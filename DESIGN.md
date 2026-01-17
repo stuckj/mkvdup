@@ -42,6 +42,7 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | `extract` | ❌ Not implemented | Rebuild original MKV |
 | `reload` | ❌ Not implemented | Send SIGHUP to daemon |
 | `check` | ❌ Not implemented | Full integrity check |
+| `probe` | ❌ Not implemented | Quick MKV-to-source match test |
 
 ### Planned Features (Not Yet Implemented)
 
@@ -56,6 +57,7 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | Blu-ray support | Source Indexer | M2TS parsing not implemented |
 | Progress meters | Phase 7 | Fancy progress bars |
 | Warning threshold | Phase 7 | Low dedup ratio warning |
+| Quick probe command | Phase 7 | Fast MKV-to-source match test |
 
 ## Supported Source Media
 
@@ -1432,6 +1434,19 @@ mkvdup extract \
     --dedup /path/to/video.mkvdup \
     --source /path/to/source_dir \
     --output /path/to/restored.mkv
+
+# Quick probe: test if MKV likely matches a source (fast, <1 min)
+# Useful for multi-disc sets to find which ISO matches which MKV
+mkvdup probe /path/to/video.mkv /path/to/source1 /path/to/source2 ...
+
+# Example output:
+#   Probing video.mkv against 3 sources...
+#   Sampling 20 packets from MKV...
+#
+#   Results:
+#     /data/disc1  18/20 matches (90%) ← likely match
+#     /data/disc2   2/20 matches (10%)
+#     /data/disc3   0/20 matches (0%)
 ```
 
 ### Statistics Output
@@ -1574,6 +1589,46 @@ that deduplication may not be effective. The user can delete or regenerate files
 | 2 | Verification failed |
 | 3 | Source directory not found or invalid |
 | 4 | MKV file not found or invalid |
+
+### Quick Probe Command
+
+The `probe` command provides a fast way to identify which source directory an MKV file
+likely came from. This is particularly useful for multi-disc DVD/Blu-ray sets where
+you have multiple ISOs and need to match each MKV to its source.
+
+**Use case:** You have 5 ISOs from a multi-disc set and 20 MKV files. Rather than
+trying each combination with full dedup (which takes minutes per attempt), probe
+can test all combinations in under a minute and show which ISOs likely match which MKVs.
+
+**Algorithm:**
+
+```
+1. Parse MKV file (quick scan, not full parse)
+2. Sample N packets from different positions:
+   - 5 from first 10% of file
+   - 10 from middle 80%
+   - 5 from last 10%
+3. For each source directory:
+   a. Build source index (or use cached index)
+   b. Look up each sampled packet hash
+   c. Count matches
+4. Report match percentages, sorted by likelihood
+```
+
+**Speed optimizations:**
+- Only parse enough MKV structure to locate sample packets
+- Sample ~20 packets total (not millions)
+- Reuse source index across multiple MKV probes
+- Target: <30 seconds per MKV against multiple sources
+
+**Output interpretation:**
+- 80-100% match: Very likely the correct source
+- 40-80% match: Possible match (may be partial content or different encode settings)
+- <40% match: Unlikely to be the source
+
+**Note:** Probe finds the best *candidate* - the actual `create` command does the
+definitive matching. A high probe score doesn't guarantee perfect dedup, but a low
+score almost certainly means wrong source.
 
 ## Implementation Order
 
