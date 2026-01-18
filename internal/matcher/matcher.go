@@ -123,21 +123,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	}
 
 	// Use parallel processing with worker pool
-	if m.numWorkers > 1 {
-		result.MatchedPackets = m.matchParallel(packets, progress)
-	} else {
-		// Single-threaded fallback
-		for i, pkt := range packets {
-			if progress != nil && i%1000 == 0 {
-				progress(i, len(packets))
-			}
-
-			matched := m.matchPacket(pkt)
-			if matched {
-				result.MatchedPackets++
-			}
-		}
-	}
+	result.MatchedPackets = m.matchParallel(packets, progress)
 
 	if progress != nil {
 		progress(len(packets), len(packets))
@@ -313,103 +299,6 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	return false
 }
 
-// matchPacket attempts to match a single packet to the source.
-func (m *Matcher) matchPacket(pkt mkv.Packet) bool {
-	// Check if this region is already covered by a matched region
-	if m.isRangeCovered(pkt.Offset, pkt.Size) {
-		return true
-	}
-
-	// Determine if this is video or audio
-	trackType := m.trackTypes[int(pkt.TrackNum)]
-	isVideo := trackType == mkv.TrackTypeVideo
-
-	// Read packet data to find sync points
-	readSize := pkt.Size
-	if readSize > 4096 {
-		readSize = 4096 // Only need to check beginning for sync points
-	}
-	if readSize < int64(m.windowSize) {
-		return false
-	}
-
-	data := make([]byte, readSize)
-	n, err := m.mkvMmap.ReadAt(data, pkt.Offset)
-	if err != nil || n < m.windowSize {
-		return false
-	}
-
-	// Find sync points within the packet data
-	var syncPoints []int
-	if isVideo {
-		syncPoints = source.FindVideoStartCodes(data[:n])
-	} else {
-		syncPoints = source.FindAudioSyncPoints(data[:n])
-	}
-
-	// Try sync points first
-	for _, syncOff := range syncPoints {
-		if syncOff+m.windowSize > n {
-			continue
-		}
-		if m.tryMatchFromOffset(pkt, int64(syncOff), data[syncOff:], isVideo) {
-			return true
-		}
-	}
-
-	// Also try from packet start (in case it's already aligned)
-	if m.tryMatchFromOffset(pkt, 0, data, isVideo) {
-		return true
-	}
-
-	return false
-}
-
-// tryMatchFromOffset tries to match starting from a specific offset within a packet.
-func (m *Matcher) tryMatchFromOffset(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool) bool {
-	if len(data) < m.windowSize {
-		return false
-	}
-
-	window := data[:m.windowSize]
-	hash := xxhash.Sum64(window)
-
-	// Look up in source index
-	locations := m.sourceIndex.Lookup(hash)
-	if len(locations) == 0 {
-		return false
-	}
-
-	// Try all locations and find the best match (longest expansion)
-	var bestMatch *matchedRegion
-	bestMatchLen := int64(0)
-
-	for _, loc := range locations {
-		// Skip locations that don't match the stream type (video vs audio)
-		// This is important for ES-based indexes where video and audio
-		// have separate offset spaces
-		if m.sourceIndex.UsesESOffsets && loc.IsVideo != isVideo {
-			continue
-		}
-
-		region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
-		if region != nil {
-			matchLen := region.mkvEnd - region.mkvStart
-			if matchLen > bestMatchLen {
-				bestMatch = region
-				bestMatchLen = matchLen
-			}
-		}
-	}
-
-	if bestMatch != nil {
-		m.matchedRegions = append(m.matchedRegions, *bestMatch)
-		return true
-	}
-
-	return false
-}
-
 // tryVerifyAndExpand attempts to verify and expand a match, returning the matched region or nil.
 func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offsetInPacket int64, isVideo bool) *matchedRegion {
 	// The MKV offset where this sync point is
@@ -460,17 +349,6 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 		isVideo:          isVideo,
 		audioSubStreamID: loc.AudioSubStreamID,
 	}
-}
-
-// verifyAndExpandFromSync verifies a match starting from a sync point within a packet.
-// Deprecated: Use tryVerifyAndExpand instead for best-match selection.
-func (m *Matcher) verifyAndExpandFromSync(pkt mkv.Packet, loc source.Location, offsetInPacket int64, isVideo bool) bool {
-	region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
-	if region != nil {
-		m.matchedRegions = append(m.matchedRegions, *region)
-		return true
-	}
-	return false
 }
 
 // expandMatch expands a verified match in both directions.
@@ -567,17 +445,6 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 	}
 
 	return mkvStart, srcStart, length
-}
-
-// isRangeCovered checks if a byte range is already fully covered by matched regions.
-func (m *Matcher) isRangeCovered(offset, size int64) bool {
-	end := offset + size
-	for _, r := range m.matchedRegions {
-		if r.mkvStart <= offset && r.mkvEnd >= end {
-			return true
-		}
-	}
-	return false
 }
 
 // mergeRegions merges overlapping matched regions.

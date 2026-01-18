@@ -5,6 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/kdomanski/iso9660"
 )
 
 // Type represents the type of source media.
@@ -31,26 +34,33 @@ func (t Type) String() string {
 var ErrUnknownSourceType = errors.New("unknown source type: directory contains neither ISO nor BDMV structure")
 
 // DetectType determines whether a directory contains a DVD ISO or Blu-ray structure.
+// ISOs are inspected to determine if they contain DVD (VIDEO_TS) or Blu-ray (BDMV) content.
 func DetectType(dir string) (Type, error) {
-	// Check for ISO file (DVD)
+	// Check for ISO files
 	isos, err := filepath.Glob(filepath.Join(dir, "*.iso"))
 	if err != nil {
 		return 0, err
 	}
-	if len(isos) > 0 {
-		return TypeDVD, nil
-	}
 
 	// Also check for ISO in subdirectory (common structure)
-	isos, err = filepath.Glob(filepath.Join(dir, "*", "*.iso"))
+	subIsos, err := filepath.Glob(filepath.Join(dir, "*", "*.iso"))
 	if err != nil {
 		return 0, err
 	}
+	isos = append(isos, subIsos...)
+
+	// If we found ISOs, inspect them to determine type
 	if len(isos) > 0 {
-		return TypeDVD, nil
+		// Check the first ISO to determine type
+		isoType, err := detectISOType(isos[0])
+		if err != nil {
+			// If we can't read the ISO, default to DVD (legacy behavior)
+			return TypeDVD, nil
+		}
+		return isoType, nil
 	}
 
-	// Check for Blu-ray structure
+	// Check for Blu-ray directory structure
 	m2ts, err := filepath.Glob(filepath.Join(dir, "BDMV", "STREAM", "*.m2ts"))
 	if err != nil {
 		return 0, err
@@ -60,6 +70,57 @@ func DetectType(dir string) (Type, error) {
 	}
 
 	return 0, ErrUnknownSourceType
+}
+
+// detectISOType examines an ISO file to determine if it's a DVD or Blu-ray.
+// DVDs have VIDEO_TS directory, Blu-rays have BDMV directory.
+func detectISOType(isoPath string) (Type, error) {
+	f, err := os.Open(isoPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	img, err := iso9660.OpenImage(f)
+	if err != nil {
+		return 0, err
+	}
+
+	root, err := img.RootDir()
+	if err != nil {
+		return 0, err
+	}
+
+	// Check for BDMV directory (Blu-ray)
+	// Check for VIDEO_TS directory (DVD)
+	hasBDMV := false
+	hasVideoTS := false
+
+	children, err := root.GetChildren()
+	if err != nil {
+		return 0, err
+	}
+
+	for _, child := range children {
+		name := strings.ToUpper(child.Name())
+		if name == "BDMV" {
+			hasBDMV = true
+		}
+		if name == "VIDEO_TS" {
+			hasVideoTS = true
+		}
+	}
+
+	// Blu-ray takes precedence if both are present (unlikely but possible)
+	if hasBDMV {
+		return TypeBluray, nil
+	}
+	if hasVideoTS {
+		return TypeDVD, nil
+	}
+
+	// Default to DVD for unrecognized ISOs
+	return TypeDVD, nil
 }
 
 // File represents a source file within the source directory.
