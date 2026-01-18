@@ -21,10 +21,10 @@ const (
 
 // Indexer builds a hash index from source media files.
 type Indexer struct {
-	sourceDir  string
-	sourceType Type
-	windowSize int
-	index      *Index
+	sourceDir      string
+	sourceType     Type
+	windowSize     int
+	index          *Index
 	useRawIndexing bool // Force raw file indexing even for DVDs
 }
 

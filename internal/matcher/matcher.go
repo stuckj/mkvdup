@@ -33,12 +33,12 @@ type Entry struct {
 
 // Result contains the results of the matching process.
 type Result struct {
-	Entries         []Entry // All entries covering the entire MKV file
-	DeltaData       []byte  // Concatenated unique data (delta)
-	MatchedBytes    int64   // Total bytes matched to source
-	UnmatchedBytes  int64   // Total bytes in delta
-	MatchedPackets  int     // Number of packets that matched
-	TotalPackets    int     // Total number of packets processed
+	Entries        []Entry // All entries covering the entire MKV file
+	DeltaData      []byte  // Concatenated unique data (delta)
+	MatchedBytes   int64   // Total bytes matched to source
+	UnmatchedBytes int64   // Total bytes in delta
+	MatchedPackets int     // Number of packets that matched
+	TotalPackets   int     // Total number of packets processed
 }
 
 // matchedRegion tracks a region that was matched to a source.
@@ -58,9 +58,9 @@ type Matcher struct {
 	mkvSize        int64
 	windowSize     int
 	matchedRegions []matchedRegion
-	regionsMu      sync.Mutex        // Protects matchedRegions for concurrent access
-	trackTypes     map[int]int       // Map from track number to track type
-	numWorkers     int               // Number of worker goroutines for parallel matching
+	regionsMu      sync.Mutex  // Protects matchedRegions for concurrent access
+	trackTypes     map[int]int // Map from track number to track type
+	numWorkers     int         // Number of worker goroutines for parallel matching
 }
 
 // NewMatcher creates a new Matcher with the given source index.
