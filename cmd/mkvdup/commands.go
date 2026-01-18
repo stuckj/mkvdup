@@ -457,10 +457,10 @@ func calculateFileChecksum(path string) (uint64, error) {
 
 // ProbeResult represents the result of probing a source against an MKV.
 type ProbeResult struct {
-	SourcePath    string
-	MatchCount    int
-	TotalSamples  int
-	MatchPercent  float64
+	SourcePath   string
+	MatchCount   int
+	TotalSamples int
+	MatchPercent float64
 }
 
 // probe tests if an MKV likely matches one or more source directories.
@@ -649,8 +649,8 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 	}
 
 	// Calculate distribution
-	earlyCount := n / 4       // 25% from first 10%
-	lateCount := n / 4        // 25% from last 10%
+	earlyCount := n / 4                    // 25% from first 10%
+	lateCount := n / 4                     // 25% from last 10%
 	midCount := n - earlyCount - lateCount // 50% from middle 80%
 
 	// Calculate packet ranges

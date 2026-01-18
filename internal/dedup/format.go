@@ -61,17 +61,17 @@ type Entry struct {
 
 // Footer represents the footer at the end of a .mkvdup file.
 type Footer struct {
-	IndexChecksum uint64   // xxhash of index section
-	DeltaChecksum uint64   // xxhash of delta section
-	Magic         [8]byte  // "MKVDUP01" (for reverse scanning)
+	IndexChecksum uint64  // xxhash of index section
+	DeltaChecksum uint64  // xxhash of delta section
+	Magic         [8]byte // "MKVDUP01" (for reverse scanning)
 }
 
 // File represents a complete dedup file structure for reconstruction.
 type File struct {
-	Header       Header
-	SourceFiles  []SourceFile
-	Entries      []Entry
-	DeltaOffset  int64 // Offset to delta section in file
+	Header        Header
+	SourceFiles   []SourceFile
+	Entries       []Entry
+	DeltaOffset   int64 // Offset to delta section in file
 	UsesESOffsets bool
 }
 
