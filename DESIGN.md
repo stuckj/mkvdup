@@ -42,7 +42,7 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | `extract` | ❌ Not implemented | Rebuild original MKV |
 | `reload` | ❌ Not implemented | Send SIGHUP to daemon |
 | `check` | ❌ Not implemented | Full integrity check |
-| `probe` | ❌ Not implemented | Quick MKV-to-source match test |
+| `probe` | ✅ Complete | Quick MKV-to-source match test |
 
 ### Planned Features (Not Yet Implemented)
 
@@ -57,7 +57,6 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | Blu-ray support | Source Indexer | M2TS parsing not implemented |
 | Progress meters | Phase 7 | Fancy progress bars |
 | Warning threshold | Phase 7 | Low dedup ratio warning |
-| Quick probe command | Phase 7 | Fast MKV-to-source match test |
 
 ## Supported Source Media
 
