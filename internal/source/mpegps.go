@@ -565,11 +565,6 @@ func (p *MPEGPSParser) RawVideoESSize() int64 {
 	return last.ESOffset + int64(last.Size)
 }
 
-// ReadRawVideoES reads raw video ES data (for debugging).
-func (p *MPEGPSParser) ReadRawVideoES(esOffset int64, size int) ([]byte, error) {
-	return p.readRawESData(esOffset, size)
-}
-
 // AudioRanges returns all audio payload ranges found in the stream.
 func (p *MPEGPSParser) AudioRanges() []PESPayloadRange {
 	return p.audioRanges
