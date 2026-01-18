@@ -15,14 +15,14 @@ import (
 
 // Reader reads .mkvdup files and provides data reconstruction.
 type Reader struct {
-	file         *File
-	dedupMmap    *mmap.ReaderAt
-	dedupPath    string
-	sourceDir    string
-	sourceMmaps  []*mmap.ReaderAt
-	esReader     ESReader   // For ES-based sources
-	entriesOnce  sync.Once  // For lazy loading entries
-	entriesErr   error      // Error from lazy loading
+	file        *File
+	dedupMmap   *mmap.ReaderAt
+	dedupPath   string
+	sourceDir   string
+	sourceMmaps []*mmap.ReaderAt
+	esReader    ESReader  // For ES-based sources
+	entriesOnce sync.Once // For lazy loading entries
+	entriesErr  error     // Error from lazy loading
 }
 
 // ESReader interface for reading ES data from MPEG-PS sources.

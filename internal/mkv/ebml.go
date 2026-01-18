@@ -265,9 +265,9 @@ func ReadBinary(r io.Reader, size int64) ([]byte, error) {
 // SimpleBlockHeader contains the decoded header of a SimpleBlock.
 type SimpleBlockHeader struct {
 	TrackNumber uint64
-	Timestamp   int16  // Relative to cluster timestamp
-	Flags       byte   // Keyframe, invisible, lacing, discardable
-	HeaderSize  int    // Total header size in bytes
+	Timestamp   int16 // Relative to cluster timestamp
+	Flags       byte  // Keyframe, invisible, lacing, discardable
+	HeaderSize  int   // Total header size in bytes
 }
 
 // Block flags

@@ -9,28 +9,28 @@ import (
 
 // MPEG-PS start codes
 const (
-	PackStartCode       = 0x000001BA
-	SystemHeaderCode    = 0x000001BB
-	ProgramEndCode      = 0x000001B9
-	PrivateStream1Code  = 0x000001BD
-	PrivateStream2Code  = 0x000001BF
-	PaddingStreamCode   = 0x000001BE
-	VideoStreamMinCode  = 0x000001E0
-	VideoStreamMaxCode  = 0x000001EF
-	AudioStreamMinCode  = 0x000001C0
-	AudioStreamMaxCode  = 0x000001DF
+	PackStartCode      = 0x000001BA
+	SystemHeaderCode   = 0x000001BB
+	ProgramEndCode     = 0x000001B9
+	PrivateStream1Code = 0x000001BD
+	PrivateStream2Code = 0x000001BF
+	PaddingStreamCode  = 0x000001BE
+	VideoStreamMinCode = 0x000001E0
+	VideoStreamMaxCode = 0x000001EF
+	AudioStreamMinCode = 0x000001C0
+	AudioStreamMaxCode = 0x000001DF
 )
 
 // PESPacket represents a parsed PES packet from an MPEG-PS stream.
 type PESPacket struct {
-	StreamID      byte   // Stream identifier (E0-EF = video, C0-DF = audio, BD = private)
-	SubStreamID   byte   // Sub-stream ID for Private Stream 1 (0x80-0x87 = AC3, 0x88-0x8F = DTS)
-	Offset        int64  // Offset of the PES packet start in the file
-	HeaderSize    int    // Total header size (start code + length + PES header + private header)
-	PayloadOffset int64  // Offset of the actual audio/video payload
-	PayloadSize   int    // Size of the payload
-	IsVideo       bool   // True if this is a video stream
-	IsAudio       bool   // True if this is an audio stream
+	StreamID      byte  // Stream identifier (E0-EF = video, C0-DF = audio, BD = private)
+	SubStreamID   byte  // Sub-stream ID for Private Stream 1 (0x80-0x87 = AC3, 0x88-0x8F = DTS)
+	Offset        int64 // Offset of the PES packet start in the file
+	HeaderSize    int   // Total header size (start code + length + PES header + private header)
+	PayloadOffset int64 // Offset of the actual audio/video payload
+	PayloadSize   int   // Size of the payload
+	IsVideo       bool  // True if this is a video stream
+	IsAudio       bool  // True if this is an audio stream
 }
 
 // PESPayloadRange represents a contiguous range of elementary stream payload data.
