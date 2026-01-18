@@ -33,7 +33,7 @@ mkdir -p ~/.cache/mkvdup/testdata/bigbuckbunny
 cd ~/.cache/mkvdup/testdata/bigbuckbunny
 
 # Download PAL version (7.5GB) - smaller than NTSC
-wget "https://archive.org/download/BigBuckBunny/big_buck_bunny_pal_dvd.iso" -O bbb-pal.iso
+wget "https://archive.org/download/BigBuckBunny/big-buck-bunny-PAL.iso" -O bbb-pal.iso
 
 # Verify checksum (MD5: cb67e9bc8e97b9d625e7cd7ee0d85e08)
 md5sum bbb-pal.iso
@@ -41,7 +41,7 @@ md5sum bbb-pal.iso
 
 Alternative: Use the NTSC version if preferred:
 ```bash
-wget "https://archive.org/download/BigBuckBunny/big_buck_bunny_ntsc_dvd.iso" -O bbb-ntsc.iso
+wget "https://archive.org/download/BigBuckBunny/big-buck-bunny-NTSC.iso" -O bbb-ntsc.iso
 # MD5: 966758b02da2c5c183ab7de2e0a5e96b
 ```
 
