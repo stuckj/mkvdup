@@ -10,6 +10,7 @@ import (
 // Type represents the type of source media.
 type Type int
 
+// Source type constants.
 const (
 	TypeDVD    Type = iota // Contains .iso file
 	TypeBluray             // Contains BDMV/STREAM/*.m2ts
