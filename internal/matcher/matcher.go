@@ -455,7 +455,7 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		} else {
 			// Zero-copy for raw indexes
 			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
-			if srcByte == nil || len(srcByte) == 0 {
+			if len(srcByte) == 0 {
 				break
 			}
 		}
@@ -494,7 +494,7 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		} else {
 			// Zero-copy for raw indexes
 			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
-			if srcByte == nil || len(srcByte) == 0 {
+			if len(srcByte) == 0 {
 				break
 			}
 		}

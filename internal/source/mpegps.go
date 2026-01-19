@@ -357,68 +357,6 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error {
 	return nil
 }
 
-// rawESOffsetToFileOffset converts raw ES offset to file offset (without filtering).
-func (p *MPEGPSParser) rawESOffsetToFileOffset(esOffset int64) (int64, int) {
-	for _, r := range p.videoRanges {
-		if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
-			offsetInPayload := esOffset - r.ESOffset
-			return r.FileOffset + offsetInPayload, r.Size - int(offsetInPayload)
-		}
-	}
-	return -1, 0
-}
-
-// readRawESData reads ES data without filtering (uses raw videoRanges).
-func (p *MPEGPSParser) readRawESData(esOffset int64, size int) ([]byte, error) {
-	ranges := p.videoRanges
-	if len(ranges) == 0 {
-		return nil, fmt.Errorf("no ranges available")
-	}
-
-	result := make([]byte, 0, size)
-	remaining := size
-
-	rangeIdx := 0
-	for rangeIdx < len(ranges) && esOffset >= ranges[rangeIdx].ESOffset+int64(ranges[rangeIdx].Size) {
-		rangeIdx++
-	}
-
-	for remaining > 0 && rangeIdx < len(ranges) {
-		r := ranges[rangeIdx]
-		if esOffset < r.ESOffset {
-			break
-		}
-		if esOffset >= r.ESOffset+int64(r.Size) {
-			rangeIdx++
-			continue
-		}
-
-		offsetInPayload := esOffset - r.ESOffset
-		availableInRange := int64(r.Size) - offsetInPayload
-		toRead := remaining
-		if int64(toRead) > availableInRange {
-			toRead = int(availableInRange)
-		}
-
-		// Direct slice access - zero copy
-		fileOffset := r.FileOffset + offsetInPayload
-		endOffset := fileOffset + int64(toRead)
-		if endOffset > p.size {
-			if len(result) > 0 {
-				return result, nil
-			}
-			return nil, fmt.Errorf("failed to read ES data: offset out of range")
-		}
-
-		result = append(result, p.data[fileOffset:endOffset]...)
-		esOffset += int64(toRead)
-		remaining -= toRead
-		rangeIdx++
-	}
-
-	return result, nil
-}
-
 // parsePackHeader parses an MPEG-2 pack header and returns its size.
 func (p *MPEGPSParser) parsePackHeader(pos int64) (int, error) {
 	// MPEG-2 pack header is 14 bytes minimum
@@ -667,32 +605,6 @@ func (p *MPEGPSParser) FilteredAudioRanges(subStreamID byte) []PESPayloadRange {
 // Data returns the raw mmap'd file data for zero-copy access.
 func (p *MPEGPSParser) Data() []byte {
 	return p.data
-}
-
-// findRangeIndex uses binary search to find the range containing the given ES offset.
-// For video only - use findAudioSubStreamRangeIndex for audio.
-// Returns the index of the range, or -1 if not found.
-func (p *MPEGPSParser) findRangeIndex(esOffset int64, isVideo bool) int {
-	if !isVideo {
-		return -1 // Audio uses per-sub-stream methods
-	}
-	var ranges []PESPayloadRange
-	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
-		ranges = p.filteredVideoRanges
-	} else {
-		ranges = p.videoRanges
-	}
-
-	return p.binarySearchRanges(ranges, esOffset)
-}
-
-// findAudioSubStreamRangeIndex uses binary search to find the range for an audio sub-stream.
-func (p *MPEGPSParser) findAudioSubStreamRangeIndex(subStreamID byte, esOffset int64) int {
-	ranges, ok := p.filteredAudioBySubStream[subStreamID]
-	if !ok {
-		return -1
-	}
-	return p.binarySearchRanges(ranges, esOffset)
 }
 
 // binarySearchRanges performs binary search on ranges to find the one containing esOffset.
