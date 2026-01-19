@@ -57,6 +57,23 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | Blu-ray support | Source Indexer | M2TS parsing not implemented |
 | Progress meters | Phase 7 | Fancy progress bars |
 | Warning threshold | Phase 7 | Low dedup ratio warning |
+| Quick probe command | Phase 7 | Fast MKV-to-source match test |
+| Optimized Entry Loading | Performance | See Future Enhancements section |
+
+### Future Enhancements
+
+#### Optimized Entry Loading (Performance)
+
+The current lazy loading implementation loads all index entries on first read. Two potential optimizations:
+
+1. **Partial entry loading**: Instead of loading all entries at once, implement a range-based index structure (e.g., B-tree or skip list over MKV offsets) to load only the entries needed for each read operation. This would spread the loading cost across multiple accesses and significantly improve performance for partial file reads (e.g., metadata extraction, seeking).
+
+2. **Direct memory mapping to structures**: Instead of parsing entries from mmap'd data, use unsafe pointers to directly interpret the memory-mapped region as entry structures. This eliminates parsing overhead but requires careful alignment handling and version-aware struct definitions. The file format versioning already supports this - older versions would use legacy struct layouts while newer versions use optimized layouts.
+
+**Trade-offs to evaluate:**
+- Partial loading adds complexity to entry lookup
+- Direct memory mapping requires unsafe code and platform-specific alignment considerations
+- Both approaches should be benchmarked against current implementation
 
 ## Supported Source Media
 

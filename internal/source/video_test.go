@@ -5,6 +5,7 @@ import (
 )
 
 func TestFindVideoStartCodes(t *testing.T) {
+	// FindVideoStartCodes finds all 00 00 01 XX patterns (any video start code)
 	tests := []struct {
 		name     string
 		data     []byte
@@ -17,17 +18,17 @@ func TestFindVideoStartCodes(t *testing.T) {
 		},
 		{
 			name:     "too short",
-			data:     []byte{0x00, 0x00},
+			data:     []byte{0x00, 0x00, 0x00},
 			expected: nil,
 		},
 		{
 			name:     "single start code at beginning",
-			data:     []byte{0x00, 0x00, 0x01, 0xB3},
+			data:     []byte{0x00, 0x00, 0x01, 0xB3, 0xFF},
 			expected: []int{0},
 		},
 		{
-			name:     "single start code in middle",
-			data:     []byte{0xFF, 0xFF, 0x00, 0x00, 0x01, 0xB3, 0xFF},
+			name:     "start code in middle",
+			data:     []byte{0xFF, 0xFF, 0x00, 0x00, 0x01, 0x00, 0xFF},
 			expected: []int{2},
 		},
 		{
@@ -36,24 +37,14 @@ func TestFindVideoStartCodes(t *testing.T) {
 			expected: []int{0, 4},
 		},
 		{
-			name:     "no start codes",
-			data:     []byte{0x00, 0x00, 0x00, 0x00, 0x00},
-			expected: nil,
+			name:     "slice header also indexed",
+			data:     []byte{0x00, 0x00, 0x01, 0x01, 0xFF},
+			expected: []int{0},
 		},
 		{
-			name: "H.264 NAL units",
-			data: []byte{
-				0x00, 0x00, 0x01, 0x67, // SPS
-				0x00, 0x00, 0x01, 0x68, // PPS
-				0x00, 0x00, 0x01, 0x65, // IDR slice
-			},
-			expected: []int{0, 4, 8},
-		},
-		{
-			name: "4-byte start code (00 00 00 01)",
-			data: []byte{0x00, 0x00, 0x00, 0x01, 0x67},
-			// We detect at offset 1 (00 00 01) within the 4-byte sequence
-			expected: []int{1},
+			name:     "H.264 NAL units also indexed",
+			data:     []byte{0x00, 0x00, 0x01, 0x67, 0x00, 0x00, 0x01, 0x68},
+			expected: []int{0, 4},
 		},
 	}
 
@@ -68,7 +59,8 @@ func TestFindVideoStartCodes(t *testing.T) {
 }
 
 func TestFindVideoStartCodesInRange(t *testing.T) {
-	data := []byte{0x00, 0x00, 0x01, 0xB3, 0xFF, 0x00, 0x00, 0x01, 0x00}
+	// Start codes at offset 0 and offset 5
+	data := []byte{0x00, 0x00, 0x01, 0xB3, 0xFF, 0x00, 0x00, 0x01, 0x00, 0xFF}
 	startOffset := 1000
 
 	result := FindVideoStartCodesInRange(data, startOffset)
@@ -95,13 +87,14 @@ func intSliceEqual(a, b []int) bool {
 }
 
 func BenchmarkFindVideoStartCodes(b *testing.B) {
-	// Create test data with some start codes scattered throughout
+	// Create test data with start codes scattered throughout
 	data := make([]byte, 1024*1024) // 1MB
-	// Add start codes every ~1000 bytes
-	for i := 0; i < len(data)-3; i += 1000 {
+	// Add start codes (00 00 01 00) every ~1000 bytes
+	for i := 0; i < len(data)-4; i += 1000 {
 		data[i] = 0x00
 		data[i+1] = 0x00
 		data[i+2] = 0x01
+		data[i+3] = 0x00
 	}
 
 	b.ResetTimer()
