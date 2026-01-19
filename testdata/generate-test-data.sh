@@ -189,18 +189,41 @@ create_mkv_mount() {
         die "VIDEO_TS directory not found in ISO"
     fi
 
-    # Collect VOB files using nullglob to handle no matches gracefully
-    # Include multi-digit segments (e.g., VTS_01_10.VOB)
+    # Find the title set with the largest total VOB size (main feature)
+    # VTS_XX_0.VOB is menu data, so we skip it and look at VTS_XX_[1-9]*.VOB
+    local best_vts=""
+    local best_size=0
     shopt -s nullglob
-    local vob_array=("${vob_dir}"/VTS_01_[0-9]*.VOB)
+    for vts_num in 01 02 03 04 05 06 07 08 09 10; do
+        local vts_vobs=("${vob_dir}"/VTS_${vts_num}_[1-9].VOB "${vob_dir}"/VTS_${vts_num}_[1-9][0-9].VOB)
+        if [[ ${#vts_vobs[@]} -gt 0 ]]; then
+            local total_size=0
+            for vob in "${vts_vobs[@]}"; do
+                local size
+                size=$(stat -c%s "$vob" 2>/dev/null || echo 0)
+                total_size=$((total_size + size))
+            done
+            if [[ $total_size -gt $best_size ]]; then
+                best_size=$total_size
+                best_vts=$vts_num
+            fi
+        fi
+    done
     shopt -u nullglob
 
-    if [[ ${#vob_array[@]} -eq 0 ]]; then
+    if [[ -z "$best_vts" ]]; then
         sudo umount "$mount_point"
         rmdir "$mount_point"
         trap - EXIT
-        die "No VTS_01_*.VOB files found"
+        die "No VTS_XX_*.VOB files found"
     fi
+
+    info "Using title set VTS_${best_vts} (largest content: $((best_size / 1024 / 1024))MB)"
+
+    # Collect VOB files for the selected title set
+    shopt -s nullglob
+    local vob_array=("${vob_dir}"/VTS_${best_vts}_[1-9].VOB "${vob_dir}"/VTS_${best_vts}_[1-9][0-9].VOB)
+    shopt -u nullglob
 
     # Sort VOB files naturally and join with '|' for ffmpeg concat
     local vob_files
@@ -209,7 +232,8 @@ create_mkv_mount() {
     info "VOB files: $vob_files"
 
     # Use ffmpeg to remux - copy all streams without transcoding
-    if ! ffmpeg -y -i "concat:${vob_files}" \
+    # -fflags +genpts generates timestamps for packets that lack them (common in VOBs)
+    if ! ffmpeg -fflags +genpts -y -i "concat:${vob_files}" \
         -map 0:v -map 0:a \
         -c copy \
         -f matroska \
