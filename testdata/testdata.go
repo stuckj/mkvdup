@@ -7,6 +7,7 @@ package testdata
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Paths contains the resolved paths to test data files.
@@ -28,8 +29,9 @@ const DefaultMKVPattern = "*.mkv"
 // Find locates the test data directory and checks for required files.
 // It checks these locations in order:
 //  1. $MKVDUP_TESTDATA environment variable
-//  2. ~/.cache/mkvdup/testdata/
-//  3. /tmp/mkvdup-testdata/
+//  2. testdata/generated/ (relative to the testdata package, created by generate-test-data.sh)
+//  3. ~/.cache/mkvdup/testdata/
+//  4. /tmp/mkvdup-testdata/
 //
 // Returns Paths with Available=false if test data is not found.
 func Find() Paths {
@@ -38,6 +40,15 @@ func Find() Paths {
 	// Check environment variable first
 	if envPath := os.Getenv("MKVDUP_TESTDATA"); envPath != "" {
 		p.Root = envPath
+		if checkPaths(&p) {
+			return p
+		}
+	}
+
+	// Check testdata/generated/ (local to the repo, created by generate-test-data.sh)
+	// This is the preferred location for reproducible test data
+	if localPath := findLocalTestdataDir(); localPath != "" {
+		p.Root = localPath
 		if checkPaths(&p) {
 			return p
 		}
@@ -103,4 +114,17 @@ func SkipIfNotAvailable(t interface{ Skip(...interface{}) }) Paths {
 		t.Skip("Test data not available. See testdata/README.md for setup instructions.")
 	}
 	return p
+}
+
+// findLocalTestdataDir returns the path to testdata/generated/ directory
+// relative to this source file, or empty string if it cannot be determined.
+func findLocalTestdataDir() string {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	// filename is the path to this file (testdata.go)
+	// We want the "generated" subdirectory in the same directory
+	dir := filepath.Dir(filename)
+	return filepath.Join(dir, "generated")
 }
