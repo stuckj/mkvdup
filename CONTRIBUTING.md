@@ -2,6 +2,8 @@
 
 Guidelines for contributing to mkvdup.
 
+**Important:** When making code changes, update relevant documentation (CLI commands, architecture, file formats, etc.) in the same PR.
+
 ## Development Environment
 
 Use `gvm` (Go Version Manager) for Go. Source it before running Go commands:
@@ -45,7 +47,7 @@ go build ./...
 - Write tests alongside implementation (test-driven when practical)
 - Use table-driven tests for cases with multiple inputs
 - Aim for high test coverage on critical paths (matching, file format, FUSE reads)
-- Use `go test -race` to detect data races in concurrent code
+- Use `go test -race` to detect data races in concurrent code (also run in CI)
 - Integration tests should use temporary directories and clean up after themselves
 
 ### Key Test Categories
@@ -93,8 +95,10 @@ go build ./...
 
 - Profile before optimizing (`go test -bench`, `pprof`)
 - Avoid premature optimization
-- Memory-map large files rather than reading into memory
+- Memory-map large files using `internal/mmap` rather than reading into memory. This is critical for ISO files (multi-GB) to avoid excessive memory copies. The mmap package provides zero-copy access via `unix.Mmap`.
 - Use sync.Pool for frequently allocated buffers
+
+**Note:** The CI workflow runs `go vet` and `staticcheck` on all PRs.
 
 ## Key Technical Details
 

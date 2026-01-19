@@ -21,6 +21,8 @@ dedup_file: "/data/dedup/video1.mkvdup"
 source_dir: "/data/sources/Video1_DVD"
 ```
 
+**Path resolution:** Relative paths in `dedup_file` and `source_dir` are resolved relative to the config file's directory, not the current working directory. Absolute paths (starting with `/`) are used as-is.
+
 ### Master Config with Includes
 
 **Main config (/etc/mkvdup/mount.yaml):**

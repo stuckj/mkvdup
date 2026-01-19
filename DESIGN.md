@@ -132,6 +132,8 @@ All file access uses true zero-copy memory mapping via `unix.Mmap` from `golang.
 
 ## Performance Results
 
+*Results from Big Buck Bunny test data (see [testdata/README.md](testdata/README.md) and #27 for reproducible test setup).*
+
 | Metric | Value |
 |--------|-------|
 | Video byte match rate | ~98.6% |

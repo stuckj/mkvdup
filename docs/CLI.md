@@ -190,26 +190,16 @@ Deduplication Results:
 The `create` command shows detailed statistics:
 
 ```
-Deduplication Results:
-  ┌─────────────────────────────────────────────────────────┐
-  │  Original MKV size:          3.42 GB                    │
-  │  Matched data (from source): 3.418 GB (99.95%)          │
-  │  Unique data (delta):        1.5 MB   (0.04%)           │
-  │  Index overhead:             51.2 MB  (1.5%)            │
-  │  ─────────────────────────────────────────────────────  │
-  │  Dedup file size:            52.7 MB                    │
-  │  Space savings:              3.37 GB  (98.5%)           │
-  └─────────────────────────────────────────────────────────┘
-
-  Packet Statistics:
-    Video matched:    1,247,832 / 1,247,832  (100.0%)
-    Audio matched:      892,156 /   892,156  (100.0%)
-    Container overhead: 12,419 clusters + 2.1M block headers (delta)
+Matched bytes:      3,418,000,000 bytes (3259.28 MB, 99.9%)
+Unmatched bytes:    1,500,000 bytes (1.43 MB, 0.0%)
+Matched packets:    2,139,988 / 2,139,988  (100.0%)
 
 Output files:
   Dedup file:  /path/to/video.mkvdup (52.7 MB)
   Config file: /path/to/video.mkvdup.yaml
 ```
+
+*Note: The matcher tracks video vs audio internally but currently reports combined statistics.*
 
 ## Related Documentation
 

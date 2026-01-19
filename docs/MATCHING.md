@@ -73,7 +73,7 @@ The parser maintains a mapping of ES offsets to file offsets for each PES payloa
 
 ## Video user_data Filtering
 
-**Problem:** MKV tools (like MakeMKV) strip `user_data` sections (start code `00 00 01 B2`) from video streams. These contain closed captions and other auxiliary data.
+**Problem:** MKV remuxing tools typically strip `user_data` sections (start code `00 00 01 B2`) from video streams. These contain closed captions and other auxiliary data.
 
 **Solution:** When building the video ES index, create "filtered ranges" that exclude user_data sections:
 
@@ -234,6 +234,8 @@ With expansion:    Match extends to include adjacent matching bytes
 7. If match: report success, optionally delete original (with --delete-original)
 
 ## Performance Results
+
+*Results from Big Buck Bunny test data (see [testdata/README.md](../testdata/README.md) and #27).*
 
 With all filtering implemented (ES-aware, user_data, per-sub-stream audio):
 
