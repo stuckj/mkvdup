@@ -1,17 +1,5 @@
 package source
 
-// Audio sync patterns for various codecs
-var (
-	// AC3/E-AC3 (Dolby Digital) sync word
-	syncAC3 = []byte{0x0B, 0x77}
-
-	// DTS/DTS-HD sync word
-	syncDTS = []byte{0x7F, 0xFE, 0x80, 0x01}
-
-	// TrueHD sync word
-	syncTrueHD = []byte{0xF8, 0x72, 0x6F, 0xBA}
-)
-
 // FindAudioSyncPoints finds all audio sync pattern positions in the data.
 // Detects AC3, DTS, TrueHD, and MPEG Audio sync patterns.
 // Returns offsets where sync patterns begin.

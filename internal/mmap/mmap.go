@@ -76,7 +76,7 @@ func (m *File) Slice(offset int64, size int) []byte {
 // Use MADV_DONTNEED to release pages (they'll be re-faulted when accessed).
 // Use MADV_SEQUENTIAL to hint sequential access pattern.
 func (m *File) Advise(advice int) error {
-	if m.data == nil || len(m.data) == 0 {
+	if len(m.data) == 0 {
 		return nil
 	}
 	return unix.Madvise(m.data, advice)

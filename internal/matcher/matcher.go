@@ -147,6 +147,56 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	return result, nil
 }
 
+// ProbeHash represents a hash computed from a sync point in packet data.
+type ProbeHash struct {
+	Hash    uint64
+	IsVideo bool
+}
+
+// ExtractProbeHashes extracts probe hashes from packet data using sync point detection.
+// This is the same algorithm used by the matcher to find matching points.
+// The data should be the first few KB of a packet (typically up to 4096 bytes).
+// windowSize should match the source index window size (typically 64 bytes).
+// Returns nil if no valid hashes could be extracted.
+func ExtractProbeHashes(data []byte, isVideo bool, windowSize int) []ProbeHash {
+	if len(data) < windowSize {
+		return nil
+	}
+
+	var hashes []ProbeHash
+
+	// Find sync points within the packet data
+	var syncPoints []int
+	if isVideo {
+		syncPoints = source.FindVideoStartCodes(data)
+	} else {
+		syncPoints = source.FindAudioSyncPoints(data)
+	}
+
+	// Hash from sync points
+	for _, syncOff := range syncPoints {
+		if syncOff+windowSize > len(data) {
+			continue
+		}
+		hash := xxhash.Sum64(data[syncOff : syncOff+windowSize])
+		hashes = append(hashes, ProbeHash{
+			Hash:    hash,
+			IsVideo: isVideo,
+		})
+	}
+
+	// If no sync points found, try from data start
+	if len(hashes) == 0 {
+		hash := xxhash.Sum64(data[:windowSize])
+		hashes = append(hashes, ProbeHash{
+			Hash:    hash,
+			IsVideo: isVideo,
+		})
+	}
+
+	return hashes
+}
+
 // matchParallel processes packets in parallel using a worker pool.
 func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int {
 	var processedCount atomic.Int64
@@ -405,7 +455,7 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		} else {
 			// Zero-copy for raw indexes
 			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
-			if srcByte == nil || len(srcByte) == 0 {
+			if len(srcByte) == 0 {
 				break
 			}
 		}
@@ -444,7 +494,7 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		} else {
 			// Zero-copy for raw indexes
 			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
-			if srcByte == nil || len(srcByte) == 0 {
+			if len(srcByte) == 0 {
 				break
 			}
 		}

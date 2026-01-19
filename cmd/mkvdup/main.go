@@ -32,6 +32,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  -v, --verbose                          Enable verbose output\n")
 		fmt.Fprintf(os.Stderr, "\nCommands:\n")
 		fmt.Fprintf(os.Stderr, "  create <mkv> <source> [output] [name]  Create dedup file from MKV + source\n")
+		fmt.Fprintf(os.Stderr, "  probe <mkv> <source>...                Quick test if MKV matches source(s)\n")
 		fmt.Fprintf(os.Stderr, "  mount <mountpoint> <config.yaml>...    Mount dedup files as FUSE filesystem\n")
 		fmt.Fprintf(os.Stderr, "  info <dedup>                           Show dedup file information\n")
 		fmt.Fprintf(os.Stderr, "  verify <dedup> <source> <original>     Verify dedup file\n")
@@ -58,6 +59,14 @@ func main() {
 			name = args[3]
 		}
 		if err := createDedup(args[0], args[1], output, name); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "probe":
+		if len(args) < 2 {
+			log.Fatal("Usage: probe <mkv> <source_dir>...")
+		}
+		if err := probe(args[0], args[1:]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

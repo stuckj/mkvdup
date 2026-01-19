@@ -42,7 +42,7 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | `extract` | ❌ Not implemented | Rebuild original MKV |
 | `reload` | ❌ Not implemented | Send SIGHUP to daemon |
 | `check` | ❌ Not implemented | Full integrity check |
-| `probe` | ❌ Not implemented | Quick MKV-to-source match test |
+| `probe` | ✅ Complete | Quick MKV-to-source match test |
 
 ### Planned Features (Not Yet Implemented)
 
@@ -57,7 +57,6 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | Blu-ray support | Source Indexer | M2TS parsing not implemented |
 | Progress meters | Phase 7 | Fancy progress bars |
 | Warning threshold | Phase 7 | Low dedup ratio warning |
-| Quick probe command | Phase 7 | Fast MKV-to-source match test |
 
 ### Future Enhancements
 
@@ -216,30 +215,9 @@ Build a hash index of the source directory for fast lookup of byte sequences.
 
 ### Source Directory Detection
 
-```go
-type SourceType int
-
-const (
-    SourceTypeDVD     SourceType = iota  // Contains .iso file
-    SourceTypeBluray                      // Contains BDMV/STREAM/*.m2ts
-)
-
-func DetectSourceType(dir string) (SourceType, error) {
-    // Check for ISO file
-    isos, _ := filepath.Glob(filepath.Join(dir, "*.iso"))
-    if len(isos) > 0 {
-        return SourceTypeDVD, nil
-    }
-
-    // Check for Blu-ray structure
-    m2ts, _ := filepath.Glob(filepath.Join(dir, "BDMV", "STREAM", "*.m2ts"))
-    if len(m2ts) > 0 {
-        return SourceTypeBluray, nil
-    }
-
-    return 0, errors.New("unknown source type")
-}
-```
+The source type is detected by scanning the directory structure:
+- **DVD**: Contains `*.iso` file(s)
+- **Blu-ray**: Contains `BDMV/STREAM/*.m2ts` files
 
 ### Indexing Strategy
 
@@ -278,24 +256,9 @@ Since most video codecs use `00 00 01` as a start code prefix, we can:
    - Detect codec from container metadata (IFO for DVD, CLIPINF for Blu-ray)
    - Apply codec-specific filtering (e.g., only index certain NAL types for H.264)
 
-**Video implementation:**
+**Video indexing:**
 
-```go
-// Common start code used by MPEG-2, H.264, HEVC, VC-1
-var startCodePrefix = []byte{0x00, 0x00, 0x01}
-
-func findVideoStartCodes(data []byte) []int {
-    var offsets []int
-    for i := 0; i <= len(data)-3; i++ {
-        if data[i] == 0x00 && data[i+1] == 0x00 && data[i+2] == 0x01 {
-            offsets = append(offsets, i)
-        }
-    }
-    return offsets
-}
-```
-
-This approach works across all common video codecs without needing to detect the specific codec in advance.
+Scan media data for the `00 00 01` byte sequence which marks video packet boundaries in MPEG-2, H.264, HEVC, and VC-1 codecs. This unified approach works across all common video codecs without needing to detect the specific codec in advance.
 
 ### ES-Aware Indexing for DVDs (MPEG-PS)
 
@@ -321,24 +284,7 @@ File offset:          47                            1314
 The ES is continuous - no container headers interrupting the codec data.
 ```
 
-**Implementation:**
-
-```go
-type MPEGPSParser struct {
-    reader      *mmap.ReaderAt
-    videoRanges []PESPayloadRange  // Maps ES offsets to file offsets
-    audioRanges []PESPayloadRange
-}
-
-type PESPayloadRange struct {
-    FileOffset int64  // Where the payload is in the actual file
-    Size       int    // Size of this payload chunk
-    ESOffset   int64  // Logical position in the continuous ES
-}
-
-// ReadESData reads continuous ES data, handling the fragmented file storage
-func (p *MPEGPSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error)
-```
+The MPEG-PS parser maintains a mapping of ES offsets to file offsets for each PES payload range, allowing it to reconstruct continuous elementary stream data from the fragmented file storage.
 
 **Index entry storage:**
 
@@ -361,42 +307,7 @@ Filtered video ES:     [video]...........[video]...........[video]
                        (user_data sections excluded from filtered ES offsets)
 ```
 
-**Implementation in `mpegps.go`:**
-
-```go
-func (p *MPEGPSParser) buildFilteredVideoRanges() error {
-    for _, rawRange := range p.videoRanges {
-        data := make([]byte, rawRange.Size)
-        p.reader.ReadAt(data, rawRange.FileOffset)
-
-        // Scan for user_data sections (00 00 01 B2) and exclude them
-        i := 0
-        rangeStart := 0
-        for i < len(data)-3 {
-            if data[i] == 0x00 && data[i+1] == 0x00 &&
-               data[i+2] == 0x01 && data[i+3] == 0xB2 {
-                // Emit range before user_data
-                if i > rangeStart {
-                    filteredRanges = append(filteredRanges, PESPayloadRange{...})
-                }
-                // Skip to next start code
-                i += 4
-                for i < len(data)-3 {
-                    if data[i] == 0x00 && data[i+1] == 0x00 && data[i+2] == 0x01 {
-                        break
-                    }
-                    i++
-                }
-                rangeStart = i
-            } else {
-                i++
-            }
-        }
-        // Emit remaining data
-        ...
-    }
-}
-```
+The filter scans for `user_data` sections (start code `00 00 01 B2`) and excludes them from the indexed ranges, skipping ahead to the next start code after each user_data section.
 
 **Result:** Video matching improved from ~60% to ~98.6% after user_data filtering.
 
@@ -419,87 +330,9 @@ Audio packets also need to be indexed for deduplication. Audio typically achieve
 | TrueHD | `F8 72 6F BA` | 4-byte sync word |
 | FLAC | `FF F8` | Frame sync pattern |
 
-**Audio implementation:**
+**Audio indexing:**
 
-```go
-// Audio sync patterns
-var (
-    syncAC3    = []byte{0x0B, 0x77}
-    syncDTS    = []byte{0x7F, 0xFE, 0x80, 0x01}
-    syncTrueHD = []byte{0xF8, 0x72, 0x6F, 0xBA}
-)
-
-func findAudioSyncPoints(data []byte) []int {
-    var offsets []int
-
-    for i := 0; i <= len(data)-4; i++ {
-        // AC3/E-AC3
-        if data[i] == 0x0B && data[i+1] == 0x77 {
-            offsets = append(offsets, i)
-            continue
-        }
-
-        // DTS / DTS-HD
-        if i <= len(data)-4 &&
-           data[i] == 0x7F && data[i+1] == 0xFE &&
-           data[i+2] == 0x80 && data[i+3] == 0x01 {
-            offsets = append(offsets, i)
-            continue
-        }
-
-        // TrueHD
-        if i <= len(data)-4 &&
-           data[i] == 0xF8 && data[i+1] == 0x72 &&
-           data[i+2] == 0x6F && data[i+3] == 0xBA {
-            offsets = append(offsets, i)
-            continue
-        }
-
-        // MPEG Audio / AAC ADTS (0xFF followed by 0xF0-0xFF with bit constraints)
-        if data[i] == 0xFF && (data[i+1]&0xF0) == 0xF0 {
-            offsets = append(offsets, i)
-            continue
-        }
-    }
-
-    return offsets
-}
-```
-
-**Combined indexing:**
-
-The source indexer scans for both video and audio sync points:
-
-```go
-func indexSourceFile(data []byte) []IndexEntry {
-    var entries []IndexEntry
-
-    // Find all video start codes
-    for _, offset := range findVideoStartCodes(data) {
-        entries = append(entries, IndexEntry{
-            Offset: offset,
-            Hash:   computeHash(data, offset),
-            Type:   TypeVideo,
-        })
-    }
-
-    // Find all audio sync points
-    for _, offset := range findAudioSyncPoints(data) {
-        entries = append(entries, IndexEntry{
-            Offset: offset,
-            Hash:   computeHash(data, offset),
-            Type:   TypeAudio,
-        })
-    }
-
-    // Sort by offset for efficient lookup
-    sort.Slice(entries, func(i, j int) bool {
-        return entries[i].Offset < entries[j].Offset
-    })
-
-    return entries
-}
-```
+Scan media data for audio codec sync patterns from the table above. The source indexer finds both video start codes and audio sync points, computes a hash at each location, and sorts entries by offset for efficient lookup.
 
 **LPCM/PCM handling:**
 
@@ -551,61 +384,14 @@ When matching an MKV audio track (which contains only ONE language), we'd hit da
 tracks and matching would fail. This is analogous to the user_data problem with video.
 
 **Solution:** Create separate filtered ES ranges for each sub-stream ID. When matching MKV audio,
-we match against only the specific sub-stream that corresponds to that MKV track.
-
-```go
-type MPEGPSParser struct {
-    // ...
-    // Filtered audio ranges per sub-stream ID - separates interleaved audio tracks
-    filteredAudioBySubStream map[byte][]PESPayloadRange
-    // Sub-stream IDs in order of appearance
-    audioSubStreams []byte
-}
-
-func (p *MPEGPSParser) buildFilteredAudioRanges() error {
-    rangesBySubStream := make(map[byte][]PESPayloadRange)
-    esOffsetBySubStream := make(map[byte]int64)
-
-    for _, rawRange := range p.audioRanges {
-        // Read sub-stream ID (first byte of payload)
-        header := make([]byte, 1)
-        p.reader.ReadAt(header, rawRange.FileOffset)
-        subStreamID := header[0]
-
-        // Check if this is AC3, DTS, or LPCM (skip subpictures)
-        isAudio := (subStreamID >= 0x80 && subStreamID <= 0x87) ||  // AC3
-                   (subStreamID >= 0x88 && subStreamID <= 0x8F) ||  // DTS
-                   (subStreamID >= 0xA0 && subStreamID <= 0xA7)     // LPCM
-
-        if isAudio && rawRange.Size > 4 {
-            esOffset := esOffsetBySubStream[subStreamID]
-            rangesBySubStream[subStreamID] = append(rangesBySubStream[subStreamID],
-                PESPayloadRange{
-                    FileOffset: rawRange.FileOffset + 4,  // Skip 4-byte header
-                    Size:       rawRange.Size - 4,
-                    ESOffset:   esOffset,
-                })
-            esOffsetBySubStream[subStreamID] += int64(rawRange.Size - 4)
-        }
-    }
-
-    p.filteredAudioBySubStream = rangesBySubStream
-    return nil
-}
-```
+we match against only the specific sub-stream that corresponds to that MKV track. The parser:
+1. Reads the sub-stream ID from the first byte of each Private Stream 1 payload
+2. Filters by audio sub-stream ranges (0x80-0x87 for AC3, 0x88-0x8F for DTS, 0xA0-0xA7 for LPCM)
+3. Skips the 4-byte header and tracks separate ES offsets per sub-stream
 
 **Index entry storage:**
 
-The `Location` struct includes `AudioSubStreamID` to track which sub-stream a hash belongs to:
-
-```go
-type Location struct {
-    FileIndex        uint16
-    Offset           int64  // ES offset within the sub-stream
-    IsVideo          bool
-    AudioSubStreamID byte   // For audio: 0x80, 0x81, etc.
-}
-```
+Each index entry includes file index, ES offset, video/audio flag, and for audio the sub-stream ID (0x80, 0x81, etc.).
 
 **Matching:** When matching audio, the matcher filters candidate locations to only those with
 the same sub-stream ID. This prevents false matches against different audio tracks.
@@ -615,35 +401,12 @@ Combined with video filtering, overall byte matching improved from ~50% to **98.
 
 ### Data Structure
 
-```go
-type SourceIndex struct {
-    // Map from hash to list of locations
-    HashToLocations map[uint64][]SourceLocation
-
-    // Source directory path (stored as relative reference)
-    SourceDir string
-
-    // Type of source
-    SourceType SourceType
-
-    // List of files in source (for multi-file sources like Blu-ray)
-    Files []SourceFile
-
-    // Window size used for hashing
-    WindowSize int
-}
-
-type SourceLocation struct {
-    FileIndex  uint16  // Index into Files array
-    Offset     int64   // Offset within that file
-}
-
-type SourceFile struct {
-    RelativePath string  // Relative to source dir
-    Size         int64
-    Checksum     uint64  // xxhash of file for integrity
-}
-```
+The source index contains:
+- **Hash table**: Maps 64-bit hash → list of (file index, offset) locations
+- **Source directory**: Path to the source media
+- **Source type**: DVD or Blu-ray
+- **File list**: For each source file: relative path, size, and checksum for integrity verification
+- **Window size**: Number of bytes used for hashing (typically 64 bytes)
 
 ### Algorithm
 
@@ -771,44 +534,10 @@ With expansion:    Match extends to include any adjacent matching bytes
 
 **Algorithm:**
 
-```go
-// After finding initial match at (mkvOffset, sourceOffset) with length matchLen:
-
-func expandMatch(mkvData, sourceData []byte, mkvOffset, sourceOffset, initialLen int64) (newMkvStart, newSourceStart, newLen int64) {
-    // Start with the verified match
-    newMkvStart = mkvOffset
-    newSourceStart = sourceOffset
-    newLen = initialLen
-
-    // Expand backward: check bytes before the match
-    for newMkvStart > 0 && newSourceStart > 0 {
-        mkvByte := mkvData[newMkvStart-1]
-        srcByte := sourceData[newSourceStart-1]
-        if mkvByte != srcByte {
-            break
-        }
-        newMkvStart--
-        newSourceStart--
-        newLen++
-    }
-
-    // Expand forward: check bytes after the match
-    mkvEnd := mkvOffset + initialLen
-    srcEnd := sourceOffset + initialLen
-    for mkvEnd < int64(len(mkvData)) && srcEnd < int64(len(sourceData)) {
-        mkvByte := mkvData[mkvEnd]
-        srcByte := sourceData[srcEnd]
-        if mkvByte != srcByte {
-            break
-        }
-        mkvEnd++
-        srcEnd++
-        newLen++
-    }
-
-    return newMkvStart, newSourceStart, newLen
-}
-```
+Once a hash match is found, the boundary expansion algorithm extends the matched region:
+1. **Expand backward**: Compare bytes before the match until a mismatch is found
+2. **Expand forward**: Compare bytes after the match until a mismatch is found
+3. **Return**: Updated start offsets and expanded length
 
 **Example:**
 
@@ -998,59 +727,11 @@ on reads, memory buffering) is not worth such minimal savings.
 
 ### Implementation
 
-```go
-func Verify(dedupFile, originalMKV string) error {
-    // Create temporary mount point
-    tmpMount, err := os.MkdirTemp("", "mkvdup-verify-")
-    if err != nil {
-        return err
-    }
-    defer os.RemoveAll(tmpMount)
-
-    // Mount FUSE filesystem with single file
-    fs := NewDedupFS(dedupFile, sourceDir)
-    go fs.Mount(tmpMount)
-    defer fs.Unmount()
-
-    // Wait for mount
-    time.Sleep(100 * time.Millisecond)
-
-    // Compare files
-    virtualPath := filepath.Join(tmpMount, "verify.mkv")
-    return compareFiles(virtualPath, originalMKV)
-}
-
-func compareFiles(a, b string) error {
-    const chunkSize = 1024 * 1024 // 1MB chunks
-
-    fa, _ := os.Open(a)
-    fb, _ := os.Open(b)
-    defer fa.Close()
-    defer fb.Close()
-
-    bufA := make([]byte, chunkSize)
-    bufB := make([]byte, chunkSize)
-    offset := int64(0)
-
-    for {
-        nA, errA := fa.Read(bufA)
-        nB, errB := fb.Read(bufB)
-
-        if nA != nB || !bytes.Equal(bufA[:nA], bufB[:nB]) {
-            return fmt.Errorf("mismatch at offset %d", offset)
-        }
-
-        if errA == io.EOF && errB == io.EOF {
-            return nil // Success
-        }
-        if errA != nil || errB != nil {
-            return fmt.Errorf("read error: %v / %v", errA, errB)
-        }
-
-        offset += int64(nA)
-    }
-}
-```
+1. Create a temporary mount point
+2. Mount the dedup file via FUSE
+3. Compare the virtual MKV with the original in 1MB chunks
+4. Report first mismatch offset if found
+5. Clean up temporary mount on completion
 
 ## Phase 6: FUSE Configuration File
 
@@ -1113,78 +794,16 @@ The FUSE daemon supports live config reload without restart:
 
 ### Linux File Change Notifications
 
-The FUSE filesystem emits standard inotify events:
+The FUSE filesystem emits standard inotify events (IN_CREATE for added files, IN_DELETE for removed files) when the config is reloaded. Applications watching the mountpoint (e.g., media servers like Jellyfin/Plex) will automatically detect changes.
 
-```go
-// When virtual files are added/removed via config reload
-func (fs *DedupFS) notifyFileAdded(path string) {
-    // Emit IN_CREATE event
-    fs.inotify.Emit(path, unix.IN_CREATE)
-}
+### Config Reload Behavior
 
-func (fs *DedupFS) notifyFileRemoved(path string) {
-    // Emit IN_DELETE event
-    fs.inotify.Emit(path, unix.IN_DELETE)
-}
-```
-
-Applications watching the mountpoint (e.g., media servers like Jellyfin/Plex)
-will automatically detect changes.
-
-### Data Structures
-
-```go
-type MasterConfig struct {
-    Mountpoint   string        `yaml:"mountpoint"`
-    Includes     []string      `yaml:"includes"`      // Paths or globs
-    VirtualFiles []VirtualFile `yaml:"virtual_files"` // Inline definitions
-}
-
-type VirtualFile struct {
-    Name      string `yaml:"name"`       // Virtual path under mountpoint
-    DedupFile string `yaml:"dedup_file"` // Path to .mkvdup file
-    SourceDir string `yaml:"source_dir"` // Path to source directory
-}
-
-type DedupFS struct {
-    mu           sync.RWMutex
-    config       *MasterConfig
-    configPath   string
-    files        map[string]*VirtualFileState
-    inotifyFd    int                    // For emitting events
-    watcher      *fsnotify.Watcher      // For watching config changes
-}
-
-func (fs *DedupFS) ReloadConfig() error {
-    fs.mu.Lock()
-    defer fs.mu.Unlock()
-
-    newConfig, err := LoadMasterConfig(fs.configPath)
-    if err != nil {
-        return err
-    }
-
-    // Diff old vs new
-    added, removed := diffConfigs(fs.config, newConfig)
-
-    // Remove old files (mark as removed, actual cleanup on last close)
-    for _, vf := range removed {
-        if state, ok := fs.files[vf.Name]; ok {
-            state.markedForRemoval = true
-            fs.notifyFileRemoved(vf.Name)
-        }
-    }
-
-    // Add new files
-    for _, vf := range added {
-        fs.files[vf.Name] = NewVirtualFileState(vf)
-        fs.notifyFileAdded(vf.Name)
-    }
-
-    fs.config = newConfig
-    return nil
-}
-```
+On reload, the FUSE daemon:
+1. Loads and parses the new config
+2. Diffs against current config to find added/removed files
+3. Marks removed files for cleanup (actual removal happens on last close)
+4. Adds new virtual files immediately
+5. Emits inotify events for changes
 
 ### FUSE Directory Structure
 
@@ -1249,114 +868,14 @@ defaults:
 
 **Implementation:**
 
-```go
-type PermissionsStore struct {
-    mu       sync.RWMutex
-    path     string
-    files    map[string]*FilePermissions  // virtual path -> permissions
-    defaults DefaultPermissions           // non-nil defaults
-}
-
-// DefaultPermissions holds the fallback values (always set)
-type DefaultPermissions struct {
-    Uid  uint32
-    Gid  uint32
-    Mode uint32
-}
-
-// FilePermissions holds per-file overrides (nil = use default)
-type FilePermissions struct {
-    Uid  *uint32 `yaml:"uid,omitempty"`
-    Gid  *uint32 `yaml:"gid,omitempty"`
-    Mode *uint32 `yaml:"mode,omitempty"`
-}
-
-func (ps *PermissionsStore) Get(path string) (uid, gid, mode uint32) {
-    ps.mu.RLock()
-    defer ps.mu.RUnlock()
-
-    // Start with defaults
-    uid = ps.defaults.Uid
-    gid = ps.defaults.Gid
-    mode = ps.defaults.Mode
-
-    // Override with file-specific values if present
-    if fp := ps.files[path]; fp != nil {
-        if fp.Uid != nil { uid = *fp.Uid }
-        if fp.Gid != nil { gid = *fp.Gid }
-        if fp.Mode != nil { mode = *fp.Mode }
-    }
-
-    return uid, gid, mode
-}
-
-func (ps *PermissionsStore) SetOwner(path string, uid, gid uint32) error {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-
-    if ps.files[path] == nil {
-        ps.files[path] = &FilePermissions{}
-    }
-    ps.files[path].Uid = &uid
-    ps.files[path].Gid = &gid
-
-    return ps.save()
-}
-
-func (ps *PermissionsStore) SetMode(path string, mode uint32) error {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-
-    if ps.files[path] == nil {
-        ps.files[path] = &FilePermissions{}
-    }
-    ps.files[path].Mode = &mode
-
-    return ps.save()
-}
-
-func (ps *PermissionsStore) Reload() error {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    return ps.load()
-}
-```
+The permissions store maintains a map of virtual path → (uid, gid, mode) with thread-safe access.
+- **Get**: Returns file-specific values if set, otherwise falls back to defaults
+- **SetOwner/SetMode**: Updates file-specific values and persists to YAML
+- **Cleanup**: Removes entries for files no longer in config
 
 **FUSE operations:**
-
-```go
-func (f *VirtualFile) Getattr(out *fuse.Attr) fuse.Status {
-    // File size from header (O(1))
-    out.Size = uint64(f.state.header.OriginalSize)
-
-    // Permissions from store
-    out.Uid, out.Gid, out.Mode = f.fs.permissions.Get(f.path)
-    out.Mode |= fuse.S_IFREG  // Mark as regular file
-
-    // Timestamps (use dedup file's mtime)
-    out.Mtime = f.state.dedupMtime
-    out.Atime = f.state.dedupMtime
-    out.Ctime = f.state.dedupMtime
-
-    return fuse.OK
-}
-
-func (f *VirtualFile) Chown(uid, gid uint32) fuse.Status {
-    if err := f.fs.permissions.SetOwner(f.path, uid, gid); err != nil {
-        log.Errorf("Failed to set owner for %s: %v", f.path, err)
-        return fuse.EIO
-    }
-    return fuse.OK
-}
-
-func (f *VirtualFile) Chmod(mode uint32) fuse.Status {
-    if err := f.fs.permissions.SetMode(f.path, mode); err != nil {
-        log.Errorf("Failed to set mode for %s: %v", f.path, err)
-        return fuse.EIO
-    }
-    return fuse.OK
-}
-```
+- **Getattr**: Returns file size from dedup header, permissions from store, timestamps from dedup file mtime
+- **Chown/Chmod**: Updates permissions store and persists changes
 
 **Permissions cleanup:**
 
@@ -1365,26 +884,6 @@ Cleanup runs on:
 1. **Initial mount** - removes stale entries from permissions file
 2. **SIGHUP reload** - removes entries for files just removed from config
 
-```go
-func (ps *PermissionsStore) Cleanup(validPaths map[string]bool) (removed []string, err error) {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-
-    for path := range ps.files {
-        if !validPaths[path] {
-            delete(ps.files, path)
-            removed = append(removed, path)
-        }
-    }
-
-    if len(removed) > 0 {
-        log.Infof("Cleaned up permissions for %d removed virtual files", len(removed))
-        return removed, ps.save()
-    }
-    return nil, nil
-}
-```
-
 **SIGHUP reload behavior:**
 
 On SIGHUP, the daemon reloads:
@@ -1392,33 +891,6 @@ On SIGHUP, the daemon reloads:
 2. Permissions file (ownership/mode changes)
 3. Cleans up permissions for removed virtual files
 4. Triggers source file re-validation if source_watch is enabled
-
-```go
-func (fs *DedupFS) handleSIGHUP() {
-    log.Info("Received SIGHUP, reloading configuration...")
-
-    // Reload main config
-    if err := fs.ReloadConfig(); err != nil {
-        log.Errorf("Failed to reload config: %v", err)
-    }
-
-    // Reload permissions
-    if err := fs.permissions.Reload(); err != nil {
-        log.Errorf("Failed to reload permissions: %v", err)
-    }
-
-    // Cleanup permissions for files no longer in config
-    validPaths := make(map[string]bool)
-    for path := range fs.files {
-        validPaths[path] = true
-    }
-    if _, err := fs.permissions.Cleanup(validPaths); err != nil {
-        log.Errorf("Failed to cleanup permissions: %v", err)
-    }
-
-    log.Info("Configuration reload complete")
-}
-```
 
 ## Phase 7: CLI Tool
 
@@ -1588,18 +1060,7 @@ Each phase shows:
 - **ETA**: Estimated time remaining in HH:MM:SS format
 - **Completion time**: Time taken for each phase after completion
 
-The ETA is calculated using:
-```go
-func calculateETA(processed, total int64, elapsed time.Duration) time.Duration {
-    if processed == 0 {
-        return 0
-    }
-    rate := float64(processed) / elapsed.Seconds()
-    remaining := float64(total - processed)
-    return time.Duration(remaining/rate) * time.Second
-}
-```
-
+The ETA is calculated from the processing rate (processed/elapsed) multiplied by remaining work.
 Progress updates use carriage return (`\r`) to update in place, avoiding log spam.
 
 ### Warning Threshold
@@ -1801,81 +1262,12 @@ Files are NOT memory-mapped at startup. Instead:
    - Decrement reference count
    - If reference count reaches 0: unmap all files for that virtual file
 
-3. **Data structures:**
+3. **Virtual file state:**
 
-```go
-type VirtualFileState struct {
-    mu          sync.RWMutex
-    refCount    int32
-    dedupMmap   *mmap.ReaderAt  // nil when not in use
-    sourceMmaps []*mmap.ReaderAt // nil when not in use
-    index       *DedupIndex      // parsed from dedupMmap, nil when not in use
-}
-
-func (v *VirtualFileState) Open() error {
-    v.mu.Lock()
-    defer v.mu.Unlock()
-
-    v.refCount++
-    if v.refCount == 1 {
-        // First open - load everything
-        return v.load()
-    }
-    return nil
-}
-
-func (v *VirtualFileState) Release() {
-    v.mu.Lock()
-    defer v.mu.Unlock()
-
-    v.refCount--
-    if v.refCount == 0 {
-        // Last close - unload everything
-        v.unload()
-    }
-}
-
-func (v *VirtualFileState) load() error {
-    var err error
-    v.dedupMmap, err = mmap.Open(v.dedupPath)
-    if err != nil {
-        return err
-    }
-
-    // Parse index from mmap'd dedup file
-    v.index, err = ParseDedupIndex(v.dedupMmap)
-    if err != nil {
-        v.dedupMmap.Close()
-        return err
-    }
-
-    // Memory-map source files
-    for _, sf := range v.index.SourceFiles {
-        m, err := mmap.Open(filepath.Join(v.sourceDir, sf.RelativePath))
-        if err != nil {
-            v.unload()
-            return err
-        }
-        v.sourceMmaps = append(v.sourceMmaps, m)
-    }
-
-    return nil
-}
-
-func (v *VirtualFileState) unload() {
-    if v.dedupMmap != nil {
-        v.dedupMmap.Close()
-        v.dedupMmap = nil
-    }
-    for _, m := range v.sourceMmaps {
-        if m != nil {
-            m.Close()
-        }
-    }
-    v.sourceMmaps = nil
-    v.index = nil
-}
-```
+Each virtual file maintains a reference count, dedup file mmap, source file mmaps, and parsed index.
+- **Open**: Increments ref count; on first open, memory-maps files and parses index
+- **Release**: Decrements ref count; on last close, closes all mmaps and clears state
+- When not in use, all mmaps are nil and no memory is consumed
 
 **Result:**
 - At startup: Only config parsed, no files mapped
@@ -1899,35 +1291,10 @@ For fast FUSE mount initialization, the dedup Reader supports two-phase loading:
 - Parses all index entries
 - Loads source files
 
-```go
-type Reader struct {
-    // ... other fields ...
-    header       *Header
-    entries      []Entry
-    entriesOnce  sync.Once   // Ensures entries loaded exactly once
-    entriesErr   error       // Captures any error from lazy loading
-}
-
-func NewReaderLazy(dedupPath, sourceDir string) (*Reader, error) {
-    // Only reads header - entries NOT parsed
-    return parseHeaderOnly(dedupPath, sourceDir)
-}
-
-func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
-    // Load entries on first access (thread-safe)
-    if err := r.loadEntries(); err != nil {
-        return 0, fmt.Errorf("load entries: %w", err)
-    }
-    // ... read logic ...
-}
-
-func (r *Reader) loadEntries() error {
-    r.entriesOnce.Do(func() {
-        r.entriesErr = r.parseEntriesAndSources()
-    })
-    return r.entriesErr
-}
-```
+The Reader uses `sync.Once` to ensure thread-safe lazy loading:
+- `NewReaderLazy()` parses only the header (60 bytes)
+- `ReadAt()` calls `loadEntries()` which uses `sync.Once` to parse entries exactly once
+- Any loading error is captured and returned on all subsequent calls
 
 **Result:**
 - Mount time: ~0 seconds (was ~7+ seconds with 750K entries)
@@ -1963,74 +1330,11 @@ performance:
 
 **Implementation:**
 
-```go
-func NewDedupFS(config *MasterConfig) *DedupFS {
-    fs := &DedupFS{
-        config: config,
-        files:  make(map[string]*VirtualFileState),
-    }
+Thread count defaults to NumCPU if set to 0. The FUSE mount options include AllowOther for multi-user access and configurable background queue settings.
 
-    // Determine thread count
-    threads := config.Performance.Threads
-    if threads == 0 {
-        threads = runtime.NumCPU()
-    }
+**Thread safety:**
 
-    return fs
-}
-
-func (fs *DedupFS) Mount(mountpoint string) error {
-    opts := &fuse.MountOptions{
-        AllowOther:        true,  // Allow other users to access
-        MaxBackground:     fs.config.Performance.MaxBackground,
-        CongestionThreshold: fs.config.Performance.CongestionThreshold,
-        Name:              "mkvdup",
-    }
-
-    // Create server with specified thread count
-    server, err := fuse.NewServer(fs, mountpoint, opts)
-    if err != nil {
-        return err
-    }
-
-    // Enable multi-threaded operation
-    server.SetDebug(false)
-
-    // Serve with multiple threads
-    go server.Serve()
-
-    return nil
-}
-```
-
-**Thread safety requirements:**
-
-```go
-type VirtualFileState struct {
-    mu sync.RWMutex  // Protects all fields below
-
-    // Read-only after load (no lock needed for reads)
-    index       *DedupIndex
-    dedupMmap   *mmap.ReaderAt
-    sourceMmaps []*mmap.ReaderAt
-
-    // Mutable (needs lock)
-    refCount    int32
-    loadError   error
-    lastAccess  time.Time
-}
-
-func (v *VirtualFileState) Read(dest []byte, offset int64) (int, error) {
-    v.mu.RLock()
-    defer v.mu.RUnlock()
-
-    // Memory-mapped reads are inherently thread-safe
-    // Index binary search is read-only, thread-safe
-    // No writes during normal operation
-
-    return v.readLocked(dest, offset)
-}
-```
+Virtual file state uses RWMutex with read locks for normal operation. Memory-mapped reads and index lookups are inherently thread-safe since they're read-only after initial load. Mutable state (refCount, loadError, lastAccess) is protected by the mutex.
 
 **Tuning guidance:**
 
@@ -2057,59 +1361,14 @@ func (v *VirtualFileState) Read(dest []byte, offset int64) (int, error) {
 
 ### Integrity Checking Strategy
 
-**Fast checks (always performed):**
+**Fast checks (always performed on load):**
 
-```go
-func (v *VirtualFileState) load() error {
-    // 1. Check dedup file exists and is readable
-    dedupInfo, err := os.Stat(v.dedupPath)
-    if err != nil {
-        return fmt.Errorf("dedup file not found: %w", err)
-    }
-
-    // 2. Open and verify dedup file header
-    v.dedupMmap, err = mmap.Open(v.dedupPath)
-    if err != nil {
-        return fmt.Errorf("cannot open dedup file: %w", err)
-    }
-
-    // 3. Verify magic number
-    if !bytes.Equal(v.dedupMmap[:8], []byte("MKVDUP01")) {
-        return errors.New("invalid dedup file: bad magic")
-    }
-
-    // 4. Parse header, verify file size matches expected
-    header := parseHeader(v.dedupMmap)
-    expectedSize := header.DeltaOffset + header.DeltaSize + 24 // +footer
-    if dedupInfo.Size() != expectedSize {
-        return fmt.Errorf("dedup file truncated: expected %d, got %d",
-            expectedSize, dedupInfo.Size())
-    }
-
-    // 5. Verify index checksum (fast, ~50MB for large file)
-    indexStart := 57 + sourceFileSectionSize
-    indexEnd := header.DeltaOffset
-    indexData := v.dedupMmap[indexStart:indexEnd]
-    if xxhash.Sum64(indexData) != footer.IndexChecksum {
-        return errors.New("dedup file corrupt: index checksum mismatch")
-    }
-
-    // 6. Check each source file exists and has correct size
-    for i, sf := range header.SourceFiles {
-        path := filepath.Join(v.sourceDir, sf.RelativePath)
-        info, err := os.Stat(path)
-        if err != nil {
-            return fmt.Errorf("source file missing: %s: %w", sf.RelativePath, err)
-        }
-        if info.Size() != sf.FileSize {
-            return fmt.Errorf("source file size mismatch: %s: expected %d, got %d",
-                sf.RelativePath, sf.FileSize, info.Size())
-        }
-    }
-
-    return nil
-}
-```
+1. Check dedup file exists and is readable
+2. Open and memory-map dedup file
+3. Verify magic number ("MKVDUP01")
+4. Parse header, verify file size matches expected (header + index + delta + footer)
+5. Verify index checksum (xxhash of index section)
+6. For each source file: check exists and has correct size
 
 **Slow checks (optional, on-demand via CLI):**
 
@@ -2136,104 +1395,27 @@ All checks passed.
 
 ### FUSE Error Responses
 
-```go
-func (f *VirtualFile) Read(dest []byte, offset int64) (fuse.ReadResult, fuse.Status) {
-    // Ensure file is loaded
-    if err := f.state.ensureLoaded(); err != nil {
-        log.Errorf("Failed to load %s: %v", f.name, err)
-        return nil, fuse.EIO
-    }
-
-    // Find index entries for this read
-    entries, err := f.state.index.FindEntries(offset, len(dest))
-    if err != nil {
-        log.Errorf("Index lookup failed for %s at offset %d: %v", f.name, offset, err)
-        return nil, fuse.EIO
-    }
-
-    // Read and stitch data
-    var bytesRead int
-    for _, entry := range entries {
-        var data []byte
-        var err error
-
-        if entry.Source == 0 {
-            // Read from delta section
-            data, err = f.readDelta(entry)
-        } else {
-            // Read from source file
-            data, err = f.readSource(entry)
-        }
-
-        if err != nil {
-            log.Errorf("Read failed for %s: %v", f.name, err)
-            // Return partial data if we have some, otherwise EIO
-            if bytesRead > 0 {
-                return fuse.ReadResultData(dest[:bytesRead]), fuse.OK
-            }
-            return nil, fuse.EIO
-        }
-
-        copy(dest[bytesRead:], data)
-        bytesRead += len(data)
-    }
-
-    return fuse.ReadResultData(dest[:bytesRead]), fuse.OK
-}
-```
+FUSE Read operations:
+1. Ensure file is loaded (return EIO if load fails)
+2. Find index entries for the requested offset/length
+3. For each entry, read from delta or source file
+4. On read error: return partial data if available, otherwise EIO
+5. On success: return stitched data
 
 ### Graceful Degradation
 
-When errors occur for a specific virtual file, other files remain accessible:
+When errors occur for a specific virtual file, other files remain accessible.
 
-```go
-type VirtualFileState struct {
-    // ... existing fields ...
-
-    // Error state
-    loadError     error     // Non-nil if file failed to load
-    loadErrorTime time.Time // When error occurred
-    errorCount    int       // Number of consecutive errors
-}
-
-func (fs *DedupFS) Getattr(name string, ...) fuse.Status {
-    state := fs.files[name]
-    if state == nil {
-        return fuse.ENOENT
-    }
-
-    // If file has persistent error, report it as inaccessible
-    if state.loadError != nil {
-        // Retry after cooldown period
-        if time.Since(state.loadErrorTime) > 5*time.Minute {
-            state.loadError = nil
-        } else {
-            return fuse.EIO
-        }
-    }
-
-    return fuse.OK
-}
-```
+Each virtual file tracks its error state (load error, error time, error count). Files with persistent errors are reported as inaccessible (EIO), but automatically retry after a 5-minute cooldown period.
 
 ### Logging and Monitoring
 
-```go
-// Structured logging for errors
-type ErrorEvent struct {
-    Timestamp  time.Time `json:"timestamp"`
-    Level      string    `json:"level"`
-    File       string    `json:"file,omitempty"`
-    SourceFile string    `json:"source_file,omitempty"`
-    Error      string    `json:"error"`
-    Offset     int64     `json:"offset,omitempty"`
-}
+Structured logging with levels:
+- **ERROR**: File unavailable, data loss possible
+- **WARN**: Degraded operation, checksum mismatch in non-critical path
+- **INFO**: Successful recovery, retry succeeded
 
-// Log levels
-// - ERROR: File unavailable, data loss possible
-// - WARN:  Degraded operation, checksum mismatch in non-critical path
-// - INFO:  Successful recovery, retry succeeded
-```
+Error events include: timestamp, level, virtual file path, source file path, error message, and offset (if applicable).
 
 ### User-Facing Error Messages
 
@@ -2289,165 +1471,23 @@ source_watch:
 
 **Implementation:**
 
-```go
-type SourceWatcher struct {
-    watcher     *fsnotify.Watcher
-    fs          *DedupFS
-    checksumCh  chan checksumJob
-    workerCount int
+The source watcher maintains:
+- **Reverse mapping**: source file path → list of virtual files using it
+- **Watch deduplication**: each source directory watched only once
+- **Pending checksums**: deduplicates checksum jobs for the same source file
 
-    // Deduplication: map source path -> list of virtual files using it
-    mu                sync.RWMutex
-    sourceToVirtuals  map[string][]*VirtualFile  // source file -> virtual files
-    watchedDirs       map[string]bool            // directories already watched
-    pendingChecksums  map[string]bool            // source files with pending checksum jobs
-}
+**On start:**
+1. Start checksum worker pool
+2. Build reverse mapping from source files to virtual files
+3. Add inotify watches (deduplicated by directory)
+4. Listen for write/remove/rename events
 
-func (sw *SourceWatcher) Start() error {
-    sw.sourceToVirtuals = make(map[string][]*VirtualFile)
-    sw.watchedDirs = make(map[string]bool)
-    sw.pendingChecksums = make(map[string]bool)
-
-    // Start checksum worker pool
-    for i := 0; i < sw.workerCount; i++ {
-        go sw.checksumWorker()
-    }
-
-    // Build reverse mapping: source file -> virtual files
-    // This also deduplicates watches (each source dir watched only once)
-    for _, vf := range sw.fs.config.VirtualFiles {
-        sw.registerVirtualFile(vf)
-    }
-
-    log.Infof("Source watcher: watching %d unique directories for %d virtual files",
-        len(sw.watchedDirs), len(sw.fs.config.VirtualFiles))
-
-    // Handle events
-    go func() {
-        for {
-            select {
-            case event := <-sw.watcher.Events:
-                if event.Op&(fsnotify.Write|fsnotify.Remove|fsnotify.Rename) != 0 {
-                    sw.handleSourceChange(event.Name)
-                }
-            case err := <-sw.watcher.Errors:
-                log.Errorf("Source watcher error: %v", err)
-            }
-        }
-    }()
-
-    return nil
-}
-
-// registerVirtualFile adds a virtual file to the watch system, deduplicating watches
-func (sw *SourceWatcher) registerVirtualFile(vf *VirtualFile) {
-    sw.mu.Lock()
-    defer sw.mu.Unlock()
-
-    sourceDir := vf.SourceDir
-
-    // Add to reverse mapping for each source file this virtual file uses
-    for _, sf := range vf.SourceFiles {
-        fullPath := filepath.Join(sourceDir, sf.RelativePath)
-        sw.sourceToVirtuals[fullPath] = append(sw.sourceToVirtuals[fullPath], vf)
-    }
-
-    // Only add watch if we haven't already watched this directory
-    if !sw.watchedDirs[sourceDir] {
-        sw.watchedDirs[sourceDir] = true
-
-        // Add recursive watch on source directory
-        filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-            if err != nil {
-                return nil // Skip inaccessible paths
-            }
-            if info.IsDir() && !sw.watchedDirs[path] {
-                sw.watchedDirs[path] = true
-                sw.watcher.Add(path)
-            }
-            return nil
-        })
-
-        log.Debugf("Added watch on source directory: %s", sourceDir)
-    }
-}
-
-func (sw *SourceWatcher) handleSourceChange(path string) {
-    sw.mu.RLock()
-    affected := sw.sourceToVirtuals[path]
-    sw.mu.RUnlock()
-
-    if len(affected) == 0 {
-        return // Not a tracked source file
-    }
-
-    // Log once per source file, listing all affected virtual files
-    affectedNames := make([]string, len(affected))
-    for i, vf := range affected {
-        affectedNames[i] = vf.Name
-    }
-    log.Warnf("Source file changed: %s (affects %d virtual files: %v)",
-        path, len(affected), affectedNames)
-
-    switch sw.fs.config.SourceWatch.OnChange {
-    case "warn":
-        // Just log the warning (already done above)
-
-    case "disable_file":
-        // Mark all affected virtual files as unavailable
-        for _, vf := range affected {
-            sw.fs.disableVirtualFile(vf.Name, "source file modified")
-        }
-
-    case "checksum":
-        // Queue ONE checksum job per source file (not per virtual file)
-        sw.mu.Lock()
-        alreadyPending := sw.pendingChecksums[path]
-        if !alreadyPending {
-            sw.pendingChecksums[path] = true
-        }
-        sw.mu.Unlock()
-
-        if !alreadyPending {
-            sw.checksumCh <- checksumJob{
-                sourcePath:      path,
-                affectedVirtuals: affected,
-            }
-        }
-    }
-}
-
-type checksumJob struct {
-    sourcePath       string
-    affectedVirtuals []*VirtualFile
-}
-
-func (sw *SourceWatcher) checksumWorker() {
-    for job := range sw.checksumCh {
-        log.Infof("Verifying checksum for %s (affects %d virtual files)",
-            job.sourcePath, len(job.affectedVirtuals))
-
-        // Checksum the source file ONCE
-        valid, err := verifySourceFileChecksum(job.sourcePath, job.affectedVirtuals[0])
-
-        // Clear pending flag
-        sw.mu.Lock()
-        delete(sw.pendingChecksums, job.sourcePath)
-        sw.mu.Unlock()
-
-        if err != nil || !valid {
-            log.Errorf("Checksum mismatch for %s: %v", job.sourcePath, err)
-            // Disable ALL virtual files that depend on this source
-            for _, vf := range job.affectedVirtuals {
-                sw.fs.disableVirtualFile(vf.Name, "checksum mismatch after modification")
-                sw.fs.notifyFileRemoved(vf.Name)
-            }
-        } else {
-            log.Infof("Checksum verified OK for %s", job.sourcePath)
-        }
-    }
-}
-```
+**On source file change:**
+1. Look up affected virtual files via reverse mapping
+2. Based on `on_change` setting:
+   - `warn`: Log warning only
+   - `disable_file`: Mark affected virtual files as unavailable
+   - `checksum`: Queue ONE checksum job per source file (not per virtual file)
 
 **Deduplication benefits:**
 
@@ -2527,85 +1567,20 @@ func (sw *SourceWatcher) checksumWorker() {
 
 ### SIGHUP Reload Tests (Required)
 
-```go
-func TestSIGHUP_ConfigReload(t *testing.T) {
-    // Setup: mount with initial config containing 2 virtual files
-    // Action: modify config to add a 3rd file, send SIGHUP
-    // Verify: new file appears in mount, old files still accessible
-}
-
-func TestSIGHUP_ConfigRemoveFile(t *testing.T) {
-    // Setup: mount with 3 virtual files
-    // Action: modify config to remove 1 file, send SIGHUP
-    // Verify: removed file no longer accessible, others still work
-    // Verify: permissions for removed file cleaned up
-}
-
-func TestSIGHUP_PermissionsReload(t *testing.T) {
-    // Setup: mount, chmod a file to 0600
-    // Action: manually edit permissions.yaml to change mode to 0644, send SIGHUP
-    // Verify: stat() returns new mode 0644
-}
-
-func TestSIGHUP_PermissionsCleanup(t *testing.T) {
-    // Setup: mount with 2 files, chmod both
-    // Action: remove one file from config, send SIGHUP
-    // Verify: permissions.yaml no longer contains entry for removed file
-}
-
-func TestMount_PermissionsCleanup(t *testing.T) {
-    // Setup: permissions.yaml has entries for files A, B, C
-    //        config only has files A, B (C was removed previously)
-    // Action: mount the filesystem
-    // Verify: permissions.yaml cleaned up, C's entry removed
-}
-
-func TestSIGHUP_DuringActiveRead(t *testing.T) {
-    // Setup: mount, start reading a large file
-    // Action: send SIGHUP mid-read
-    // Verify: read completes successfully, no corruption
-}
-```
+- `TestSIGHUP_ConfigReload` - Add file to config, send SIGHUP, verify new file appears
+- `TestSIGHUP_ConfigRemoveFile` - Remove file from config, send SIGHUP, verify removed and permissions cleaned up
+- `TestSIGHUP_PermissionsReload` - Edit permissions.yaml, send SIGHUP, verify new permissions applied
+- `TestSIGHUP_PermissionsCleanup` - Remove file from config, verify stale permissions entries removed
+- `TestMount_PermissionsCleanup` - Mount with stale permissions entries, verify cleanup on start
+- `TestSIGHUP_DuringActiveRead` - Send SIGHUP during active read, verify no corruption
 
 ### Source File Watch Tests (Required)
 
-```go
-func TestSourceWatch_FileModified(t *testing.T) {
-    // Setup: mount with source watching enabled
-    // Action: modify a byte in the source ISO
-    // Verify: inotify event detected
-    // Verify: appropriate action taken (warn/disable/checksum based on config)
-}
-
-func TestSourceWatch_FileDeleted(t *testing.T) {
-    // Setup: mount with source watching enabled
-    // Action: delete (or rename) source file
-    // Verify: virtual file becomes inaccessible with EIO
-    // Verify: error logged
-}
-
-func TestSourceWatch_SharedSource(t *testing.T) {
-    // Setup: mount with 3 virtual files sharing same ISO source
-    // Action: modify the ISO
-    // Verify: only ONE inotify watch exists for the ISO
-    // Verify: all 3 virtual files affected
-    // Verify: only ONE checksum job queued (not 3)
-}
-
-func TestSourceWatch_ChecksumVerification(t *testing.T) {
-    // Setup: mount with on_change: checksum
-    // Action: touch source file (modify mtime but not content)
-    // Verify: checksum passes, file remains accessible
-}
-
-func TestSourceWatch_ChecksumFailure(t *testing.T) {
-    // Setup: mount with on_change: checksum
-    // Action: actually modify source file content
-    // Verify: checksum fails
-    // Verify: all dependent virtual files disabled
-    // Verify: inotify DELETE events emitted for virtual files
-}
-```
+- `TestSourceWatch_FileModified` - Modify source, verify appropriate action (warn/disable/checksum)
+- `TestSourceWatch_FileDeleted` - Delete source, verify virtual file returns EIO
+- `TestSourceWatch_SharedSource` - Shared ISO: verify one watch, one checksum job, all files affected
+- `TestSourceWatch_ChecksumVerification` - Touch source (mtime only), verify checksum passes
+- `TestSourceWatch_ChecksumFailure` - Modify content, verify checksum fails and files disabled
 
 ### Edge Case Tests
 
