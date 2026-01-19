@@ -20,6 +20,9 @@ gofmt -w .
 # Check for common issues
 go vet ./...
 
+# Run linter
+golint ./...
+
 # Run tests with race detection
 go test -race ./...
 
