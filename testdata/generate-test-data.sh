@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/generated}"
 
 # Big Buck Bunny PAL DVD
-ISO_URL="https://archive.org/download/BigBuckBunny/big_buck_bunny_pal_dvd.iso"
+ISO_URL="https://archive.org/download/BigBuckBunny/big-buck-bunny-PAL.iso"
 ISO_MD5="cb67e9bc8e97b9d625e7cd7ee0d85e08"
 ISO_NAME="bbb-pal.iso"
 
