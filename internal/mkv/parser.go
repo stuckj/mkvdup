@@ -1,11 +1,12 @@
 package mkv
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 
-	"golang.org/x/exp/mmap"
+	"github.com/stuckj/mkvdup/internal/mmap"
 )
 
 // Packet represents a codec data packet extracted from an MKV file.
@@ -27,11 +28,12 @@ type Track struct {
 
 // Parser parses MKV files to extract codec packets.
 type Parser struct {
-	path    string
-	reader  *mmap.ReaderAt
-	size    int64
-	tracks  []Track
-	packets []Packet
+	path     string
+	mmapFile *mmap.File
+	data     []byte // Zero-copy mmap'd data
+	size     int64
+	tracks   []Track
+	packets  []Packet
 }
 
 // NewParser creates a new MKV parser for the given file.
@@ -41,22 +43,23 @@ func NewParser(path string) (*Parser, error) {
 		return nil, fmt.Errorf("stat file: %w", err)
 	}
 
-	reader, err := mmap.Open(path)
+	mmapFile, err := mmap.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("mmap file: %w", err)
 	}
 
 	return &Parser{
-		path:   path,
-		reader: reader,
-		size:   info.Size(),
+		path:     path,
+		mmapFile: mmapFile,
+		data:     mmapFile.Data(),
+		size:     info.Size(),
 	}, nil
 }
 
 // Close releases resources used by the parser.
 func (p *Parser) Close() error {
-	if p.reader != nil {
-		return p.reader.Close()
+	if p.mmapFile != nil {
+		return p.mmapFile.Close()
 	}
 	return nil
 }
@@ -151,7 +154,8 @@ func (p *Parser) readElementAt(offset int64) (Element, error) {
 		return Element{}, io.EOF
 	}
 
-	r := io.NewSectionReader(p.reader, offset, p.size-offset)
+	// Zero-copy: create a bytes.Reader over the slice (no data copied)
+	r := bytes.NewReader(p.data[offset:])
 	return ReadElementHeader(r, offset)
 }
 
@@ -192,7 +196,8 @@ func (p *Parser) parseTrackEntry(trackElem Element) (Track, error) {
 			return track, err
 		}
 
-		r := io.NewSectionReader(p.reader, elem.DataOffset, elem.Size)
+		// Zero-copy: create a bytes.Reader over the slice
+		r := bytes.NewReader(p.data[elem.DataOffset : elem.DataOffset+elem.Size])
 
 		switch elem.ID {
 		case IDTrackNum:
@@ -237,7 +242,8 @@ func (p *Parser) parseCluster(clusterElem Element, clusterTimestamp *int64) erro
 
 		switch elem.ID {
 		case IDTimestamp:
-			r := io.NewSectionReader(p.reader, elem.DataOffset, elem.Size)
+			// Zero-copy: create a bytes.Reader over the slice
+			r := bytes.NewReader(p.data[elem.DataOffset : elem.DataOffset+elem.Size])
 			ts, _ := ReadUint(r, elem.Size)
 			*clusterTimestamp = int64(ts)
 
@@ -260,20 +266,22 @@ func (p *Parser) parseCluster(clusterElem Element, clusterTimestamp *int64) erro
 
 // parseSimpleBlock parses a SimpleBlock element and adds packets.
 func (p *Parser) parseSimpleBlock(elem Element, clusterTimestamp int64) error {
-	// Read header bytes to parse track number, timestamp, and flags
-	headerBuf := make([]byte, 16) // More than enough for header
+	// Zero-copy: read header bytes directly from mmap'd data
 	readSize := elem.Size
-	if readSize > int64(len(headerBuf)) {
-		readSize = int64(len(headerBuf))
+	if readSize > 16 {
+		readSize = 16 // More than enough for header
 	}
 
-	r := io.NewSectionReader(p.reader, elem.DataOffset, readSize)
-	n, err := r.Read(headerBuf)
-	if err != nil || n < 4 {
-		return fmt.Errorf("read SimpleBlock header: %w", err)
+	endOffset := elem.DataOffset + readSize
+	if endOffset > p.size {
+		endOffset = p.size
+	}
+	headerBuf := p.data[elem.DataOffset:endOffset]
+	if len(headerBuf) < 4 {
+		return fmt.Errorf("read SimpleBlock header: data too short")
 	}
 
-	header, err := ParseSimpleBlockHeader(headerBuf[:n])
+	header, err := ParseSimpleBlockHeader(headerBuf)
 	if err != nil {
 		return err
 	}
@@ -319,19 +327,22 @@ func (p *Parser) parseBlockGroup(groupElem Element, clusterTimestamp int64) erro
 
 		if elem.ID == IDBlock {
 			// Block has same format as SimpleBlock for the header
-			headerBuf := make([]byte, 16)
+			// Zero-copy: read header bytes directly from mmap'd data
 			readSize := elem.Size
-			if readSize > int64(len(headerBuf)) {
-				readSize = int64(len(headerBuf))
+			if readSize > 16 {
+				readSize = 16
 			}
 
-			r := io.NewSectionReader(p.reader, elem.DataOffset, readSize)
-			n, err := r.Read(headerBuf)
-			if err != nil || n < 4 {
-				return fmt.Errorf("read Block header: %w", err)
+			endOffset := elem.DataOffset + readSize
+			if endOffset > p.size {
+				endOffset = p.size
+			}
+			headerBuf := p.data[elem.DataOffset:endOffset]
+			if len(headerBuf) < 4 {
+				return fmt.Errorf("read Block header: data too short")
 			}
 
-			header, err := ParseSimpleBlockHeader(headerBuf[:n])
+			header, err := ParseSimpleBlockHeader(headerBuf)
 			if err != nil {
 				return err
 			}
@@ -413,11 +424,22 @@ func (p *Parser) AudioPacketCount() int {
 }
 
 // ReadPacketData reads the data for a packet.
+// Returns a slice into the mmap'd data (zero-copy).
+// The returned slice is valid until Close() is called.
 func (p *Parser) ReadPacketData(pkt Packet) ([]byte, error) {
-	data := make([]byte, pkt.Size)
-	n, err := p.reader.ReadAt(data, pkt.Offset)
-	if err != nil && int64(n) != pkt.Size {
-		return nil, fmt.Errorf("read packet data: %w", err)
+	endOffset := pkt.Offset + pkt.Size
+	if endOffset > p.size {
+		endOffset = p.size
 	}
-	return data[:n], nil
+	if pkt.Offset >= p.size {
+		return nil, fmt.Errorf("read packet data: offset out of range")
+	}
+	// Zero-copy: return slice directly into mmap'd data
+	return p.data[pkt.Offset:endOffset], nil
+}
+
+// Data returns the raw mmap'd file data for zero-copy access.
+// The returned slice is valid until Close() is called.
+func (p *Parser) Data() []byte {
+	return p.data
 }
