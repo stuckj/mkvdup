@@ -139,8 +139,8 @@ create_mkv_dvd_protocol() {
     info "Trying ffmpeg dvd:// protocol (no sudo required)..."
 
     # The dvd:// protocol requires libdvdread support in ffmpeg
-    # Title 1 is typically the main feature
-    if ffmpeg -y -i "dvd://${iso_path}" \
+    # Use -dvd_device for the ISO path, dvd:// selects the longest title by default
+    if ffmpeg -dvd_device "$iso_path" -y -i dvd:// \
         -map 0:v -map 0:a \
         -c copy \
         -f matroska \

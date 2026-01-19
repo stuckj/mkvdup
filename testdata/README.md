@@ -74,7 +74,8 @@ wget "https://archive.org/download/BigBuckBunny/big-buck-bunny-NTSC.iso" -O bbb-
 mkdir -p ~/.cache/mkvdup/testdata/bigbuckbunny-mkv
 
 # Requires ffmpeg compiled with libdvdread
-ffmpeg -i "dvd://bbb-pal.iso" \
+# dvd:// without a title number selects the longest title
+ffmpeg -dvd_device bbb-pal.iso -i dvd:// \
     -map 0:v -map 0:a -c copy \
     ~/.cache/mkvdup/testdata/bigbuckbunny-mkv/bigbuckbunny.mkv
 ```
