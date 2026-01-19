@@ -1,0 +1,112 @@
+# Contributing
+
+Guidelines for contributing to mkvdup.
+
+## Development Environment
+
+Use `gvm` (Go Version Manager) for Go. Source it before running Go commands:
+```bash
+source ~/.gvm/scripts/gvm && go build ...
+```
+
+## Pre-Commit Checklist
+
+Run these checks before committing code:
+
+```bash
+source ~/.gvm/scripts/gvm
+
+# Format all Go files
+gofmt -w .
+
+# Check for common issues
+go vet ./...
+
+# Run linter
+golint ./...
+
+# Run tests with race detection
+go test -race ./...
+
+# Build to verify compilation
+go build ./...
+```
+
+## Code Style
+
+- Run `gofmt` or `goimports` on all code before committing
+- Follow [Effective Go](https://go.dev/doc/effective_go) guidelines
+- Use `golint` and `go vet` to catch common issues
+- Keep functions focused and reasonably sized
+- Use meaningful variable and function names
+
+## Testing
+
+- Write tests alongside implementation (test-driven when practical)
+- Use table-driven tests for cases with multiple inputs
+- Aim for high test coverage on critical paths (matching, file format, FUSE reads)
+- Use `go test -race` to detect data races in concurrent code
+- Integration tests should use temporary directories and clean up after themselves
+
+### Key Test Categories
+
+**Unit tests:**
+- Parser tests (EBML/MKV, source indexer, hash functions)
+- Index tests (binary search, entry lookup, boundary conditions)
+- Boundary expansion tests
+- Sync pattern detection tests
+- Config parsing tests
+- Dedup file format tests (header, footer, roundtrip)
+
+**Integration tests:**
+- End-to-end: Create dedup → verify → compare SHA256
+- FUSE playback: Mount, play in VLC/mpv, verify no artifacts
+- Stress test: Multiple concurrent reads, random seeks
+- Lazy loading tests (mmap on open, unmap on close)
+- Graceful degradation tests (single file error doesn't affect others)
+
+**Edge case tests:**
+- Empty files, tiny files, corrupted sources, missing sources
+- Deduplication quality validation (delta contains only container overhead)
+- Boundary conditions (read at exact file end, spanning multiple entries)
+
+## Error Handling
+
+- Return errors rather than panicking (except for truly unrecoverable situations)
+- Wrap errors with context using `fmt.Errorf("context: %w", err)`
+- Log errors at appropriate levels (debug, info, warn, error)
+
+## Documentation
+
+- Document exported functions and types with godoc comments
+- Keep comments current when code changes
+- Complex algorithms should have explanatory comments
+
+## Dependencies
+
+- Prefer standard library when sufficient
+- Vet third-party dependencies for maintenance status and security
+- Use Go modules for dependency management
+- Pin dependency versions in go.mod
+
+## Performance
+
+- Profile before optimizing (`go test -bench`, `pprof`)
+- Avoid premature optimization
+- Memory-map large files rather than reading into memory
+- Use sync.Pool for frequently allocated buffers
+
+## Key Technical Details
+
+- DVDs use MPEG-PS (Program Stream) container format with PES packet framing
+- MKV files contain raw ES (Elementary Stream) data
+- Video matching requires ES-aware indexing that accounts for PES headers
+- Private Stream 1 (0xBD) contains AC-3 audio (sub-streams 0x80-0x87) and subpictures
+
+## Project Documentation
+
+- [DESIGN.md](DESIGN.md) - Architecture overview
+- [docs/MATCHING.md](docs/MATCHING.md) - Matching algorithms
+- [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md) - Binary file format
+- [docs/FUSE.md](docs/FUSE.md) - FUSE filesystem configuration
+- [docs/CLI.md](docs/CLI.md) - Command-line interface
