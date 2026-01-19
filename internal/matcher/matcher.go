@@ -11,8 +11,8 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mkv"
+	"github.com/stuckj/mkvdup/internal/mmap"
 	"github.com/stuckj/mkvdup/internal/source"
-	"golang.org/x/exp/mmap"
 )
 
 const (
@@ -54,7 +54,8 @@ type matchedRegion struct {
 // Matcher performs the deduplication matching.
 type Matcher struct {
 	sourceIndex    *source.Index
-	mkvMmap        *mmap.ReaderAt
+	mkvMmap        *mmap.File
+	mkvData        []byte // Zero-copy mmap'd MKV data
 	mkvSize        int64
 	windowSize     int
 	matchedRegions []matchedRegion
@@ -98,7 +99,7 @@ type ProgressFunc func(processedPackets, totalPackets int)
 
 // Match processes an MKV file and matches packets to the source.
 func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track, progress ProgressFunc) (*Result, error) {
-	// Memory-map the MKV file
+	// Memory-map the MKV file for zero-copy access
 	info, err := os.Stat(mkvPath)
 	if err != nil {
 		return nil, fmt.Errorf("stat MKV: %w", err)
@@ -109,6 +110,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	if err != nil {
 		return nil, fmt.Errorf("mmap MKV: %w", err)
 	}
+	m.mkvData = m.mkvMmap.Data() // Store reference for zero-copy access
 
 	// Build track type map
 	for _, t := range tracks {
@@ -198,7 +200,7 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 	trackType := m.trackTypes[int(pkt.TrackNum)]
 	isVideo := trackType == mkv.TrackTypeVideo
 
-	// Read packet data to find sync points
+	// Read packet data to find sync points (zero-copy slice access)
 	readSize := pkt.Size
 	if readSize > 4096 {
 		readSize = 4096 // Only need to check beginning for sync points
@@ -207,23 +209,27 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		return false
 	}
 
-	data := make([]byte, readSize)
-	n, err := m.mkvMmap.ReadAt(data, pkt.Offset)
-	if err != nil || n < m.windowSize {
+	// Zero-copy: slice directly into mmap'd data
+	endOffset := pkt.Offset + readSize
+	if endOffset > m.mkvSize {
+		endOffset = m.mkvSize
+	}
+	data := m.mkvData[pkt.Offset:endOffset]
+	if len(data) < m.windowSize {
 		return false
 	}
 
 	// Find sync points within the packet data
 	var syncPoints []int
 	if isVideo {
-		syncPoints = source.FindVideoStartCodes(data[:n])
+		syncPoints = source.FindVideoStartCodes(data)
 	} else {
-		syncPoints = source.FindAudioSyncPoints(data[:n])
+		syncPoints = source.FindAudioSyncPoints(data)
 	}
 
 	// Try sync points first
 	for _, syncOff := range syncPoints {
-		if syncOff+m.windowSize > n {
+		if syncOff+m.windowSize > len(data) {
 			continue
 		}
 		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo) {
@@ -311,22 +317,27 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 		verifyLen = remainingInPacket
 	}
 
-	mkvBuf := make([]byte, verifyLen)
-	if _, err := m.mkvMmap.ReadAt(mkvBuf, mkvSyncOffset); err != nil {
+	// Zero-copy: slice directly into mmap'd data
+	endOffset := mkvSyncOffset + verifyLen
+	if endOffset > m.mkvSize {
 		return nil
 	}
+	mkvBuf := m.mkvData[mkvSyncOffset:endOffset]
 
-	// Read source data - use ES reader for ES-based indexes, raw reader otherwise
+	// Read source data - use ES reader for ES-based indexes, raw slice for zero-copy
 	var srcBuf []byte
 	var err error
 	if m.sourceIndex.UsesESOffsets {
 		srcBuf, err = m.sourceIndex.ReadESDataAt(loc, int(verifyLen))
+		if err != nil || len(srcBuf) < int(verifyLen) {
+			return nil
+		}
 	} else {
-		// For raw indexes, read directly from the file
-		srcBuf, err = m.sourceIndex.ReadRawDataAt(loc, int(verifyLen))
-	}
-	if err != nil || len(srcBuf) < int(verifyLen) {
-		return nil
+		// For raw indexes, use zero-copy slice
+		srcBuf = m.sourceIndex.RawSlice(loc, int(verifyLen))
+		if srcBuf == nil || len(srcBuf) < int(verifyLen) {
+			return nil
+		}
 	}
 
 	// Check if bytes match
@@ -372,13 +383,11 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		}
 	}
 
-	// Expand backward
+	// Expand backward (zero-copy single-byte reads from mmap'd data)
 	backwardExpanded := int64(0)
 	for mkvStart > 0 && srcStart > 0 && backwardExpanded < MaxExpansionBytes {
-		var mkvByte [1]byte
-		if _, err := m.mkvMmap.ReadAt(mkvByte[:], mkvStart-1); err != nil {
-			break
-		}
+		// Zero-copy: direct byte access
+		mkvByte := m.mkvData[mkvStart-1]
 
 		var srcByte []byte
 		var err error
@@ -390,14 +399,18 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 				AudioSubStreamID: loc.AudioSubStreamID,
 			}
 			srcByte, err = m.sourceIndex.ReadESDataAt(readLoc, 1)
+			if err != nil || len(srcByte) == 0 {
+				break
+			}
 		} else {
-			srcByte, err = m.sourceIndex.ReadRawDataAt(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
-		}
-		if err != nil || len(srcByte) == 0 {
-			break
+			// Zero-copy for raw indexes
+			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
+			if srcByte == nil || len(srcByte) == 0 {
+				break
+			}
 		}
 
-		if mkvByte[0] != srcByte[0] {
+		if mkvByte != srcByte[0] {
 			break
 		}
 
@@ -407,15 +420,13 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		backwardExpanded++
 	}
 
-	// Expand forward
+	// Expand forward (zero-copy single-byte reads from mmap'd data)
 	mkvEnd := mkvOffset + initialLen
 	srcEnd := loc.Offset + initialLen
 	forwardExpanded := int64(0)
 	for mkvEnd < m.mkvSize && srcEnd < srcSize && forwardExpanded < MaxExpansionBytes {
-		var mkvByte [1]byte
-		if _, err := m.mkvMmap.ReadAt(mkvByte[:], mkvEnd); err != nil {
-			break
-		}
+		// Zero-copy: direct byte access
+		mkvByte := m.mkvData[mkvEnd]
 
 		var srcByte []byte
 		var err error
@@ -427,14 +438,18 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 				AudioSubStreamID: loc.AudioSubStreamID,
 			}
 			srcByte, err = m.sourceIndex.ReadESDataAt(readLoc, 1)
+			if err != nil || len(srcByte) == 0 {
+				break
+			}
 		} else {
-			srcByte, err = m.sourceIndex.ReadRawDataAt(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
-		}
-		if err != nil || len(srcByte) == 0 {
-			break
+			// Zero-copy for raw indexes
+			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
+			if srcByte == nil || len(srcByte) == 0 {
+				break
+			}
 		}
 
-		if mkvByte[0] != srcByte[0] {
+		if mkvByte != srcByte[0] {
 			break
 		}
 
@@ -527,9 +542,10 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) {
 			}
 			gapLen := gapEnd - pos
 
-			// Read delta data
-			data := make([]byte, gapLen)
-			if _, err := m.mkvMmap.ReadAt(data, pos); err == nil {
+			// Zero-copy: slice directly into mmap'd data for reading,
+			// but we need to copy it to deltaData since that's returned to caller
+			if gapEnd <= m.mkvSize {
+				data := m.mkvData[pos:gapEnd]
 				entries = append(entries, Entry{
 					MkvOffset:    pos,
 					Length:       gapLen,

@@ -3,8 +3,6 @@ package source
 import (
 	"encoding/binary"
 	"fmt"
-
-	"golang.org/x/exp/mmap"
 )
 
 // MPEG-PS start codes
@@ -42,7 +40,7 @@ type PESPayloadRange struct {
 
 // MPEGPSParser parses MPEG Program Stream files to extract PES packet information.
 type MPEGPSParser struct {
-	reader      *mmap.ReaderAt
+	data        []byte // Direct mmap'd data - zero-copy access
 	size        int64
 	packets     []PESPacket
 	videoRanges []PESPayloadRange
@@ -57,11 +55,12 @@ type MPEGPSParser struct {
 	filterUserData  bool
 }
 
-// NewMPEGPSParser creates a parser for the given memory-mapped file.
-func NewMPEGPSParser(reader *mmap.ReaderAt) *MPEGPSParser {
+// NewMPEGPSParser creates a parser for the given memory-mapped data.
+// The data slice should be from a zero-copy mmap (unix.Mmap).
+func NewMPEGPSParser(data []byte) *MPEGPSParser {
 	return &MPEGPSParser{
-		reader: reader,
-		size:   int64(reader.Len()),
+		data: data,
+		size: int64(len(data)),
 	}
 }
 
@@ -75,26 +74,31 @@ func (p *MPEGPSParser) Parse() error {
 
 // ParseWithProgress scans the file with progress reporting.
 func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
-	const chunkSize = 4 * 1024 * 1024 // 4MB chunks for efficient reading
-
 	pos := int64(0)
 	var videoESOffset, audioESOffset int64
-
-	chunk := make([]byte, chunkSize+16) // Extra bytes for boundary handling
 	lastProgress := int64(0)
 
-	for pos < p.size-4 {
-		// Read a chunk
-		readSize := chunkSize
-		if pos+int64(readSize) > p.size {
-			readSize = int(p.size - pos)
-		}
+	// Pre-allocate slices to reduce reallocation churn
+	// Estimate: average PES packet ~2KB, so ~size/2048 packets
+	// We split roughly 60% video, 40% audio
+	estimatedPackets := int(p.size / 2048)
+	if estimatedPackets < 1000 {
+		estimatedPackets = 1000
+	}
+	p.packets = make([]PESPacket, 0, estimatedPackets)
+	p.videoRanges = make([]PESPayloadRange, 0, estimatedPackets*6/10)
+	p.audioRanges = make([]PESPayloadRange, 0, estimatedPackets*4/10)
 
-		n, err := p.reader.ReadAt(chunk[:readSize], pos)
-		if err != nil || n < 4 {
+	for pos < p.size-4 {
+		// Direct slice access - zero copy
+		end := pos + 4*1024*1024 // Process in ~4MB logical chunks for progress
+		if end > p.size {
+			end = p.size
+		}
+		chunkData := p.data[pos:end]
+		if len(chunkData) < 4 {
 			break
 		}
-		chunkData := chunk[:n]
 
 		// Scan for start codes within this chunk
 		i := 0
@@ -234,16 +238,17 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error {
 
 	// Process each raw video range individually
 	// This avoids complex chunk boundary handling
-	var filteredRanges []PESPayloadRange
+	// Pre-allocate with similar capacity to reduce reallocation
+	filteredRanges := make([]PESPayloadRange, 0, len(p.videoRanges))
 	var filteredESOffset int64
 
 	for _, rawRange := range p.videoRanges {
-		// Read this PES packet's payload
-		data := make([]byte, rawRange.Size)
-		n, err := p.reader.ReadAt(data, rawRange.FileOffset)
-		if err != nil || n < rawRange.Size {
+		// Direct slice access - zero copy, no allocation
+		endOffset := rawRange.FileOffset + int64(rawRange.Size)
+		if endOffset > p.size {
 			continue
 		}
+		data := p.data[rawRange.FileOffset:endOffset]
 
 		// Scan for user_data sections within this PES payload
 		i := 0
@@ -316,14 +321,11 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error {
 			continue
 		}
 
-		// Read the first byte to check the sub-stream ID
-		header := make([]byte, 1)
-		n, err := p.reader.ReadAt(header, rawRange.FileOffset)
-		if err != nil || n < 1 {
+		// Direct slice access - zero copy
+		if rawRange.FileOffset >= p.size {
 			continue
 		}
-
-		subStreamID := header[0]
+		subStreamID := p.data[rawRange.FileOffset]
 
 		// Check if this is AC3, DTS, or LPCM
 		isAC3 := subStreamID >= 0x80 && subStreamID <= 0x87
@@ -398,16 +400,17 @@ func (p *MPEGPSParser) readRawESData(esOffset int64, size int) ([]byte, error) {
 			toRead = int(availableInRange)
 		}
 
-		buf := make([]byte, toRead)
-		n, err := p.reader.ReadAt(buf, r.FileOffset+offsetInPayload)
-		if err != nil || n < toRead {
+		// Direct slice access - zero copy
+		fileOffset := r.FileOffset + offsetInPayload
+		endOffset := fileOffset + int64(toRead)
+		if endOffset > p.size {
 			if len(result) > 0 {
 				return result, nil
 			}
-			return nil, fmt.Errorf("failed to read ES data: %w", err)
+			return nil, fmt.Errorf("failed to read ES data: offset out of range")
 		}
 
-		result = append(result, buf...)
+		result = append(result, p.data[fileOffset:endOffset]...)
 		esOffset += int64(toRead)
 		remaining -= toRead
 		rangeIdx++
@@ -420,11 +423,10 @@ func (p *MPEGPSParser) readRawESData(esOffset int64, size int) ([]byte, error) {
 func (p *MPEGPSParser) parsePackHeader(pos int64) (int, error) {
 	// MPEG-2 pack header is 14 bytes minimum
 	// Format: 00 00 01 BA + SCR (6 bytes) + mux_rate (3 bytes) + stuffing
-	buf := make([]byte, 14)
-	n, err := p.reader.ReadAt(buf, pos)
-	if err != nil || n < 14 {
+	if pos+14 > p.size {
 		return 0, fmt.Errorf("failed to read pack header")
 	}
+	buf := p.data[pos : pos+14]
 
 	// Check if this is MPEG-2 (starts with 01) or MPEG-1 (starts with 0010)
 	if buf[4]&0xC0 == 0x40 {
@@ -448,12 +450,10 @@ func (p *MPEGPSParser) parseSystemHeader(pos int64) (int, error) {
 
 // readPESLength reads the 2-byte PES packet length field.
 func (p *MPEGPSParser) readPESLength(pos int64) (uint16, error) {
-	buf := make([]byte, 2)
-	n, err := p.reader.ReadAt(buf, pos)
-	if err != nil || n < 2 {
+	if pos+2 > p.size {
 		return 0, fmt.Errorf("failed to read PES length")
 	}
-	return binary.BigEndian.Uint16(buf), nil
+	return binary.BigEndian.Uint16(p.data[pos : pos+2]), nil
 }
 
 // parsePESPacket parses a PES packet header and returns packet info.
@@ -486,12 +486,11 @@ func (p *MPEGPSParser) parsePESPacket(pos int64, streamID byte) (PESPacket, erro
 	// - 8 bits: PES_header_data_length
 	// Then optional fields based on flags
 
-	// Read PES header fields
-	buf := make([]byte, 3)
-	n, err := p.reader.ReadAt(buf, pos+6)
-	if err != nil || n < 3 {
+	// Direct slice access for PES header fields
+	if pos+9 > p.size {
 		return pkt, fmt.Errorf("failed to read PES header")
 	}
+	buf := p.data[pos+6 : pos+9]
 
 	// Check for MPEG-2 PES (starts with 10)
 	if buf[0]&0xC0 == 0x80 {
@@ -506,29 +505,29 @@ func (p *MPEGPSParser) parsePESPacket(pos int64, streamID byte) (PESPacket, erro
 		headerLen := 0
 		offset := pos + 6
 		for {
-			var b [1]byte
-			if _, err := p.reader.ReadAt(b[:], offset+int64(headerLen)); err != nil {
-				return pkt, err
+			if offset+int64(headerLen) >= p.size {
+				return pkt, fmt.Errorf("failed to read PES header: offset out of range")
 			}
-			if b[0] == 0xFF {
+			b := p.data[offset+int64(headerLen)]
+			if b == 0xFF {
 				headerLen++
 				if headerLen > 16 { // Safety limit
 					break
 				}
 				continue
 			}
-			if b[0]&0xC0 == 0x40 {
+			if b&0xC0 == 0x40 {
 				// STD buffer
 				headerLen += 2
 				continue
 			}
-			if b[0]&0xF0 == 0x20 {
+			if b&0xF0 == 0x20 {
 				// PTS only
 				headerLen += 5
-			} else if b[0]&0xF0 == 0x30 {
+			} else if b&0xF0 == 0x30 {
 				// PTS + DTS
 				headerLen += 10
-			} else if b[0] == 0x0F {
+			} else if b == 0x0F {
 				// No timestamps
 				headerLen++
 			}
@@ -650,6 +649,26 @@ func (p *MPEGPSParser) AudioSubStreamESSize(subStreamID byte) int64 {
 	return last.ESOffset + int64(last.Size)
 }
 
+// FilteredVideoRanges returns the filtered video payload ranges for zero-copy iteration.
+// Returns the raw video ranges if filtering is not enabled.
+func (p *MPEGPSParser) FilteredVideoRanges() []PESPayloadRange {
+	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
+		return p.filteredVideoRanges
+	}
+	return p.videoRanges
+}
+
+// FilteredAudioRanges returns the filtered audio payload ranges for a specific sub-stream.
+// Returns nil if the sub-stream doesn't exist.
+func (p *MPEGPSParser) FilteredAudioRanges(subStreamID byte) []PESPayloadRange {
+	return p.filteredAudioBySubStream[subStreamID]
+}
+
+// Data returns the raw mmap'd file data for zero-copy access.
+func (p *MPEGPSParser) Data() []byte {
+	return p.data
+}
+
 // findRangeIndex uses binary search to find the range containing the given ES offset.
 // For video only - use findAudioSubStreamRangeIndex for audio.
 // Returns the index of the range, or -1 if not found.
@@ -731,13 +750,12 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 }
 
 // readFromRanges reads data from a range list starting at the given ES offset.
-func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, size int, isVideo bool) ([]byte, error) {
+// Returns a zero-copy slice when data fits in a single range (common case),
+// only copies when data spans multiple ranges.
+func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, size int, _ bool) ([]byte, error) {
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("no ranges available")
 	}
-
-	result := make([]byte, 0, size)
-	remaining := size
 
 	// Use binary search to find starting range
 	rangeIdx := p.binarySearchRanges(ranges, esOffset)
@@ -749,11 +767,37 @@ func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, 
 		}
 	}
 
+	if rangeIdx >= len(ranges) {
+		return nil, fmt.Errorf("ES offset %d not found in ranges", esOffset)
+	}
+
+	r := ranges[rangeIdx]
+	if esOffset < r.ESOffset || esOffset >= r.ESOffset+int64(r.Size) {
+		return nil, fmt.Errorf("ES offset %d not in range [%d, %d)", esOffset, r.ESOffset, r.ESOffset+int64(r.Size))
+	}
+
+	offsetInPayload := esOffset - r.ESOffset
+	availableInRange := int64(r.Size) - offsetInPayload
+
+	// Fast path: data fits entirely within this single range (zero-copy)
+	if int64(size) <= availableInRange {
+		fileOffset := r.FileOffset + offsetInPayload
+		endOffset := fileOffset + int64(size)
+		if endOffset > p.size {
+			return nil, fmt.Errorf("file offset out of range")
+		}
+		// Return slice directly into mmap'd data - no copy!
+		return p.data[fileOffset:endOffset], nil
+	}
+
+	// Slow path: data spans multiple ranges - must copy
+	result := make([]byte, 0, size)
+	remaining := size
+
 	for remaining > 0 && rangeIdx < len(ranges) {
 		r := ranges[rangeIdx]
 
 		if esOffset < r.ESOffset {
-			// Gap in ES data - shouldn't happen normally
 			break
 		}
 
@@ -769,16 +813,16 @@ func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, 
 			toRead = int(availableInRange)
 		}
 
-		buf := make([]byte, toRead)
-		n, err := p.reader.ReadAt(buf, r.FileOffset+offsetInPayload)
-		if err != nil || n < toRead {
+		fileOffset := r.FileOffset + offsetInPayload
+		endOffset := fileOffset + int64(toRead)
+		if endOffset > p.size {
 			if len(result) > 0 {
 				return result, nil
 			}
-			return nil, fmt.Errorf("failed to read ES data: %w", err)
+			return nil, fmt.Errorf("failed to read ES data: offset out of range")
 		}
 
-		result = append(result, buf...)
+		result = append(result, p.data[fileOffset:endOffset]...)
 		esOffset += int64(toRead)
 		remaining -= toRead
 		rangeIdx++
