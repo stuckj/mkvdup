@@ -18,8 +18,9 @@ This will:
 
 **Requirements:**
 - `wget` - for downloading
+- `md5sum` - for checksum verification
 - `ffmpeg` - for creating the MKV (with libdvdread for best results)
-- `sudo` access - only needed if ffmpeg lacks libdvdread support
+- `sudo` access - only needed on Linux if ffmpeg lacks libdvdread support
 
 ## Test Data Locations
 

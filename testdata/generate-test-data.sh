@@ -70,6 +70,11 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --output-dir)
+                if [[ $# -lt 2 || "$2" == -* ]]; then
+                    echo "Error: --output-dir requires a directory argument." >&2
+                    echo "Usage: $0 [--output-dir DIR]" >&2
+                    exit 1
+                fi
                 OUTPUT_DIR="$2"
                 shift 2
                 ;;
@@ -153,15 +158,25 @@ create_mkv_mount() {
 
     info "Falling back to mount method (requires sudo)..."
 
+    # Check for mount-specific dependencies
+    for cmd in sudo mount umount; do
+        if ! command -v "$cmd" &> /dev/null; then
+            die "Missing required tool for mount fallback: $cmd"
+        fi
+    done
+
     # Create a temporary mount point
     local mount_point
     mount_point=$(mktemp -d)
-    trap "sudo umount '$mount_point' 2>/dev/null || true; rmdir '$mount_point' 2>/dev/null || true" EXIT
 
     # Mount the ISO (requires sudo)
     if ! sudo mount -o loop,ro "$iso_path" "$mount_point"; then
+        rmdir "$mount_point"
         die "Failed to mount ISO. Make sure you have sudo access and loop device support."
     fi
+
+    # Install cleanup trap only after successful mount
+    trap "sudo umount '$mount_point' 2>/dev/null || true; rmdir '$mount_point' 2>/dev/null || true" EXIT
 
     info "ISO mounted at $mount_point"
 
@@ -170,18 +185,26 @@ create_mkv_mount() {
     if [[ ! -d "$vob_dir" ]]; then
         sudo umount "$mount_point"
         rmdir "$mount_point"
+        trap - EXIT
         die "VIDEO_TS directory not found in ISO"
     fi
 
-    # Big Buck Bunny main title is typically VTS_01_*.VOB
-    local vob_files
-    vob_files=$(ls -1 "${vob_dir}"/VTS_01_[1-9].VOB 2>/dev/null | sort -V | tr '\n' '|' | sed 's/|$//')
+    # Collect VOB files using nullglob to handle no matches gracefully
+    # Include multi-digit segments (e.g., VTS_01_10.VOB)
+    shopt -s nullglob
+    local vob_array=("${vob_dir}"/VTS_01_[0-9]*.VOB)
+    shopt -u nullglob
 
-    if [[ -z "$vob_files" ]]; then
+    if [[ ${#vob_array[@]} -eq 0 ]]; then
         sudo umount "$mount_point"
         rmdir "$mount_point"
+        trap - EXIT
         die "No VTS_01_*.VOB files found"
     fi
+
+    # Sort VOB files naturally and join with '|' for ffmpeg concat
+    local vob_files
+    vob_files=$(printf '%s\n' "${vob_array[@]}" | sort -V | paste -sd'|' -)
 
     info "VOB files: $vob_files"
 
@@ -193,6 +216,7 @@ create_mkv_mount() {
         "$mkv_path"; then
         sudo umount "$mount_point"
         rmdir "$mount_point"
+        trap - EXIT
         die "ffmpeg remux failed"
     fi
 
