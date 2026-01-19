@@ -78,7 +78,10 @@ func TestFullDedupCycle(t *testing.T) {
 
 	// Phase 4: Write dedup file
 	t.Log("Phase 4: Writing dedup file...")
-	mkvInfo, _ := os.Stat(paths.MKVFile)
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to stat MKV file: %v", err)
+	}
 
 	// Calculate MKV checksum
 	mkvFile, err := os.Open(paths.MKVFile)
@@ -107,7 +110,10 @@ func TestFullDedupCycle(t *testing.T) {
 		t.Fatalf("Failed to write dedup file: %v", err)
 	}
 
-	dedupInfo, _ := os.Stat(dedupPath)
+	dedupInfo, err := os.Stat(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to stat dedup file: %v", err)
+	}
 	t.Logf("  Dedup file: %d bytes (%.1f%% of original)",
 		dedupInfo.Size(), float64(dedupInfo.Size())/float64(mkvInfo.Size())*100)
 
@@ -181,6 +187,9 @@ func TestFullDedupCycle(t *testing.T) {
 	}
 
 	if mismatches > 0 {
+		if mismatches > 5 {
+			t.Logf("  ... and %d more mismatches not shown", mismatches-5)
+		}
 		t.Errorf("Verification failed: %d chunk mismatches", mismatches)
 	} else {
 		t.Log("  Verification passed: reconstructed MKV matches original")

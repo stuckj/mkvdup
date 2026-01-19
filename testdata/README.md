@@ -33,7 +33,7 @@ mkdir -p ~/.cache/mkvdup/testdata/bigbuckbunny
 cd ~/.cache/mkvdup/testdata/bigbuckbunny
 
 # Download PAL version (7.5GB) - smaller than NTSC
-wget "https://archive.org/download/BigBuckBunny/big-buck-bunny-PAL.iso" -O bbb-pal.iso
+wget "https://archive.org/download/BigBuckBunny/big_buck_bunny_pal_dvd.iso" -O bbb-pal.iso
 
 # Verify checksum (MD5: cb67e9bc8e97b9d625e7cd7ee0d85e08)
 md5sum bbb-pal.iso
@@ -41,7 +41,7 @@ md5sum bbb-pal.iso
 
 Alternative: Use the NTSC version if preferred:
 ```bash
-wget "https://archive.org/download/BigBuckBunny/big-buck-bunny-NTSC.iso" -O bbb-ntsc.iso
+wget "https://archive.org/download/BigBuckBunny/big_buck_bunny_ntsc_dvd.iso" -O bbb-ntsc.iso
 # MD5: 966758b02da2c5c183ab7de2e0a5e96b
 ```
 
@@ -79,14 +79,11 @@ ls -la ~/.cache/mkvdup/testdata/bigbuckbunny-mkv/
 
 ## Running Integration Tests
 
-Integration tests that require the test data will be skipped if it's not available:
+Integration tests that require the test data will be skipped automatically if it's not available:
 
 ```bash
 # Run all tests (integration tests skip if no test data)
 go test ./...
-
-# Run only integration tests (requires test data)
-go test ./... -tags=integration
 
 # Run with specific test data path
 MKVDUP_TESTDATA=/path/to/testdata go test ./...

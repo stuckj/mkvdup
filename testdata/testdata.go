@@ -57,8 +57,12 @@ func Find() Paths {
 		return p
 	}
 
-	// Not found
+	// Not found - clear all paths
 	p.Root = ""
+	p.ISODir = ""
+	p.ISOFile = ""
+	p.MKVDir = ""
+	p.MKVFile = ""
 	p.Available = false
 	return p
 }
