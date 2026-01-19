@@ -31,32 +31,21 @@ type ESReader interface {
 	ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
 }
 
-// NewReader opens a dedup file for reading.
-// This parses the full file including all entries - use NewReaderLazy for faster initialization.
+// NewReader opens a dedup file for reading with all entries loaded immediately.
+// Use NewReaderLazy for faster initialization when entries can be loaded on first access.
 func NewReader(dedupPath, sourceDir string) (*Reader, error) {
-	f, err := os.Open(dedupPath)
+	r, err := NewReaderLazy(dedupPath, sourceDir)
 	if err != nil {
-		return nil, fmt.Errorf("open dedup file: %w", err)
-	}
-	defer f.Close()
-
-	file, err := parseFile(f)
-	if err != nil {
-		return nil, fmt.Errorf("parse dedup file: %w", err)
+		return nil, err
 	}
 
-	// Memory-map the dedup file
-	dedupMmap, err := mmap.Open(dedupPath)
-	if err != nil {
-		return nil, fmt.Errorf("mmap dedup file: %w", err)
+	// Force immediate entry loading
+	if err := r.loadEntries(); err != nil {
+		r.Close()
+		return nil, fmt.Errorf("load entries: %w", err)
 	}
 
-	return &Reader{
-		file:      file,
-		dedupMmap: dedupMmap,
-		dedupPath: dedupPath,
-		sourceDir: sourceDir,
-	}, nil
+	return r, nil
 }
 
 // NewReaderLazy opens a dedup file but only reads the header.
@@ -332,128 +321,6 @@ func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, erro
 		return nil, fmt.Errorf("source offset out of range")
 	}
 	return data, nil
-}
-
-// parseFile parses a dedup file from a reader.
-func parseFile(r io.Reader) (*File, error) {
-	file := &File{}
-
-	// Read and verify magic
-	magic := make([]byte, MagicSize)
-	if _, err := io.ReadFull(r, magic); err != nil {
-		return nil, fmt.Errorf("read magic: %w", err)
-	}
-	if string(magic) != Magic {
-		return nil, fmt.Errorf("invalid magic: %s", magic)
-	}
-	copy(file.Header.Magic[:], magic)
-
-	// Read version
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
-		return nil, fmt.Errorf("read version: %w", err)
-	}
-	if file.Header.Version != Version {
-		return nil, fmt.Errorf("unsupported version: %d", file.Header.Version)
-	}
-
-	// Read flags
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.Flags); err != nil {
-		return nil, fmt.Errorf("read flags: %w", err)
-	}
-
-	// Read original size
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.OriginalSize); err != nil {
-		return nil, fmt.Errorf("read original size: %w", err)
-	}
-
-	// Read original checksum
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.OriginalChecksum); err != nil {
-		return nil, fmt.Errorf("read original checksum: %w", err)
-	}
-
-	// Read source type
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.SourceType); err != nil {
-		return nil, fmt.Errorf("read source type: %w", err)
-	}
-
-	// Read uses ES offsets flag
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.UsesESOffsets); err != nil {
-		return nil, fmt.Errorf("read uses ES offsets: %w", err)
-	}
-	file.UsesESOffsets = file.Header.UsesESOffsets == 1
-
-	// Read source file count
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.SourceFileCount); err != nil {
-		return nil, fmt.Errorf("read source file count: %w", err)
-	}
-
-	// Read entry count
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.EntryCount); err != nil {
-		return nil, fmt.Errorf("read entry count: %w", err)
-	}
-
-	// Read delta offset
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.DeltaOffset); err != nil {
-		return nil, fmt.Errorf("read delta offset: %w", err)
-	}
-	file.DeltaOffset = file.Header.DeltaOffset
-
-	// Read delta size
-	if err := binary.Read(r, binary.LittleEndian, &file.Header.DeltaSize); err != nil {
-		return nil, fmt.Errorf("read delta size: %w", err)
-	}
-
-	// Read source files
-	file.SourceFiles = make([]SourceFile, file.Header.SourceFileCount)
-	for i := range file.SourceFiles {
-		var pathLen uint16
-		if err := binary.Read(r, binary.LittleEndian, &pathLen); err != nil {
-			return nil, fmt.Errorf("read path length: %w", err)
-		}
-
-		path := make([]byte, pathLen)
-		if _, err := io.ReadFull(r, path); err != nil {
-			return nil, fmt.Errorf("read path: %w", err)
-		}
-		file.SourceFiles[i].RelativePath = string(path)
-
-		if err := binary.Read(r, binary.LittleEndian, &file.SourceFiles[i].Size); err != nil {
-			return nil, fmt.Errorf("read file size: %w", err)
-		}
-
-		if err := binary.Read(r, binary.LittleEndian, &file.SourceFiles[i].Checksum); err != nil {
-			return nil, fmt.Errorf("read file checksum: %w", err)
-		}
-	}
-
-	// Read entries
-	file.Entries = make([]Entry, file.Header.EntryCount)
-	for i := range file.Entries {
-		if err := binary.Read(r, binary.LittleEndian, &file.Entries[i].MkvOffset); err != nil {
-			return nil, fmt.Errorf("read entry MkvOffset: %w", err)
-		}
-		if err := binary.Read(r, binary.LittleEndian, &file.Entries[i].Length); err != nil {
-			return nil, fmt.Errorf("read entry Length: %w", err)
-		}
-		if err := binary.Read(r, binary.LittleEndian, &file.Entries[i].Source); err != nil {
-			return nil, fmt.Errorf("read entry Source: %w", err)
-		}
-		if err := binary.Read(r, binary.LittleEndian, &file.Entries[i].SourceOffset); err != nil {
-			return nil, fmt.Errorf("read entry SourceOffset: %w", err)
-		}
-
-		var esFlags uint8
-		if err := binary.Read(r, binary.LittleEndian, &esFlags); err != nil {
-			return nil, fmt.Errorf("read entry esFlags: %w", err)
-		}
-		file.Entries[i].IsVideo = esFlags&1 == 1
-
-		if err := binary.Read(r, binary.LittleEndian, &file.Entries[i].AudioSubStreamID); err != nil {
-			return nil, fmt.Errorf("read entry AudioSubStreamID: %w", err)
-		}
-	}
-
-	return file, nil
 }
 
 // parseHeaderOnly parses just the header and source files (not entries) for fast initialization.

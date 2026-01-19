@@ -74,6 +74,17 @@ For very large files or seek-heavy workloads, two optional optimizations could f
 
 2. **Direct memory mapping to structures**: Use unsafe pointers to interpret the mmap'd region as entry structures directly. This eliminates parsing overhead but requires careful alignment handling.
 
+#### Raw Offset Storage (Performance)
+
+Currently, entries for ES-indexed sources (DVDs) store ES offsets, requiring ES-to-raw offset translation during FUSE reads. This translation involves looking up the appropriate PES payload range for each read.
+
+Storing raw file offsets instead would enable direct zero-copy reads without translation overhead:
+- During `create`, convert ES offsets to raw offsets before writing entries
+- During `mount`/`read`, access source data directly via raw offset + mmap slice
+- This would eliminate the need to maintain `ESReader` and payload range lookups at read time
+
+Trade-off: Slightly larger dedup files (raw offsets may require additional metadata), but significantly faster FUSE access for ES-indexed sources.
+
 ### Zero-Copy Memory Mapping
 
 All file access in the system uses true zero-copy memory mapping via `unix.Mmap` from `golang.org/x/sys/unix`. This is implemented in the `internal/mmap` package which provides:
