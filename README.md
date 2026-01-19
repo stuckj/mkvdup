@@ -59,6 +59,15 @@ mkvdup info video.mkvdup
 4. **Create dedup file** - Store the index mapping plus any MKV-only data (headers, chapters, etc.)
 5. **Reconstruct on-demand** - FUSE filesystem stitches data from source files and the dedup file
 
+## Documentation
+
+- [DESIGN.md](DESIGN.md) - Architecture overview and technical decisions
+- [docs/MATCHING.md](docs/MATCHING.md) - Matching algorithms and ES-aware indexing
+- [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md) - Binary specification for .mkvdup files
+- [docs/FUSE.md](docs/FUSE.md) - FUSE filesystem configuration
+- [docs/CLI.md](docs/CLI.md) - Command-line interface reference
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Development guidelines
+
 ## License
 
 MIT
