@@ -5,6 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/stuckj/mkvdup/internal/mmap"
 )
 
 // Type represents the type of source media.
@@ -31,26 +34,33 @@ func (t Type) String() string {
 var ErrUnknownSourceType = errors.New("unknown source type: directory contains neither ISO nor BDMV structure")
 
 // DetectType determines whether a directory contains a DVD ISO or Blu-ray structure.
+// ISOs are inspected to determine if they contain DVD (VIDEO_TS) or Blu-ray (BDMV) content.
 func DetectType(dir string) (Type, error) {
-	// Check for ISO file (DVD)
+	// Check for ISO files
 	isos, err := filepath.Glob(filepath.Join(dir, "*.iso"))
 	if err != nil {
 		return 0, err
 	}
-	if len(isos) > 0 {
-		return TypeDVD, nil
-	}
 
 	// Also check for ISO in subdirectory (common structure)
-	isos, err = filepath.Glob(filepath.Join(dir, "*", "*.iso"))
+	subIsos, err := filepath.Glob(filepath.Join(dir, "*", "*.iso"))
 	if err != nil {
 		return 0, err
 	}
+	isos = append(isos, subIsos...)
+
+	// If we found ISOs, inspect them to determine type
 	if len(isos) > 0 {
-		return TypeDVD, nil
+		// Check the first ISO to determine type
+		isoType, err := detectISOType(isos[0])
+		if err != nil {
+			// If we can't read the ISO, default to DVD (legacy behavior)
+			return TypeDVD, nil
+		}
+		return isoType, nil
 	}
 
-	// Check for Blu-ray structure
+	// Check for Blu-ray directory structure
 	m2ts, err := filepath.Glob(filepath.Join(dir, "BDMV", "STREAM", "*.m2ts"))
 	if err != nil {
 		return 0, err
@@ -60,6 +70,116 @@ func DetectType(dir string) (Type, error) {
 	}
 
 	return 0, ErrUnknownSourceType
+}
+
+// detectISOType examines an ISO file to determine if it's a DVD or Blu-ray.
+// DVDs have VIDEO_TS directory, Blu-rays have BDMV directory.
+// Uses minimal reads to avoid loading the entire ISO into memory.
+func detectISOType(isoPath string) (Type, error) {
+	f, err := os.Open(isoPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	// ISO9660 primary volume descriptor is at sector 16 (2048 bytes per sector)
+	// The root directory record is embedded in the volume descriptor at offset 156.
+	const sectorSize = 2048
+	const pvdOffset = 16 * sectorSize
+
+	// Read the primary volume descriptor
+	pvd := make([]byte, sectorSize)
+	if _, err := f.ReadAt(pvd, pvdOffset); err != nil {
+		return 0, err
+	}
+
+	// Check volume descriptor type (byte 0) and signature "CD001" (bytes 1-5)
+	if pvd[0] != 1 || string(pvd[1:6]) != "CD001" {
+		// Not a valid ISO9660 primary volume descriptor, default to DVD
+		return TypeDVD, nil
+	}
+
+	// Root directory record is at offset 156, length at byte 0 of the record
+	rootDirRecord := pvd[156:]
+	if len(rootDirRecord) < 34 {
+		return TypeDVD, nil
+	}
+
+	// Extract root directory extent location (bytes 2-5, little-endian)
+	rootExtent := uint32(rootDirRecord[2]) | uint32(rootDirRecord[3])<<8 |
+		uint32(rootDirRecord[4])<<16 | uint32(rootDirRecord[5])<<24
+	// Extract root directory data length (bytes 10-13, little-endian)
+	rootDataLen := uint32(rootDirRecord[10]) | uint32(rootDirRecord[11])<<8 |
+		uint32(rootDirRecord[12])<<16 | uint32(rootDirRecord[13])<<24
+
+	// Read the root directory
+	// Limit to first 16KB to avoid reading huge directories
+	if rootDataLen > 16*1024 {
+		rootDataLen = 16 * 1024
+	}
+	rootDir := make([]byte, rootDataLen)
+	if _, err := f.ReadAt(rootDir, int64(rootExtent)*sectorSize); err != nil {
+		return 0, err
+	}
+
+	// Parse directory entries looking for VIDEO_TS or BDMV
+	hasBDMV := false
+	hasVideoTS := false
+
+	offset := 0
+	for offset < len(rootDir) {
+		recLen := int(rootDir[offset])
+		if recLen == 0 {
+			// Move to next sector boundary
+			nextSector := ((offset / sectorSize) + 1) * sectorSize
+			if nextSector >= len(rootDir) {
+				break
+			}
+			offset = nextSector
+			continue
+		}
+		if offset+recLen > len(rootDir) {
+			break
+		}
+
+		// Name length is at offset 32
+		if offset+33 > len(rootDir) {
+			break
+		}
+		nameLen := int(rootDir[offset+32])
+		if offset+33+nameLen > len(rootDir) {
+			break
+		}
+
+		// Extract and check the filename
+		name := strings.ToUpper(string(rootDir[offset+33 : offset+33+nameLen]))
+		// Strip version number (;1) if present
+		if idx := strings.Index(name, ";"); idx >= 0 {
+			name = name[:idx]
+		}
+		// Strip trailing dot if present
+		name = strings.TrimSuffix(name, ".")
+
+		if name == "BDMV" {
+			hasBDMV = true
+		}
+		if name == "VIDEO_TS" {
+			hasVideoTS = true
+		}
+
+		offset += recLen
+	}
+
+	// Blu-ray takes precedence if both are present
+	if hasBDMV {
+		return TypeBluray, nil
+	}
+	if hasVideoTS {
+		return TypeDVD, nil
+	}
+
+	// Default to DVD for unrecognized ISOs
+	return TypeDVD, nil
 }
 
 // File represents a source file within the source directory.
@@ -99,6 +219,9 @@ type ESReader interface {
 // RawReader provides an interface for reading raw file data.
 type RawReader interface {
 	ReadAt(buf []byte, offset int64) (int, error)
+	// Slice returns a zero-copy slice of the underlying data.
+	// Returns nil if offset is out of range.
+	Slice(offset int64, size int) []byte
 	Len() int
 	Close() error
 }
@@ -127,6 +250,10 @@ type Index struct {
 	// RawReaders provides raw file reading for each file.
 	// Used when raw file indexing is enabled.
 	RawReaders []RawReader
+
+	// MmapFiles holds the mmap file handles for proper cleanup.
+	// These back the ESReaders for MPEG-PS files.
+	MmapFiles []*mmap.File
 
 	// UsesESOffsets indicates whether Location.Offset values are ES offsets
 	// rather than raw file offsets. True for DVD (MPEG-PS) sources.
@@ -196,6 +323,7 @@ func GetFileInfo(path string) (int64, error) {
 
 // ReadRawDataAt reads raw data from the source file at the given location.
 // This is used for raw file indexing (non-ES mode).
+// Note: This copies data. Prefer RawSlice for zero-copy access.
 func (idx *Index) ReadRawDataAt(loc Location, size int) ([]byte, error) {
 	if int(loc.FileIndex) >= len(idx.RawReaders) || idx.RawReaders[loc.FileIndex] == nil {
 		return nil, errors.New("no raw reader for file")
@@ -206,4 +334,13 @@ func (idx *Index) ReadRawDataAt(loc Location, size int) ([]byte, error) {
 		return buf[:n], err
 	}
 	return buf[:n], nil
+}
+
+// RawSlice returns a zero-copy slice of raw data at the given location.
+// Returns nil if the location is out of range.
+func (idx *Index) RawSlice(loc Location, size int) []byte {
+	if int(loc.FileIndex) >= len(idx.RawReaders) || idx.RawReaders[loc.FileIndex] == nil {
+		return nil
+	}
+	return idx.RawReaders[loc.FileIndex].Slice(loc.Offset, size)
 }
