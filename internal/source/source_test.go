@@ -172,3 +172,61 @@ func TestGetFileInfo_NotFound(t *testing.T) {
 		t.Error("GetFileInfo() expected error for nonexistent file")
 	}
 }
+
+func TestNewIndex(t *testing.T) {
+	idx := NewIndex("/test/dir", TypeDVD, 64)
+
+	if idx == nil {
+		t.Fatal("NewIndex() returned nil")
+	}
+	if idx.SourceDir != "/test/dir" {
+		t.Errorf("SourceDir = %q, want %q", idx.SourceDir, "/test/dir")
+	}
+	if idx.SourceType != TypeDVD {
+		t.Errorf("SourceType = %v, want %v", idx.SourceType, TypeDVD)
+	}
+	if idx.WindowSize != 64 {
+		t.Errorf("WindowSize = %d, want 64", idx.WindowSize)
+	}
+	if idx.HashToLocations == nil {
+		t.Error("HashToLocations map not initialized")
+	}
+}
+
+func TestIndex_Lookup(t *testing.T) {
+	idx := NewIndex("/test/dir", TypeDVD, 64)
+
+	// Add some test locations
+	hash1 := uint64(12345)
+	hash2 := uint64(67890)
+	loc1 := Location{FileIndex: 0, Offset: 100, IsVideo: true}
+	loc2 := Location{FileIndex: 0, Offset: 200, IsVideo: true}
+	loc3 := Location{FileIndex: 1, Offset: 300, IsVideo: false}
+
+	idx.HashToLocations[hash1] = []Location{loc1, loc2}
+	idx.HashToLocations[hash2] = []Location{loc3}
+
+	// Test lookup for existing hash
+	locs := idx.Lookup(hash1)
+	if len(locs) != 2 {
+		t.Errorf("Lookup(hash1) returned %d locations, want 2", len(locs))
+	}
+	if locs[0].Offset != 100 || locs[1].Offset != 200 {
+		t.Errorf("Lookup(hash1) returned wrong offsets")
+	}
+
+	// Test lookup for another hash
+	locs = idx.Lookup(hash2)
+	if len(locs) != 1 {
+		t.Errorf("Lookup(hash2) returned %d locations, want 1", len(locs))
+	}
+	if locs[0].Offset != 300 {
+		t.Errorf("Lookup(hash2) returned wrong offset: %d", locs[0].Offset)
+	}
+
+	// Test lookup for non-existent hash
+	locs = idx.Lookup(99999)
+	if len(locs) != 0 {
+		t.Errorf("Lookup(99999) returned %d locations, want 0", len(locs))
+	}
+}
