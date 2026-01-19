@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"syscall"
 	"time"
 
@@ -606,13 +607,9 @@ func probe(mkvPath string, sourceDirs []string) error {
 	}
 
 	// Sort results by match percentage (descending)
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].MatchPercent > results[i].MatchPercent {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].MatchPercent > results[j].MatchPercent
+	})
 
 	// Print summary
 	fmt.Println()
@@ -666,7 +663,7 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 	samples := make([]mkv.Packet, 0, n)
 
 	// Sample from early portion (first 10%)
-	if earlyEnd > 0 {
+	if earlyCount > 0 && earlyEnd > 0 {
 		step := earlyEnd / earlyCount
 		if step < 1 {
 			step = 1
@@ -679,7 +676,7 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 	// Sample from middle portion (middle 80%)
 	midStart := earlyEnd
 	midEnd := lateStart
-	if midEnd > midStart {
+	if midCount > 0 && midEnd > midStart {
 		step := (midEnd - midStart) / midCount
 		if step < 1 {
 			step = 1
@@ -690,7 +687,7 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 	}
 
 	// Sample from late portion (last 10%)
-	if lateStart < len(packets) {
+	if lateCount > 0 && lateStart < len(packets) {
 		step := (len(packets) - lateStart) / lateCount
 		if step < 1 {
 			step = 1
