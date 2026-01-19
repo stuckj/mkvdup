@@ -126,20 +126,32 @@ download_iso() {
     info "ISO downloaded and verified: $iso_path"
 }
 
-# Create MKV from ISO using ffmpeg
-create_mkv() {
-    local iso_path="${OUTPUT_DIR}/bigbuckbunny/${ISO_NAME}"
-    local mkv_dir="${OUTPUT_DIR}/bigbuckbunny-mkv"
-    local mkv_path="${mkv_dir}/bigbuckbunny.mkv"
+# Create MKV from ISO using ffmpeg dvd:// protocol (no sudo required)
+create_mkv_dvd_protocol() {
+    local iso_path="$1"
+    local mkv_path="$2"
 
-    mkdir -p "$mkv_dir"
+    info "Trying ffmpeg dvd:// protocol (no sudo required)..."
 
-    if [[ -f "$mkv_path" ]]; then
-        info "MKV already exists: $mkv_path"
+    # The dvd:// protocol requires libdvdread support in ffmpeg
+    # Title 1 is typically the main feature
+    if ffmpeg -y -i "dvd://${iso_path}" \
+        -map 0:v -map 0:a \
+        -c copy \
+        -f matroska \
+        "$mkv_path" 2>/dev/null; then
         return 0
     fi
 
-    info "Mounting ISO to extract content..."
+    return 1
+}
+
+# Create MKV from ISO by mounting (requires sudo)
+create_mkv_mount() {
+    local iso_path="$1"
+    local mkv_path="$2"
+
+    info "Falling back to mount method (requires sudo)..."
 
     # Create a temporary mount point
     local mount_point
@@ -156,36 +168,65 @@ create_mkv() {
     # Find the main VOB files (VIDEO_TS)
     local vob_dir="${mount_point}/VIDEO_TS"
     if [[ ! -d "$vob_dir" ]]; then
+        sudo umount "$mount_point"
+        rmdir "$mount_point"
         die "VIDEO_TS directory not found in ISO"
     fi
 
     # Big Buck Bunny main title is typically VTS_01_*.VOB
-    # We'll use ffmpeg to concatenate and remux the VOBs
-    info "Creating MKV from DVD structure using ffmpeg..."
-    info "This performs a lossless remux (no transcoding)..."
-
-    # Use ffmpeg with the dvd protocol to read the title directly
-    # The concat demuxer with VOB files is the most reliable approach
     local vob_files
     vob_files=$(ls -1 "${vob_dir}"/VTS_01_[1-9].VOB 2>/dev/null | sort -V | tr '\n' '|' | sed 's/|$//')
 
     if [[ -z "$vob_files" ]]; then
+        sudo umount "$mount_point"
+        rmdir "$mount_point"
         die "No VTS_01_*.VOB files found"
     fi
 
     info "VOB files: $vob_files"
 
     # Use ffmpeg to remux - copy all streams without transcoding
-    ffmpeg -y -i "concat:${vob_files}" \
+    if ! ffmpeg -y -i "concat:${vob_files}" \
         -map 0:v -map 0:a \
         -c copy \
         -f matroska \
-        "$mkv_path" || die "ffmpeg remux failed"
+        "$mkv_path"; then
+        sudo umount "$mount_point"
+        rmdir "$mount_point"
+        die "ffmpeg remux failed"
+    fi
 
     # Unmount
     sudo umount "$mount_point"
     rmdir "$mount_point"
     trap - EXIT
+}
+
+# Create MKV from ISO using ffmpeg
+create_mkv() {
+    local iso_path="${OUTPUT_DIR}/bigbuckbunny/${ISO_NAME}"
+    local mkv_dir="${OUTPUT_DIR}/bigbuckbunny-mkv"
+    local mkv_path="${mkv_dir}/bigbuckbunny.mkv"
+
+    mkdir -p "$mkv_dir"
+
+    if [[ -f "$mkv_path" ]]; then
+        info "MKV already exists: $mkv_path"
+        return 0
+    fi
+
+    info "Creating MKV from DVD structure using ffmpeg..."
+    info "This performs a lossless remux (no transcoding)..."
+
+    # Try dvd:// protocol first (no sudo required, needs libdvdread)
+    if create_mkv_dvd_protocol "$iso_path" "$mkv_path"; then
+        info "MKV created using dvd:// protocol: $mkv_path"
+        info "Size: $(du -h "$mkv_path" | cut -f1)"
+        return 0
+    fi
+
+    # Fall back to mounting
+    create_mkv_mount "$iso_path" "$mkv_path"
 
     info "MKV created: $mkv_path"
     info "Size: $(du -h "$mkv_path" | cut -f1)"

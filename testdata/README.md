@@ -18,8 +18,8 @@ This will:
 
 **Requirements:**
 - `wget` - for downloading
-- `ffmpeg` - for creating the MKV
-- `sudo` access - for mounting the ISO (loop device)
+- `ffmpeg` - for creating the MKV (with libdvdread for best results)
+- `sudo` access - only needed if ffmpeg lacks libdvdread support
 
 ## Test Data Locations
 
@@ -67,7 +67,18 @@ wget "https://archive.org/download/BigBuckBunny/big_buck_bunny_ntsc_dvd.iso" -O 
 
 ### 2. Create MKV from ISO
 
-**Using ffmpeg (recommended for reproducibility):**
+**Using ffmpeg dvd:// protocol (recommended, no sudo required):**
+
+```bash
+mkdir -p ~/.cache/mkvdup/testdata/bigbuckbunny-mkv
+
+# Requires ffmpeg compiled with libdvdread
+ffmpeg -i "dvd://bbb-pal.iso" \
+    -map 0:v -map 0:a -c copy \
+    ~/.cache/mkvdup/testdata/bigbuckbunny-mkv/bigbuckbunny.mkv
+```
+
+**Using ffmpeg with mount (fallback if libdvdread unavailable):**
 
 ```bash
 mkdir -p ~/.cache/mkvdup/testdata/bigbuckbunny-mkv
@@ -84,14 +95,6 @@ ffmpeg -i "concat:/mnt/bbb/VIDEO_TS/VTS_01_1.VOB|/mnt/bbb/VIDEO_TS/VTS_01_2.VOB|
 # Unmount
 sudo umount /mnt/bbb
 ```
-
-**Using MakeMKV (alternative):**
-
-```bash
-makemkvcon mkv iso:bbb-pal.iso all ~/.cache/mkvdup/testdata/bigbuckbunny-mkv/
-```
-
-Note: Using ffmpeg is preferred for reproducibility across environments.
 
 ### 3. Verify Setup
 
