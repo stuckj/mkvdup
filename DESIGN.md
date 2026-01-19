@@ -58,22 +58,52 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 | Progress meters | Phase 7 | Fancy progress bars |
 | Warning threshold | Phase 7 | Low dedup ratio warning |
 | Quick probe command | Phase 7 | Fast MKV-to-source match test |
-| Optimized Entry Loading | Performance | See Future Enhancements section |
 
 ### Future Enhancements
 
-#### Optimized Entry Loading (Performance)
+#### Optimized Entry Loading (Optional)
 
-The current lazy loading implementation loads all index entries on first read. Two potential optimizations:
+The current lazy loading implementation with zero-copy mmap provides good performance:
+- Mount is near-instant (lazy loading defers entry parsing)
+- First file access: ~23s for 563MB file (includes loading 40K entries + reading from 7.6GB source ISO)
+- Subsequent reads: ~3s for full file, 9ms for 1MB partial read
 
-1. **Partial entry loading**: Instead of loading all entries at once, implement a range-based index structure (e.g., B-tree or skip list over MKV offsets) to load only the entries needed for each read operation. This would spread the loading cost across multiple accesses and significantly improve performance for partial file reads (e.g., metadata extraction, seeking).
+For very large files or seek-heavy workloads, two optional optimizations could further improve performance:
 
-2. **Direct memory mapping to structures**: Instead of parsing entries from mmap'd data, use unsafe pointers to directly interpret the memory-mapped region as entry structures. This eliminates parsing overhead but requires careful alignment handling and version-aware struct definitions. The file format versioning already supports this - older versions would use legacy struct layouts while newer versions use optimized layouts.
+1. **Partial entry loading**: Implement a range-based index structure (e.g., B-tree over MKV offsets) to load only entries needed for each read. This would help applications that seek frequently or extract metadata without reading the entire file.
 
-**Trade-offs to evaluate:**
-- Partial loading adds complexity to entry lookup
-- Direct memory mapping requires unsafe code and platform-specific alignment considerations
-- Both approaches should be benchmarked against current implementation
+2. **Direct memory mapping to structures**: Use unsafe pointers to interpret the mmap'd region as entry structures directly. This eliminates parsing overhead but requires careful alignment handling.
+
+### Zero-Copy Memory Mapping
+
+All file access in the system uses true zero-copy memory mapping via `unix.Mmap` from `golang.org/x/sys/unix`. This is implemented in the `internal/mmap` package which provides:
+
+```go
+type File struct {
+    data []byte  // Direct slice into mmap'd memory
+    size int64
+}
+
+func Open(path string) (*File, error)     // Memory-map a file
+func (m *File) Data() []byte              // Get full data slice (zero-copy)
+func (m *File) Slice(offset, size) []byte // Get sub-slice (zero-copy)
+func (m *File) Advise(advice int) error   // Hint kernel about access patterns
+func (m *File) Close() error              // Unmap the file
+```
+
+**Key benefits:**
+- **No data copying**: Slices point directly into kernel page cache
+- **Efficient memory usage**: Pages are demand-loaded and can be evicted under memory pressure
+- **Fast random access**: No syscall overhead for reads within mapped region
+
+**ISO detection optimization**: DVD/Blu-ray detection reads only ~18KB (primary volume descriptor + root directory) instead of loading the entire ISO. This reduced memory usage from 40GB+ to ~640MB for a 7.6GB DVD.
+
+**Usage throughout the codebase:**
+- Source indexer: Memory-maps ISO files for zero-copy parsing
+- MPEG-PS parser: Direct slice access to PES payloads
+- MKV parser: Zero-copy access to EBML elements
+- Matcher: Zero-copy byte comparisons
+- Dedup reader: Zero-copy reconstruction from source files
 
 ## Supported Source Media
 

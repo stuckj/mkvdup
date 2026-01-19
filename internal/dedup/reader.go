@@ -10,16 +10,16 @@ import (
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
-	"golang.org/x/exp/mmap"
+	"github.com/stuckj/mkvdup/internal/mmap"
 )
 
 // Reader reads .mkvdup files and provides data reconstruction.
 type Reader struct {
 	file        *File
-	dedupMmap   *mmap.ReaderAt
+	dedupMmap   *mmap.File
 	dedupPath   string
 	sourceDir   string
-	sourceMmaps []*mmap.ReaderAt
+	sourceMmaps []*mmap.File
 	esReader    ESReader  // For ES-based sources
 	entriesOnce sync.Once // For lazy loading entries
 	entriesErr  error     // Error from lazy loading
@@ -94,7 +94,7 @@ func (r *Reader) SetESReader(esReader ESReader) {
 
 // LoadSourceFiles memory-maps all source files.
 func (r *Reader) LoadSourceFiles() error {
-	r.sourceMmaps = make([]*mmap.ReaderAt, len(r.file.SourceFiles))
+	r.sourceMmaps = make([]*mmap.File, len(r.file.SourceFiles))
 	for i, sf := range r.file.SourceFiles {
 		path := r.sourceDir + "/" + sf.RelativePath
 		m, err := mmap.Open(path)
@@ -136,12 +136,11 @@ func (r *Reader) loadEntries() error {
 		indexStart := int64(HeaderSize) + r.calculateSourceFilesSize()
 		entryCount := int(r.file.Header.EntryCount)
 
-		// Read all entries from mmap
-		indexSize := int64(entryCount) * EntrySize
-		indexData := make([]byte, indexSize)
-		n, err := r.dedupMmap.ReadAt(indexData, indexStart)
-		if err != nil && n < int(indexSize) {
-			r.entriesErr = fmt.Errorf("read entries: %w", err)
+		// Get zero-copy slice of index data from mmap
+		indexSize := int(int64(entryCount) * EntrySize)
+		indexData := r.dedupMmap.Slice(indexStart, indexSize)
+		if indexData == nil || len(indexData) < indexSize {
+			r.entriesErr = fmt.Errorf("read entries: slice out of range")
 			return
 		}
 
@@ -311,12 +310,12 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 
 func (r *Reader) readDelta(offset int64, size int) ([]byte, error) {
 	fileOffset := r.file.DeltaOffset + offset
-	data := make([]byte, size)
-	n, err := r.dedupMmap.ReadAt(data, fileOffset)
-	if err != nil && err != io.EOF {
-		return nil, err
+	// Zero-copy slice from mmap'd data
+	data := r.dedupMmap.Slice(fileOffset, size)
+	if data == nil {
+		return nil, fmt.Errorf("delta offset out of range")
 	}
-	return data[:n], nil
+	return data, nil
 }
 
 func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) {
@@ -327,12 +326,12 @@ func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, erro
 		return nil, fmt.Errorf("source file %d not loaded", fileIndex)
 	}
 
-	data := make([]byte, size)
-	n, err := r.sourceMmaps[fileIndex].ReadAt(data, offset)
-	if err != nil && err != io.EOF {
-		return nil, err
+	// Zero-copy slice from mmap'd data
+	data := r.sourceMmaps[fileIndex].Slice(offset, size)
+	if data == nil {
+		return nil, fmt.Errorf("source offset out of range")
 	}
-	return data[:n], nil
+	return data, nil
 }
 
 // parseFile parses a dedup file from a reader.
@@ -591,21 +590,21 @@ func (r *Reader) VerifyIntegrity() error {
 		return fmt.Errorf("invalid footer magic")
 	}
 
-	// Calculate and verify index checksum
+	// Calculate and verify index checksum (zero-copy)
 	indexStart := HeaderSize + r.calculateSourceFilesSize()
-	indexSize := int64(len(r.file.Entries)) * EntrySize
-	indexData := make([]byte, indexSize)
-	if _, err := r.dedupMmap.ReadAt(indexData, indexStart); err != nil {
-		return fmt.Errorf("read index for checksum: %w", err)
+	indexSize := int(int64(len(r.file.Entries)) * EntrySize)
+	indexData := r.dedupMmap.Slice(indexStart, indexSize)
+	if indexData == nil {
+		return fmt.Errorf("read index for checksum: slice out of range")
 	}
 	if xxhash.Sum64(indexData) != footer.IndexChecksum {
 		return fmt.Errorf("index checksum mismatch")
 	}
 
-	// Calculate and verify delta checksum
-	deltaData := make([]byte, r.file.Header.DeltaSize)
-	if _, err := r.dedupMmap.ReadAt(deltaData, r.file.DeltaOffset); err != nil {
-		return fmt.Errorf("read delta for checksum: %w", err)
+	// Calculate and verify delta checksum (zero-copy)
+	deltaData := r.dedupMmap.Slice(r.file.DeltaOffset, int(r.file.Header.DeltaSize))
+	if deltaData == nil {
+		return fmt.Errorf("read delta for checksum: slice out of range")
 	}
 	if xxhash.Sum64(deltaData) != footer.DeltaChecksum {
 		return fmt.Errorf("delta checksum mismatch")
