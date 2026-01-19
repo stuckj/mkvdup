@@ -119,6 +119,15 @@ func TestFullDedupCycle(t *testing.T) {
 	}
 	defer reader.Close()
 
+	// Set up ES reader or load source files for reconstruction
+	if reader.UsesESOffsets() {
+		reader.SetESReader(index.ESReaders[0])
+	} else {
+		if err := reader.LoadSourceFiles(); err != nil {
+			t.Fatalf("Failed to load source files: %v", err)
+		}
+	}
+
 	// Verify size matches
 	if reader.OriginalSize() != mkvInfo.Size() {
 		t.Errorf("Size mismatch: reader reports %d, original is %d",
