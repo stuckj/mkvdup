@@ -48,11 +48,7 @@ jobs:
           go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o mkvdup ./cmd/mkvdup
 
       - name: Install nfpm
-        run: |
-          curl -fsSL https://repo.goreleaser.com/goreleaser-archive-keyring.gpg | sudo tee /usr/share/keyrings/goreleaser-archive-keyring.gpg > /dev/null
-          echo 'deb [signed-by=/usr/share/keyrings/goreleaser-archive-keyring.gpg] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
-          sudo apt-get update
-          sudo apt-get install -y nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build deb package
         env:
