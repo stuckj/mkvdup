@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // childEnvVar is the environment variable that marks a child daemon process.
@@ -201,14 +203,15 @@ func Detach() {
 	}
 
 	// Replace stdin, stdout, stderr with /dev/null
+	// Use unix.Dup2 for cross-architecture compatibility (syscall.Dup2 not available on arm64)
 	// Errors are logged but not fatal since the daemon can still function
-	if err := syscall.Dup2(int(devNull.Fd()), int(os.Stdin.Fd())); err != nil {
+	if err := unix.Dup2(int(devNull.Fd()), int(os.Stdin.Fd())); err != nil {
 		fmt.Fprintf(os.Stderr, "daemon: failed to redirect stdin: %v\n", err)
 	}
-	if err := syscall.Dup2(int(devNull.Fd()), int(os.Stdout.Fd())); err != nil {
+	if err := unix.Dup2(int(devNull.Fd()), int(os.Stdout.Fd())); err != nil {
 		fmt.Fprintf(os.Stderr, "daemon: failed to redirect stdout: %v\n", err)
 	}
-	if err := syscall.Dup2(int(devNull.Fd()), int(os.Stderr.Fd())); err != nil {
+	if err := unix.Dup2(int(devNull.Fd()), int(os.Stderr.Fd())); err != nil {
 		// stderr may already be redirected, best effort
 		_ = err
 	}
