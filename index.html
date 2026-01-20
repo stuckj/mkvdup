@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>mkvdup - Package Repository</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+    pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+    h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+    h2 { margin-top: 30px; }
+  </style>
+</head>
+<body>
+  <h1>mkvdup</h1>
+  <p>MKV deduplication tool using FUSE. Store MKV files as small dedup files that reference original DVD/Blu-ray sources.</p>
+
+  <h2>Debian/Ubuntu (APT)</h2>
+  <pre>
+# Add the GPG key
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
+
+# Add the repository
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
+
+# Install
+sudo apt update
+sudo apt install mkvdup</pre>
+
+  <h2>RHEL/CentOS/Fedora (YUM/DNF)</h2>
+  <pre>
+# Add the repository
+sudo tee /etc/yum.repos.d/mkvdup.repo &lt;&lt; 'REPO'
+[mkvdup]
+name=mkvdup
+baseurl=https://stuckj.github.io/mkvdup/yum
+enabled=1
+gpgcheck=1
+gpgkey=https://stuckj.github.io/mkvdup/yum/gpg-key.asc
+REPO
+
+# Install
+sudo dnf install mkvdup</pre>
+
+  <h2>Links</h2>
+  <ul>
+    <li><a href="https://github.com/stuckj/mkvdup">GitHub Repository</a></li>
+    <li><a href="https://github.com/stuckj/mkvdup/releases">Release Downloads</a></li>
+  </ul>
+</body>
+</html>
