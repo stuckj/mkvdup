@@ -49,7 +49,8 @@ jobs:
 
       - name: Install nfpm
         run: |
-          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          curl -fsSL https://repo.goreleaser.com/goreleaser-archive-keyring.gpg | sudo tee /usr/share/keyrings/goreleaser-archive-keyring.gpg > /dev/null
+          echo 'deb [signed-by=/usr/share/keyrings/goreleaser-archive-keyring.gpg] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
           sudo apt-get update
           sudo apt-get install -y nfpm
 
@@ -252,7 +253,7 @@ jobs:
           curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
 
           # Add the repository
-          echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
+          echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
 
           # Install
           sudo apt update

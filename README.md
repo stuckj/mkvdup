@@ -28,7 +28,7 @@ This tool is intended for personal backup and archival of legally owned media. I
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
 
 # Add the repository
-echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
 
 # Install
 sudo apt update
