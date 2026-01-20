@@ -61,6 +61,12 @@ contents:
     file_info:
       mode: 0755
 
+  # Bash completion
+  - src: scripts/mkvdup-completion.bash
+    dst: /usr/share/bash-completion/completions/mkvdup
+    file_info:
+      mode: 0644
+
 # RPM-specific settings
 rpm:
   group: Applications/Multimedia
