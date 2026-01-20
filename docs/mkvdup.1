@@ -1,0 +1,163 @@
+.TH MKVDUP 1 "January 2026" "mkvdup" "User Commands"
+.SH NAME
+mkvdup \- MKV deduplication tool using FUSE
+.SH SYNOPSIS
+.B mkvdup
+.RI [ OPTIONS ]
+.I command
+.RI [ ARGS ]
+.SH DESCRIPTION
+.B mkvdup
+reduces storage requirements for MKV files by referencing their source media
+(DVD ISOs, Blu-ray backups). Since the underlying codec data is identical
+between an MKV and its source, we store only the unique MKV data plus an index
+mapping offsets. A 3.4GB MKV can be stored as approximately 50MB.
+.SH COMMANDS
+.TP
+.B create \fImkv-file\fR \fIsource-dir\fR [\fIoutput\fR] [\fIname\fR]
+Create a dedup file from an MKV and its source media.
+.RS
+.TP
+.I mkv-file
+Path to the MKV file to deduplicate
+.TP
+.I source-dir
+Directory containing source media (ISO files or BDMV folders)
+.TP
+.I output
+Output .mkvdup file (default: \fImkv-file\fR.mkvdup)
+.TP
+.I name
+Display name in FUSE mount (default: basename of mkv-file)
+.RE
+.TP
+.B probe \fImkv-file\fR \fIsource-dir\fR...
+Quick test to check if an MKV matches one or more source directories.
+Useful for identifying which disc an MKV came from in multi-disc sets.
+.RS
+.TP
+.I mkv-file
+Path to the MKV file to test
+.TP
+.I source-dir
+One or more directories to test against
+.RE
+.TP
+.B mount \fImountpoint\fR \fIconfig.yaml\fR...
+Mount dedup files as a FUSE filesystem.
+.RS
+.TP
+.I mountpoint
+Directory to mount the filesystem
+.TP
+.I config.yaml
+One or more YAML config files describing dedup files
+.RE
+.TP
+.B info \fIdedup-file\fR
+Show information about a dedup file.
+.RS
+.TP
+.I dedup-file
+Path to the .mkvdup file
+.RE
+.TP
+.B verify \fIdedup-file\fR \fIsource-dir\fR \fIoriginal-mkv\fR
+Verify that a dedup file correctly reconstructs the original MKV.
+.RS
+.TP
+.I dedup-file
+Path to the .mkvdup file
+.TP
+.I source-dir
+Directory containing the source media
+.TP
+.I original-mkv
+Path to the original MKV for comparison
+.RE
+.TP
+.B parse-mkv \fImkv-file\fR
+Parse an MKV file and display packet information (debugging).
+.TP
+.B index-source \fIsource-dir\fR
+Index a source directory and display statistics (debugging).
+.TP
+.B match \fImkv-file\fR \fIsource-dir\fR
+Match MKV packets to source and show detailed results (debugging).
+.SH OPTIONS
+.TP
+.BR \-v ", " \-\-verbose
+Enable verbose output
+.TP
+.BR \-h ", " \-\-help
+Show help message
+.TP
+.B \-\-version
+Show version information
+.SH EXAMPLES
+Create a dedup file:
+.PP
+.RS
+.nf
+mkvdup create movie.mkv /media/dvd-backups
+.fi
+.RE
+.PP
+Test if MKV matches a source (useful for multi-disc sets):
+.PP
+.RS
+.nf
+mkvdup probe movie.mkv /media/disc1 /media/disc2 /media/disc3
+.fi
+.RE
+.PP
+Mount dedup files as virtual MKVs:
+.PP
+.RS
+.nf
+mkvdup mount /mnt/videos movie.mkvdup.yaml
+.fi
+.RE
+.PP
+Verify a dedup file:
+.PP
+.RS
+.nf
+mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+.fi
+.RE
+.SH CONFIG FILE FORMAT
+The YAML config file for mounting specifies the dedup file, source directory,
+and virtual file name:
+.PP
+.RS
+.nf
+name: "movie.mkv"
+dedup: "/path/to/movie.mkvdup"
+source: "/path/to/source/dir"
+.fi
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+General error (invalid arguments, file not found, etc.)
+.SH FILES
+.TP
+.I *.mkvdup
+Dedup files containing the index and delta data
+.TP
+.I *.mkvdup.yaml
+Config files for mounting dedup files
+.SH SEE ALSO
+.BR fusermount (1),
+.BR ffmpeg (1),
+.BR mkvmerge (1)
+.SH BUGS
+Report bugs at https://github.com/stuckj/mkvdup/issues
+.SH AUTHOR
+Written by stuckj.
+.SH COPYRIGHT
+MIT License
