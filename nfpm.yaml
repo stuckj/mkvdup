@@ -55,9 +55,9 @@ contents:
     file_info:
       mode: 0644
 
-  # Mount helper for fstab/systemd integration
-  - src: scripts/mount.mkvdup
-    dst: /usr/sbin/mount.mkvdup
+  # Mount helper for fstab/systemd integration (fuse.mkvdup type)
+  - src: scripts/mount.fuse.mkvdup
+    dst: /usr/sbin/mount.fuse.mkvdup
     file_info:
       mode: 0755
 
