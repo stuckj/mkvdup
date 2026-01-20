@@ -715,7 +715,10 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 	}
 
 	// If configDir is set, expand directory to list of .yaml files
-	if configDir && len(configPaths) == 1 {
+	if configDir {
+		if len(configPaths) != 1 {
+			return fmt.Errorf("--config-dir requires exactly one directory path, got %d", len(configPaths))
+		}
 		dir := configPaths[0]
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -761,13 +764,11 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 		}
 	}
 
-	if foreground {
-		fmt.Println()
-		fmt.Println("Running in foreground. Press Ctrl+C to unmount.")
-	} else {
-		fmt.Println()
-		fmt.Println("Press Ctrl+C to unmount")
-	}
+	// Note: go-fuse doesn't daemonize; the filesystem always runs in foreground.
+	// The foreground parameter is accepted for fstab compatibility but ignored.
+	_ = foreground
+	fmt.Println()
+	fmt.Println("Press Ctrl+C to unmount")
 
 	// Handle signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)

@@ -89,7 +89,7 @@ Arguments:
 
 Options:
     --allow-other  Allow other users to access the mount
-    --foreground   Run in foreground (don't daemonize)
+    --foreground   Ignored (for fstab compatibility; mkvdup always runs in foreground)
     --config-dir   Treat config argument as directory of .yaml files
 
 Examples:

@@ -79,13 +79,17 @@ for opt in "${OPTS[@]}"; do
             # systemd options - ignore
             ;;
         *)
-            # Pass unknown options through (might be FUSE options)
+            # Ignore unknown options for safety
             ;;
     esac
 done
 
-# Add config_dir flag if set
+# Validate config_dir usage
 if [[ "$CONFIG_DIR" == "true" ]]; then
+    if [[ "$WHAT" == "none" || -z "$WHAT" ]]; then
+        echo "Error: config_dir option requires a directory path, not 'none'" >&2
+        exit 1
+    fi
     MKVDUP_ARGS+=("--config-dir")
 fi
 
