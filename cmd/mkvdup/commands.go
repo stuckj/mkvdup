@@ -705,10 +705,10 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 const defaultConfigPath = "/etc/mkvdup.conf"
 
 // mountFuse mounts a FUSE filesystem exposing dedup files as MKV files.
-func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool, pidFile string) error {
+func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool, pidFile string, daemonTimeout time.Duration) error {
 	// Daemonize unless --foreground is set or we're already a daemon child
 	if !foreground && !daemon.IsChild() {
-		return daemon.Daemonize(pidFile, 30*time.Second)
+		return daemon.Daemonize(pidFile, daemonTimeout)
 	}
 
 	// Write PID file in foreground mode (daemon mode writes it in Daemonize)

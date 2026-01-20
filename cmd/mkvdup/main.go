@@ -89,12 +89,13 @@ Arguments:
     [config.yaml]  YAML config files (default: /etc/mkvdup.conf)
 
 Options:
-    --allow-other    Allow other users to access the mount
-    --foreground     Run in foreground (for debugging or systemd)
-    --config-dir     Treat config argument as directory of .yaml files
-    --pid-file PATH  Write daemon PID to file
+    --allow-other          Allow other users to access the mount
+    --foreground           Run in foreground (for debugging or systemd)
+    --config-dir           Treat config argument as directory of .yaml files
+    --pid-file PATH        Write daemon PID to file
+    --daemon-timeout DUR   Timeout waiting for daemon startup (default: 30s)
 
-By default, mkvdup daemonizes after the mount is ready and returns (30s timeout).
+By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
 
 Examples:
@@ -246,6 +247,7 @@ func main() {
 		foreground := false
 		configDir := false
 		pidFile := ""
+		daemonTimeout := 30 * time.Second
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -262,6 +264,17 @@ func main() {
 				} else {
 					log.Fatalf("Error: --pid-file requires a path argument")
 				}
+			case "--daemon-timeout":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --daemon-timeout invalid duration: %v", err)
+					}
+					daemonTimeout = d
+					i++
+				} else {
+					log.Fatalf("Error: --daemon-timeout requires a duration argument (e.g., 30s, 1m)")
+				}
 			default:
 				mountArgs = append(mountArgs, args[i])
 			}
@@ -272,7 +285,7 @@ func main() {
 		}
 		mountpoint := mountArgs[0]
 		configPaths := mountArgs[1:]
-		if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir, pidFile); err != nil {
+		if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir, pidFile, daemonTimeout); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
