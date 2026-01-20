@@ -1,0 +1,294 @@
+name: Build and Release Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (without v prefix, e.g. 1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Set version from tag or input
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Extract version from tag (remove 'v' prefix)
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o mkvdup ./cmd/mkvdup
+
+      - name: Install nfpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+
+      - name: Build deb package
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          nfpm package --packager deb --target .
+
+      - name: Build rpm package
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          nfpm package --packager rpm --target .
+
+      - name: List built packages
+        run: ls -la *.deb *.rpm
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package-${{ matrix.goarch }}
+          path: "*.deb"
+
+      - name: Upload rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package-${{ matrix.goarch }}
+          path: "*.rpm"
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/
+          merge-multiple: true
+
+      - name: List packages
+        run: ls -la packages/
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: packages/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-repo:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        id: checkout-gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 0
+        continue-on-error: true
+
+      - name: Initialize gh-pages if needed
+        if: steps.checkout-gh-pages.outcome == 'failure'
+        run: |
+          mkdir -p gh-pages
+          cd gh-pages
+          git init
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git checkout -b gh-pages
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c gnupg
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
+
+          # Configure GPG for non-interactive use
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
+
+      - name: Download all deb packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deb-package-*
+          path: packages/
+          merge-multiple: true
+
+      - name: Download all rpm packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rpm-package-*
+          path: packages/
+          merge-multiple: true
+
+      - name: Setup APT repository structure
+        run: |
+          cd gh-pages
+
+          # Create directory structure
+          mkdir -p apt/pool/main
+          mkdir -p apt/dists/stable/main/binary-amd64
+          mkdir -p apt/dists/stable/main/binary-arm64
+
+          # Copy deb packages to pool
+          cp ../packages/*.deb apt/pool/main/
+
+          # Generate Packages files for each architecture
+          cd apt
+          dpkg-scanpackages --arch amd64 pool/ > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+          dpkg-scanpackages --arch arm64 pool/ > dists/stable/main/binary-arm64/Packages
+          gzip -k -f dists/stable/main/binary-arm64/Packages
+
+          # Create Release file
+          cd dists/stable
+          cat > Release << EOF
+          Origin: mkvdup
+          Label: mkvdup
+          Suite: stable
+          Codename: stable
+          Architectures: amd64 arm64
+          Components: main
+          Description: mkvdup packages
+          Date: $(date -Ru)
+          EOF
+
+          # Add checksums to Release file
+          echo "SHA256:" >> Release
+          for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz \
+                   main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
+            if [[ -f "$f" ]]; then
+              SIZE=$(stat -c%s "$f")
+              SHA=$(sha256sum "$f" | awk '{print $1}')
+              echo " $SHA $SIZE $f" >> Release
+            fi
+          done
+
+          # Sign the Release file
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o Release.gpg Release
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --clearsign -o InRelease Release
+
+      - name: Setup YUM repository structure
+        run: |
+          cd gh-pages
+
+          # Create directory structure
+          mkdir -p yum/packages
+
+          # Copy rpm packages
+          cp ../packages/*.rpm yum/packages/
+
+          # Generate repository metadata
+          cd yum
+          createrepo_c .
+
+          # Sign the repository metadata
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o repodata/repomd.xml.asc repodata/repomd.xml
+
+      - name: Export GPG public key
+        run: |
+          cd gh-pages
+          gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
+          cp gpg-key.asc apt/
+          cp gpg-key.asc yum/
+
+      - name: Create index page
+        run: |
+          cat > gh-pages/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>mkvdup - Package Repository</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+              pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+              code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+              h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+              h2 { margin-top: 30px; }
+            </style>
+          </head>
+          <body>
+            <h1>mkvdup</h1>
+            <p>MKV deduplication tool using FUSE. Store MKV files as small dedup files that reference original DVD/Blu-ray sources.</p>
+
+            <h2>Debian/Ubuntu (APT)</h2>
+            <pre>
+          # Add the GPG key
+          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
+
+          # Add the repository
+          echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
+
+          # Install
+          sudo apt update
+          sudo apt install mkvdup</pre>
+
+            <h2>RHEL/CentOS/Fedora (YUM/DNF)</h2>
+            <pre>
+          # Add the repository
+          sudo tee /etc/yum.repos.d/mkvdup.repo &lt;&lt; 'REPO'
+          [mkvdup]
+          name=mkvdup
+          baseurl=https://stuckj.github.io/mkvdup/yum
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://stuckj.github.io/mkvdup/yum/gpg-key.asc
+          REPO
+
+          # Install
+          sudo dnf install mkvdup</pre>
+
+            <h2>Links</h2>
+            <ul>
+              <li><a href="https://github.com/stuckj/mkvdup">GitHub Repository</a></li>
+              <li><a href="https://github.com/stuckj/mkvdup/releases">Release Downloads</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "Update packages for ${{ github.ref_name }}"
+          git push origin gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

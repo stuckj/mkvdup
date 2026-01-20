@@ -1,0 +1,55 @@
+# nfpm configuration for building deb and rpm packages
+# See: https://nfpm.goreleaser.com/configuration/
+
+name: mkvdup
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: stuckj <stuckj@users.noreply.github.com>
+description: |
+  MKV deduplication tool using FUSE.
+  Stores MKV files as small dedup files that reference original DVD/Blu-ray sources,
+  providing massive storage savings while maintaining instant access to video files.
+vendor: stuckj
+homepage: https://github.com/stuckj/mkvdup
+license: MIT
+priority: optional
+section: video
+
+# Package dependencies
+depends:
+  - fuse3
+
+# Files to include in the package
+contents:
+  # Binary
+  - src: mkvdup
+    dst: /usr/bin/mkvdup
+    file_info:
+      mode: 0755
+
+  # Documentation
+  - src: README.md
+    dst: /usr/share/doc/mkvdup/README.md
+    file_info:
+      mode: 0644
+
+  - src: DESIGN.md
+    dst: /usr/share/doc/mkvdup/DESIGN.md
+    file_info:
+      mode: 0644
+
+  - src: LICENSE
+    dst: /usr/share/doc/mkvdup/LICENSE
+    file_info:
+      mode: 0644
+
+  - src: docs/
+    dst: /usr/share/doc/mkvdup/docs/
+    file_info:
+      mode: 0644
+
+# RPM-specific settings
+rpm:
+  group: Applications/Multimedia
+  summary: MKV deduplication tool using FUSE
