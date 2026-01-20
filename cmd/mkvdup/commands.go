@@ -711,6 +711,20 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 		return daemon.Daemonize(pidFile, 30*time.Second)
 	}
 
+	// Write PID file in foreground mode (daemon mode writes it in Daemonize)
+	if foreground && pidFile != "" {
+		if err := daemon.WritePidFile(pidFile, os.Getpid()); err != nil {
+			return fmt.Errorf("write pid file: %w", err)
+		}
+	}
+
+	// Clean up PID file on exit (for both foreground and daemon child modes)
+	if pidFile != "" && (foreground || daemon.IsChild()) {
+		defer func() {
+			_ = daemon.RemovePidFile(pidFile)
+		}()
+	}
+
 	// If no config paths provided, use default
 	if len(configPaths) == 0 {
 		if _, err := os.Stat(defaultConfigPath); err == nil {
@@ -789,7 +803,10 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 
 	// If we're a daemon child, signal success and detach from terminal
 	if daemon.IsChild() {
-		daemon.NotifyReady()
+		if err := daemon.NotifyReady(); err != nil {
+			// Parent may have timed out; log and continue since mount succeeded
+			fmt.Fprintf(os.Stderr, "warning: failed to notify parent: %v\n", err)
+		}
 		daemon.Detach()
 	} else {
 		// Running in foreground mode - print info

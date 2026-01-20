@@ -95,11 +95,14 @@ func Daemonize(pidFile string, timeout time.Duration) error {
 		if status[0] == statusReady {
 			resultChan <- nil
 		} else {
-			// Read error message
-			errMsg := make([]byte, 1024)
-			n, _ := readPipe.Read(errMsg)
-			if n > 0 {
-				resultChan <- fmt.Errorf("daemon failed: %s", string(errMsg[:n]))
+			// Read full error message until EOF to avoid truncation
+			errMsg, readErr := io.ReadAll(readPipe)
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				resultChan <- fmt.Errorf("daemon failed (error reading message): %v", readErr)
+				return
+			}
+			if len(errMsg) > 0 {
+				resultChan <- fmt.Errorf("daemon failed: %s", string(errMsg))
 			} else {
 				resultChan <- fmt.Errorf("daemon failed with unknown error")
 			}
@@ -110,7 +113,9 @@ func Daemonize(pidFile string, timeout time.Duration) error {
 	case err := <-resultChan:
 		if err != nil {
 			// Try to clean up the child
-			cmd.Process.Kill()
+			if cmd.Process != nil {
+				cmd.Process.Kill()
+			}
 			return err
 		}
 		// Success - child is running and mount is ready
@@ -122,7 +127,11 @@ func Daemonize(pidFile string, timeout time.Duration) error {
 		}
 		return nil
 	case <-time.After(timeout):
-		cmd.Process.Kill()
+		// Close pipe to unblock the goroutine waiting on Read()
+		readPipe.Close()
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
 		return fmt.Errorf("daemon startup timed out after %v", timeout)
 	}
 }
@@ -187,14 +196,26 @@ func Detach() {
 	// Redirect standard file descriptors to /dev/null
 	devNull, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: failed to open /dev/null: %v\n", err)
 		return
 	}
 
 	// Replace stdin, stdout, stderr with /dev/null
-	syscall.Dup2(int(devNull.Fd()), int(os.Stdin.Fd()))
-	syscall.Dup2(int(devNull.Fd()), int(os.Stdout.Fd()))
-	syscall.Dup2(int(devNull.Fd()), int(os.Stderr.Fd()))
-	devNull.Close()
+	// Errors are logged but not fatal since the daemon can still function
+	if err := syscall.Dup2(int(devNull.Fd()), int(os.Stdin.Fd())); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: failed to redirect stdin: %v\n", err)
+	}
+	if err := syscall.Dup2(int(devNull.Fd()), int(os.Stdout.Fd())); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon: failed to redirect stdout: %v\n", err)
+	}
+	if err := syscall.Dup2(int(devNull.Fd()), int(os.Stderr.Fd())); err != nil {
+		// stderr may already be redirected, best effort
+		_ = err
+	}
+	if err := devNull.Close(); err != nil {
+		// Can't log since stderr may be redirected
+		_ = err
+	}
 }
 
 // WritePidFile writes the given PID to a file.

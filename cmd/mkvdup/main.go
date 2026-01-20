@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/stuckj/mkvdup/internal/matcher"
@@ -93,7 +94,7 @@ Options:
     --config-dir     Treat config argument as directory of .yaml files
     --pid-file PATH  Write daemon PID to file
 
-By default, mkvdup daemonizes after the mount is ready and returns.
+By default, mkvdup daemonizes after the mount is ready and returns (30s timeout).
 Use --foreground to keep it attached to the terminal.
 
 Examples:
@@ -255,11 +256,11 @@ func main() {
 			case "--config-dir":
 				configDir = true
 			case "--pid-file":
-				if i+1 < len(args) {
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
 					pidFile = args[i+1]
 					i++
 				} else {
-					log.Fatalf("Error: --pid-file requires an argument")
+					log.Fatalf("Error: --pid-file requires a path argument")
 				}
 			default:
 				mountArgs = append(mountArgs, args[i])
