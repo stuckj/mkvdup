@@ -14,6 +14,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/stuckj/mkvdup/internal/daemon"
 	"github.com/stuckj/mkvdup/internal/dedup"
 	mkvfuse "github.com/stuckj/mkvdup/internal/fuse"
 	"github.com/stuckj/mkvdup/internal/matcher"
@@ -704,12 +705,20 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 const defaultConfigPath = "/etc/mkvdup.conf"
 
 // mountFuse mounts a FUSE filesystem exposing dedup files as MKV files.
-func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool) error {
+func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool, pidFile string) error {
+	// Daemonize unless --foreground is set or we're already a daemon child
+	if !foreground && !daemon.IsChild() {
+		return daemon.Daemonize(pidFile, 30*time.Second)
+	}
+
 	// If no config paths provided, use default
 	if len(configPaths) == 0 {
 		if _, err := os.Stat(defaultConfigPath); err == nil {
 			configPaths = []string{defaultConfigPath}
 		} else {
+			if daemon.IsChild() {
+				daemon.NotifyError(fmt.Errorf("no config files specified and %s not found", defaultConfigPath))
+			}
 			return fmt.Errorf("no config files specified and %s not found", defaultConfigPath)
 		}
 	}
@@ -717,12 +726,20 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 	// If configDir is set, expand directory to list of .yaml files
 	if configDir {
 		if len(configPaths) != 1 {
-			return fmt.Errorf("--config-dir requires exactly one directory path, got %d", len(configPaths))
+			err := fmt.Errorf("--config-dir requires exactly one directory path, got %d", len(configPaths))
+			if daemon.IsChild() {
+				daemon.NotifyError(err)
+			}
+			return err
 		}
 		dir := configPaths[0]
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return fmt.Errorf("read config directory %s: %w", dir, err)
+			err = fmt.Errorf("read config directory %s: %w", dir, err)
+			if daemon.IsChild() {
+				daemon.NotifyError(err)
+			}
+			return err
 		}
 		configPaths = nil
 		for _, entry := range entries {
@@ -731,14 +748,22 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 			}
 		}
 		if len(configPaths) == 0 {
-			return fmt.Errorf("no .yaml files found in %s", dir)
+			err = fmt.Errorf("no .yaml files found in %s", dir)
+			if daemon.IsChild() {
+				daemon.NotifyError(err)
+			}
+			return err
 		}
 	}
 
 	// Create the root filesystem
 	root, err := mkvfuse.NewMKVFS(configPaths, verbose)
 	if err != nil {
-		return fmt.Errorf("create filesystem: %w", err)
+		err = fmt.Errorf("create filesystem: %w", err)
+		if daemon.IsChild() {
+			daemon.NotifyError(err)
+		}
+		return err
 	}
 
 	// Mount the filesystem
@@ -752,23 +777,33 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 
 	server, err := fs.Mount(mountpoint, root, opts)
 	if err != nil {
-		return fmt.Errorf("mount: %w", err)
-	}
-
-	fmt.Printf("Mounted at %s\n", mountpoint)
-	fmt.Printf("Files:\n")
-	for _, configPath := range configPaths {
-		config, _ := dedup.ReadConfig(configPath)
-		if config != nil {
-			fmt.Printf("  %s\n", config.Name)
+		err = fmt.Errorf("mount: %w", err)
+		if daemon.IsChild() {
+			daemon.NotifyError(err)
 		}
+		return err
 	}
 
-	// Note: go-fuse doesn't daemonize; the filesystem always runs in foreground.
-	// The foreground parameter is accepted for fstab compatibility but ignored.
-	_ = foreground
-	fmt.Println()
-	fmt.Println("Press Ctrl+C to unmount")
+	// Wait for mount to be ready
+	server.WaitMount()
+
+	// If we're a daemon child, signal success and detach from terminal
+	if daemon.IsChild() {
+		daemon.NotifyReady()
+		daemon.Detach()
+	} else {
+		// Running in foreground mode - print info
+		fmt.Printf("Mounted at %s\n", mountpoint)
+		fmt.Printf("Files:\n")
+		for _, configPath := range configPaths {
+			config, _ := dedup.ReadConfig(configPath)
+			if config != nil {
+				fmt.Printf("  %s\n", config.Name)
+			}
+		}
+		fmt.Println()
+		fmt.Println("Press Ctrl+C to unmount")
+	}
 
 	// Handle signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -776,13 +811,18 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 
 	go func() {
 		<-sigChan
-		fmt.Println("\nUnmounting...")
+		if !daemon.IsChild() {
+			fmt.Println("\nUnmounting...")
+		}
 		server.Unmount()
 	}()
 
 	// Serve until unmounted
 	server.Wait()
-	fmt.Println("Unmounted")
+
+	if !daemon.IsChild() {
+		fmt.Println("Unmounted")
+	}
 
 	return nil
 }
