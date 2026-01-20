@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/stuckj/mkvdup/internal/matcher"
@@ -88,15 +89,21 @@ Arguments:
     [config.yaml]  YAML config files (default: /etc/mkvdup.conf)
 
 Options:
-    --allow-other  Allow other users to access the mount
-    --foreground   Ignored (for fstab compatibility; mkvdup always runs in foreground)
-    --config-dir   Treat config argument as directory of .yaml files
+    --allow-other          Allow other users to access the mount
+    --foreground           Run in foreground (for debugging or systemd)
+    --config-dir           Treat config argument as directory of .yaml files
+    --pid-file PATH        Write daemon PID to file
+    --daemon-timeout DUR   Timeout waiting for daemon startup (default: 30s)
+
+By default, mkvdup daemonizes after the mount is ready and returns.
+Use --foreground to keep it attached to the terminal.
 
 Examples:
     mkvdup mount /mnt/videos movie.mkvdup.yaml
     mkvdup mount /mnt/videos *.yaml
     mkvdup mount --allow-other /mnt/videos
     mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
+    mkvdup mount --foreground /mnt/videos config.yaml
 `)
 	case "info":
 		fmt.Print(`Usage: mkvdup info <dedup-file>
@@ -239,17 +246,37 @@ func main() {
 		allowOther := false
 		foreground := false
 		configDir := false
+		pidFile := ""
+		daemonTimeout := 30 * time.Second
 		var mountArgs []string
-		for _, arg := range args {
-			switch arg {
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
 			case "--allow-other":
 				allowOther = true
 			case "--foreground", "-f":
 				foreground = true
 			case "--config-dir":
 				configDir = true
+			case "--pid-file":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					pidFile = args[i+1]
+					i++
+				} else {
+					log.Fatalf("Error: --pid-file requires a path argument")
+				}
+			case "--daemon-timeout":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --daemon-timeout invalid duration: %v", err)
+					}
+					daemonTimeout = d
+					i++
+				} else {
+					log.Fatalf("Error: --daemon-timeout requires a duration argument (e.g., 30s, 1m)")
+				}
 			default:
-				mountArgs = append(mountArgs, arg)
+				mountArgs = append(mountArgs, args[i])
 			}
 		}
 		if len(mountArgs) < 1 {
@@ -258,7 +285,7 @@ func main() {
 		}
 		mountpoint := mountArgs[0]
 		configPaths := mountArgs[1:]
-		if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir); err != nil {
+		if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir, pidFile, daemonTimeout); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

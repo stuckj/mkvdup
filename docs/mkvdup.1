@@ -57,10 +57,18 @@ YAML config files (default: /etc/mkvdup.conf)
 Allow other users to access the mount
 .TP
 .B \-\-foreground
-Ignored (for fstab compatibility; mkvdup always runs in foreground)
+Run in foreground (for debugging or systemd). By default, mkvdup daemonizes
+after the mount is ready and returns control to the caller.
 .TP
 .B \-\-config\-dir
 Treat config argument as directory of .yaml files
+.TP
+.B \-\-pid\-file PATH
+Write the daemon PID to the specified file. Useful for init scripts.
+.TP
+.B \-\-daemon\-timeout DURATION
+Timeout for waiting for the daemon to start (default: 30s). Accepts Go duration
+format (e.g., 30s, 1m, 2m30s).
 .RE
 .TP
 .B info \fIdedup-file\fR
