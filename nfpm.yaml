@@ -55,6 +55,12 @@ contents:
     file_info:
       mode: 0644
 
+  # Mount helper for fstab/systemd integration
+  - src: scripts/mount.mkvdup
+    dst: /usr/sbin/mount.mkvdup
+    file_info:
+      mode: 0755
+
 # RPM-specific settings
 rpm:
   group: Applications/Multimedia

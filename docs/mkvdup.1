@@ -43,7 +43,7 @@ Path to the MKV file to test
 One or more directories to test against
 .RE
 .TP
-.B mount \fImountpoint\fR \fIconfig.yaml\fR...
+.B mount \fR[\fIoptions\fR] \fImountpoint\fR [\fIconfig.yaml\fR...]
 Mount dedup files as a FUSE filesystem.
 .RS
 .TP
@@ -51,7 +51,16 @@ Mount dedup files as a FUSE filesystem.
 Directory to mount the filesystem
 .TP
 .I config.yaml
-One or more YAML config files describing dedup files
+YAML config files (default: /etc/mkvdup.conf)
+.TP
+.B \-\-allow\-other
+Allow other users to access the mount
+.TP
+.B \-\-foreground
+Ignored (for fstab compatibility; mkvdup always runs in foreground)
+.TP
+.B \-\-config\-dir
+Treat config argument as directory of .yaml files
 .RE
 .TP
 .B info \fIdedup-file\fR
@@ -137,6 +146,61 @@ dedup: "/path/to/movie.mkvdup"
 source: "/path/to/source/dir"
 .fi
 .RE
+.SH FSTAB AND SYSTEMD
+mkvdup can be mounted via /etc/fstab or systemd mount units using the
+mount.mkvdup helper script.
+.SS fstab examples
+Mount using a specific config file:
+.PP
+.RS
+.nf
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  defaults  0  0
+.fi
+.RE
+.PP
+Mount using the default config with allow_other:
+.PP
+.RS
+.nf
+none  /mnt/videos  fuse.mkvdup  defaults,allow_other  0  0
+.fi
+.RE
+.PP
+Mount using a directory of config files:
+.PP
+.RS
+.nf
+/etc/mkvdup.d  /mnt/videos  fuse.mkvdup  config_dir  0  0
+.fi
+.RE
+.SS systemd mount unit
+Create a file like /etc/systemd/system/mnt-videos.mount:
+.PP
+.RS
+.nf
+[Unit]
+Description=mkvdup FUSE mount
+After=local-fs.target
+
+[Mount]
+What=/etc/mkvdup.conf
+Where=/mnt/videos
+Type=fuse.mkvdup
+Options=allow_other
+
+[Install]
+WantedBy=multi-user.target
+.fi
+.RE
+.PP
+Then enable and start:
+.PP
+.RS
+.nf
+systemctl enable mnt-videos.mount
+systemctl start mnt-videos.mount
+.fi
+.RE
 .SH EXIT STATUS
 .TP
 .B 0
@@ -145,6 +209,12 @@ Success
 .B 1
 General error (invalid arguments, file not found, etc.)
 .SH FILES
+.TP
+.I /etc/mkvdup.conf
+Default configuration file (used if no config specified)
+.TP
+.I /usr/sbin/mount.mkvdup
+Mount helper script for fstab/systemd integration
 .TP
 .I *.mkvdup
 Dedup files containing the index and delta data
