@@ -39,12 +39,7 @@ _mkvdup() {
     case "$cmd" in
         create)
             # create <mkv-file> <source-dir> [output] [name]
-            case "$cword" in
-                *)
-                    # Complete files/directories
-                    _filedir
-                    ;;
-            esac
+            _filedir
             ;;
 
         probe)
@@ -70,11 +65,6 @@ _mkvdup() {
                 --daemon-timeout)
                     # Suggest common timeout values
                     COMPREPLY=($(compgen -W "10s 30s 60s 2m 5m" -- "$cur"))
-                    return
-                    ;;
-                --config-dir)
-                    # Complete directories only
-                    _filedir -d
                     return
                     ;;
             esac
