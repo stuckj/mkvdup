@@ -12,43 +12,199 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
+// version is set at build time via -ldflags
+var version = "dev"
+
 // verbose is set to true when -v flag is passed
 var verbose bool
 
+func printVersion() {
+	fmt.Printf("mkvdup version %s\n", version)
+}
+
+func printUsage() {
+	fmt.Print(`mkvdup - MKV deduplication tool using FUSE
+
+Usage: mkvdup [options] <command> [args...]
+
+Commands:
+  create       Create dedup file from MKV + source directory
+  probe        Quick test if MKV matches source(s)
+  mount        Mount dedup files as FUSE filesystem
+  info         Show dedup file information
+  verify       Verify dedup file against original MKV
+
+Debug commands:
+  parse-mkv    Parse MKV and show packet info
+  index-source Index source directory
+  match        Match MKV packets to source
+
+Options:
+  -v, --verbose   Enable verbose output
+  -h, --help      Show help
+  --version       Show version
+
+Run 'mkvdup <command> --help' for more information on a command.
+See 'man mkvdup' for detailed documentation.
+`)
+}
+
+func printCommandUsage(cmd string) {
+	switch cmd {
+	case "create":
+		fmt.Print(`Usage: mkvdup create <mkv-file> <source-dir> [output] [name]
+
+Create a dedup file from an MKV and its source media.
+
+Arguments:
+    <mkv-file>    Path to the MKV file to deduplicate
+    <source-dir>  Directory containing source media (ISO files or BDMV folders)
+    [output]      Output .mkvdup file (default: <mkv-file>.mkvdup)
+    [name]        Display name in FUSE mount (default: basename of mkv-file)
+
+Examples:
+    mkvdup create movie.mkv /media/dvd-backups
+    mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
+`)
+	case "probe":
+		fmt.Print(`Usage: mkvdup probe <mkv-file> <source-dir>...
+
+Quick test to check if an MKV matches one or more source directories.
+
+Arguments:
+    <mkv-file>    Path to the MKV file to test
+    <source-dir>  One or more directories to test against
+
+Examples:
+    mkvdup probe movie.mkv /media/disc1 /media/disc2 /media/disc3
+`)
+	case "mount":
+		fmt.Print(`Usage: mkvdup mount <mountpoint> <config.yaml>...
+
+Mount dedup files as a FUSE filesystem.
+
+Arguments:
+    <mountpoint>   Directory to mount the filesystem
+    <config.yaml>  One or more YAML config files describing dedup files
+
+Examples:
+    mkvdup mount /mnt/videos movie.mkvdup.yaml
+    mkvdup mount /mnt/videos *.yaml
+`)
+	case "info":
+		fmt.Print(`Usage: mkvdup info <dedup-file>
+
+Show information about a dedup file.
+
+Arguments:
+    <dedup-file>  Path to the .mkvdup file
+
+Examples:
+    mkvdup info movie.mkvdup
+`)
+	case "verify":
+		fmt.Print(`Usage: mkvdup verify <dedup-file> <source-dir> <original-mkv>
+
+Verify that a dedup file correctly reconstructs the original MKV.
+
+Arguments:
+    <dedup-file>    Path to the .mkvdup file
+    <source-dir>    Directory containing the source media
+    <original-mkv>  Path to the original MKV for comparison
+
+Examples:
+    mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+`)
+	case "parse-mkv":
+		fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
+
+Parse an MKV file and display packet information (debugging).
+
+Arguments:
+    <mkv-file>  Path to the MKV file to parse
+
+Examples:
+    mkvdup parse-mkv movie.mkv
+`)
+	case "index-source":
+		fmt.Print(`Usage: mkvdup index-source <source-dir>
+
+Index a source directory and display statistics (debugging).
+
+Arguments:
+    <source-dir>  Directory containing source media (ISO files or BDMV folders)
+
+Examples:
+    mkvdup index-source /media/dvd-backups
+`)
+	case "match":
+		fmt.Print(`Usage: mkvdup match <mkv-file> <source-dir>
+
+Match MKV packets to source and show detailed results (debugging).
+
+Arguments:
+    <mkv-file>    Path to the MKV file
+    <source-dir>  Directory containing source media
+
+Examples:
+    mkvdup match movie.mkv /media/dvd-backups
+`)
+	default:
+		printUsage()
+	}
+}
+
 func main() {
-	// Check for -v flag
+	// Process global flags before command
 	args := os.Args[1:]
-	for i, arg := range args {
-		if arg == "-v" || arg == "--verbose" {
+	var filteredArgs []string
+	showHelp := false
+	showVersion := false
+
+	for _, arg := range args {
+		switch arg {
+		case "-v", "--verbose":
 			verbose = true
-			args = append(args[:i], args[i+1:]...)
-			break
+		case "-h", "--help":
+			showHelp = true
+		case "--version":
+			showVersion = true
+		default:
+			filteredArgs = append(filteredArgs, arg)
 		}
 	}
+	args = filteredArgs
 
+	// Handle --version (always top-level)
+	if showVersion {
+		printVersion()
+		os.Exit(0)
+	}
+
+	// If no command given, show appropriate help
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-v] <command> [args...]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\nGlobal options:\n")
-		fmt.Fprintf(os.Stderr, "  -v, --verbose                          Enable verbose output\n")
-		fmt.Fprintf(os.Stderr, "\nCommands:\n")
-		fmt.Fprintf(os.Stderr, "  create <mkv> <source> [output] [name]  Create dedup file from MKV + source\n")
-		fmt.Fprintf(os.Stderr, "  probe <mkv> <source>...                Quick test if MKV matches source(s)\n")
-		fmt.Fprintf(os.Stderr, "  mount <mountpoint> <config.yaml>...    Mount dedup files as FUSE filesystem\n")
-		fmt.Fprintf(os.Stderr, "  info <dedup>                           Show dedup file information\n")
-		fmt.Fprintf(os.Stderr, "  verify <dedup> <source> <original>     Verify dedup file\n")
-		fmt.Fprintf(os.Stderr, "  parse-mkv <file.mkv>                   Parse MKV and show packet info\n")
-		fmt.Fprintf(os.Stderr, "  index-source <dir>                     Index source directory\n")
-		fmt.Fprintf(os.Stderr, "  match <file.mkv> <source>              Match MKV packets to source\n")
+		if showHelp {
+			printUsage()
+			os.Exit(0)
+		}
+		printUsage()
 		os.Exit(1)
 	}
 
 	cmd := args[0]
 	args = args[1:]
 
+	// If help flag was given with a command, show command-specific help
+	if showHelp {
+		printCommandUsage(cmd)
+		os.Exit(0)
+	}
+
 	switch cmd {
 	case "create":
 		if len(args) < 2 {
-			log.Fatal("Usage: create <mkv> <source_dir> [output] [name]")
+			printCommandUsage("create")
+			os.Exit(1)
 		}
 		output := ""
 		name := ""
@@ -64,7 +220,8 @@ func main() {
 
 	case "probe":
 		if len(args) < 2 {
-			log.Fatal("Usage: probe <mkv> <source_dir>...")
+			printCommandUsage("probe")
+			os.Exit(1)
 		}
 		if err := probe(args[0], args[1:]); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -72,7 +229,8 @@ func main() {
 
 	case "mount":
 		if len(args) < 2 {
-			log.Fatal("Usage: mount <mountpoint> <config.yaml>...")
+			printCommandUsage("mount")
+			os.Exit(1)
 		}
 		if err := mountFuse(args[0], args[1:]); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -80,7 +238,8 @@ func main() {
 
 	case "info":
 		if len(args) < 1 {
-			log.Fatal("Usage: info <dedup_file>")
+			printCommandUsage("info")
+			os.Exit(1)
 		}
 		if err := showInfo(args[0]); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -88,7 +247,8 @@ func main() {
 
 	case "verify":
 		if len(args) < 3 {
-			log.Fatal("Usage: verify <dedup_file> <source_dir> <original_mkv>")
+			printCommandUsage("verify")
+			os.Exit(1)
 		}
 		if err := verifyDedup(args[0], args[1], args[2]); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -96,7 +256,8 @@ func main() {
 
 	case "parse-mkv":
 		if len(args) < 1 {
-			log.Fatal("Usage: parse-mkv <file.mkv>")
+			printCommandUsage("parse-mkv")
+			os.Exit(1)
 		}
 		if err := parseMKV(args[0]); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -104,7 +265,8 @@ func main() {
 
 	case "index-source":
 		if len(args) < 1 {
-			log.Fatal("Usage: index-source <dir>")
+			printCommandUsage("index-source")
+			os.Exit(1)
 		}
 		if err := indexSource(args[0]); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -112,14 +274,25 @@ func main() {
 
 	case "match":
 		if len(args) < 2 {
-			log.Fatal("Usage: match <file.mkv> <source_dir>")
+			printCommandUsage("match")
+			os.Exit(1)
 		}
 		if err := matchMKV(args[0], args[1]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
+	case "help":
+		if len(args) > 0 {
+			printCommandUsage(args[0])
+		} else {
+			printUsage()
+		}
+		os.Exit(0)
+
 	default:
-		log.Fatalf("Unknown command: %s", cmd)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmd)
+		printUsage()
+		os.Exit(1)
 	}
 }
 
