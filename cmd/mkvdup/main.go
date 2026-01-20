@@ -79,17 +79,24 @@ Examples:
     mkvdup probe movie.mkv /media/disc1 /media/disc2 /media/disc3
 `)
 	case "mount":
-		fmt.Print(`Usage: mkvdup mount <mountpoint> <config.yaml>...
+		fmt.Print(`Usage: mkvdup mount [options] <mountpoint> [config.yaml...]
 
 Mount dedup files as a FUSE filesystem.
 
 Arguments:
     <mountpoint>   Directory to mount the filesystem
-    <config.yaml>  One or more YAML config files describing dedup files
+    [config.yaml]  YAML config files (default: /etc/mkvdup.conf)
+
+Options:
+    --allow-other  Allow other users to access the mount
+    --foreground   Run in foreground (don't daemonize)
+    --config-dir   Treat config argument as directory of .yaml files
 
 Examples:
     mkvdup mount /mnt/videos movie.mkvdup.yaml
     mkvdup mount /mnt/videos *.yaml
+    mkvdup mount --allow-other /mnt/videos
+    mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
 `)
 	case "info":
 		fmt.Print(`Usage: mkvdup info <dedup-file>
@@ -228,11 +235,30 @@ func main() {
 		}
 
 	case "mount":
-		if len(args) < 2 {
+		// Parse mount-specific options
+		allowOther := false
+		foreground := false
+		configDir := false
+		var mountArgs []string
+		for _, arg := range args {
+			switch arg {
+			case "--allow-other":
+				allowOther = true
+			case "--foreground", "-f":
+				foreground = true
+			case "--config-dir":
+				configDir = true
+			default:
+				mountArgs = append(mountArgs, arg)
+			}
+		}
+		if len(mountArgs) < 1 {
 			printCommandUsage("mount")
 			os.Exit(1)
 		}
-		if err := mountFuse(args[0], args[1:]); err != nil {
+		mountpoint := mountArgs[0]
+		configPaths := mountArgs[1:]
+		if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

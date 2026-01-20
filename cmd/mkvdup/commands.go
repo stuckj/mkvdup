@@ -700,8 +700,38 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 	return samples
 }
 
+// defaultConfigPath is the default config file location.
+const defaultConfigPath = "/etc/mkvdup.conf"
+
 // mountFuse mounts a FUSE filesystem exposing dedup files as MKV files.
-func mountFuse(mountpoint string, configPaths []string) error {
+func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool) error {
+	// If no config paths provided, use default
+	if len(configPaths) == 0 {
+		if _, err := os.Stat(defaultConfigPath); err == nil {
+			configPaths = []string{defaultConfigPath}
+		} else {
+			return fmt.Errorf("no config files specified and %s not found", defaultConfigPath)
+		}
+	}
+
+	// If configDir is set, expand directory to list of .yaml files
+	if configDir && len(configPaths) == 1 {
+		dir := configPaths[0]
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return fmt.Errorf("read config directory %s: %w", dir, err)
+		}
+		configPaths = nil
+		for _, entry := range entries {
+			if !entry.IsDir() && (filepath.Ext(entry.Name()) == ".yaml" || filepath.Ext(entry.Name()) == ".yml") {
+				configPaths = append(configPaths, filepath.Join(dir, entry.Name()))
+			}
+		}
+		if len(configPaths) == 0 {
+			return fmt.Errorf("no .yaml files found in %s", dir)
+		}
+	}
+
 	// Create the root filesystem
 	root, err := mkvfuse.NewMKVFS(configPaths, verbose)
 	if err != nil {
@@ -711,7 +741,7 @@ func mountFuse(mountpoint string, configPaths []string) error {
 	// Mount the filesystem
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
-			AllowOther: false,
+			AllowOther: allowOther,
 			Name:       "mkvdup",
 			FsName:     "mkvdup",
 		},
@@ -730,8 +760,14 @@ func mountFuse(mountpoint string, configPaths []string) error {
 			fmt.Printf("  %s\n", config.Name)
 		}
 	}
-	fmt.Println()
-	fmt.Println("Press Ctrl+C to unmount")
+
+	if foreground {
+		fmt.Println()
+		fmt.Println("Running in foreground. Press Ctrl+C to unmount.")
+	} else {
+		fmt.Println()
+		fmt.Println("Press Ctrl+C to unmount")
+	}
 
 	// Handle signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)

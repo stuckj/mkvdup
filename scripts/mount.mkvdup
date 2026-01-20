@@ -1,0 +1,98 @@
+#!/bin/bash
+# mount.mkvdup - FUSE mount helper for mkvdup
+#
+# This script allows mkvdup to be mounted via /etc/fstab or systemd mount units.
+#
+# fstab usage:
+#   /path/to/config.yaml  /mnt/videos  fuse.mkvdup  defaults  0  0
+#   /etc/mkvdup.d         /mnt/videos  fuse.mkvdup  config_dir  0  0
+#   none                  /mnt/videos  fuse.mkvdup  defaults  0  0
+#
+# systemd mount unit:
+#   [Mount]
+#   What=/path/to/config.yaml
+#   Where=/mnt/videos
+#   Type=fuse.mkvdup
+#   Options=allow_other
+
+set -e
+
+# Parse arguments
+# mount calls us as: mount.mkvdup <what> <where> -o <options>
+WHAT=""
+WHERE=""
+OPTIONS=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o)
+            OPTIONS="$2"
+            shift 2
+            ;;
+        -n|-v|-s)
+            # Ignore standard mount flags
+            shift
+            ;;
+        -*)
+            # Unknown option, skip
+            shift
+            ;;
+        *)
+            if [[ -z "$WHAT" ]]; then
+                WHAT="$1"
+            elif [[ -z "$WHERE" ]]; then
+                WHERE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$WHERE" ]]; then
+    echo "Usage: mount.mkvdup <config> <mountpoint> -o <options>" >&2
+    echo "" >&2
+    echo "fstab example:" >&2
+    echo "  /etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  defaults  0  0" >&2
+    exit 1
+fi
+
+# Parse options
+MKVDUP_ARGS=()
+CONFIG_DIR=false
+
+IFS=',' read -ra OPTS <<< "$OPTIONS"
+for opt in "${OPTS[@]}"; do
+    case "$opt" in
+        allow_other)
+            MKVDUP_ARGS+=("--allow-other")
+            ;;
+        config_dir)
+            CONFIG_DIR=true
+            ;;
+        foreground)
+            MKVDUP_ARGS+=("--foreground")
+            ;;
+        ro|rw|defaults|auto|noauto|user|nouser|exec|noexec|suid|nosuid|dev|nodev|_netdev)
+            # Standard mount options - ignore (FUSE handles most of these)
+            ;;
+        x-systemd.*)
+            # systemd options - ignore
+            ;;
+        *)
+            # Pass unknown options through (might be FUSE options)
+            ;;
+    esac
+done
+
+# Add config_dir flag if set
+if [[ "$CONFIG_DIR" == "true" ]]; then
+    MKVDUP_ARGS+=("--config-dir")
+fi
+
+# Build the command
+# If WHAT is "none" or empty, use default config
+if [[ "$WHAT" == "none" || -z "$WHAT" ]]; then
+    exec /usr/bin/mkvdup mount "${MKVDUP_ARGS[@]}" "$WHERE"
+else
+    exec /usr/bin/mkvdup mount "${MKVDUP_ARGS[@]}" "$WHERE" "$WHAT"
+fi
