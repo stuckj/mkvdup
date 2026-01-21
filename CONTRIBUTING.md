@@ -115,24 +115,22 @@ significant regression detection (>10% slowdown with p<0.05).
 go test -bench=. -benchmem -count=5 ./internal/dedup/...
 ```
 
-**Compare against baseline:**
+**Compare against baseline (optional, for local development):**
 ```bash
-# Install benchstat (required)
+# Install benchstat
 go install golang.org/x/perf/cmd/benchstat@latest
 
-# Run and compare against baseline
+# Run and compare against repo baseline
 ./scripts/benchmark-compare.sh
 
 # Run with regression check (exits non-zero on significant regression)
 ./scripts/benchmark-compare.sh check
-
-# Save current results as new baseline
-./scripts/benchmark-compare.sh save
 ```
 
 **Benchmark results are tracked at:** [Benchmark Dashboard](https://stuckj.github.io/mkvdup/benchmarks/)
 
-The baseline file (`benchmarks/baseline.txt`) is automatically updated on merges to main.
+The baseline file (`benchmarks/baseline.txt`) is automatically updated by CI on merges to main.
+Do not commit baseline changes manually - CI handles this to ensure consistent runner performance.
 
 **Note:** The CI workflow runs `go vet` and `staticcheck` on all PRs.
 
