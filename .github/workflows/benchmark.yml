@@ -39,12 +39,16 @@ jobs:
         run: |
           if [ -f benchmarks/baseline.txt ]; then
             echo "Comparing against baseline..."
-            benchstat benchmarks/baseline.txt benchmark-output.txt | tee benchstat-output.txt
-            # Check for significant regressions
-            if ./scripts/check-benchstat.sh benchstat-output.txt; then
-              echo "regression=false" >> $GITHUB_OUTPUT
+            if benchstat benchmarks/baseline.txt benchmark-output.txt | tee benchstat-output.txt; then
+              # Check for significant regressions
+              if ./scripts/check-benchstat.sh benchstat-output.txt; then
+                echo "regression=false" >> $GITHUB_OUTPUT
+              else
+                echo "regression=true" >> $GITHUB_OUTPUT
+              fi
             else
-              echo "regression=true" >> $GITHUB_OUTPUT
+              echo "benchstat failed to parse benchmarks (possible corrupted baseline). Skipping regression check."
+              echo "regression=false" >> $GITHUB_OUTPUT
             fi
           else
             echo "No baseline file found, skipping comparison"

@@ -2,7 +2,7 @@ package dedup
 
 import (
 	"encoding/binary"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -161,9 +161,9 @@ func BenchmarkGetEntry_Random(b *testing.B) {
 
 	// Pre-generate random indices to avoid rand overhead in benchmark
 	indices := make([]int, b.N)
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewPCG(42, 0))
 	for i := range indices {
-		indices[i] = rng.Intn(numEntries)
+		indices[i] = rng.IntN(numEntries)
 	}
 
 	b.ResetTimer()
@@ -189,9 +189,9 @@ func BenchmarkGetMkvOffset(b *testing.B) {
 	defer cleanup()
 
 	indices := make([]int, b.N)
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewPCG(42, 0))
 	for i := range indices {
-		indices[i] = rng.Intn(numEntries)
+		indices[i] = rng.IntN(numEntries)
 	}
 
 	b.ResetTimer()
@@ -251,13 +251,13 @@ func BenchmarkReadAt_Random(b *testing.B) {
 
 	// Pre-generate random offsets
 	offsets := make([]int64, b.N)
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewPCG(42, 0))
 	maxOffset := fileSize - chunkSize
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
 	for i := range offsets {
-		offsets[i] = rng.Int63n(maxOffset + 1)
+		offsets[i] = rng.Int64N(maxOffset + 1)
 	}
 
 	b.ResetTimer()
@@ -285,13 +285,13 @@ func BenchmarkReadAt_Small(b *testing.B) {
 	fileSize := reader.file.Header.OriginalSize
 
 	offsets := make([]int64, b.N)
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewPCG(42, 0))
 	maxOffset := fileSize - chunkSize
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
 	for i := range offsets {
-		offsets[i] = rng.Int63n(maxOffset + 1)
+		offsets[i] = rng.Int64N(maxOffset + 1)
 	}
 
 	b.ResetTimer()
@@ -320,7 +320,7 @@ func BenchmarkFindEntriesForRange(b *testing.B) {
 		length int64
 	}
 	queries := make([]rangeQuery, b.N)
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewPCG(42, 0))
 	fileSize := reader.file.Header.OriginalSize
 	const queryLen int64 = 1000
 	length := queryLen
@@ -334,7 +334,7 @@ func BenchmarkFindEntriesForRange(b *testing.B) {
 	for i := range queries {
 		var offset int64
 		if maxOffset > 0 {
-			offset = rng.Int63n(maxOffset)
+			offset = rng.Int64N(maxOffset)
 		}
 		queries[i] = rangeQuery{offset: offset, length: length}
 	}
