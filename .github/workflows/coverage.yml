@@ -34,6 +34,7 @@ jobs:
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Generate coverage reports
+        id: coverage
         run: |
           # Generate function coverage summary
           go tool cover -func=coverage.out | tee coverage-summary.txt
@@ -48,7 +49,6 @@ jobs:
 
           # Generate JSON for badge and tracking
           echo "{\"coverage\": ${COVERAGE}, \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"commit\": \"${GITHUB_SHA}\"}" > coverage.json
-        id: coverage
 
       - name: Comment coverage on PR
         if: github.event_name == 'pull_request'

@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -268,7 +270,7 @@ func TestNotifyError_Message(t *testing.T) {
 	// Read error message
 	msgBuf := make([]byte, 256)
 	n, err = readPipe.Read(msgBuf)
-	if err != nil && err.Error() != "EOF" {
+	if err != nil && !errors.Is(err, io.EOF) {
 		t.Fatalf("Failed to read message from pipe: %v", err)
 	}
 	msg := string(msgBuf[:n])
