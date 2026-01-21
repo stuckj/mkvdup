@@ -134,10 +134,10 @@ func TestRawEntrySizeIs27Bytes(t *testing.T) {
 	buf := make([]byte, EntrySize)
 	binary.LittleEndian.PutUint64(buf[0:8], 1234)   // MkvOffset
 	binary.LittleEndian.PutUint64(buf[8:16], 5678)  // Length
-	buf[16] = 1                                      // Source
+	buf[16] = 1                                     // Source
 	binary.LittleEndian.PutUint64(buf[17:25], 9999) // SourceOffset (unaligned!)
-	buf[25] = 1                                      // ESFlags
-	buf[26] = 0x80                                   // AudioSubStreamID
+	buf[25] = 1                                     // ESFlags
+	buf[26] = 0x80                                  // AudioSubStreamID
 
 	// Copy to RawEntry and verify
 	copy(r.MkvOffset[:], buf[0:8])
