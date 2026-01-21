@@ -34,6 +34,13 @@ go test -race ./...
 go build ./...
 ```
 
+## Pull Requests
+
+- All PRs are **squash merged** to maintain a clean, linear commit history
+- Feature branches are deleted after merge
+- Write clear PR titles that describe the change (these become commit messages)
+- Include context in the PR description for complex changes
+
 ## Code Style
 
 - Run `gofmt` or `goimports` on all code before committing
