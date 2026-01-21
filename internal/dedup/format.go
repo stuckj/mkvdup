@@ -11,12 +11,12 @@ import (
 // File format constants
 const (
 	Magic   = "MKVDUP01"
-	Version = 2 // v2: raw offsets instead of ES offsets
+	Version = 3 // v3: Source field expanded to uint16 for >256 source files
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
 	HeaderSize  = 60
-	EntrySize   = 27 // Fixed entry size (25 + 2 for ES flags)
+	EntrySize   = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
 	FooterSize  = 24
 	MagicSize   = 8
 	VersionSize = 4
@@ -53,22 +53,22 @@ type SourceFile struct {
 // Entry represents an index entry in the dedup file.
 // This mirrors matcher.Entry but is specifically for serialization.
 type Entry struct {
-	MkvOffset        int64 // Start offset in the MKV file
-	Length           int64 // Length of this region
-	Source           uint8 // 0 = delta, 1+ = source file index + 1
-	SourceOffset     int64 // Offset in source file (or ES offset)
-	IsVideo          bool  // For ES-based sources
-	AudioSubStreamID byte  // For ES-based audio sub-streams
+	MkvOffset        int64  // Start offset in the MKV file
+	Length           int64  // Length of this region
+	Source           uint16 // 0 = delta, 1+ = source file index + 1 (supports up to 65535 files)
+	SourceOffset     int64  // Offset in source file (or ES offset)
+	IsVideo          bool   // For ES-based sources
+	AudioSubStreamID byte   // For ES-based audio sub-streams
 }
 
-// RawEntry matches the 27-byte on-disk entry format exactly.
+// RawEntry matches the 28-byte on-disk entry format exactly.
 // Uses byte arrays for int64 fields to handle unaligned access portably.
 // This enables direct memory-mapped access without parsing into []Entry.
 type RawEntry struct {
 	MkvOffset        [8]byte // int64, little-endian
 	Length           [8]byte // int64, little-endian
-	Source           uint8
-	SourceOffset     [8]byte // int64, little-endian (unaligned at byte 17)
+	Source           [2]byte // uint16, little-endian
+	SourceOffset     [8]byte // int64, little-endian (unaligned at byte 18)
 	ESFlags          uint8   // bit 0 = IsVideo
 	AudioSubStreamID uint8
 }
@@ -78,7 +78,7 @@ func (r *RawEntry) ToEntry() Entry {
 	return Entry{
 		MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
 		Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
-		Source:           r.Source,
+		Source:           binary.LittleEndian.Uint16(r.Source[:]),
 		SourceOffset:     int64(binary.LittleEndian.Uint64(r.SourceOffset[:])),
 		IsVideo:          r.ESFlags&1 == 1,
 		AudioSubStreamID: r.AudioSubStreamID,

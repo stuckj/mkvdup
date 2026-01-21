@@ -17,7 +17,7 @@ func TestRawEntryToEntry(t *testing.T) {
 				var r RawEntry
 				binary.LittleEndian.PutUint64(r.MkvOffset[:], 1000)
 				binary.LittleEndian.PutUint64(r.Length[:], 500)
-				r.Source = 1
+				binary.LittleEndian.PutUint16(r.Source[:], 1)
 				binary.LittleEndian.PutUint64(r.SourceOffset[:], 2000)
 				r.ESFlags = 1 // IsVideo = true
 				r.AudioSubStreamID = 0
@@ -38,7 +38,7 @@ func TestRawEntryToEntry(t *testing.T) {
 				var r RawEntry
 				binary.LittleEndian.PutUint64(r.MkvOffset[:], 0)
 				binary.LittleEndian.PutUint64(r.Length[:], 100)
-				r.Source = 0 // delta
+				binary.LittleEndian.PutUint16(r.Source[:], 0) // delta
 				binary.LittleEndian.PutUint64(r.SourceOffset[:], 0)
 				r.ESFlags = 0
 				r.AudioSubStreamID = 0
@@ -59,7 +59,7 @@ func TestRawEntryToEntry(t *testing.T) {
 				var r RawEntry
 				binary.LittleEndian.PutUint64(r.MkvOffset[:], 5000)
 				binary.LittleEndian.PutUint64(r.Length[:], 1024)
-				r.Source = 2
+				binary.LittleEndian.PutUint16(r.Source[:], 2)
 				binary.LittleEndian.PutUint64(r.SourceOffset[:], 10000)
 				r.ESFlags = 0 // IsVideo = false
 				r.AudioSubStreamID = 0x80
@@ -75,12 +75,33 @@ func TestRawEntryToEntry(t *testing.T) {
 			},
 		},
 		{
-			name: "large offsets",
+			name: "large source index (>256)",
+			raw: func() RawEntry {
+				var r RawEntry
+				binary.LittleEndian.PutUint64(r.MkvOffset[:], 1000)
+				binary.LittleEndian.PutUint64(r.Length[:], 500)
+				binary.LittleEndian.PutUint16(r.Source[:], 1000) // > 256 files
+				binary.LittleEndian.PutUint64(r.SourceOffset[:], 2000)
+				r.ESFlags = 1
+				r.AudioSubStreamID = 0
+				return r
+			}(),
+			expected: Entry{
+				MkvOffset:        1000,
+				Length:           500,
+				Source:           1000,
+				SourceOffset:     2000,
+				IsVideo:          true,
+				AudioSubStreamID: 0,
+			},
+		},
+		{
+			name: "max values",
 			raw: func() RawEntry {
 				var r RawEntry
 				binary.LittleEndian.PutUint64(r.MkvOffset[:], 0x7FFFFFFFFFFFFFFF) // max int64
 				binary.LittleEndian.PutUint64(r.Length[:], 0x100000000)           // 4GB
-				r.Source = 255
+				binary.LittleEndian.PutUint16(r.Source[:], 65535)                 // max uint16
 				binary.LittleEndian.PutUint64(r.SourceOffset[:], 0x7FFFFFFFFFFFFFFF)
 				r.ESFlags = 1
 				r.AudioSubStreamID = 255
@@ -89,7 +110,7 @@ func TestRawEntryToEntry(t *testing.T) {
 			expected: Entry{
 				MkvOffset:        0x7FFFFFFFFFFFFFFF,
 				Length:           0x100000000,
-				Source:           255,
+				Source:           65535,
 				SourceOffset:     0x7FFFFFFFFFFFFFFF,
 				IsVideo:          true,
 				AudioSubStreamID: 255,
@@ -121,11 +142,11 @@ func TestRawEntryToEntry(t *testing.T) {
 	}
 }
 
-func TestRawEntrySizeIs27Bytes(t *testing.T) {
-	// Verify the RawEntry struct is exactly 27 bytes (matches EntrySize constant)
+func TestRawEntrySizeIs28Bytes(t *testing.T) {
+	// Verify the RawEntry struct is exactly 28 bytes (matches EntrySize constant)
+	// Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
 	var r RawEntry
-	// Calculate size manually: 8 + 8 + 1 + 8 + 1 + 1 = 27
-	expectedSize := 8 + 8 + 1 + 8 + 1 + 1
+	expectedSize := 8 + 8 + 2 + 8 + 1 + 1
 	if expectedSize != EntrySize {
 		t.Errorf("Expected size calculation %d != EntrySize constant %d", expectedSize, EntrySize)
 	}
@@ -134,18 +155,18 @@ func TestRawEntrySizeIs27Bytes(t *testing.T) {
 	buf := make([]byte, EntrySize)
 	binary.LittleEndian.PutUint64(buf[0:8], 1234)   // MkvOffset
 	binary.LittleEndian.PutUint64(buf[8:16], 5678)  // Length
-	buf[16] = 1                                     // Source
-	binary.LittleEndian.PutUint64(buf[17:25], 9999) // SourceOffset (unaligned!)
-	buf[25] = 1                                     // ESFlags
-	buf[26] = 0x80                                  // AudioSubStreamID
+	binary.LittleEndian.PutUint16(buf[16:18], 999)  // Source (uint16)
+	binary.LittleEndian.PutUint64(buf[18:26], 9999) // SourceOffset
+	buf[26] = 1                                     // ESFlags
+	buf[27] = 0x80                                  // AudioSubStreamID
 
 	// Copy to RawEntry and verify
 	copy(r.MkvOffset[:], buf[0:8])
 	copy(r.Length[:], buf[8:16])
-	r.Source = buf[16]
-	copy(r.SourceOffset[:], buf[17:25])
-	r.ESFlags = buf[25]
-	r.AudioSubStreamID = buf[26]
+	copy(r.Source[:], buf[16:18])
+	copy(r.SourceOffset[:], buf[18:26])
+	r.ESFlags = buf[26]
+	r.AudioSubStreamID = buf[27]
 
 	entry := r.ToEntry()
 	if entry.MkvOffset != 1234 {
@@ -154,8 +175,8 @@ func TestRawEntrySizeIs27Bytes(t *testing.T) {
 	if entry.Length != 5678 {
 		t.Errorf("Length = %d, want 5678", entry.Length)
 	}
-	if entry.Source != 1 {
-		t.Errorf("Source = %d, want 1", entry.Source)
+	if entry.Source != 999 {
+		t.Errorf("Source = %d, want 999", entry.Source)
 	}
 	if entry.SourceOffset != 9999 {
 		t.Errorf("SourceOffset = %d, want 9999", entry.SourceOffset)

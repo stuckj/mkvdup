@@ -13,6 +13,7 @@ import (
 )
 
 // Reader reads .mkvdup files and provides data reconstruction.
+// Reader is safe for concurrent use from multiple goroutines.
 type Reader struct {
 	file        *File
 	dedupMmap   *mmap.File
@@ -28,6 +29,8 @@ type Reader struct {
 	entryCount int   // Number of entries
 
 	// Last-entry cache for O(1) sequential read lookup
+	// Protected by cacheMu for concurrent access safety
+	cacheMu        sync.Mutex
 	lastEntryIdx   int   // Index of last accessed entry (-1 if none)
 	lastEntry      Entry // The cached parsed entry
 	lastEntryValid bool  // Whether lastEntry is valid
@@ -142,39 +145,46 @@ func (r *Reader) initEntryAccess() error {
 }
 
 // getEntry returns the entry at the given index by parsing from mmap.
-// Uses cache for O(1) sequential access.
+// Uses cache for O(1) sequential access. Safe for concurrent use.
 func (r *Reader) getEntry(idx int) (Entry, bool) {
 	if idx < 0 || idx >= r.entryCount {
 		return Entry{}, false
 	}
 
-	// Check cache first
+	// Check cache first (with lock)
+	r.cacheMu.Lock()
 	if r.lastEntryValid && r.lastEntryIdx == idx {
-		return r.lastEntry, true
+		entry := r.lastEntry
+		r.cacheMu.Unlock()
+		return entry, true
 	}
+	r.cacheMu.Unlock()
 
-	// Parse entry from mmap using RawEntry
+	// Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
 	offset := r.indexStart + int64(idx)*EntrySize
 	data := r.dedupMmap.Slice(offset, EntrySize)
-	if data == nil || len(data) < EntrySize {
+	if len(data) < EntrySize {
 		return Entry{}, false
 	}
 
 	// Parse using RawEntry for portable unaligned access
+	// Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
 	var raw RawEntry
 	copy(raw.MkvOffset[:], data[0:8])
 	copy(raw.Length[:], data[8:16])
-	raw.Source = data[16]
-	copy(raw.SourceOffset[:], data[17:25])
-	raw.ESFlags = data[25]
-	raw.AudioSubStreamID = data[26]
+	copy(raw.Source[:], data[16:18])
+	copy(raw.SourceOffset[:], data[18:26])
+	raw.ESFlags = data[26]
+	raw.AudioSubStreamID = data[27]
 
 	entry := raw.ToEntry()
 
-	// Update cache
+	// Update cache (with lock)
+	r.cacheMu.Lock()
 	r.lastEntryIdx = idx
 	r.lastEntry = entry
 	r.lastEntryValid = true
+	r.cacheMu.Unlock()
 
 	return entry, true
 }
@@ -188,7 +198,24 @@ func (r *Reader) getMkvOffset(idx int) (int64, bool) {
 
 	offset := r.indexStart + int64(idx)*EntrySize
 	data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
-	if data == nil || len(data) < 8 {
+	if len(data) < 8 {
+		return 0, false
+	}
+
+	return int64(binary.LittleEndian.Uint64(data)), true
+}
+
+// getEntryLength returns just the Length for entry at idx (for binary search).
+// This avoids full entry parsing when only offset and length are needed.
+func (r *Reader) getEntryLength(idx int) (int64, bool) {
+	if idx < 0 || idx >= r.entryCount {
+		return 0, false
+	}
+
+	// Length is at offset 8 within each entry (after MkvOffset)
+	offset := r.indexStart + int64(idx)*EntrySize + 8
+	data := r.dedupMmap.Slice(offset, 8)
+	if len(data) < 8 {
 		return 0, false
 	}
 
@@ -211,9 +238,18 @@ func (r *Reader) SourceFiles() []SourceFile {
 }
 
 // EntryCount returns the number of index entries.
+// EntryCount returns the number of index entries.
+// Returns 0 if entry access initialization failed. Use InitEntryAccess() to check for errors.
 func (r *Reader) EntryCount() int {
 	r.initEntryAccess() // Ensure entryCount is initialized
 	return r.entryCount
+}
+
+// InitEntryAccess explicitly initializes entry access and returns any error.
+// This is useful when you need to check for initialization errors before calling
+// methods like EntryCount() or Info() that silently return zero/empty on error.
+func (r *Reader) InitEntryAccess() error {
+	return r.initEntryAccess()
 }
 
 // UsesESOffsets returns true if this dedup file uses ES offsets.
@@ -315,12 +351,16 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 
 	endOffset := offset + length
 
-	// Fast path: check if offset is within cached entry
+	// Fast path: check if offset is within cached entry (with lock)
+	r.cacheMu.Lock()
 	if r.lastEntryValid && r.lastEntryIdx >= 0 && r.lastEntryIdx < r.entryCount {
 		if offset >= r.lastEntry.MkvOffset && offset < r.lastEntry.MkvOffset+r.lastEntry.Length {
 			// Cache hit - start from cached entry
+			startIdx := r.lastEntryIdx
+			r.cacheMu.Unlock()
+
 			var result []Entry
-			for i := r.lastEntryIdx; i < r.entryCount; i++ {
+			for i := startIdx; i < r.entryCount; i++ {
 				entry, ok := r.getEntry(i)
 				if !ok || entry.MkvOffset >= endOffset {
 					break
@@ -330,15 +370,20 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 			return result
 		}
 	}
+	r.cacheMu.Unlock()
 
 	// Cache miss - binary search for first entry that could contain offset
-	// Use getMkvOffset + getEntry.Length for the search predicate
+	// Use getMkvOffset + getEntryLength for efficiency (reads 16 bytes, not 27)
 	idx := sort.Search(r.entryCount, func(i int) bool {
-		entry, ok := r.getEntry(i)
+		mkvOffset, ok := r.getMkvOffset(i)
 		if !ok {
 			return true // Shouldn't happen, but treat as "found"
 		}
-		return entry.MkvOffset+entry.Length > offset
+		entryLen, ok := r.getEntryLength(i)
+		if !ok {
+			return true
+		}
+		return mkvOffset+entryLen > offset
 	})
 
 	var result []Entry
@@ -397,12 +442,15 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
-	// Support current version (2) only. V1 files with ES offsets must be recreated.
+	// Support current version (3) only. Older versions must be recreated.
 	if file.Header.Version != Version {
 		if file.Header.Version == 1 {
 			return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
 		}
-		return nil, fmt.Errorf("unsupported version: %d", file.Header.Version)
+		if file.Header.Version == 2 {
+			return nil, fmt.Errorf("unsupported version 2 (uses uint8 source index); please recreate with 'mkvdup create'")
+		}
+		return nil, fmt.Errorf("unsupported version: %d (expected %d)", file.Header.Version, Version)
 	}
 
 	// Read flags
@@ -550,9 +598,12 @@ func (r *Reader) calculateSourceFilesSize() int64 {
 }
 
 // Info returns a summary of the dedup file.
+// Info returns a summary of the dedup file.
+// If entry access initialization failed, the "error" key will contain the error message
+// and "entry_count" will be 0.
 func (r *Reader) Info() map[string]any {
-	r.initEntryAccess() // Ensure entryCount is initialized
-	return map[string]any{
+	err := r.initEntryAccess() // Ensure entryCount is initialized
+	info := map[string]any{
 		"version":           r.file.Header.Version,
 		"original_size":     r.file.Header.OriginalSize,
 		"original_checksum": r.file.Header.OriginalChecksum,
@@ -562,4 +613,8 @@ func (r *Reader) Info() map[string]any {
 		"entry_count":       r.entryCount,
 		"delta_size":        r.file.Header.DeltaSize,
 	}
+	if err != nil {
+		info["error"] = err.Error()
+	}
+	return info
 }

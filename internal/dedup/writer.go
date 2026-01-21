@@ -308,7 +308,7 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
 			return 0, err
 		}
 
-		// Source (1)
+		// Source (2)
 		if err := binary.Write(writer, binary.LittleEndian, entry.Source); err != nil {
 			return 0, err
 		}

@@ -12,7 +12,8 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 
 | Version | Description |
 |---------|-------------|
-| 2 (current) | Raw file offsets stored directly. UsesESOffsets is always 0. |
+| 3 (current) | Source field expanded to uint16 (supports >256 source files). Entry size: 28 bytes. |
+| 2 (deprecated) | Raw file offsets stored directly. Source field was uint8 (max 256 files). No longer supported; files must be recreated. |
 | 1 (deprecated) | Used ES (elementary stream) offsets for DVD sources. No longer supported; files must be recreated. |
 
 ## Design Principles
@@ -51,18 +52,18 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 │  Note: Path is relative to source_dir in FUSE config   │
 │  Example: "VIDEO_TS/VTS_09_1.VOB" not full path        │
 ├────────────────────────────────────────────────────────┤
-│  Index Entries Section (fixed 27 bytes per entry)      │
+│  Index Entries Section (fixed 28 bytes per entry)      │
 ├────────────────────────────────────────────────────────┤
 │  For each entry (sorted by MkvOffset, contiguous):     │
 │    MkvOffset: int64 (8 bytes)                          │
 │    Length: int64 (8 bytes)                             │
-│    Source: uint8 (1 byte) [0=DELTA, 1+=file idx+1]     │
+│    Source: uint16 (2 bytes) [0=DELTA, 1+=file idx+1]   │
 │    SourceOffset: int64 (8 bytes)                       │
 │    IsVideo: uint8 (1 byte)  [for ES-based sources]     │
 │    AudioSubStreamID: uint8 (1 byte)  [for ES audio]    │
 │                                                        │
-│  Entry size: 27 bytes                                  │
-│  1M entries = 27 MB index overhead                     │
+│  Entry size: 28 bytes                                  │
+│  1M entries = 28 MB index overhead                     │
 ├────────────────────────────────────────────────────────┤
 │  Delta Section (variable size)                         │
 ├────────────────────────────────────────────────────────┤
@@ -85,22 +86,22 @@ For index entries:
 - `Source = 2`: Data is in source file 1 at `SourceOffset`
 - etc.
 
-In version 2, `SourceOffset` is always a raw byte offset into the source file.
+In version 3, `SourceOffset` is always a raw byte offset into the source file.
 Entries that would span multiple non-contiguous regions in the source file
 (due to container header removal) are split into multiple entries during creation.
 
 ## Storage Efficiency
 
-**Current entry size: 27 bytes**
+**Current entry size: 28 bytes**
 - MkvOffset: 8 bytes
 - Length: 8 bytes
-- Source: 1 byte
+- Source: 2 bytes (uint16, supports up to 65535 source files)
 - SourceOffset: 8 bytes
 - IsVideo: 1 byte
 - AudioSubStreamID: 1 byte
 
 **Estimated index size for typical video:**
-- ~1-2 million packets → 27-54 MB index
+- ~1-2 million packets → 28-56 MB index
 - Acceptable given ~3 GB space savings
 
 **Future optimization (if needed): Varint encoding**
