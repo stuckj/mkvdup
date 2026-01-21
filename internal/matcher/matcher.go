@@ -23,12 +23,12 @@ const (
 
 // Entry represents a region in the MKV file and where its data comes from.
 type Entry struct {
-	MkvOffset        int64 // Start offset in the MKV file
-	Length           int64 // Length of this region
-	Source           uint8 // 0 = delta, 1+ = source file index + 1
-	SourceOffset     int64 // Offset in source file (or ES offset for ES-based sources)
-	IsVideo          bool  // For ES-based sources: whether this is video or audio data
-	AudioSubStreamID byte  // For ES-based audio: sub-stream ID (0x80-0x87=AC3, etc.)
+	MkvOffset        int64  // Start offset in the MKV file
+	Length           int64  // Length of this region
+	Source           uint16 // 0 = delta, 1+ = source file index + 1 (supports up to 65535 files)
+	SourceOffset     int64  // Offset in source file (or ES offset for ES-based sources)
+	IsVideo          bool   // For ES-based sources: whether this is video or audio data
+	AudioSubStreamID byte   // For ES-based audio: sub-stream ID (0x80-0x87=AC3, etc.)
 }
 
 // Result contains the results of the matching process.
@@ -576,7 +576,7 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) {
 			entries = append(entries, Entry{
 				MkvOffset:        pos,
 				Length:           regionLen,
-				Source:           uint8(inRegion.fileIndex + 1),
+				Source:           uint16(inRegion.fileIndex + 1),
 				SourceOffset:     inRegion.srcOffset + offsetInRegion,
 				IsVideo:          inRegion.isVideo,
 				AudioSubStreamID: inRegion.audioSubStreamID,
