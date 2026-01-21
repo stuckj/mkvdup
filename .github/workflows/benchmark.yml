@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -41,7 +43,7 @@ jobs:
             echo "Comparing against baseline..."
             if benchstat benchmarks/baseline.txt benchmark-output.txt | tee benchstat-output.txt; then
               # Check for significant regressions
-              if ./scripts/check-benchstat.sh benchstat-output.txt; then
+              if bash scripts/check-benchstat.sh benchstat-output.txt; then
                 echo "regression=false" >> $GITHUB_OUTPUT
               else
                 echo "regression=true" >> $GITHUB_OUTPUT

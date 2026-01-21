@@ -26,7 +26,7 @@ if [ ! -f "$INPUT_FILE" ]; then
 fi
 
 # Parse benchstat output for significant regressions
-# Look for lines with "+XX.XX%" that don't have "~" (which indicates no significant change)
+# Look for lines with "+XX.XX%" that don't have "~" before "(p=" (which indicates no significant change)
 # Format: BenchmarkName  old  new  +XX.XX% (p=0.XXX n=XX)
 
 REGRESSIONS=()
@@ -38,7 +38,7 @@ while IFS= read -r line; do
     fi
 
     # Skip lines with ~ (not statistically significant)
-    if echo "$line" | grep -qE '~.*\(p='; then
+    if echo "$line" | grep -qE '~\(p='; then
         continue
     fi
 
@@ -46,8 +46,8 @@ while IFS= read -r line; do
     pct=$(echo "$line" | grep -oE '\+[0-9]+\.[0-9]+%' | head -1 | tr -d '+%')
 
     if [ -n "$pct" ]; then
-        # Compare against threshold (using bc for floating point)
-        is_regression=$(echo "$pct > $THRESHOLD" | bc -l)
+        # Compare against threshold using awk for floating point
+        is_regression=$(awk "BEGIN {print ($pct > $THRESHOLD)}")
         if [ "$is_regression" -eq 1 ]; then
             REGRESSIONS+=("$line")
         fi

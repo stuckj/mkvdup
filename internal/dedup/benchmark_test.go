@@ -159,20 +159,17 @@ func BenchmarkGetEntry_Random(b *testing.B) {
 	reader, cleanup := createBenchmarkDedupFile(b, tmpDir, numEntries)
 	defer cleanup()
 
-	// Pre-generate random indices to avoid rand overhead in benchmark
-	indices := make([]int, b.N)
+	// Use on-demand RNG to avoid memory issues with large b.N
 	rng := rand.New(rand.NewPCG(42, 0))
-	for i := range indices {
-		indices[i] = rng.IntN(numEntries)
-	}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		entry, ok := reader.getEntry(indices[i])
+		idx := rng.IntN(numEntries)
+		entry, ok := reader.getEntry(idx)
 		if !ok {
-			b.Fatalf("getEntry(%d) failed", indices[i])
+			b.Fatalf("getEntry(%d) failed", idx)
 		}
 		if entry.MkvOffset < 0 {
 			b.Fatal("unexpected negative offset")
@@ -188,19 +185,17 @@ func BenchmarkGetMkvOffset(b *testing.B) {
 	reader, cleanup := createBenchmarkDedupFile(b, tmpDir, numEntries)
 	defer cleanup()
 
-	indices := make([]int, b.N)
+	// Use on-demand RNG to avoid memory issues with large b.N
 	rng := rand.New(rand.NewPCG(42, 0))
-	for i := range indices {
-		indices[i] = rng.IntN(numEntries)
-	}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		offset, ok := reader.getMkvOffset(indices[i])
+		idx := rng.IntN(numEntries)
+		offset, ok := reader.getMkvOffset(idx)
 		if !ok {
-			b.Fatalf("getMkvOffset(%d) failed", indices[i])
+			b.Fatalf("getMkvOffset(%d) failed", idx)
 		}
 		if offset < 0 {
 			b.Fatal("unexpected negative offset")
@@ -249,25 +244,19 @@ func BenchmarkReadAt_Random(b *testing.B) {
 	buf := make([]byte, chunkSize)
 	fileSize := reader.file.Header.OriginalSize
 
-	// Pre-generate random offsets
-	offsets := make([]int64, b.N)
+	// Use on-demand RNG to avoid memory issues with large b.N
 	rng := rand.New(rand.NewPCG(42, 0))
-	maxOffset := fileSize - chunkSize
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	for i := range offsets {
-		offsets[i] = rng.Int64N(maxOffset + 1)
-	}
+	maxOffset := max(fileSize-chunkSize, 0)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.SetBytes(chunkSize)
 
 	for i := 0; i < b.N; i++ {
-		n, err := reader.ReadAt(buf, offsets[i])
+		offset := rng.Int64N(maxOffset + 1)
+		n, err := reader.ReadAt(buf, offset)
 		if err != nil && n == 0 {
-			b.Fatalf("ReadAt failed at offset %d: %v", offsets[i], err)
+			b.Fatalf("ReadAt failed at offset %d: %v", offset, err)
 		}
 	}
 }
@@ -284,22 +273,17 @@ func BenchmarkReadAt_Small(b *testing.B) {
 	buf := make([]byte, chunkSize)
 	fileSize := reader.file.Header.OriginalSize
 
-	offsets := make([]int64, b.N)
+	// Use on-demand RNG to avoid memory issues with large b.N
 	rng := rand.New(rand.NewPCG(42, 0))
-	maxOffset := fileSize - chunkSize
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	for i := range offsets {
-		offsets[i] = rng.Int64N(maxOffset + 1)
-	}
+	maxOffset := max(fileSize-chunkSize, 0)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.SetBytes(chunkSize)
 
 	for i := 0; i < b.N; i++ {
-		n, err := reader.ReadAt(buf, offsets[i])
+		offset := rng.Int64N(maxOffset + 1)
+		n, err := reader.ReadAt(buf, offset)
 		if err != nil && n == 0 {
 			b.Fatalf("ReadAt failed: %v", err)
 		}
@@ -314,36 +298,22 @@ func BenchmarkFindEntriesForRange(b *testing.B) {
 	reader, cleanup := createBenchmarkDedupFile(b, tmpDir, numEntries)
 	defer cleanup()
 
-	// Pre-generate random ranges
-	type rangeQuery struct {
-		offset int64
-		length int64
-	}
-	queries := make([]rangeQuery, b.N)
+	// Use on-demand RNG to avoid memory issues with large b.N
 	rng := rand.New(rand.NewPCG(42, 0))
 	fileSize := reader.file.Header.OriginalSize
 	const queryLen int64 = 1000
-	length := queryLen
-	if fileSize < length {
-		length = fileSize
-	}
-	maxOffset := fileSize - length
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	for i := range queries {
-		var offset int64
-		if maxOffset > 0 {
-			offset = rng.Int64N(maxOffset)
-		}
-		queries[i] = rangeQuery{offset: offset, length: length}
-	}
+	length := min(queryLen, fileSize)
+	maxOffset := max(fileSize-length, 0)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		entries := reader.findEntriesForRange(queries[i].offset, queries[i].length)
+		var offset int64
+		if maxOffset > 0 {
+			offset = rng.Int64N(maxOffset)
+		}
+		entries := reader.findEntriesForRange(offset, length)
 		if len(entries) == 0 {
 			b.Fatal("findEntriesForRange returned no entries")
 		}
