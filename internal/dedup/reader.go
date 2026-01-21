@@ -20,9 +20,12 @@ type Reader struct {
 	dedupPath   string
 	sourceDir   string
 	sourceMmaps []*mmap.File
-	esReader    ESReader  // For ES-based sources
+	esReader    ESReader  // For ES-based sources (v1 only, deprecated in v2)
 	entriesOnce sync.Once // For lazy loading entries
 	entriesErr  error     // Error from lazy loading
+
+	// Last-entry cache for O(1) sequential read lookup
+	lastEntryIdx int // Index of last accessed entry (-1 if none)
 }
 
 // ESReader interface for reading ES data from MPEG-PS sources.
@@ -69,10 +72,11 @@ func NewReaderLazy(dedupPath, sourceDir string) (*Reader, error) {
 	}
 
 	return &Reader{
-		file:      file,
-		dedupMmap: dedupMmap,
-		dedupPath: dedupPath,
-		sourceDir: sourceDir,
+		file:         file,
+		dedupMmap:    dedupMmap,
+		dedupPath:    dedupPath,
+		sourceDir:    sourceDir,
+		lastEntryIdx: -1, // No entry cached yet
 	}, nil
 }
 
@@ -283,8 +287,30 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 }
 
 func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
-	// Binary search for first entry that could contain offset
 	entries := r.file.Entries
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Fast path: check if offset is within cached entry
+	if r.lastEntryIdx >= 0 && r.lastEntryIdx < len(entries) {
+		cached := &entries[r.lastEntryIdx]
+		if offset >= cached.MkvOffset && offset < cached.MkvOffset+cached.Length {
+			// Cache hit - start from cached entry
+			var result []Entry
+			endOffset := offset + length
+			for i := r.lastEntryIdx; i < len(entries) && entries[i].MkvOffset < endOffset; i++ {
+				result = append(result, entries[i])
+			}
+			// Update cache to last entry we accessed
+			if len(result) > 0 {
+				r.lastEntryIdx = r.lastEntryIdx + len(result) - 1
+			}
+			return result
+		}
+	}
+
+	// Cache miss - binary search for first entry that could contain offset
 	idx := sort.Search(len(entries), func(i int) bool {
 		return entries[i].MkvOffset+entries[i].Length > offset
 	})
@@ -294,6 +320,12 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	for i := idx; i < len(entries) && entries[i].MkvOffset < endOffset; i++ {
 		result = append(result, entries[i])
 	}
+
+	// Update cache to last entry we accessed
+	if len(result) > 0 {
+		r.lastEntryIdx = idx + len(result) - 1
+	}
+
 	return result
 }
 
@@ -341,7 +373,11 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
+	// Support current version (2) only. V1 files with ES offsets must be recreated.
 	if file.Header.Version != Version {
+		if file.Header.Version == 1 {
+			return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
+		}
 		return nil, fmt.Errorf("unsupported version: %d", file.Header.Version)
 	}
 
@@ -489,8 +525,9 @@ func (r *Reader) calculateSourceFilesSize() int64 {
 }
 
 // Info returns a summary of the dedup file.
-func (r *Reader) Info() map[string]interface{} {
-	return map[string]interface{}{
+func (r *Reader) Info() map[string]any {
+	return map[string]any{
+		"version":           r.file.Header.Version,
 		"original_size":     r.file.Header.OriginalSize,
 		"original_checksum": r.file.Header.OriginalChecksum,
 		"source_type":       r.file.Header.SourceType,

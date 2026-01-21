@@ -119,15 +119,38 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	}
 	defer writer.Close()
 
-	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType(), index.UsesESOffsets)
+	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
-	writer.SetMatchResult(result)
 
-	if err := writer.Write(); err != nil {
+	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		// ESReaders also implement ESRangeConverter (MPEGPSParser)
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		os.Remove(outputPath) // Clean up on error
+		return fmt.Errorf("set match result: %w", err)
+	}
+
+	lastProgress = time.Time{}
+	if err := writer.WriteWithProgress(func(written, total int64) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(written) / float64(total) * 100
+			fmt.Printf("\r  Progress: %.1f%% (%d/%d bytes)", pct, written, total)
+			lastProgress = time.Now()
+		}
+	}); err != nil {
 		os.Remove(outputPath) // Clean up on error
 		return fmt.Errorf("write dedup file: %w", err)
 	}
-	fmt.Printf("  Written in %v\n", time.Since(start))
+	fmt.Printf("\r  Written in %v                              \n", time.Since(start))
 
 	// Write config file
 	configPath := outputPath + ".yaml"
@@ -288,6 +311,7 @@ func showInfo(dedupPath string) error {
 
 	fmt.Printf("Dedup file: %s\n", dedupPath)
 	fmt.Println()
+	fmt.Printf("Format version:     %d\n", info["version"].(uint32))
 	fmt.Printf("Original MKV size:  %d bytes (%.2f MB)\n",
 		info["original_size"].(int64),
 		float64(info["original_size"].(int64))/(1024*1024))

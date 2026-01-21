@@ -130,6 +130,17 @@ All file access uses true zero-copy memory mapping via `unix.Mmap` from `golang.
 - First read: parses entries via `sync.Once`
 - Subsequent reads: instant
 
+### File Format Version 2 (Raw Offsets)
+- **v1 (deprecated)**: Stored ES (elementary stream) offsets for DVD sources, requiring O(log N) binary search translation during each read
+- **v2 (current)**: Stores raw file offsets directly, eliminating translation overhead
+- Entries that span multiple PES payload ranges are split during create
+- Trade-off: ~10-30% more entries, but significantly faster reads
+
+### Last-Entry Caching
+- Caches the last accessed entry index
+- Sequential reads (video playback) hit cache for O(1) lookup
+- Random seeks fall back to O(log N) binary search
+
 ## Performance Results
 
 *Results from Big Buck Bunny test data (see [testdata/README.md](testdata/README.md) and #27 for reproducible test setup).*
