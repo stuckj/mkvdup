@@ -23,15 +23,15 @@ func createTestDedupFile(t *testing.T, tmpDir string, numEntries int) string {
 	defer f.Close()
 
 	// Write header
-	f.Write([]byte(Magic))                                      // Magic (8 bytes)
-	binary.Write(f, binary.LittleEndian, uint32(Version))       // Version (4 bytes)
-	binary.Write(f, binary.LittleEndian, uint32(0))             // Flags (4 bytes)
-	binary.Write(f, binary.LittleEndian, int64(1000000))        // OriginalSize (8 bytes)
-	binary.Write(f, binary.LittleEndian, uint64(0x1234567890))  // OriginalChecksum (8 bytes)
-	binary.Write(f, binary.LittleEndian, uint8(SourceTypeDVD))  // SourceType (1 byte)
-	binary.Write(f, binary.LittleEndian, uint8(0))              // UsesESOffsets (1 byte)
-	binary.Write(f, binary.LittleEndian, uint16(1))             // SourceFileCount (2 bytes)
-	binary.Write(f, binary.LittleEndian, uint64(numEntries))    // EntryCount (8 bytes)
+	f.Write([]byte(Magic))                                     // Magic (8 bytes)
+	binary.Write(f, binary.LittleEndian, uint32(Version))      // Version (4 bytes)
+	binary.Write(f, binary.LittleEndian, uint32(0))            // Flags (4 bytes)
+	binary.Write(f, binary.LittleEndian, int64(1000000))       // OriginalSize (8 bytes)
+	binary.Write(f, binary.LittleEndian, uint64(0x1234567890)) // OriginalChecksum (8 bytes)
+	binary.Write(f, binary.LittleEndian, uint8(SourceTypeDVD)) // SourceType (1 byte)
+	binary.Write(f, binary.LittleEndian, uint8(0))             // UsesESOffsets (1 byte)
+	binary.Write(f, binary.LittleEndian, uint16(1))            // SourceFileCount (2 bytes)
+	binary.Write(f, binary.LittleEndian, uint64(numEntries))   // EntryCount (8 bytes)
 
 	// Calculate delta offset after header + source files + entries
 	sourceFilePath := "test/source.vob"
