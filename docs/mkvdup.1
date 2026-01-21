@@ -229,6 +229,23 @@ Dedup files containing the index and delta data
 .TP
 .I *.mkvdup.yaml
 Config files for mounting dedup files
+.SH FILE FORMAT
+The .mkvdup file format is versioned. The current version is 2.
+.PP
+.B Version 2 (current):
+Stores raw file offsets for all source references. This provides faster
+FUSE read performance by eliminating offset translation overhead.
+.PP
+.B Version 1 (deprecated):
+Used elementary stream (ES) offsets for DVD sources, requiring translation
+during reads. Version 1 files are no longer supported and must be recreated
+using the
+.B create
+command.
+.PP
+Use
+.B mkvdup info
+to check the format version of a dedup file.
 .SH SEE ALSO
 .BR fusermount (1),
 .BR ffmpeg (1),

@@ -9,7 +9,7 @@ import (
 // File format constants
 const (
 	Magic   = "MKVDUP01"
-	Version = 1
+	Version = 2 // v2: raw offsets instead of ES offsets
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes

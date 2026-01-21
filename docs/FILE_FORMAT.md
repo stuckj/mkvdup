@@ -8,6 +8,13 @@
 
 The `.mkvdup` file is a single binary file containing both the index and delta data needed to reconstruct an MKV file from its source media.
 
+## Version History
+
+| Version | Description |
+|---------|-------------|
+| 2 (current) | Raw file offsets stored directly. UsesESOffsets is always 0. |
+| 1 (deprecated) | Used ES (elementary stream) offsets for DVD sources. No longer supported; files must be recreated. |
+
 ## Design Principles
 
 1. **No repeated strings**: Filenames stored once, referenced by index
@@ -27,7 +34,7 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 │  OriginalSize: int64 (8 bytes)                         │
 │  OriginalChecksum: uint64 (8 bytes)                    │
 │  SourceType: uint8 (1 byte)  [0=DVD, 1=Blu-ray]        │
-│  UsesESOffsets: uint8 (1 byte)  [1=ES offsets mode]    │
+│  UsesESOffsets: uint8 (1 byte)  [always 0 in v2]       │
 │  SourceFileCount: uint16 (2 bytes)                     │
 │  EntryCount: uint64 (8 bytes)                          │
 │  DeltaOffset: int64 (8 bytes)                          │
@@ -77,6 +84,10 @@ For index entries:
 - `Source = 1`: Data is in source file 0 at `SourceOffset`
 - `Source = 2`: Data is in source file 1 at `SourceOffset`
 - etc.
+
+In version 2, `SourceOffset` is always a raw byte offset into the source file.
+Entries that would span multiple non-contiguous regions in the source file
+(due to container header removal) are split into multiple entries during creation.
 
 ## Storage Efficiency
 

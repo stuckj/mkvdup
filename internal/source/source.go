@@ -197,6 +197,18 @@ type Location struct {
 	AudioSubStreamID byte   // For audio in MPEG-PS: sub-stream ID (0x80-0x87 = AC3, etc.)
 }
 
+// ESRangeConverter provides an interface for converting ES offsets to raw file offsets.
+// This is used during dedup file creation to convert ES-based entries to raw-offset entries.
+type ESRangeConverter interface {
+	// RawRangesForESRegion returns the raw file ranges that contain the given ES region.
+	// Each returned range represents a contiguous chunk of raw file data.
+	// The sum of all returned range sizes equals the requested ES region size.
+	// For video streams only - audio should use RawRangesForAudioSubStream.
+	RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error)
+	// RawRangesForAudioSubStream returns the raw file ranges for audio data from a specific sub-stream.
+	RawRangesForAudioSubStream(subStreamID byte, esOffset int64, size int) ([]RawRange, error)
+}
+
 // ESReader provides an interface for reading elementary stream data from container files.
 type ESReader interface {
 	// ReadESData reads size bytes of ES data starting at esOffset.

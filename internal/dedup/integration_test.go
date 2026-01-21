@@ -102,9 +102,23 @@ func TestFullDedupCycle(t *testing.T) {
 	}
 	defer writer.Close()
 
-	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType(), index.UsesESOffsets)
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
-	writer.SetMatchResult(result)
+
+	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		t.Fatalf("Failed to set match result: %v", err)
+	}
 
 	if err := writer.Write(); err != nil {
 		t.Fatalf("Failed to write dedup file: %v", err)

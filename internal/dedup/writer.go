@@ -13,12 +13,11 @@ import (
 
 // Writer creates .mkvdup files.
 type Writer struct {
-	file          *os.File
-	header        Header
-	sourceFiles   []SourceFile
-	entries       []Entry
-	deltaData     []byte
-	usesESOffsets bool
+	file        *os.File
+	header      Header
+	sourceFiles []SourceFile
+	entries     []Entry
+	deltaData   []byte
 }
 
 // NewWriter creates a new dedup file writer.
@@ -31,18 +30,14 @@ func NewWriter(path string) (*Writer, error) {
 }
 
 // SetHeader sets the header information.
-func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceType source.Type, usesESOffsets bool) {
+// In v2, UsesESOffsets is always 0 (raw offsets are stored instead).
+func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceType source.Type) {
 	copy(w.header.Magic[:], Magic)
 	w.header.Version = Version
 	w.header.Flags = 0
 	w.header.OriginalSize = originalSize
 	w.header.OriginalChecksum = originalChecksum
-	w.usesESOffsets = usesESOffsets
-	if usesESOffsets {
-		w.header.UsesESOffsets = 1
-	} else {
-		w.header.UsesESOffsets = 0
-	}
+	w.header.UsesESOffsets = 0 // v2 always uses raw offsets
 
 	switch sourceType {
 	case source.TypeDVD:
@@ -62,14 +57,80 @@ func (w *Writer) SetSourceFiles(files []source.File) {
 }
 
 // SetMatchResult sets the match result (entries and delta).
-func (w *Writer) SetMatchResult(result *matcher.Result) {
-	w.entries = make([]Entry, len(result.Entries))
+// If esConverters is provided and non-empty, ES-offset entries will be converted
+// to raw-offset entries, potentially splitting entries that span multiple ranges.
+func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ESRangeConverter) error {
+	// Convert matcher entries to dedup entries
+	entries := make([]Entry, len(result.Entries))
 	for i, e := range result.Entries {
-		w.entries[i] = FromMatcherEntry(e)
+		entries[i] = FromMatcherEntry(e)
 	}
+
+	// Convert ES offsets to raw offsets if we have converters
+	if len(esConverters) > 0 {
+		var err error
+		entries, err = w.convertESToRawOffsets(entries, esConverters)
+		if err != nil {
+			return fmt.Errorf("convert ES to raw offsets: %w", err)
+		}
+	}
+
+	w.entries = entries
 	w.deltaData = result.DeltaData
-	w.header.EntryCount = uint64(len(result.Entries))
+	w.header.EntryCount = uint64(len(w.entries))
 	w.header.DeltaSize = int64(len(result.DeltaData))
+	return nil
+}
+
+// convertESToRawOffsets converts ES-offset entries to raw-offset entries.
+// Entries that span multiple PES payload ranges are split into multiple entries.
+func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ESRangeConverter) ([]Entry, error) {
+	var result []Entry
+
+	for _, entry := range entries {
+		if entry.Source == 0 {
+			// Delta entry - no conversion needed
+			result = append(result, entry)
+			continue
+		}
+
+		// Get the ES converter for this source file
+		fileIndex := int(entry.Source - 1)
+		if fileIndex >= len(esConverters) || esConverters[fileIndex] == nil {
+			// No converter available - assume raw offsets already
+			result = append(result, entry)
+			continue
+		}
+		converter := esConverters[fileIndex]
+
+		// Get raw ranges for this ES region
+		var rawRanges []source.RawRange
+		var err error
+		if entry.IsVideo {
+			rawRanges, err = converter.RawRangesForESRegion(entry.SourceOffset, int(entry.Length), true)
+		} else {
+			rawRanges, err = converter.RawRangesForAudioSubStream(entry.AudioSubStreamID, entry.SourceOffset, int(entry.Length))
+		}
+		if err != nil {
+			return nil, fmt.Errorf("convert entry at MKV offset %d: %w", entry.MkvOffset, err)
+		}
+
+		// Create one entry per raw range
+		mkvOffset := entry.MkvOffset
+		for _, rr := range rawRanges {
+			result = append(result, Entry{
+				MkvOffset:        mkvOffset,
+				Length:           int64(rr.Size),
+				Source:           entry.Source,
+				SourceOffset:     rr.FileOffset, // Raw file offset!
+				IsVideo:          entry.IsVideo,
+				AudioSubStreamID: entry.AudioSubStreamID,
+			})
+			mkvOffset += int64(rr.Size)
+		}
+	}
+
+	return result, nil
 }
 
 // Write writes the dedup file.

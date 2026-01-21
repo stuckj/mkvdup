@@ -634,6 +634,107 @@ const (
 	UserDataStartCode = 0xB2 // This gets stripped by MKV tools
 )
 
+// RawRange represents a contiguous chunk of raw file data corresponding to
+// part of an ES region. Used for converting ES offsets to raw file offsets.
+type RawRange struct {
+	FileOffset int64 // Offset in the raw file
+	Size       int   // Size of this chunk
+}
+
+// RawRangesForESRegion returns the raw file ranges that contain the given ES region.
+// Each returned range represents a contiguous chunk of raw file data.
+// The sum of all returned range sizes equals the requested ES region size.
+// For video streams only - audio should use RawRangesForAudioSubStream.
+func (p *MPEGPSParser) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) {
+	if !isVideo {
+		return nil, fmt.Errorf("audio uses per-sub-stream methods, use RawRangesForAudioSubStream")
+	}
+
+	var ranges []PESPayloadRange
+	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
+		ranges = p.filteredVideoRanges
+	} else {
+		ranges = p.videoRanges
+	}
+
+	return p.rawRangesFromPESRanges(ranges, esOffset, size)
+}
+
+// RawRangesForAudioSubStream returns the raw file ranges for audio data from a specific sub-stream.
+func (p *MPEGPSParser) RawRangesForAudioSubStream(subStreamID byte, esOffset int64, size int) ([]RawRange, error) {
+	ranges, ok := p.filteredAudioBySubStream[subStreamID]
+	if !ok {
+		return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
+	}
+	return p.rawRangesFromPESRanges(ranges, esOffset, size)
+}
+
+// rawRangesFromPESRanges enumerates raw file ranges for a given ES region.
+func (p *MPEGPSParser) rawRangesFromPESRanges(ranges []PESPayloadRange, esOffset int64, size int) ([]RawRange, error) {
+	if len(ranges) == 0 {
+		return nil, fmt.Errorf("no ranges available")
+	}
+
+	// Use binary search to find starting range
+	rangeIdx := p.binarySearchRanges(ranges, esOffset)
+	if rangeIdx < 0 {
+		// Maybe esOffset is before the first range, try linear from start
+		rangeIdx = 0
+		for rangeIdx < len(ranges) && esOffset >= ranges[rangeIdx].ESOffset+int64(ranges[rangeIdx].Size) {
+			rangeIdx++
+		}
+	}
+
+	if rangeIdx >= len(ranges) {
+		return nil, fmt.Errorf("ES offset %d not found in ranges", esOffset)
+	}
+
+	r := ranges[rangeIdx]
+	if esOffset < r.ESOffset || esOffset >= r.ESOffset+int64(r.Size) {
+		return nil, fmt.Errorf("ES offset %d not in range [%d, %d)", esOffset, r.ESOffset, r.ESOffset+int64(r.Size))
+	}
+
+	// Collect raw ranges
+	var result []RawRange
+	remaining := size
+
+	for remaining > 0 && rangeIdx < len(ranges) {
+		r := ranges[rangeIdx]
+
+		if esOffset < r.ESOffset {
+			break
+		}
+
+		if esOffset >= r.ESOffset+int64(r.Size) {
+			rangeIdx++
+			continue
+		}
+
+		offsetInPayload := esOffset - r.ESOffset
+		availableInRange := int64(r.Size) - offsetInPayload
+		toTake := remaining
+		if int64(toTake) > availableInRange {
+			toTake = int(availableInRange)
+		}
+
+		fileOffset := r.FileOffset + offsetInPayload
+		result = append(result, RawRange{
+			FileOffset: fileOffset,
+			Size:       toTake,
+		})
+
+		esOffset += int64(toTake)
+		remaining -= toTake
+		rangeIdx++
+	}
+
+	if remaining > 0 {
+		return nil, fmt.Errorf("could not map entire ES region: %d bytes remaining", remaining)
+	}
+
+	return result, nil
+}
+
 // ReadESData reads elementary stream data at the given ES offset.
 // For video, returns FILTERED ES data (excludes user_data sections).
 // For audio, returns error - use ReadAudioSubStreamData instead.
