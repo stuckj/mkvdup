@@ -133,32 +133,45 @@ func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ES
 	return result, nil
 }
 
+// WriteProgressFunc is called to report write progress.
+type WriteProgressFunc func(written, total int64)
+
 // Write writes the dedup file.
 func (w *Writer) Write() error {
-	// Calculate offsets
+	return w.WriteWithProgress(nil)
+}
+
+// WriteWithProgress writes the dedup file with progress reporting.
+func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
+	// Calculate offsets and total size
 	sourceFilesSize := w.calculateSourceFilesSize()
 	indexSize := int64(len(w.entries)) * EntrySize
 	deltaOffset := int64(HeaderSize) + sourceFilesSize + indexSize
 	w.header.DeltaOffset = deltaOffset
 
+	totalSize := deltaOffset + w.header.DeltaSize + FooterSize
+	var written int64
+
 	// Write header
 	if err := w.writeHeader(); err != nil {
 		return fmt.Errorf("write header: %w", err)
 	}
+	written += HeaderSize
 
 	// Write source files section
 	if err := w.writeSourceFiles(); err != nil {
 		return fmt.Errorf("write source files: %w", err)
 	}
+	written += sourceFilesSize
 
 	// Write index entries and calculate checksum
-	indexChecksum, err := w.writeEntries()
+	indexChecksum, err := w.writeEntriesWithProgress(progress, &written, totalSize)
 	if err != nil {
 		return fmt.Errorf("write entries: %w", err)
 	}
 
 	// Write delta data and calculate checksum
-	deltaChecksum, err := w.writeDelta()
+	deltaChecksum, err := w.writeDeltaWithProgress(progress, &written, totalSize)
 	if err != nil {
 		return fmt.Errorf("write delta: %w", err)
 	}
@@ -166,6 +179,10 @@ func (w *Writer) Write() error {
 	// Write footer
 	if err := w.writeFooter(indexChecksum, deltaChecksum); err != nil {
 		return fmt.Errorf("write footer: %w", err)
+	}
+
+	if progress != nil {
+		progress(totalSize, totalSize)
 	}
 
 	return nil
@@ -273,11 +290,14 @@ func (w *Writer) writeSourceFiles() error {
 	return nil
 }
 
-func (w *Writer) writeEntries() (uint64, error) {
+func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) {
 	hasher := xxhash.New()
 	writer := io.MultiWriter(w.file, hasher)
 
-	for _, entry := range w.entries {
+	entryCount := len(w.entries)
+	lastProgress := 0
+
+	for i, entry := range w.entries {
 		// MkvOffset (8)
 		if err := binary.Write(writer, binary.LittleEndian, entry.MkvOffset); err != nil {
 			return 0, err
@@ -312,17 +332,58 @@ func (w *Writer) writeEntries() (uint64, error) {
 		if err := binary.Write(writer, binary.LittleEndian, entry.AudioSubStreamID); err != nil {
 			return 0, err
 		}
+
+		*written += EntrySize
+
+		// Report progress every 1% or 10000 entries
+		if progress != nil && entryCount > 0 {
+			pct := (i + 1) * 100 / entryCount
+			if pct > lastProgress || (i+1)%10000 == 0 {
+				progress(*written, total)
+				lastProgress = pct
+			}
+		}
 	}
 
 	return hasher.Sum64(), nil
 }
 
-func (w *Writer) writeDelta() (uint64, error) {
-	checksum := xxhash.Sum64(w.deltaData)
-	if _, err := w.file.Write(w.deltaData); err != nil {
-		return 0, err
+func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) {
+	hasher := xxhash.New()
+
+	// Write delta in chunks to report progress
+	const chunkSize = 64 * 1024 // 64KB chunks
+	data := w.deltaData
+	lastProgress := 0
+
+	for len(data) > 0 {
+		chunk := data
+		if len(chunk) > chunkSize {
+			chunk = data[:chunkSize]
+		}
+		data = data[len(chunk):]
+
+		// Write to file
+		if _, err := w.file.Write(chunk); err != nil {
+			return 0, err
+		}
+
+		// Update hash
+		hasher.Write(chunk)
+
+		*written += int64(len(chunk))
+
+		// Report progress every chunk
+		if progress != nil && w.header.DeltaSize > 0 {
+			pct := int((*written * 100) / total)
+			if pct > lastProgress {
+				progress(*written, total)
+				lastProgress = pct
+			}
+		}
 	}
-	return checksum, nil
+
+	return hasher.Sum64(), nil
 }
 
 func (w *Writer) writeFooter(indexChecksum, deltaChecksum uint64) error {

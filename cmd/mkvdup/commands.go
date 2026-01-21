@@ -139,11 +139,18 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 		return fmt.Errorf("set match result: %w", err)
 	}
 
-	if err := writer.Write(); err != nil {
+	lastProgress = time.Time{}
+	if err := writer.WriteWithProgress(func(written, total int64) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(written) / float64(total) * 100
+			fmt.Printf("\r  Progress: %.1f%% (%d/%d bytes)", pct, written, total)
+			lastProgress = time.Now()
+		}
+	}); err != nil {
 		os.Remove(outputPath) // Clean up on error
 		return fmt.Errorf("write dedup file: %w", err)
 	}
-	fmt.Printf("  Written in %v\n", time.Since(start))
+	fmt.Printf("\r  Written in %v                              \n", time.Since(start))
 
 	// Write config file
 	configPath := outputPath + ".yaml"
