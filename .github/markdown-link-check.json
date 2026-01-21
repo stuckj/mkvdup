@@ -2,9 +2,6 @@
   "ignorePatterns": [
     {
       "pattern": "^#"
-    },
-    {
-      "pattern": "^https://stuckj\\.github\\.io/mkvdup/benchmarks"
     }
   ],
   "replacementPatterns": [],

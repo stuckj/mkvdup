@@ -100,6 +100,7 @@ mkvdup info video.mkvdup
 - [docs/FUSE.md](docs/FUSE.md) - FUSE filesystem configuration
 - [docs/CLI.md](docs/CLI.md) - Command-line interface reference
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Development guidelines
+- [Performance Benchmarks](https://stuckj.github.io/mkvdup/benchmarks/) - Historical performance tracking
 
 ## License
 
