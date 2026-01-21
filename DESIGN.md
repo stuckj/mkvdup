@@ -134,13 +134,14 @@ All file access uses true zero-copy memory mapping via `unix.Mmap` from `golang.
 
 ### Entry Access Optimization
 - Entries accessed directly from mmap'd file (no allocation)
-- `RawEntry` packed struct (27 bytes) matches on-disk format exactly
+- `RawEntry` packed struct (28 bytes) matches on-disk format exactly
 - Uses byte arrays with explicit little-endian decoding for portability
 - Single-entry cache eliminates repeated parsing for sequential access
 
-### File Format Version 2 (Raw Offsets)
-- **v1 (deprecated)**: Stored ES (elementary stream) offsets for DVD sources, requiring O(log N) binary search translation during each read
-- **v2 (current)**: Stores raw file offsets directly, eliminating translation overhead
+### File Format Version 3 (Current)
+- **v1 (deprecated)**: Stored ES (elementary stream) offsets for DVD sources
+- **v2 (deprecated)**: Used uint8 for Source field (max 256 files)
+- **v3 (current)**: Uses uint16 for Source field (max 65535 files), raw file offsets
 - Entries that span multiple PES payload ranges are split during create
 - Trade-off: ~10-30% more entries, but significantly faster reads
 

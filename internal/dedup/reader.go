@@ -372,7 +372,7 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	r.cacheMu.Unlock()
 
 	// Cache miss - binary search for first entry that could contain offset
-	// Use getMkvOffset + getEntryLength for efficiency (reads 16 bytes, not 27)
+	// Use getMkvOffset + getEntryLength for efficiency (reads 16 bytes, not 28)
 	idx := sort.Search(r.entryCount, func(i int) bool {
 		mkvOffset, ok := r.getMkvOffset(i)
 		if !ok {
@@ -596,7 +596,6 @@ func (r *Reader) calculateSourceFilesSize() int64 {
 	return size
 }
 
-// Info returns a summary of the dedup file.
 // Info returns a summary of the dedup file.
 // If entry access initialization failed, the "error" key will contain the error message
 // and "entry_count" will be 0.
