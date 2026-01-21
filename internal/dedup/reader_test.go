@@ -474,3 +474,484 @@ func TestEntryCount(t *testing.T) {
 		t.Errorf("EntryCount() = %d, want 25", count)
 	}
 }
+
+func TestNewReader_FileNotFound(t *testing.T) {
+	_, err := NewReader("/nonexistent/path/file.mkvdup", "/tmp")
+	if err == nil {
+		t.Error("NewReader should fail for nonexistent file")
+	}
+}
+
+func TestNewReaderLazy_FileNotFound(t *testing.T) {
+	_, err := NewReaderLazy("/nonexistent/path/file.mkvdup", "/tmp")
+	if err == nil {
+		t.Error("NewReaderLazy should fail for nonexistent file")
+	}
+}
+
+func TestNewReader_InvalidMagic(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := filepath.Join(tmpDir, "bad.mkvdup")
+
+	// Write file with invalid magic
+	f, err := os.Create(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	f.Write([]byte("BADMAGIC")) // Wrong magic
+	f.Close()
+
+	_, err = NewReader(dedupPath, tmpDir)
+	if err == nil {
+		t.Error("NewReader should fail for invalid magic")
+	}
+}
+
+func TestNewReader_InvalidVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := filepath.Join(tmpDir, "bad.mkvdup")
+
+	f, err := os.Create(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Write valid magic but unsupported version
+	f.Write([]byte(Magic))
+	binary.Write(f, binary.LittleEndian, uint32(99)) // Unsupported version
+	f.Close()
+
+	_, err = NewReader(dedupPath, tmpDir)
+	if err == nil {
+		t.Error("NewReader should fail for unsupported version")
+	}
+}
+
+func TestNewReader_Version1Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := filepath.Join(tmpDir, "v1.mkvdup")
+
+	f, err := os.Create(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Write valid magic but version 1
+	f.Write([]byte(Magic))
+	binary.Write(f, binary.LittleEndian, uint32(1)) // Version 1
+	f.Close()
+
+	_, err = NewReader(dedupPath, tmpDir)
+	if err == nil {
+		t.Error("NewReader should fail for version 1")
+	}
+	// Check error message suggests recreating
+	if err != nil && !contains(err.Error(), "recreate") {
+		t.Errorf("Error should suggest recreating: %v", err)
+	}
+}
+
+func TestNewReader_Version2Error(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := filepath.Join(tmpDir, "v2.mkvdup")
+
+	f, err := os.Create(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Write valid magic but version 2
+	f.Write([]byte(Magic))
+	binary.Write(f, binary.LittleEndian, uint32(2)) // Version 2
+	f.Close()
+
+	_, err = NewReader(dedupPath, tmpDir)
+	if err == nil {
+		t.Error("NewReader should fail for version 2")
+	}
+}
+
+func TestNewReader_TruncatedHeader(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := filepath.Join(tmpDir, "truncated.mkvdup")
+
+	f, err := os.Create(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Write only partial header
+	f.Write([]byte(Magic))
+	binary.Write(f, binary.LittleEndian, uint32(Version))
+	// Missing rest of header
+	f.Close()
+
+	_, err = NewReader(dedupPath, tmpDir)
+	if err == nil {
+		t.Error("NewReader should fail for truncated header")
+	}
+}
+
+func TestLoadSourceFiles_MissingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Try to load source files that don't exist
+	err = reader.LoadSourceFiles()
+	if err == nil {
+		t.Error("LoadSourceFiles should fail when source files don't exist")
+	}
+}
+
+func TestReadAt_BeyondFileEnd(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Try to read beyond file end
+	buf := make([]byte, 100)
+	n, err := reader.ReadAt(buf, reader.OriginalSize()+1000)
+	if err == nil {
+		t.Error("ReadAt should return error when reading beyond file end")
+	}
+	if n != 0 {
+		t.Errorf("ReadAt should return 0 bytes, got %d", n)
+	}
+}
+
+func TestReadAt_AtExactEnd(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Try to read at exact end of file
+	buf := make([]byte, 100)
+	_, err = reader.ReadAt(buf, reader.OriginalSize())
+	if err == nil {
+		t.Error("ReadAt should return EOF when reading at exact file end")
+	}
+}
+
+func TestReadAt_EmptyBuffer(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Read with empty buffer
+	buf := make([]byte, 0)
+	n, err := reader.ReadAt(buf, 0)
+	if err != nil {
+		t.Errorf("ReadAt with empty buffer should not error: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("ReadAt with empty buffer should return 0, got %d", n)
+	}
+}
+
+func TestVerifyIntegrity_ValidFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 10)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Verify integrity should pass for valid file
+	if err := reader.VerifyIntegrity(); err != nil {
+		t.Errorf("VerifyIntegrity failed for valid file: %v", err)
+	}
+}
+
+func TestVerifyIntegrity_CorruptedIndex(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 10)
+
+	// Corrupt the index section
+	f, err := os.OpenFile(dedupPath, os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+
+	// Corrupt a byte in the index section (after header and source files)
+	// Header is 56 bytes, source file section is ~30 bytes, so corrupt around offset 100
+	_, err = f.Seek(100, 0)
+	if err != nil {
+		t.Fatalf("Failed to seek: %v", err)
+	}
+	f.Write([]byte{0xFF, 0xFF, 0xFF, 0xFF}) // Corrupt 4 bytes
+	f.Close()
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Verify integrity should fail
+	err = reader.VerifyIntegrity()
+	if err == nil {
+		t.Error("VerifyIntegrity should fail for corrupted index")
+	}
+}
+
+func TestVerifyIntegrity_InvalidFooterMagic(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	// Get file size and corrupt footer magic
+	stat, err := os.Stat(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to stat file: %v", err)
+	}
+
+	f, err := os.OpenFile(dedupPath, os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+
+	// Footer magic is at the very end (last 8 bytes)
+	_, err = f.Seek(stat.Size()-8, 0)
+	if err != nil {
+		t.Fatalf("Failed to seek: %v", err)
+	}
+	f.Write([]byte("BADMAGIC"))
+	f.Close()
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	err = reader.VerifyIntegrity()
+	if err == nil {
+		t.Error("VerifyIntegrity should fail for invalid footer magic")
+	}
+}
+
+func TestOriginalSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	if size := reader.OriginalSize(); size != 1000000 {
+		t.Errorf("OriginalSize() = %d, want 1000000", size)
+	}
+}
+
+func TestOriginalChecksum(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	if checksum := reader.OriginalChecksum(); checksum != 0x1234567890 {
+		t.Errorf("OriginalChecksum() = 0x%x, want 0x1234567890", checksum)
+	}
+}
+
+func TestSourceFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	files := reader.SourceFiles()
+	if len(files) != 1 {
+		t.Fatalf("SourceFiles() len = %d, want 1", len(files))
+	}
+	if files[0].RelativePath != "test/source.vob" {
+		t.Errorf("SourceFiles()[0].RelativePath = %q, want %q", files[0].RelativePath, "test/source.vob")
+	}
+}
+
+func TestUsesESOffsets(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Test file has UsesESOffsets = false
+	if reader.UsesESOffsets() {
+		t.Error("UsesESOffsets() = true, want false")
+	}
+}
+
+func TestInfo(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 10)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	info := reader.Info()
+
+	// Verify key fields exist and have expected values
+	if info["version"].(uint32) != Version {
+		t.Errorf("info[version] = %v, want %v", info["version"], Version)
+	}
+	if info["original_size"].(int64) != 1000000 {
+		t.Errorf("info[original_size] = %v, want 1000000", info["original_size"])
+	}
+	if info["entry_count"].(int) != 10 {
+		t.Errorf("info[entry_count] = %v, want 10", info["entry_count"])
+	}
+	if info["source_file_count"].(int) != 1 {
+		t.Errorf("info[source_file_count] = %v, want 1", info["source_file_count"])
+	}
+}
+
+// createTestDedupFileZeroEntries creates a valid dedup file with zero entries
+func createTestDedupFileZeroEntries(t *testing.T, tmpDir string) string {
+	t.Helper()
+
+	dedupPath := filepath.Join(tmpDir, "zero.mkvdup")
+	f, err := os.Create(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	defer f.Close()
+
+	// Write header with zero entries
+	f.Write([]byte(Magic))
+	binary.Write(f, binary.LittleEndian, uint32(Version))
+	binary.Write(f, binary.LittleEndian, uint32(0))            // Flags
+	binary.Write(f, binary.LittleEndian, int64(0))             // OriginalSize
+	binary.Write(f, binary.LittleEndian, uint64(0))            // OriginalChecksum
+	binary.Write(f, binary.LittleEndian, uint8(SourceTypeDVD)) // SourceType
+	binary.Write(f, binary.LittleEndian, uint8(0))             // UsesESOffsets
+	binary.Write(f, binary.LittleEndian, uint16(0))            // SourceFileCount (0)
+	binary.Write(f, binary.LittleEndian, uint64(0))            // EntryCount (0)
+
+	// Delta offset and size (right after header since no source files or entries)
+	deltaOffset := int64(HeaderSize)
+	deltaSize := int64(0)
+	binary.Write(f, binary.LittleEndian, deltaOffset)
+	binary.Write(f, binary.LittleEndian, deltaSize)
+
+	// Write footer (no index to checksum, no delta to checksum)
+	binary.Write(f, binary.LittleEndian, uint64(0xef46db3751d8e999)) // xxhash of empty
+	binary.Write(f, binary.LittleEndian, uint64(0xef46db3751d8e999)) // xxhash of empty
+	f.Write([]byte(Magic))
+
+	return dedupPath
+}
+
+func TestZeroEntries(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFileZeroEntries(t, tmpDir)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	if count := reader.EntryCount(); count != 0 {
+		t.Errorf("EntryCount() = %d, want 0", count)
+	}
+
+	// Reading from empty file should return EOF
+	buf := make([]byte, 100)
+	_, err = reader.ReadAt(buf, 0)
+	if err == nil {
+		t.Error("ReadAt should return error for empty file")
+	}
+}
+
+func TestFindEntriesForRange_EmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFileZeroEntries(t, tmpDir)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// findEntriesForRange should return nil for empty file
+	entries := reader.findEntriesForRange(0, 100)
+	if len(entries) != 0 {
+		t.Errorf("findEntriesForRange returned %d entries, want 0", len(entries))
+	}
+}
+
+func TestClose_Idempotent(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+
+	// Close multiple times should not panic
+	if err := reader.Close(); err != nil {
+		t.Errorf("First Close() failed: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Errorf("Second Close() failed: %v", err)
+	}
+}
+
+func TestSetESReader(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 5)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// SetESReader should not panic with nil
+	reader.SetESReader(nil)
+
+	// Reader's esReader should be nil
+	if reader.esReader != nil {
+		t.Error("esReader should be nil after SetESReader(nil)")
+	}
+}
