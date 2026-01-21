@@ -2,6 +2,8 @@
 package dedup
 
 import (
+	"encoding/binary"
+
 	"github.com/stuckj/mkvdup/internal/matcher"
 	"github.com/stuckj/mkvdup/internal/source"
 )
@@ -59,6 +61,30 @@ type Entry struct {
 	AudioSubStreamID byte  // For ES-based audio sub-streams
 }
 
+// RawEntry matches the 27-byte on-disk entry format exactly.
+// Uses byte arrays for int64 fields to handle unaligned access portably.
+// This enables direct memory-mapped access without parsing into []Entry.
+type RawEntry struct {
+	MkvOffset        [8]byte // int64, little-endian
+	Length           [8]byte // int64, little-endian
+	Source           uint8
+	SourceOffset     [8]byte // int64, little-endian (unaligned at byte 17)
+	ESFlags          uint8   // bit 0 = IsVideo
+	AudioSubStreamID uint8
+}
+
+// ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
+func (r *RawEntry) ToEntry() Entry {
+	return Entry{
+		MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
+		Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
+		Source:           r.Source,
+		SourceOffset:     int64(binary.LittleEndian.Uint64(r.SourceOffset[:])),
+		IsVideo:          r.ESFlags&1 == 1,
+		AudioSubStreamID: r.AudioSubStreamID,
+	}
+}
+
 // Footer represents the footer at the end of a .mkvdup file.
 type Footer struct {
 	IndexChecksum uint64  // xxhash of index section
@@ -67,10 +93,11 @@ type Footer struct {
 }
 
 // File represents a complete dedup file structure for reconstruction.
+// Note: Entries are accessed directly from mmap via Reader.getEntry(),
+// not stored in this struct, to avoid large memory allocation.
 type File struct {
 	Header        Header
 	SourceFiles   []SourceFile
-	Entries       []Entry
 	DeltaOffset   int64 // Offset to delta section in file
 	UsesESOffsets bool
 }

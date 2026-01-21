@@ -1,7 +1,6 @@
 package dedup
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -21,11 +20,17 @@ type Reader struct {
 	sourceDir   string
 	sourceMmaps []*mmap.File
 	esReader    ESReader  // For ES-based sources (v1 only, deprecated in v2)
-	entriesOnce sync.Once // For lazy loading entries
-	entriesErr  error     // Error from lazy loading
+	entriesOnce sync.Once // For lazy entry access initialization
+	entriesErr  error     // Error from entry access initialization
+
+	// Direct mmap access to entries (no []Entry allocation)
+	indexStart int64 // Byte offset where entries begin in file
+	entryCount int   // Number of entries
 
 	// Last-entry cache for O(1) sequential read lookup
-	lastEntryIdx int // Index of last accessed entry (-1 if none)
+	lastEntryIdx   int   // Index of last accessed entry (-1 if none)
+	lastEntry      Entry // The cached parsed entry
+	lastEntryValid bool  // Whether lastEntry is valid
 }
 
 // ESReader interface for reading ES data from MPEG-PS sources.
@@ -34,18 +39,18 @@ type ESReader interface {
 	ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
 }
 
-// NewReader opens a dedup file for reading with all entries loaded immediately.
-// Use NewReaderLazy for faster initialization when entries can be loaded on first access.
+// NewReader opens a dedup file for reading with entry access initialized immediately.
+// Use NewReaderLazy for faster initialization when entries can be accessed on first read.
 func NewReader(dedupPath, sourceDir string) (*Reader, error) {
 	r, err := NewReaderLazy(dedupPath, sourceDir)
 	if err != nil {
 		return nil, err
 	}
 
-	// Force immediate entry loading
-	if err := r.loadEntries(); err != nil {
+	// Force immediate entry access initialization
+	if err := r.initEntryAccess(); err != nil {
 		r.Close()
-		return nil, fmt.Errorf("load entries: %w", err)
+		return nil, fmt.Errorf("init entry access: %w", err)
 	}
 
 	return r, nil
@@ -118,60 +123,76 @@ func (r *Reader) Close() error {
 	return nil
 }
 
-// loadEntries loads entries from the mmap (for lazy loading).
-func (r *Reader) loadEntries() error {
+// initEntryAccess initializes direct mmap access to entries (no parsing into []Entry).
+// This is called lazily on first entry access.
+func (r *Reader) initEntryAccess() error {
 	r.entriesOnce.Do(func() {
-		if r.file.Entries != nil {
-			return // Already loaded
-		}
-
 		// Calculate index start offset
-		indexStart := int64(HeaderSize) + r.calculateSourceFilesSize()
-		entryCount := int(r.file.Header.EntryCount)
+		r.indexStart = int64(HeaderSize) + r.calculateSourceFilesSize()
+		r.entryCount = int(r.file.Header.EntryCount)
 
-		// Get zero-copy slice of index data from mmap
-		indexSize := int(int64(entryCount) * EntrySize)
-		indexData := r.dedupMmap.Slice(indexStart, indexSize)
-		if indexData == nil || len(indexData) < indexSize {
-			r.entriesErr = fmt.Errorf("read entries: slice out of range")
-			return
-		}
-
-		// Parse entries
-		r.file.Entries = make([]Entry, entryCount)
-		buf := bytes.NewReader(indexData)
-		for i := 0; i < entryCount; i++ {
-			if err := binary.Read(buf, binary.LittleEndian, &r.file.Entries[i].MkvOffset); err != nil {
-				r.entriesErr = fmt.Errorf("read entry MkvOffset: %w", err)
-				return
-			}
-			if err := binary.Read(buf, binary.LittleEndian, &r.file.Entries[i].Length); err != nil {
-				r.entriesErr = fmt.Errorf("read entry Length: %w", err)
-				return
-			}
-			if err := binary.Read(buf, binary.LittleEndian, &r.file.Entries[i].Source); err != nil {
-				r.entriesErr = fmt.Errorf("read entry Source: %w", err)
-				return
-			}
-			if err := binary.Read(buf, binary.LittleEndian, &r.file.Entries[i].SourceOffset); err != nil {
-				r.entriesErr = fmt.Errorf("read entry SourceOffset: %w", err)
-				return
-			}
-
-			var esFlags uint8
-			if err := binary.Read(buf, binary.LittleEndian, &esFlags); err != nil {
-				r.entriesErr = fmt.Errorf("read entry esFlags: %w", err)
-				return
-			}
-			r.file.Entries[i].IsVideo = esFlags&1 == 1
-
-			if err := binary.Read(buf, binary.LittleEndian, &r.file.Entries[i].AudioSubStreamID); err != nil {
-				r.entriesErr = fmt.Errorf("read entry AudioSubStreamID: %w", err)
-				return
-			}
+		// Validate mmap has enough data for all entries
+		requiredSize := r.indexStart + int64(r.entryCount)*EntrySize
+		if int64(r.dedupMmap.Size()) < requiredSize {
+			r.entriesErr = fmt.Errorf("mmap too small: need %d, have %d",
+				requiredSize, r.dedupMmap.Size())
 		}
 	})
 	return r.entriesErr
+}
+
+// getEntry returns the entry at the given index by parsing from mmap.
+// Uses cache for O(1) sequential access.
+func (r *Reader) getEntry(idx int) (Entry, bool) {
+	if idx < 0 || idx >= r.entryCount {
+		return Entry{}, false
+	}
+
+	// Check cache first
+	if r.lastEntryValid && r.lastEntryIdx == idx {
+		return r.lastEntry, true
+	}
+
+	// Parse entry from mmap using RawEntry
+	offset := r.indexStart + int64(idx)*EntrySize
+	data := r.dedupMmap.Slice(offset, EntrySize)
+	if data == nil || len(data) < EntrySize {
+		return Entry{}, false
+	}
+
+	// Parse using RawEntry for portable unaligned access
+	var raw RawEntry
+	copy(raw.MkvOffset[:], data[0:8])
+	copy(raw.Length[:], data[8:16])
+	raw.Source = data[16]
+	copy(raw.SourceOffset[:], data[17:25])
+	raw.ESFlags = data[25]
+	raw.AudioSubStreamID = data[26]
+
+	entry := raw.ToEntry()
+
+	// Update cache
+	r.lastEntryIdx = idx
+	r.lastEntry = entry
+	r.lastEntryValid = true
+
+	return entry, true
+}
+
+// getMkvOffset returns just the MkvOffset for entry at idx (for binary search).
+// This avoids full entry parsing when only the offset is needed.
+func (r *Reader) getMkvOffset(idx int) (int64, bool) {
+	if idx < 0 || idx >= r.entryCount {
+		return 0, false
+	}
+
+	offset := r.indexStart + int64(idx)*EntrySize
+	data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
+	if data == nil || len(data) < 8 {
+		return 0, false
+	}
+
+	return int64(binary.LittleEndian.Uint64(data)), true
 }
 
 // OriginalSize returns the size of the original MKV file.
@@ -191,7 +212,8 @@ func (r *Reader) SourceFiles() []SourceFile {
 
 // EntryCount returns the number of index entries.
 func (r *Reader) EntryCount() int {
-	return len(r.file.Entries)
+	r.initEntryAccess() // Ensure entryCount is initialized
+	return r.entryCount
 }
 
 // UsesESOffsets returns true if this dedup file uses ES offsets.
@@ -201,9 +223,9 @@ func (r *Reader) UsesESOffsets() bool {
 
 // ReadAt reads reconstructed MKV data at the given offset.
 func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
-	// Load entries on first access (lazy loading)
-	if err := r.loadEntries(); err != nil {
-		return 0, fmt.Errorf("load entries: %w", err)
+	// Initialize entry access on first read (lazy initialization)
+	if err := r.initEntryAccess(); err != nil {
+		return 0, fmt.Errorf("init entry access: %w", err)
 	}
 
 	if offset >= r.file.Header.OriginalSize {
@@ -287,43 +309,45 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 }
 
 func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
-	entries := r.file.Entries
-	if len(entries) == 0 {
+	if r.entryCount == 0 {
 		return nil
 	}
 
+	endOffset := offset + length
+
 	// Fast path: check if offset is within cached entry
-	if r.lastEntryIdx >= 0 && r.lastEntryIdx < len(entries) {
-		cached := &entries[r.lastEntryIdx]
-		if offset >= cached.MkvOffset && offset < cached.MkvOffset+cached.Length {
+	if r.lastEntryValid && r.lastEntryIdx >= 0 && r.lastEntryIdx < r.entryCount {
+		if offset >= r.lastEntry.MkvOffset && offset < r.lastEntry.MkvOffset+r.lastEntry.Length {
 			// Cache hit - start from cached entry
 			var result []Entry
-			endOffset := offset + length
-			for i := r.lastEntryIdx; i < len(entries) && entries[i].MkvOffset < endOffset; i++ {
-				result = append(result, entries[i])
-			}
-			// Update cache to last entry we accessed
-			if len(result) > 0 {
-				r.lastEntryIdx = r.lastEntryIdx + len(result) - 1
+			for i := r.lastEntryIdx; i < r.entryCount; i++ {
+				entry, ok := r.getEntry(i)
+				if !ok || entry.MkvOffset >= endOffset {
+					break
+				}
+				result = append(result, entry)
 			}
 			return result
 		}
 	}
 
 	// Cache miss - binary search for first entry that could contain offset
-	idx := sort.Search(len(entries), func(i int) bool {
-		return entries[i].MkvOffset+entries[i].Length > offset
+	// Use getMkvOffset + getEntry.Length for the search predicate
+	idx := sort.Search(r.entryCount, func(i int) bool {
+		entry, ok := r.getEntry(i)
+		if !ok {
+			return true // Shouldn't happen, but treat as "found"
+		}
+		return entry.MkvOffset+entry.Length > offset
 	})
 
 	var result []Entry
-	endOffset := offset + length
-	for i := idx; i < len(entries) && entries[i].MkvOffset < endOffset; i++ {
-		result = append(result, entries[i])
-	}
-
-	// Update cache to last entry we accessed
-	if len(result) > 0 {
-		r.lastEntryIdx = idx + len(result) - 1
+	for i := idx; i < r.entryCount; i++ {
+		entry, ok := r.getEntry(i)
+		if !ok || entry.MkvOffset >= endOffset {
+			break
+		}
+		result = append(result, entry)
 	}
 
 	return result
@@ -451,15 +475,17 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 		}
 	}
 
-	// Don't read entries - they will be loaded lazily
-	// Entries is nil, indicating they need to be loaded
-	file.Entries = nil
-
+	// Entries are accessed directly from mmap via Reader.getEntry()
 	return file, nil
 }
 
 // VerifyIntegrity verifies the dedup file checksums.
 func (r *Reader) VerifyIntegrity() error {
+	// Initialize entry access to get entryCount
+	if err := r.initEntryAccess(); err != nil {
+		return fmt.Errorf("init entry access: %w", err)
+	}
+
 	f, err := os.Open(r.dedupPath)
 	if err != nil {
 		return fmt.Errorf("open dedup file: %w", err)
@@ -494,9 +520,8 @@ func (r *Reader) VerifyIntegrity() error {
 	}
 
 	// Calculate and verify index checksum (zero-copy)
-	indexStart := HeaderSize + r.calculateSourceFilesSize()
-	indexSize := int(int64(len(r.file.Entries)) * EntrySize)
-	indexData := r.dedupMmap.Slice(indexStart, indexSize)
+	indexSize := int(int64(r.entryCount) * EntrySize)
+	indexData := r.dedupMmap.Slice(r.indexStart, indexSize)
 	if indexData == nil {
 		return fmt.Errorf("read index for checksum: slice out of range")
 	}
@@ -526,6 +551,7 @@ func (r *Reader) calculateSourceFilesSize() int64 {
 
 // Info returns a summary of the dedup file.
 func (r *Reader) Info() map[string]any {
+	r.initEntryAccess() // Ensure entryCount is initialized
 	return map[string]any{
 		"version":           r.file.Header.Version,
 		"original_size":     r.file.Header.OriginalSize,
@@ -533,7 +559,7 @@ func (r *Reader) Info() map[string]any {
 		"source_type":       r.file.Header.SourceType,
 		"uses_es_offsets":   r.file.UsesESOffsets,
 		"source_file_count": len(r.file.SourceFiles),
-		"entry_count":       len(r.file.Entries),
+		"entry_count":       r.entryCount,
 		"delta_size":        r.file.Header.DeltaSize,
 	}
 }

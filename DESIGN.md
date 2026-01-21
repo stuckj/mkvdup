@@ -125,21 +125,24 @@ All file access uses true zero-copy memory mapping via `unix.Mmap` from `golang.
 - Per-sync-point (millions of entries) for maximum dedup
 - Index stored in dedup file, not in memory during normal operation
 
-### Dedup Reader Lazy Loading
+### Dedup Reader Direct Mmap Access
 - Mount time: ~0 seconds (header only)
-- First read: parses entries via `sync.Once`
-- Subsequent reads: instant
+- Entry access: Direct from mmap (no parsing into `[]Entry`)
+- Memory usage: Near-zero (kernel-managed mmap pages)
+- Sequential reads: O(1) via last-entry cache
+- Random seeks: O(log N) binary search + single entry parse
+
+### Entry Access Optimization
+- Entries accessed directly from mmap'd file (no allocation)
+- `RawEntry` packed struct (27 bytes) matches on-disk format exactly
+- Uses byte arrays with explicit little-endian decoding for portability
+- Single-entry cache eliminates repeated parsing for sequential access
 
 ### File Format Version 2 (Raw Offsets)
 - **v1 (deprecated)**: Stored ES (elementary stream) offsets for DVD sources, requiring O(log N) binary search translation during each read
 - **v2 (current)**: Stores raw file offsets directly, eliminating translation overhead
 - Entries that span multiple PES payload ranges are split during create
 - Trade-off: ~10-30% more entries, but significantly faster reads
-
-### Last-Entry Caching
-- Caches the last accessed entry index
-- Sequential reads (video playback) hit cache for O(1) lookup
-- Random seeks fall back to O(log N) binary search
 
 ## Performance Results
 
