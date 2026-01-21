@@ -103,6 +103,11 @@ func createBenchmarkDedupFile(b *testing.B, tmpDir string, numEntries int) (*Rea
 	binary.Write(f, binary.LittleEndian, deltaChecksum)
 	f.Write([]byte(Magic))
 
+	// Sync to catch any write errors
+	if err := f.Sync(); err != nil {
+		b.Fatalf("Failed to sync dedup file: %v", err)
+	}
+
 	// Create reader
 	reader, err := NewReader(dedupPath, sourceDir)
 	if err != nil {
@@ -281,8 +286,12 @@ func BenchmarkReadAt_Small(b *testing.B) {
 
 	offsets := make([]int64, b.N)
 	rng := rand.New(rand.NewSource(42))
+	maxOffset := fileSize - chunkSize
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
 	for i := range offsets {
-		offsets[i] = rng.Int63n(fileSize - chunkSize)
+		offsets[i] = rng.Int63n(maxOffset + 1)
 	}
 
 	b.ResetTimer()
@@ -313,9 +322,21 @@ func BenchmarkFindEntriesForRange(b *testing.B) {
 	queries := make([]rangeQuery, b.N)
 	rng := rand.New(rand.NewSource(42))
 	fileSize := reader.file.Header.OriginalSize
+	const queryLen int64 = 1000
+	length := queryLen
+	if fileSize < length {
+		length = fileSize
+	}
+	maxOffset := fileSize - length
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
 	for i := range queries {
-		offset := rng.Int63n(fileSize - 1000)
-		queries[i] = rangeQuery{offset: offset, length: 1000}
+		var offset int64
+		if maxOffset > 0 {
+			offset = rng.Int63n(maxOffset)
+		}
+		queries[i] = rangeQuery{offset: offset, length: length}
 	}
 
 	b.ResetTimer()

@@ -44,7 +44,7 @@ compare_benchmarks() {
     fi
 
     CURRENT_FILE=$(mktemp)
-    trap "rm -f $CURRENT_FILE" EXIT
+    trap 'rm -f "$CURRENT_FILE"' EXIT
 
     run_benchmarks > "$CURRENT_FILE"
 
