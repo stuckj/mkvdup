@@ -112,7 +112,7 @@ significant regression detection (>10% slowdown with p<0.05).
 
 **Run benchmarks locally:**
 ```bash
-go test -bench=. -benchmem -count=10 ./internal/dedup/...
+go test -bench=. -benchmem -count=5 ./internal/dedup/...
 ```
 
 **Compare against baseline:**

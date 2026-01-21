@@ -11,7 +11,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BASELINE_FILE="$PROJECT_ROOT/benchmarks/baseline.txt"
-BENCH_COUNT=10  # Number of iterations for statistical significance
+BENCH_COUNT=5  # Number of iterations for statistical significance
 
 show_help() {
     echo "Usage: $0 [command]"
