@@ -105,6 +105,33 @@ go build ./...
 - Memory-map large files using `internal/mmap` rather than reading into memory. This is critical for ISO files (multi-GB) to avoid excessive memory copies. The mmap package provides zero-copy access via `unix.Mmap`.
 - Use sync.Pool for frequently allocated buffers
 
+### Benchmarks
+
+Performance benchmarks track dedup reader operations. CI uses `benchstat` for statistically
+significant regression detection (>10% slowdown with p<0.05).
+
+**Run benchmarks locally:**
+```bash
+go test -bench=. -benchmem -count=5 ./internal/dedup/...
+```
+
+**Compare against baseline (optional, for local development):**
+```bash
+# Install benchstat
+go install golang.org/x/perf/cmd/benchstat@latest
+
+# Run and compare against repo baseline
+./scripts/benchmark-compare.sh
+
+# Run with regression check (exits non-zero on significant regression)
+./scripts/benchmark-compare.sh check
+```
+
+**Benchmark results are tracked at:** [Benchmark Dashboard](https://stuckj.github.io/mkvdup/benchmarks/)
+
+The baseline file (`benchmarks/baseline.txt`) is automatically updated by CI on merges to main.
+Do not commit baseline changes manually - CI handles this to ensure consistent runner performance.
+
 **Note:** The CI workflow runs `go vet` and `staticcheck` on all PRs.
 
 ## Key Technical Details
