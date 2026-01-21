@@ -1,0 +1,49 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse-dev
+
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem -count=5 ./internal/dedup/... | tee benchmark-output.txt
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'go'
+          output-file-path: benchmark-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Only push to gh-pages on main branch pushes
+          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # Alert if performance regresses by more than 15%
+          alert-threshold: '115%'
+          # Comment on PRs when regression detected
+          comment-on-alert: true
+          # Don't fail the build, just warn (can tighten later)
+          fail-on-alert: false
+          # Store benchmark data on gh-pages branch
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: benchmarks
