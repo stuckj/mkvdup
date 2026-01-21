@@ -107,28 +107,32 @@ go build ./...
 
 ### Benchmarks
 
-Performance benchmarks track dedup reader operations. CI alerts on >15% regressions.
+Performance benchmarks track dedup reader operations. CI uses `benchstat` for statistically
+significant regression detection (>10% slowdown with p<0.05).
 
 **Run benchmarks locally:**
 ```bash
-go test -bench=. -benchmem -count=5 ./internal/dedup/...
+go test -bench=. -benchmem -count=10 ./internal/dedup/...
 ```
 
 **Compare against baseline:**
 ```bash
-# Save current results as baseline
-./scripts/benchmark-compare.sh save
+# Install benchstat (required)
+go install golang.org/x/perf/cmd/benchstat@latest
 
 # Run and compare against baseline
 ./scripts/benchmark-compare.sh
-```
 
-For detailed comparison statistics, install benchstat:
-```bash
-go install golang.org/x/perf/cmd/benchstat@latest
+# Run with regression check (exits non-zero on significant regression)
+./scripts/benchmark-compare.sh check
+
+# Save current results as new baseline
+./scripts/benchmark-compare.sh save
 ```
 
 **Benchmark results are tracked at:** [Benchmark Dashboard](https://stuckj.github.io/mkvdup/benchmarks/)
+
+The baseline file (`benchmarks/baseline.txt`) is automatically updated on merges to main.
 
 **Note:** The CI workflow runs `go vet` and `staticcheck` on all PRs.
 

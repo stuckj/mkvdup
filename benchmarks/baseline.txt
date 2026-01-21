@@ -1,0 +1,349 @@
+goos: linux
+goarch: amd64
+pkg: github.com/stuckj/mkvdup/internal/dedup
+cpu: Intel(R) Core(TM) Ultra 7 268V
+BenchmarkGetEntry_Sequential-8   	25334983	        40.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	26055090	        39.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	31761798	        37.58 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	27255084	        38.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	26058658	        38.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	25812621	        39.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	26558598	        38.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	31581270	        37.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	30624385	        37.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-8   	25907542	        39.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	27450513	        39.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	28164436	        40.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	27595394	        38.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	28005080	        39.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	25647562	        40.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	28845531	        39.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	28164870	        39.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	29261007	        38.32 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	27341959	        40.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-8       	28202802	        38.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	502395243	         2.993 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	446267648	         2.448 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	454070178	         2.576 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	456143640	         2.544 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	474178474	         2.475 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	488246188	         2.488 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	460794241	         2.565 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	483327729	         2.398 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	466316660	         2.494 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-8          	464722136	         2.606 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-8     	   21878	     52229 ns/op	1254.78 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   23001	     53543 ns/op	1223.99 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   23317	     53659 ns/op	1221.35 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   22782	     53051 ns/op	1235.34 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   21741	     52591 ns/op	1246.13 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   22773	     53832 ns/op	1217.41 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   22058	     57255 ns/op	1144.63 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   22645	     55930 ns/op	1171.76 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   21542	     54422 ns/op	1204.23 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-8     	   22467	     53861 ns/op	1216.77 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   20996	     54704 ns/op	1198.00 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   21790	     57869 ns/op	1132.48 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   20550	     55062 ns/op	1190.22 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   22405	     54420 ns/op	1204.27 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   21162	     54072 ns/op	1212.02 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   20708	     53871 ns/op	1216.53 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   20496	     54465 ns/op	1203.26 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   22270	     54476 ns/op	1203.02 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   20682	     54747 ns/op	1197.08 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Random-8         	   21168	     55038 ns/op	1190.74 MB/s	   84193 B/op	      11 allocs/op
+BenchmarkReadAt_Small-8          	 2521856	       454.9 ns/op	 562.72 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2603875	       460.1 ns/op	 556.35 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2514900	       454.8 ns/op	 562.86 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2649768	       462.0 ns/op	 554.15 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2551950	       440.0 ns/op	 581.79 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2522067	       447.2 ns/op	 572.50 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2499206	       444.4 ns/op	 576.10 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2646469	       437.8 ns/op	 584.76 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2526051	       444.7 ns/op	 575.63 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-8          	 2522138	       457.9 ns/op	 559.08 MB/s	     287 B/op	       2 allocs/op
+BenchmarkFindEntriesForRange-8   	 1232731	       941.9 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1243605	       961.7 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1234916	       925.0 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1280502	       927.7 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1256516	       918.0 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1350302	       923.5 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1245117	       913.7 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1287286	       865.7 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1307157	       918.0 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-8   	 1317178	       923.5 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkNewReader-8             	   51622	     22412 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   50246	     25478 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   59258	     24937 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   47614	     22347 ns/op	    1032 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   49378	     21693 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   52238	     23393 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   58599	     22284 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   54249	     23329 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	   48978	     24803 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-8             	SIGQUIT: quit
+PC=0x47aea1 m=0 sigcode=0
+
+goroutine 0 gp=0x6fd4c0 m=0 mp=0x6fe3a0 [idle]:
+runtime.futex(0x6fe4f8, 0x80, 0x0, 0x0, 0x0, 0x0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/sys_linux_amd64.s:557 +0x21 fp=0x7fff53d61ab8 sp=0x7fff53d61ab0 pc=0x47aea1
+runtime.futexsleep(0x7fff53d61b30?, 0x413011?, 0x47aa8d?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/os_linux.go:75 +0x30 fp=0x7fff53d61b08 sp=0x7fff53d61ab8 pc=0x438450
+runtime.notesleep(0x6fe4f8)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/lock_futex.go:47 +0x87 fp=0x7fff53d61b40 sp=0x7fff53d61b08 pc=0x412727
+runtime.mPark(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:1919
+runtime.stopm()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:2950 +0x8c fp=0x7fff53d61b70 sp=0x7fff53d61b40 pc=0x443a0c
+runtime.findRunnable()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:3699 +0xd9c fp=0x7fff53d61ce8 sp=0x7fff53d61b70 pc=0x4454dc
+runtime.schedule()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:4072 +0xb1 fp=0x7fff53d61d20 sp=0x7fff53d61ce8 pc=0x4465d1
+runtime.park_m(0xc000183180)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:4201 +0x285 fp=0x7fff53d61d80 sp=0x7fff53d61d20 pc=0x446a45
+runtime.mcall()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:459 +0x4e fp=0x7fff53d61d98 sp=0x7fff53d61d80 pc=0x4771ae
+
+goroutine 1 gp=0xc000002380 m=nil [chan receive]:
+runtime.gopark(0x41405e?, 0x200000003269a38?, 0x8?, 0x0?, 0x76a17b0833e8?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc0000e5710 sp=0xc0000e56f0 pc=0x471d8e
+runtime.chanrecv(0xc00002c150, 0x0, 0x1)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/chan.go:664 +0x445 fp=0xc0000e5788 sp=0xc0000e5710 pc=0x40d585
+runtime.chanrecv1(0x59c560?, 0x40c1a5?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/chan.go:506 +0x12 fp=0xc0000e57b0 sp=0xc0000e5788 pc=0x40d112
+testing.(*B).doBench(0xc03970c2c8)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:297 +0x78 fp=0xc0000e5800 sp=0xc0000e57b0 pc=0x4d5018
+testing.(*benchState).processBench(0xc0277380c0, 0x280?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:747 +0x385 fp=0xc0000e59a0 sp=0xc0000e5800 pc=0x4d6885
+testing.(*B).run(0xc03970c848?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:288 +0x5b fp=0xc0000e59d0 sp=0xc0000e59a0 pc=0x4d4dfb
+testing.(*B).Run(0xc03970c008, {0x5a63a3?, 0x493c73?}, 0x5b1d00)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:848 +0x49f fp=0xc0000e5ad0 sp=0xc0000e59d0 pc=0x4d73bf
+testing.runBenchmarks.func1(0xc03970c008)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:708 +0x37 fp=0xc0000e5b10 sp=0xc0000e5ad0 pc=0x4d64b7
+testing.(*B).runN(0xc03970c008, 0x1)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:219 +0x190 fp=0xc0000e5ba0 sp=0xc0000e5b10 pc=0x4d46b0
+testing.runBenchmarks({0x5ad1d0, 0x27}, 0x0?, {0x6f7ee0, 0x9, 0x7?})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:717 +0x5f6 fp=0xc0000e5ca0 sp=0xc0000e5ba0 pc=0x4d63f6
+testing.(*M).Run(0xc000096140)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/testing.go:2158 +0x9b6 fp=0xc0000e5ed0 sp=0xc0000e5ca0 pc=0x4e3236
+main.main()
+	_testmain.go:87 +0x9b fp=0xc0000e5f50 sp=0xc0000e5ed0 pc=0x5451bb
+runtime.main()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:283 +0x28b fp=0xc0000e5fe0 sp=0xc0000e5f50 pc=0x43eb6b
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc0000e5fe8 sp=0xc0000e5fe0 pc=0x479061
+
+goroutine 2 gp=0xc0000028c0 m=nil [force gc (idle), 10 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc000060fa8 sp=0xc000060f88 pc=0x471d8e
+runtime.goparkunlock(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:441
+runtime.forcegchelper()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:348 +0xb3 fp=0xc000060fe0 sp=0xc000060fa8 pc=0x43eeb3
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc000060fe8 sp=0xc000060fe0 pc=0x479061
+created by runtime.init.7 in goroutine 1
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:336 +0x1a
+
+goroutine 3 gp=0xc000002e00 m=nil [GC sweep wait]:
+runtime.gopark(0x6fcf01?, 0x6fcf40?, 0xc?, 0x9?, 0x1?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc000061780 sp=0xc000061760 pc=0x471d8e
+runtime.goparkunlock(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:441
+runtime.bgsweep(0xc000080000)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgcsweep.go:316 +0xdf fp=0xc0000617c8 sp=0xc000061780 pc=0x4278df
+runtime.gcenable.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:204 +0x25 fp=0xc0000617e0 sp=0xc0000617c8 pc=0x41bdc5
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc0000617e8 sp=0xc0000617e0 pc=0x479061
+created by runtime.gcenable in goroutine 1
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:204 +0x66
+
+goroutine 4 gp=0xc000002fc0 m=nil [GC scavenge wait]:
+runtime.gopark(0x10000?, 0x164cfb7?, 0x0?, 0x0?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc01fc84778 sp=0xc01fc84758 pc=0x471d8e
+runtime.goparkunlock(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:441
+runtime.(*scavengerState).park(0x6fd2a0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgcscavenge.go:425 +0x49 fp=0xc01fc847a8 sp=0xc01fc84778 pc=0x425349
+runtime.bgscavenge(0xc000080000)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgcscavenge.go:658 +0x59 fp=0xc01fc847c8 sp=0xc01fc847a8 pc=0x4258d9
+runtime.gcenable.gowrap2()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:205 +0x25 fp=0xc01fc847e0 sp=0xc01fc847c8 pc=0x41bd65
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc01fc847e8 sp=0xc01fc847e0 pc=0x479061
+created by runtime.gcenable in goroutine 1
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:205 +0xa5
+
+goroutine 5 gp=0xc000003500 m=nil [finalizer wait, 10 minutes]:
+runtime.gopark(0x0?, 0x0?, 0xd0?, 0xe2?, 0x15?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc000060630 sp=0xc000060610 pc=0x471d8e
+runtime.runfinq()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mfinal.go:196 +0x107 fp=0xc0000607e0 sp=0xc000060630 pc=0x41ad87
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc0000607e8 sp=0xc0000607e0 pc=0x479061
+created by runtime.createfing in goroutine 1
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mfinal.go:166 +0x3d
+
+goroutine 593 gp=0xc000003dc0 m=nil [runnable]:
+syscall.Syscall(0x0, 0x5, 0xc000388000, 0x8)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/syscall/syscall_linux.go:73 +0x25 fp=0xc000344a00 sp=0xc0003449a0 pc=0x486f85
+syscall.read(0xc000506060?, {0xc000388000?, 0x0?, 0xc000344a80?})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/syscall/zsyscall_linux_amd64.go:736 +0x38 fp=0xc000344a40 sp=0xc000344a00 pc=0x486398
+syscall.Read(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/syscall/syscall_unix.go:183
+internal/poll.ignoringEINTRIO(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/internal/poll/fd_unix.go:745
+internal/poll.(*FD).Read(0xc000506060, {0xc000388000, 0x8, 0x8})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/internal/poll/fd_unix.go:161 +0x2ae fp=0xc000344ad8 sp=0xc000344a40 pc=0x49912e
+os.(*File).read(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/os/file_posix.go:29
+os.(*File).Read(0xc0002114b8, {0xc000388000?, 0xc000344b50?, 0x473849?})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/os/file.go:124 +0x4f fp=0xc000344b18 sp=0xc000344ad8 pc=0x49d1ef
+io.ReadAtLeast({0x5e1f98, 0xc0002114b8}, {0xc000388000, 0x8, 0x8}, 0x8)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/io/io.go:335 +0x91 fp=0xc000344b60 sp=0xc000344b18 pc=0x494bf1
+io.ReadFull(...)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/io/io.go:354
+encoding/binary.Read({0x5e1f98, 0xc0002114b8}, {0x5e3170, 0x71cf40}, {0x568da0, 0xc000251300})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/encoding/binary/binary.go:262 +0xa5 fp=0xc000344c50 sp=0xc000344b60 pc=0x4e9f25
+github.com/stuckj/mkvdup/internal/dedup.parseHeaderOnly({0x5e1f98, 0xc0002114b8})
+	/home/stuckj/dev/personal/mkvdup/internal/dedup/reader.go:492 +0x616 fp=0xc000344cf0 sp=0xc000344c50 pc=0x539e96
+github.com/stuckj/mkvdup/internal/dedup.NewReaderLazy({0xc00001e3c0, 0x31}, {0xc0000203f0, 0x2c})
+	/home/stuckj/dev/personal/mkvdup/internal/dedup/reader.go:71 +0xf0 fp=0xc000344d80 sp=0xc000344cf0 pc=0x538010
+github.com/stuckj/mkvdup/internal/dedup.NewReader({0xc00001e3c0?, 0xc000020390?}, {0xc0000203f0?, 0x186a0?})
+	/home/stuckj/dev/personal/mkvdup/internal/dedup/reader.go:48 +0x25 fp=0xc000344de0 sp=0xc000344d80 pc=0x537e45
+github.com/stuckj/mkvdup/internal/dedup.BenchmarkNewReader(0xc03970c2c8)
+	/home/stuckj/dev/personal/mkvdup/internal/dedup/benchmark_test.go:371 +0x169 fp=0xc000344eb0 sp=0xc000344de0 pc=0x53e229
+testing.(*B).runN(0xc03970c2c8, 0x2710)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:219 +0x190 fp=0xc000344f40 sp=0xc000344eb0 pc=0x4d46b0
+testing.(*B).launch(0xc03970c2c8)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:354 +0x1bc fp=0xc000344fc8 sp=0xc000344f40 pc=0x4d529c
+testing.(*B).doBench.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:296 +0x25 fp=0xc000344fe0 sp=0xc000344fc8 pc=0x4d50a5
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc000344fe8 sp=0xc000344fe0 pc=0x479061
+created by testing.(*B).doBench in goroutine 1
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/testing/benchmark.go:296 +0x65
+
+goroutine 53 gp=0xc0000d48c0 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88c017d33?, 0x3?, 0x1c?, 0x11?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04caca738 sp=0xc04caca718 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04caca7c8 sp=0xc04caca738 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04caca7e0 sp=0xc04caca7c8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04caca7e8 sp=0xc04caca7e0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 54 gp=0xc000182a80 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88c0090dd?, 0x3?, 0x3a?, 0x65?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cacef38 sp=0xc04cacef18 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cacefc8 sp=0xc04cacef38 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cacefe0 sp=0xc04cacefc8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cacefe8 sp=0xc04cacefe0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 55 gp=0xc000182c40 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88c00c7d3?, 0x3?, 0x79?, 0x27?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cacdf38 sp=0xc04cacdf18 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cacdfc8 sp=0xc04cacdf38 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cacdfe0 sp=0xc04cacdfc8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cacdfe8 sp=0xc04cacdfe0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 56 gp=0xc000182e00 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88bf44e54?, 0x3?, 0x6b?, 0x2b?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cacd738 sp=0xc04cacd718 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cacd7c8 sp=0xc04cacd738 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cacd7e0 sp=0xc04cacd7c8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cacd7e8 sp=0xc04cacd7e0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 57 gp=0xc000182fc0 m=nil [GC worker (idle)]:
+runtime.gopark(0x71de00?, 0x3?, 0xdd?, 0x1?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cace738 sp=0xc04cace718 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cace7c8 sp=0xc04cace738 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cace7e0 sp=0xc04cace7c8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cace7e8 sp=0xc04cace7e0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 58 gp=0xc000183180 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88c018519?, 0x3?, 0xa4?, 0x46?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cacff38 sp=0xc04cacff18 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cacffc8 sp=0xc04cacff38 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cacffe0 sp=0xc04cacffc8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cacffe8 sp=0xc04cacffe0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 59 gp=0xc000183340 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88c017bc5?, 0x3?, 0xbf?, 0x4?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cacf738 sp=0xc04cacf718 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cacf7c8 sp=0xc04cacf738 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cacf7e0 sp=0xc04cacf7c8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cacf7e8 sp=0xc04cacf7e0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+goroutine 60 gp=0xc000183500 m=nil [GC worker (idle)]:
+runtime.gopark(0xc9b88c00bb46?, 0x3?, 0x20?, 0x19?, 0x0?)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/proc.go:435 +0xce fp=0xc04cacb738 sp=0xc04cacb718 pc=0x471d8e
+runtime.gcBgMarkWorker(0xc0001b04d0)
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1423 +0xe9 fp=0xc04cacb7c8 sp=0xc04cacb738 pc=0x41e229
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x25 fp=0xc04cacb7e0 sp=0xc04cacb7c8 pc=0x41e105
+runtime.goexit({})
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/asm_amd64.s:1700 +0x1 fp=0xc04cacb7e8 sp=0xc04cacb7e0 pc=0x479061
+created by runtime.gcBgMarkStartWorkers in goroutine 52
+	/home/stuckj/.gvm/pkgsets/go1.23.12/global/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.12.linux-amd64/src/runtime/mgc.go:1339 +0x105
+
+rax    0xca
+rbx    0x0
+rcx    0x47aea3
+rdx    0x0
+rdi    0x6fe4f8
+rsi    0x80
+rbp    0x7fff53d61af8
+rsp    0x7fff53d61ab0
+r8     0x0
+r9     0x0
+r10    0x0
+r11    0x286
+r12    0x7fff53d61b30
+r13    0x6dea60
+r14    0x6fd4c0
+r15    0x3
+rip    0x47aea1
+rflags 0x286
+cs     0x33
+fs     0x0
+gs     0x0
+*** Test killed with quit: ran too long (11m0s).
+exit status 2
+FAIL	github.com/stuckj/mkvdup/internal/dedup	660.012s
+FAIL
