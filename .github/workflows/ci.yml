@@ -26,11 +26,25 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Test with coverage
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Test with race detection
         run: go test -race ./...
+
+      - name: Generate coverage report
+        run: |
+          go tool cover -func=coverage.out | tee coverage-summary.txt
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            coverage.out
+            coverage.html
+            coverage-summary.txt
 
   lint:
     name: Lint
