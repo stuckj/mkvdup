@@ -1,6 +1,9 @@
 package daemon
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -155,5 +158,131 @@ func TestStatusConstants(t *testing.T) {
 	// Verify status constants are distinct
 	if statusReady == statusError {
 		t.Error("statusReady and statusError should be different")
+	}
+}
+
+func TestNotifyReady_WithPipe(t *testing.T) {
+	// Create a pipe
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+	defer readPipe.Close()
+
+	// Save original env and set up for test
+	origFd := os.Getenv(readyPipeFdEnvVar)
+	defer os.Setenv(readyPipeFdEnvVar, origFd)
+
+	// Set the env var to point to our write pipe's fd
+	os.Setenv(readyPipeFdEnvVar, strconv.Itoa(int(writePipe.Fd())))
+
+	// Call NotifyReady
+	err = NotifyReady()
+	if err != nil {
+		t.Errorf("NotifyReady failed: %v", err)
+	}
+
+	// Read from the pipe and verify the status
+	status := make([]byte, 1)
+	n, err := readPipe.Read(status)
+	if err != nil {
+		t.Fatalf("Failed to read from pipe: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("Expected to read 1 byte, got %d", n)
+	}
+	if status[0] != statusReady {
+		t.Errorf("Expected status %d (statusReady), got %d", statusReady, status[0])
+	}
+}
+
+func TestNotifyError_WithPipe(t *testing.T) {
+	// Create a pipe
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+	defer readPipe.Close()
+
+	// Save original env and set up for test
+	origFd := os.Getenv(readyPipeFdEnvVar)
+	defer os.Setenv(readyPipeFdEnvVar, origFd)
+
+	// Set the env var to point to our write pipe's fd
+	os.Setenv(readyPipeFdEnvVar, strconv.Itoa(int(writePipe.Fd())))
+
+	// Call NotifyError
+	testErr := os.ErrNotExist
+	err = NotifyError(testErr)
+	if err != nil {
+		t.Errorf("NotifyError failed: %v", err)
+	}
+
+	// Read from the pipe and verify the status
+	status := make([]byte, 1)
+	n, err := readPipe.Read(status)
+	if err != nil {
+		t.Fatalf("Failed to read status from pipe: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("Expected to read 1 byte for status, got %d", n)
+	}
+	if status[0] != statusError {
+		t.Errorf("Expected status %d (statusError), got %d", statusError, status[0])
+	}
+}
+
+func TestNotifyError_Message(t *testing.T) {
+	// Create a pipe
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+	defer readPipe.Close()
+
+	// Save original env and set up for test
+	origFd := os.Getenv(readyPipeFdEnvVar)
+	defer os.Setenv(readyPipeFdEnvVar, origFd)
+
+	// Set the env var to point to our write pipe's fd
+	os.Setenv(readyPipeFdEnvVar, strconv.Itoa(int(writePipe.Fd())))
+
+	// Call NotifyError with a custom error message
+	customErr := fmt.Errorf("custom test error message")
+	err = NotifyError(customErr)
+	if err != nil {
+		t.Errorf("NotifyError failed: %v", err)
+	}
+
+	// Close write end so we can read all data
+	writePipe.Close()
+
+	// Read status byte
+	status := make([]byte, 1)
+	n, err := readPipe.Read(status)
+	if err != nil {
+		t.Fatalf("Failed to read status from pipe: %v", err)
+	}
+	if n != 1 || status[0] != statusError {
+		t.Errorf("Expected status byte %d, got %d", statusError, status[0])
+	}
+
+	// Read error message
+	msgBuf := make([]byte, 256)
+	n, err = readPipe.Read(msgBuf)
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("Failed to read message from pipe: %v", err)
+	}
+	msg := string(msgBuf[:n])
+	if msg != customErr.Error() {
+		t.Errorf("Error message mismatch: got %q, want %q", msg, customErr.Error())
+	}
+}
+
+func TestWritePidFile_InvalidPath(t *testing.T) {
+	// Try to write to a path that doesn't exist
+	err := WritePidFile("/nonexistent/directory/test.pid", 12345)
+	if err == nil {
+		t.Error("WritePidFile should fail for invalid path")
 	}
 }

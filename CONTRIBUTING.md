@@ -132,6 +132,25 @@ go install golang.org/x/perf/cmd/benchstat@latest
 The baseline file (`benchmarks/baseline.txt`) is automatically updated by CI on merges to main.
 Do not commit baseline changes manually - CI handles this to ensure consistent runner performance.
 
+### Test Coverage
+
+Test coverage is tracked in CI and published to GitHub Pages.
+
+**Run tests with coverage locally:**
+```bash
+go test -coverprofile=coverage.out ./...
+
+# View coverage summary
+go tool cover -func=coverage.out
+
+# Generate HTML report
+go tool cover -html=coverage.out -o coverage.html
+```
+
+**Coverage reports are tracked at:** [Coverage Report](https://stuckj.github.io/mkvdup/coverage/)
+
+Coverage is automatically updated by CI on merges to main.
+
 **Note:** The CI workflow runs `go vet` and `staticcheck` on all PRs.
 
 ## Key Technical Details

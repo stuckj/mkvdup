@@ -2,6 +2,9 @@
   "ignorePatterns": [
     {
       "pattern": "^#"
+    },
+    {
+      "pattern": "^https://stuckj\\.github\\.io/mkvdup/coverage"
     }
   ],
   "replacementPatterns": [],

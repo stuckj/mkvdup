@@ -1,5 +1,8 @@
 # mkvdup
 
+[![CI](https://github.com/stuckj/mkvdup/actions/workflows/ci.yml/badge.svg)](https://github.com/stuckj/mkvdup/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-see%20report-blue)](https://stuckj.github.io/mkvdup/coverage/)
+
 A storage deduplication tool for MKV files and their source media (DVD ISOs, Blu-ray backups).
 
 ## Overview
