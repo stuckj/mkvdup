@@ -238,7 +238,6 @@ func (r *Reader) SourceFiles() []SourceFile {
 }
 
 // EntryCount returns the number of index entries.
-// EntryCount returns the number of index entries.
 // Returns 0 if entry access initialization failed. Use InitEntryAccess() to check for errors.
 func (r *Reader) EntryCount() int {
 	r.initEntryAccess() // Ensure entryCount is initialized
