@@ -217,3 +217,431 @@ func TestFullDedupCycle(t *testing.T) {
 	t.Logf("Space saved:  %.1f%%", (1-float64(dedupInfo.Size())/float64(mkvInfo.Size()))*100)
 	t.Logf("Match rate:   %.1f%%", matchRate)
 }
+
+// TestConcurrentReaders tests multiple readers accessing the same dedup file concurrently.
+// This validates thread-safety and concurrent access patterns.
+func TestConcurrentReaders(t *testing.T) {
+	paths := testdata.SkipIfNotAvailable(t)
+
+	// First, create a dedup file (similar to TestFullDedupCycle but abbreviated)
+	tmpDir, err := os.MkdirTemp("", "mkvdup-concurrent-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dedupPath := filepath.Join(tmpDir, "test.mkvdup")
+
+	// Parse MKV
+	parser, err := mkv.NewParser(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to create MKV parser: %v", err)
+	}
+	defer parser.Close()
+
+	if err := parser.Parse(nil); err != nil {
+		t.Fatalf("Failed to parse MKV: %v", err)
+	}
+
+	// Index source
+	indexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
+	if err != nil {
+		t.Fatalf("Failed to create indexer: %v", err)
+	}
+
+	if err := indexer.Build(nil); err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+	index := indexer.Index()
+	defer index.Close()
+
+	// Match packets
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer m.Close()
+
+	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
+	if err != nil {
+		t.Fatalf("Failed to match: %v", err)
+	}
+
+	// Write dedup file
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to stat MKV file: %v", err)
+	}
+
+	mkvFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open MKV for checksum: %v", err)
+	}
+	h := xxhash.New()
+	if _, err := io.Copy(h, mkvFile); err != nil {
+		mkvFile.Close()
+		t.Fatalf("Failed to checksum MKV: %v", err)
+	}
+	mkvChecksum := h.Sum64()
+	mkvFile.Close()
+
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create writer: %v", err)
+	}
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		t.Fatalf("Failed to set match result: %v", err)
+	}
+
+	if err := writer.Write(); err != nil {
+		t.Fatalf("Failed to write dedup file: %v", err)
+	}
+	writer.Close()
+
+	// Now test concurrent reading
+	t.Log("Testing concurrent readers...")
+
+	const numReaders = 4
+	const numReads = 10
+	const readSize = 64 * 1024 // 64KB chunks
+
+	// Create readers
+	readers := make([]*dedup.Reader, numReaders)
+	for i := 0; i < numReaders; i++ {
+		reader, err := dedup.NewReader(dedupPath, paths.ISODir)
+		if err != nil {
+			t.Fatalf("Failed to create reader %d: %v", i, err)
+		}
+		if reader.UsesESOffsets() {
+			reader.SetESReader(index.ESReaders[0])
+		} else {
+			if err := reader.LoadSourceFiles(); err != nil {
+				t.Fatalf("Failed to load source files for reader %d: %v", i, err)
+			}
+		}
+		readers[i] = reader
+	}
+	defer func() {
+		for _, r := range readers {
+			r.Close()
+		}
+	}()
+
+	// Open original file for comparison
+	origFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open original MKV: %v", err)
+	}
+	defer origFile.Close()
+
+	// Run concurrent reads
+	errCh := make(chan error, numReaders*numReads)
+	doneCh := make(chan struct{})
+
+	for i := 0; i < numReaders; i++ {
+		go func(readerIdx int) {
+			reader := readers[readerIdx]
+			buf := make([]byte, readSize)
+			origBuf := make([]byte, readSize)
+
+			// Read from different positions
+			for j := 0; j < numReads; j++ {
+				// Calculate offset - spread reads across the file
+				offset := int64((readerIdx*numReads + j) * readSize)
+				if offset >= reader.OriginalSize() {
+					offset = offset % reader.OriginalSize()
+				}
+
+				// Read from dedup reader
+				n, err := reader.ReadAt(buf, offset)
+				if err != nil && err != io.EOF {
+					errCh <- err
+					return
+				}
+
+				// Read from original for comparison
+				nOrig, err := origFile.ReadAt(origBuf[:n], offset)
+				if err != nil && err != io.EOF {
+					errCh <- err
+					return
+				}
+
+				if n != nOrig {
+					errCh <- io.ErrShortWrite
+					return
+				}
+
+				if !bytes.Equal(buf[:n], origBuf[:n]) {
+					errCh <- io.ErrUnexpectedEOF // Using as "data mismatch" signal
+					return
+				}
+			}
+			doneCh <- struct{}{}
+		}(i)
+	}
+
+	// Wait for all goroutines
+	completed := 0
+	for completed < numReaders {
+		select {
+		case err := <-errCh:
+			t.Errorf("Concurrent read error: %v", err)
+		case <-doneCh:
+			completed++
+		}
+	}
+
+	t.Logf("Completed %d concurrent readers with %d reads each", numReaders, numReads)
+}
+
+// TestVerifyIntegrity_Integration tests the VerifyIntegrity method with real data.
+func TestVerifyIntegrity_Integration(t *testing.T) {
+	paths := testdata.SkipIfNotAvailable(t)
+
+	// Create a dedup file (abbreviated from TestFullDedupCycle)
+	tmpDir, err := os.MkdirTemp("", "mkvdup-integrity-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dedupPath := filepath.Join(tmpDir, "test.mkvdup")
+
+	// Parse MKV
+	parser, err := mkv.NewParser(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to create MKV parser: %v", err)
+	}
+	defer parser.Close()
+
+	if err := parser.Parse(nil); err != nil {
+		t.Fatalf("Failed to parse MKV: %v", err)
+	}
+
+	// Index source
+	indexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
+	if err != nil {
+		t.Fatalf("Failed to create indexer: %v", err)
+	}
+
+	if err := indexer.Build(nil); err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+	index := indexer.Index()
+	defer index.Close()
+
+	// Match packets
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer m.Close()
+
+	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
+	if err != nil {
+		t.Fatalf("Failed to match: %v", err)
+	}
+
+	// Write dedup file
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to stat MKV file: %v", err)
+	}
+
+	mkvFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open MKV for checksum: %v", err)
+	}
+	h := xxhash.New()
+	if _, err := io.Copy(h, mkvFile); err != nil {
+		mkvFile.Close()
+		t.Fatalf("Failed to checksum MKV: %v", err)
+	}
+	mkvChecksum := h.Sum64()
+	mkvFile.Close()
+
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create writer: %v", err)
+	}
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		t.Fatalf("Failed to set match result: %v", err)
+	}
+
+	if err := writer.Write(); err != nil {
+		t.Fatalf("Failed to write dedup file: %v", err)
+	}
+	writer.Close()
+
+	// Test integrity verification
+	t.Log("Testing integrity verification...")
+
+	reader, err := dedup.NewReader(dedupPath, paths.ISODir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// VerifyIntegrity should pass on valid file
+	if err := reader.VerifyIntegrity(); err != nil {
+		t.Errorf("VerifyIntegrity failed on valid file: %v", err)
+	}
+
+	t.Log("Integrity verification passed")
+}
+
+// TestReaderInfo_Integration tests the Info method with real data.
+func TestReaderInfo_Integration(t *testing.T) {
+	paths := testdata.SkipIfNotAvailable(t)
+
+	// Create a dedup file (abbreviated)
+	tmpDir, err := os.MkdirTemp("", "mkvdup-info-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dedupPath := filepath.Join(tmpDir, "test.mkvdup")
+
+	// Parse MKV
+	parser, err := mkv.NewParser(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to create MKV parser: %v", err)
+	}
+	defer parser.Close()
+
+	if err := parser.Parse(nil); err != nil {
+		t.Fatalf("Failed to parse MKV: %v", err)
+	}
+
+	// Index source
+	indexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
+	if err != nil {
+		t.Fatalf("Failed to create indexer: %v", err)
+	}
+
+	if err := indexer.Build(nil); err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+	index := indexer.Index()
+	defer index.Close()
+
+	// Match packets
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer m.Close()
+
+	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
+	if err != nil {
+		t.Fatalf("Failed to match: %v", err)
+	}
+
+	// Write dedup file
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to stat MKV file: %v", err)
+	}
+
+	mkvFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open MKV for checksum: %v", err)
+	}
+	h := xxhash.New()
+	if _, err := io.Copy(h, mkvFile); err != nil {
+		mkvFile.Close()
+		t.Fatalf("Failed to checksum MKV: %v", err)
+	}
+	mkvChecksum := h.Sum64()
+	mkvFile.Close()
+
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create writer: %v", err)
+	}
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		t.Fatalf("Failed to set match result: %v", err)
+	}
+
+	if err := writer.Write(); err != nil {
+		t.Fatalf("Failed to write dedup file: %v", err)
+	}
+	writer.Close()
+
+	// Test Info method
+	reader, err := dedup.NewReader(dedupPath, paths.ISODir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	info := reader.Info()
+
+	// Validate info fields
+	if info["version"] == nil {
+		t.Error("Info missing 'version' field")
+	}
+	if info["original_size"] == nil {
+		t.Error("Info missing 'original_size' field")
+	}
+	if info["entry_count"] == nil {
+		t.Error("Info missing 'entry_count' field")
+	}
+	if info["source_file_count"] == nil {
+		t.Error("Info missing 'source_file_count' field")
+	}
+
+	// Validate values make sense
+	originalSize := info["original_size"].(int64)
+	if originalSize != mkvInfo.Size() {
+		t.Errorf("Info original_size = %d, want %d", originalSize, mkvInfo.Size())
+	}
+
+	entryCount := info["entry_count"].(int)
+	if entryCount <= 0 {
+		t.Errorf("Info entry_count = %d, expected positive value", entryCount)
+	}
+
+	t.Logf("Info: version=%v, original_size=%d, entry_count=%d, source_files=%d",
+		info["version"], originalSize, entryCount, info["source_file_count"])
+}

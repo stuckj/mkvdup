@@ -30,8 +30,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
       - name: Run tests with coverage
-        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+        run: gotestsum --junitfile test-results.xml --jsonfile test-results.json -- -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Generate coverage reports
         id: coverage
@@ -47,8 +50,26 @@ jobs:
           # Generate HTML report
           go tool cover -html=coverage.out -o coverage.html
 
-          # Generate JSON for badge and tracking
-          echo "{\"coverage\": ${COVERAGE}, \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"commit\": \"${GITHUB_SHA}\"}" > coverage.json
+          # Extract test counts from gotestsum JSON output
+          TESTS_PASSED=$(grep -c '"Action":"pass"' test-results.json | head -1 || echo "0")
+          TESTS_FAILED=$(grep -c '"Action":"fail"' test-results.json | head -1 || echo "0")
+          TESTS_SKIPPED=$(grep -c '"Action":"skip"' test-results.json | head -1 || echo "0")
+
+          # Generate JSON for badge and tracking (includes test stats)
+          cat > coverage.json << EOF
+          {
+            "coverage": ${COVERAGE},
+            "tests_passed": ${TESTS_PASSED},
+            "tests_failed": ${TESTS_FAILED},
+            "tests_skipped": ${TESTS_SKIPPED},
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${GITHUB_SHA}"
+          }
+          EOF
+
+          echo "tests_passed=${TESTS_PASSED}" >> $GITHUB_OUTPUT
+          echo "tests_failed=${TESTS_FAILED}" >> $GITHUB_OUTPUT
+          echo "tests_skipped=${TESTS_SKIPPED}" >> $GITHUB_OUTPUT
 
       - name: Comment coverage on PR
         if: github.event_name == 'pull_request'
@@ -115,11 +136,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Save coverage files
+          # Save coverage and test files
           mkdir -p /tmp/coverage
           cp coverage.html /tmp/coverage/
           cp coverage.json /tmp/coverage/
           cp coverage-summary.txt /tmp/coverage/
+          cp test-results.xml /tmp/coverage/
+          cp test-results.json /tmp/coverage/
 
           # Switch to gh-pages branch
           git fetch origin gh-pages
@@ -132,6 +155,8 @@ jobs:
           cp /tmp/coverage/coverage.html coverage/index.html
           cp /tmp/coverage/coverage.json coverage/
           cp /tmp/coverage/coverage-summary.txt coverage/
+          cp /tmp/coverage/test-results.xml coverage/
+          cp /tmp/coverage/test-results.json coverage/
 
           # Commit and push
           git add coverage/
