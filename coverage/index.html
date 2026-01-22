@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (0.0%)</option>
+				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (8.2%)</option>
 				
 				<option value="file1">github.com/stuckj/mkvdup/cmd/mkvdup/main.go (0.0%)</option>
 				
@@ -579,18 +579,18 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error <span class="c
 }
 
 // calculateFileChecksum calculates xxhash checksum of a file.
-func calculateFileChecksum(path string) (uint64, error) <span class="cov0" title="0">{
+func calculateFileChecksum(path string) (uint64, error) <span class="cov4" title="6">{
         f, err := os.Open(path)
-        if err != nil </span><span class="cov0" title="0">{
+        if err != nil </span><span class="cov1" title="1">{
                 return 0, err
         }</span>
-        <span class="cov0" title="0">defer f.Close()
+        <span class="cov4" title="5">defer f.Close()
 
         hasher := xxhash.New()
         if _, err := io.Copy(hasher, f); err != nil </span><span class="cov0" title="0">{
                 return 0, err
         }</span>
-        <span class="cov0" title="0">return hasher.Sum64(), nil</span>
+        <span class="cov4" title="5">return hasher.Sum64(), nil</span>
 }
 
 // ProbeResult represents the result of probing a source against an MKV.
@@ -777,64 +777,64 @@ func probe(mkvPath string, sourceDirs []string) error <span class="cov0" title="
 // - 25% from first 10% of packets (early content)
 // - 50% from middle 80% of packets (main content)
 // - 25% from last 10% of packets (late content)
-func samplePackets(packets []mkv.Packet, n int) []mkv.Packet <span class="cov0" title="0">{
-        if len(packets) &lt;= n </span><span class="cov0" title="0">{
+func samplePackets(packets []mkv.Packet, n int) []mkv.Packet <span class="cov6" title="17">{
+        if len(packets) &lt;= n </span><span class="cov4" title="7">{
                 return packets
         }</span>
 
         // Calculate distribution
-        <span class="cov0" title="0">earlyCount := n / 4                    // 25% from first 10%
+        <span class="cov5" title="10">earlyCount := n / 4                    // 25% from first 10%
         lateCount := n / 4                     // 25% from last 10%
         midCount := n - earlyCount - lateCount // 50% from middle 80%
 
         // Calculate packet ranges
         earlyEnd := len(packets) / 10
         lateStart := len(packets) - len(packets)/10
-        if earlyEnd &lt; 1 </span><span class="cov0" title="0">{
+        if earlyEnd &lt; 1 </span><span class="cov1" title="1">{
                 earlyEnd = 1
         }</span>
-        <span class="cov0" title="0">if lateStart &lt;= earlyEnd </span><span class="cov0" title="0">{
+        <span class="cov5" title="10">if lateStart &lt;= earlyEnd </span><span class="cov0" title="0">{
                 lateStart = earlyEnd + 1
         }</span>
 
-        <span class="cov0" title="0">samples := make([]mkv.Packet, 0, n)
+        <span class="cov5" title="10">samples := make([]mkv.Packet, 0, n)
 
         // Sample from early portion (first 10%)
-        if earlyCount &gt; 0 &amp;&amp; earlyEnd &gt; 0 </span><span class="cov0" title="0">{
+        if earlyCount &gt; 0 &amp;&amp; earlyEnd &gt; 0 </span><span class="cov4" title="7">{
                 step := earlyEnd / earlyCount
-                if step &lt; 1 </span><span class="cov0" title="0">{
+                if step &lt; 1 </span><span class="cov3" title="3">{
                         step = 1
                 }</span>
-                <span class="cov0" title="0">for i := 0; i &lt; earlyEnd &amp;&amp; len(samples) &lt; earlyCount; i += step </span><span class="cov0" title="0">{
+                <span class="cov4" title="7">for i := 0; i &lt; earlyEnd &amp;&amp; len(samples) &lt; earlyCount; i += step </span><span class="cov8" title="56">{
                         samples = append(samples, packets[i])
                 }</span>
         }
 
         // Sample from middle portion (middle 80%)
-        <span class="cov0" title="0">midStart := earlyEnd
+        <span class="cov5" title="10">midStart := earlyEnd
         midEnd := lateStart
-        if midCount &gt; 0 &amp;&amp; midEnd &gt; midStart </span><span class="cov0" title="0">{
+        if midCount &gt; 0 &amp;&amp; midEnd &gt; midStart </span><span class="cov5" title="9">{
                 step := (midEnd - midStart) / midCount
                 if step &lt; 1 </span><span class="cov0" title="0">{
                         step = 1
                 }</span>
-                <span class="cov0" title="0">for i := midStart; i &lt; midEnd &amp;&amp; len(samples) &lt; earlyCount+midCount; i += step </span><span class="cov0" title="0">{
+                <span class="cov5" title="9">for i := midStart; i &lt; midEnd &amp;&amp; len(samples) &lt; earlyCount+midCount; i += step </span><span class="cov10" title="122">{
                         samples = append(samples, packets[i])
                 }</span>
         }
 
         // Sample from late portion (last 10%)
-        <span class="cov0" title="0">if lateCount &gt; 0 &amp;&amp; lateStart &lt; len(packets) </span><span class="cov0" title="0">{
+        <span class="cov5" title="10">if lateCount &gt; 0 &amp;&amp; lateStart &lt; len(packets) </span><span class="cov4" title="6">{
                 step := (len(packets) - lateStart) / lateCount
-                if step &lt; 1 </span><span class="cov0" title="0">{
+                if step &lt; 1 </span><span class="cov2" title="2">{
                         step = 1
                 }</span>
-                <span class="cov0" title="0">for i := lateStart; i &lt; len(packets) &amp;&amp; len(samples) &lt; n; i += step </span><span class="cov0" title="0">{
+                <span class="cov4" title="6">for i := lateStart; i &lt; len(packets) &amp;&amp; len(samples) &lt; n; i += step </span><span class="cov8" title="55">{
                         samples = append(samples, packets[i])
                 }</span>
         }
 
-        <span class="cov0" title="0">return samples</span>
+        <span class="cov5" title="10">return samples</span>
 }
 
 // defaultConfigPath is the default config file location.

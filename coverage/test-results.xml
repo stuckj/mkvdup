@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="298" failures="0" errors="0" time="1.780150">
+	<testsuite tests="20" failures="0" time="0.010000" name="github.com/stuckj/mkvdup/cmd/mkvdup" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/fewer_packets_than_requested" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/equal_packets_and_requested" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/normal_sampling_from_large_set" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/distribution_check" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/single_packet" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/empty_packets" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/request_single_sample" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets/small_packet_count_edge_cases" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/normal_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/empty_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/file_not_found" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/large_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/consistency" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestProbeResult" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestProbeResult_ZeroValues" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestZero" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestTwo" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestFour" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="13" failures="0" time="0.004000" name="github.com/stuckj/mkvdup/internal/daemon" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestIsChild" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestWriteAndRemovePidFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestRemovePidFileNotExists" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestGetReadyPipeFdNotSet" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestGetReadyPipeFdInvalid" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestGetReadyPipeFdValid" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyReadyNotChild" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyErrorNotChild" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestStatusConstants" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyReady_WithPipe" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyError_WithPipe" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyError_Message" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestWritePidFile_InvalidPath" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="80" failures="0" time="0.030000" name="github.com/stuckj/mkvdup/internal/dedup" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestFullDedupCycle" time="0.000000">
+			<skipped message="=== RUN   TestFullDedupCycle&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestFullDedupCycle (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestConcurrentReaders" time="0.000000">
+			<skipped message="=== RUN   TestConcurrentReaders&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestConcurrentReaders (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestVerifyIntegrity_Integration" time="0.000000">
+			<skipped message="=== RUN   TestVerifyIntegrity_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestVerifyIntegrity_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReaderInfo_Integration" time="0.000000">
+			<skipped message="=== RUN   TestReaderInfo_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestReaderInfo_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestWriteConfig" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestWriteConfig_SpecialChars" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_MissingFields/missing_name" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_MissingFields/missing_dedup_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_MissingFields/missing_source_dir" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_MissingFields/empty_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_MissingFields/only_comments" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_MissingFields" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadConfig_FileNotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/simple_value" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/value_with_spaces" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/value_with_path" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/key_not_found" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/multiple_lines" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/key_in_comment_should_not_match" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue/key_as_substring_should_not_match" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue_EdgeCases/empty_content" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue_EdgeCases/no_closing_quote" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue_EdgeCases/key_without_colon_space_quote" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue_EdgeCases/key_with_different_format" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestParseYAMLValue_EdgeCases" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/found_at_beginning" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/found_in_middle" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/found_at_end" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/not_found" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/empty_substr" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/substr_longer_than_s" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf/exact_match" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestIndexOf" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry/basic_entry" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry/delta_entry_(source=0)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry/audio_entry_with_substream" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry/large_source_index_(&gt;256)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry/max_values" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry/zero_values" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntryToEntry" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestRawEntrySizeIs28Bytes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_CacheHit" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_CacheMiss" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_BoundaryConditions/negative_index" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_BoundaryConditions/index_equals_count" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_BoundaryConditions/index_greater_than_count" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_BoundaryConditions/first_valid_index" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_BoundaryConditions/last_valid_index" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_BoundaryConditions" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetMkvOffset" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntryLength" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestGetEntry_ConcurrentAccess" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestSequentialAccess_CacheEfficiency" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestInitEntryAccess" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestEntryCount" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReader_FileNotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReaderLazy_FileNotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReader_InvalidMagic" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReader_InvalidVersion" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReader_Version1Error" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReader_Version2Error" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestNewReader_TruncatedHeader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestLoadSourceFiles_MissingFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadAt_BeyondFileEnd" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadAt_AtExactEnd" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestReadAt_EmptyBuffer" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestVerifyIntegrity_ValidFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestVerifyIntegrity_CorruptedIndex" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestVerifyIntegrity_InvalidFooterMagic" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestOriginalSize" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestOriginalChecksum" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestSourceFiles" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestUsesESOffsets" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestInfo" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestZeroEntries" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestFindEntriesForRange_EmptyFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestClose_Idempotent" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestSetESReader" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="0" failures="0" time="0.006000" name="github.com/stuckj/mkvdup/internal/fuse" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+	</testsuite>
+	<testsuite tests="21" failures="0" time="0.005000" name="github.com/stuckj/mkvdup/internal/matcher" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_Video" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_Audio" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_NoSyncPoint" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_TooSmall" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_MultipleSyncPoints" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestNewMatcher" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestMatcher_SetNumWorkers" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestMatcher_Close" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestMaxExpansionBytes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_ExactWindowSize" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_DifferentSyncPoints" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_MPASync" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestProbeHash_Fields" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestEntry_Fields" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestResult_Fields" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_VideoStartCodesTypes/Sequence_header_(0xB3)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_VideoStartCodesTypes/Picture_(0x00)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_VideoStartCodesTypes/GOP_(0xB8)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_VideoStartCodesTypes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_EmptyData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_AudioWithNoSyncPoint" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="84" failures="0" time="0.008000" name="github.com/stuckj/mkvdup/internal/mkv" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/1-byte_VINT_(0x81_=_1)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/1-byte_VINT_with_marker" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/2-byte_VINT_(0x4000_=_0)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/2-byte_VINT_(0x4001_=_1)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/3-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/4-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/EBML_header_ID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/Segment_ID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/empty_data" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT/invalid_VINT_(0x00)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadElementHeader/EBML_header_element" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadElementHeader/simple_element" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadElementHeader/Cluster_element" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadElementHeader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint/1-byte_uint" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint/2-byte_uint" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint/4-byte_uint" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint/8-byte_uint" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint/zero_size" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadString/simple_string" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadString/string_with_null_padding" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadString/empty_string" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadString/codec_ID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadString" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader/basic_SimpleBlock" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader/track_2_with_timestamp" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader/negative_timestamp" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader/too_short" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_IsKeyframe/keyframe" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_IsKeyframe/not_keyframe" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_IsKeyframe/keyframe_with_other_flags" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_IsKeyframe" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_LacingType/no_lacing" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_LacingType/Xiph_lacing" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_LacingType/fixed_lacing" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_LacingType/EBML_lacing" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestSimpleBlockHeader_LacingType" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestIsUnknownSize" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT_LongerValues/5-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT_LongerValues/6-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT_LongerValues/7-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT_LongerValues/8-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT_LongerValues" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadVINT_TruncatedData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadBinary/simple_binary" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadBinary/empty_binary" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadBinary/single_byte" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadBinary" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadBinary_TruncatedData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadUint_TruncatedData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadString_TruncatedData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadInt/positive_1-byte" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadInt/negative_1-byte" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadInt/positive_2-byte" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadInt/negative_2-byte" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadInt/zero_size" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadInt" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader_LargeTrackNumber" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseSimpleBlockHeader_EmptyData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseVINTFromBytes/1-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseVINTFromBytes/2-byte_VINT" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseVINTFromBytes/empty_data" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseVINTFromBytes/invalid_VINT_(0x00)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParseVINTFromBytes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadElementHeader_TruncatedData" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestReadElementHeader_UnknownSize" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs/EBML_Header" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs/Segment" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs/Cluster" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs/Tracks" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs/SimpleBlock" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs/Block" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestElementIDs" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestLacingConstants" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestTrackTypeConstants" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestNewParser_FileNotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParser_EmptyFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParser_EmptyContent" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParser_Close" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParser_Accessors" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestIsTopLevelElement" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="16" failures="0" time="0.008000" name="github.com/stuckj/mkvdup/internal/mmap" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestOpen" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestOpen_EmptyFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestOpen_NotExists" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice/beginning" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice/middle" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice/end" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice/partial_at_end" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice/single_byte" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice_OutOfBounds" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestSlice_NegativeOffset" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestAdvise" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestAdvise_EmptyFile" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose_Idempotent" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose_EmptyFile" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="64" failures="0" time="0.009000" name="github.com/stuckj/mkvdup/internal/source" timestamp="2026-01-22T12:49:51Z">
+		<properties>
+			<property name="go.version" value="go1.24.12 linux/amd64"></property>
+		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_AC3/AC3_sync_at_beginning" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_AC3/AC3_sync_in_middle" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_AC3/multiple_AC3_syncs" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_AC3" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_DTS/DTS_sync_at_beginning" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_DTS/DTS_sync_in_middle" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_DTS" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_TrueHD/TrueHD_sync_at_beginning" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_TrueHD/TrueHD_sync_in_middle" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_TrueHD" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_MPEG/MPEG_audio_sync_FF_F0" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_MPEG/MPEG_audio_sync_FF_FB_(MP3)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_MPEG/AAC_ADTS_sync_FF_F1" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_MPEG/not_MPEG_sync_(FF_E0)" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_MPEG" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPoints_Mixed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAllSyncPoints" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindAudioSyncPointsInRange" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForESRegion_SingleRange" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForESRegion_MultiRange" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForESRegion_SpansThreeRanges" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForESRegion_ESOffsetNotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForESRegion_AudioError" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForAudioSubStream_SingleRange" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForAudioSubStream_MultiRange" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForAudioSubStream_SubStreamNotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestRawRangesForESRegion_EmptyRanges" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestDetectType_DVD" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestDetectType_DVDSubdirectory" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestDetectType_Bluray" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestDetectType_Unknown" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestTypeString" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestEnumerateMediaFiles_DVD" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestEnumerateMediaFiles_Bluray" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestGetFileInfo" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestGetFileInfo_NotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestNewIndex" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndex_Lookup" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestDetectType_NonExistentDir" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestDetectType_EmptyDir" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestEnumerateMediaFiles_EmptyDir" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestNewIndexer_UnknownType" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestNewIndexer_WindowSizeClamping" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndexer_SourceTypeAndDir" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndexer_Index" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndex_Close" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndex_ReadRawDataAt_NoReader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndex_RawSlice_NoReader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndex_ReadESDataAt_NoReader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestComputeHash" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestComputeHash_Empty" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestWindowSizeConstants" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestType_String_AllTypes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestIndex_LookupWithMultipleLocations" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestNewIndex_Fields" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/empty_data" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/too_short" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/single_start_code_at_beginning" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/start_code_in_middle" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/multiple_start_codes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/slice_header_also_indexed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes/H.264_NAL_units_also_indexed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodes" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/source" name="TestFindVideoStartCodesInRange" time="0.000000"></testcase>
+	</testsuite>
+</testsuites>

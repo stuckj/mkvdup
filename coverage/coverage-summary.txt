@@ -2,9 +2,9 @@ github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:26:		createDedup			0.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:216:		verifyReconstruction		0.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:303:		showInfo			0.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:347:		verifyDedup			0.0%
-github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:470:		calculateFileChecksum		0.0%
+github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:470:		calculateFileChecksum		87.5%
 github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:495:		probe				0.0%
-github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:668:		samplePackets			0.0%
+github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:668:		samplePackets			93.9%
 github.com/stuckj/mkvdup/cmd/mkvdup/commands.go:732:		mountFuse			0.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/main.go:22:			printVersion			0.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/main.go:26:			printUsage			0.0%
@@ -185,4 +185,4 @@ github.com/stuckj/mkvdup/internal/source/source.go:339:		ReadRawDataAt			28.6%
 github.com/stuckj/mkvdup/internal/source/source.go:353:		RawSlice			66.7%
 github.com/stuckj/mkvdup/internal/source/video.go:5:		FindVideoStartCodes		100.0%
 github.com/stuckj/mkvdup/internal/source/video.go:23:		FindVideoStartCodesInRange	85.7%
-total:								(statements)			22.7%
+total:								(statements)			24.1%
