@@ -14,8 +14,10 @@ var _ ConfigReader = (*DefaultConfigReader)(nil)
 
 // dedupReaderAdapter wraps dedup.Reader to implement ReaderInitializer interface.
 type dedupReaderAdapter struct {
-	reader    *dedup.Reader
-	sourceDir string
+	reader *dedup.Reader
+	// index stores the source index for cleanup when using ES offsets.
+	// This is nil when using raw source files.
+	index *source.Index
 }
 
 func (a *dedupReaderAdapter) OriginalSize() int64 {
@@ -40,8 +42,8 @@ func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
 		if len(index.ESReaders) > 0 {
 			a.reader.SetESReader(index.ESReaders[0])
 		}
-		// Note: We're not storing index here since the adapter is just for reading
-		// In a production scenario, we'd want to track this for cleanup
+		// Store index for cleanup in Close()
+		a.index = index
 	} else {
 		// Load source files for raw access
 		if err := a.reader.LoadSourceFiles(); err != nil {
@@ -56,7 +58,19 @@ func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (a *dedupReaderAdapter) Close() error {
-	return a.reader.Close()
+	var errs []error
+	if err := a.reader.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	if a.index != nil {
+		if err := a.index.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return errs[0]
+	}
+	return nil
 }
 
 // DefaultReaderFactory is the default implementation of ReaderFactory.
@@ -67,7 +81,7 @@ func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (Reade
 	if err != nil {
 		return nil, err
 	}
-	return &dedupReaderAdapter{reader: reader, sourceDir: sourceDir}, nil
+	return &dedupReaderAdapter{reader: reader}, nil
 }
 
 // DefaultConfigReader is the default implementation of ConfigReader.

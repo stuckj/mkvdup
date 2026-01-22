@@ -473,7 +473,7 @@ func TestNewMKVFSWithFactories_RelativePaths(t *testing.T) {
 			"/base/configs/movie.yaml": {
 				Name:      "movie.mkv",
 				DedupFile: "../data/movie.dedup", // Relative path
-				SourceDir: "../source",          // Relative path
+				SourceDir: "../source",           // Relative path
 			},
 		},
 	}
@@ -514,7 +514,7 @@ func TestNewMKVFSWithFactories_AbsolutePaths(t *testing.T) {
 			"/configs/movie.yaml": {
 				Name:      "movie.mkv",
 				DedupFile: "/absolute/path/movie.dedup", // Absolute path
-				SourceDir: "/absolute/source",          // Absolute path
+				SourceDir: "/absolute/source",           // Absolute path
 			},
 		},
 	}

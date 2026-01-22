@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -27,10 +28,10 @@ func skipIfFUSEUnavailable(t *testing.T) {
 		t.Skip("FUSE not available: /dev/fuse does not exist")
 	}
 
-	// Check if fusermount is available
-	if _, err := os.Stat("/usr/bin/fusermount"); os.IsNotExist(err) {
-		if _, err := os.Stat("/usr/bin/fusermount3"); os.IsNotExist(err) {
-			t.Skip("FUSE not available: fusermount not found")
+	// Check if fusermount is available in PATH (more portable than hardcoded paths)
+	if _, err := exec.LookPath("fusermount"); err != nil {
+		if _, err := exec.LookPath("fusermount3"); err != nil {
+			t.Skip("FUSE not available: fusermount not found in PATH")
 		}
 	}
 }
