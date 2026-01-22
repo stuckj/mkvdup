@@ -2,9 +2,11 @@ package dedup_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/cespare/xxhash/v2"
@@ -348,11 +350,13 @@ func TestConcurrentReaders(t *testing.T) {
 	defer origFile.Close()
 
 	// Run concurrent reads
+	var wg sync.WaitGroup
 	errCh := make(chan error, numReaders*numReads)
-	doneCh := make(chan struct{})
 
 	for i := 0; i < numReaders; i++ {
+		wg.Add(1)
 		go func(readerIdx int) {
+			defer wg.Done()
 			reader := readers[readerIdx]
 			buf := make([]byte, readSize)
 			origBuf := make([]byte, readSize)
@@ -368,40 +372,41 @@ func TestConcurrentReaders(t *testing.T) {
 				// Read from dedup reader
 				n, err := reader.ReadAt(buf, offset)
 				if err != nil && err != io.EOF {
-					errCh <- err
+					errCh <- fmt.Errorf("reader %d read %d: dedup read error at offset %d: %w",
+						readerIdx, j, offset, err)
 					return
 				}
 
 				// Read from original for comparison
 				nOrig, err := origFile.ReadAt(origBuf[:n], offset)
 				if err != nil && err != io.EOF {
-					errCh <- err
+					errCh <- fmt.Errorf("reader %d read %d: original read error at offset %d: %w",
+						readerIdx, j, offset, err)
 					return
 				}
 
 				if n != nOrig {
-					errCh <- io.ErrShortWrite
+					errCh <- fmt.Errorf("reader %d read %d: length mismatch at offset %d: got %d, want %d",
+						readerIdx, j, offset, n, nOrig)
 					return
 				}
 
 				if !bytes.Equal(buf[:n], origBuf[:n]) {
-					errCh <- io.ErrUnexpectedEOF // Using as "data mismatch" signal
+					errCh <- fmt.Errorf("reader %d read %d: data mismatch at offset %d",
+						readerIdx, j, offset)
 					return
 				}
 			}
-			doneCh <- struct{}{}
 		}(i)
 	}
 
-	// Wait for all goroutines
-	completed := 0
-	for completed < numReaders {
-		select {
-		case err := <-errCh:
-			t.Errorf("Concurrent read error: %v", err)
-		case <-doneCh:
-			completed++
-		}
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(errCh)
+
+	// Collect any errors
+	for err := range errCh {
+		t.Errorf("Concurrent read error: %v", err)
 	}
 
 	t.Logf("Completed %d concurrent readers with %d reads each", numReaders, numReads)

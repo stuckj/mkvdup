@@ -50,10 +50,10 @@ jobs:
           # Generate HTML report
           go tool cover -html=coverage.out -o coverage.html
 
-          # Extract test counts from gotestsum JSON output
-          TESTS_PASSED=$(grep -c '"Action":"pass"' test-results.json | head -1 || echo "0")
-          TESTS_FAILED=$(grep -c '"Action":"fail"' test-results.json | head -1 || echo "0")
-          TESTS_SKIPPED=$(grep -c '"Action":"skip"' test-results.json | head -1 || echo "0")
+          # Extract test counts from gotestsum JSON output (only count test-level events, not package-level)
+          TESTS_PASSED=$(jq -s '[.[] | select(.Action=="pass" and .Test != null and .Test != "")] | length' test-results.json)
+          TESTS_FAILED=$(jq -s '[.[] | select(.Action=="fail" and .Test != null and .Test != "")] | length' test-results.json)
+          TESTS_SKIPPED=$(jq -s '[.[] | select(.Action=="skip" and .Test != null and .Test != "")] | length' test-results.json)
 
           # Generate JSON for badge and tracking (includes test stats)
           cat > coverage.json << EOF
