@@ -193,7 +193,10 @@ func TestCalculateFileChecksum(t *testing.T) {
 	})
 
 	t.Run("file not found", func(t *testing.T) {
-		_, err := calculateFileChecksum("/nonexistent/path/file.bin")
+		tmpDir := t.TempDir()
+		missingFile := filepath.Join(tmpDir, "nonexistent.bin")
+
+		_, err := calculateFileChecksum(missingFile)
 		if err == nil {
 			t.Error("Expected error for nonexistent file")
 		}

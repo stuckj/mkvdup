@@ -220,8 +220,9 @@ func TestFullDedupCycle(t *testing.T) {
 	t.Logf("Match rate:   %.1f%%", matchRate)
 }
 
-// TestConcurrentReaders tests multiple readers accessing the same dedup file concurrently.
-// This validates thread-safety and concurrent access patterns.
+// TestConcurrentReaders ensures multiple independent readers can access the same dedup file concurrently
+// without errors. Each goroutine uses its own dedup.Reader instance; this test does not validate
+// internal thread-safety of sharing a single Reader across goroutines.
 func TestConcurrentReaders(t *testing.T) {
 	paths := testdata.SkipIfNotAvailable(t)
 
@@ -291,6 +292,8 @@ func TestConcurrentReaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create writer: %v", err)
 	}
+	defer writer.Close()
+
 	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
 
@@ -311,7 +314,6 @@ func TestConcurrentReaders(t *testing.T) {
 	if err := writer.Write(); err != nil {
 		t.Fatalf("Failed to write dedup file: %v", err)
 	}
-	writer.Close()
 
 	// Now test concurrent reading
 	t.Log("Testing concurrent readers...")
@@ -320,13 +322,15 @@ func TestConcurrentReaders(t *testing.T) {
 	const numReads = 10
 	const readSize = 64 * 1024 // 64KB chunks
 
-	// Create readers
+	// Create readers with per-reader cleanup to avoid leaks if creation fails mid-loop
 	readers := make([]*dedup.Reader, numReaders)
 	for i := 0; i < numReaders; i++ {
 		reader, err := dedup.NewReader(dedupPath, paths.ISODir)
 		if err != nil {
 			t.Fatalf("Failed to create reader %d: %v", i, err)
 		}
+		t.Cleanup(func() { reader.Close() })
+
 		if reader.UsesESOffsets() {
 			reader.SetESReader(index.ESReaders[0])
 		} else {
@@ -336,11 +340,6 @@ func TestConcurrentReaders(t *testing.T) {
 		}
 		readers[i] = reader
 	}
-	defer func() {
-		for _, r := range readers {
-			r.Close()
-		}
-	}()
 
 	// Open original file for comparison
 	origFile, err := os.Open(paths.MKVFile)
@@ -482,6 +481,8 @@ func TestVerifyIntegrity_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create writer: %v", err)
 	}
+	defer writer.Close()
+
 	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
 
@@ -502,7 +503,6 @@ func TestVerifyIntegrity_Integration(t *testing.T) {
 	if err := writer.Write(); err != nil {
 		t.Fatalf("Failed to write dedup file: %v", err)
 	}
-	writer.Close()
 
 	// Test integrity verification
 	t.Log("Testing integrity verification...")
@@ -591,6 +591,8 @@ func TestReaderInfo_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create writer: %v", err)
 	}
+	defer writer.Close()
+
 	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
 
@@ -611,7 +613,6 @@ func TestReaderInfo_Integration(t *testing.T) {
 	if err := writer.Write(); err != nil {
 		t.Fatalf("Failed to write dedup file: %v", err)
 	}
-	writer.Close()
 
 	// Test Info method
 	reader, err := dedup.NewReader(dedupPath, paths.ISODir)
