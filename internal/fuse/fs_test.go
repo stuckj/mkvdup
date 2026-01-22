@@ -623,3 +623,358 @@ func TestEnsureReader_AlreadyInitialized(t *testing.T) {
 		t.Error("reader should not have been replaced")
 	}
 }
+
+// --- Directory Tree Tests ---
+
+func TestBuildDirectoryTree(t *testing.T) {
+	files := []*MKVFile{
+		{Name: "Movies/Action/Matrix.mkv", Size: 100},
+		{Name: "Movies/Action/JohnWick.mkv", Size: 200},
+		{Name: "Movies/Comedy/Hangover.mkv", Size: 150},
+		{Name: "root.mkv", Size: 50},
+	}
+
+	tree := BuildDirectoryTree(files, false, nil)
+
+	// Check root level
+	if len(tree.files) != 1 {
+		t.Errorf("expected 1 file at root, got %d", len(tree.files))
+	}
+	if _, ok := tree.files["root.mkv"]; !ok {
+		t.Error("expected root.mkv at root level")
+	}
+
+	if len(tree.subdirs) != 1 {
+		t.Errorf("expected 1 subdir at root, got %d", len(tree.subdirs))
+	}
+
+	// Check Movies directory
+	movies, ok := tree.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory")
+	}
+	if movies.name != "Movies" {
+		t.Errorf("expected name 'Movies', got '%s'", movies.name)
+	}
+	if movies.path != "Movies" {
+		t.Errorf("expected path 'Movies', got '%s'", movies.path)
+	}
+	if len(movies.subdirs) != 2 {
+		t.Errorf("expected 2 subdirs in Movies, got %d", len(movies.subdirs))
+	}
+
+	// Check Action directory
+	action, ok := movies.subdirs["Action"]
+	if !ok {
+		t.Fatal("expected Action subdirectory")
+	}
+	if action.path != "Movies/Action" {
+		t.Errorf("expected path 'Movies/Action', got '%s'", action.path)
+	}
+	if len(action.files) != 2 {
+		t.Errorf("expected 2 files in Action, got %d", len(action.files))
+	}
+
+	// Check Comedy directory
+	comedy, ok := movies.subdirs["Comedy"]
+	if !ok {
+		t.Fatal("expected Comedy subdirectory")
+	}
+	if len(comedy.files) != 1 {
+		t.Errorf("expected 1 file in Comedy, got %d", len(comedy.files))
+	}
+}
+
+func TestBuildDirectoryTree_RootFiles(t *testing.T) {
+	files := []*MKVFile{
+		{Name: "movie1.mkv", Size: 100},
+		{Name: "movie2.mkv", Size: 200},
+		{Name: "movie3.mkv", Size: 300},
+	}
+
+	tree := BuildDirectoryTree(files, false, nil)
+
+	if len(tree.files) != 3 {
+		t.Errorf("expected 3 files at root, got %d", len(tree.files))
+	}
+	if len(tree.subdirs) != 0 {
+		t.Errorf("expected 0 subdirs at root, got %d", len(tree.subdirs))
+	}
+}
+
+func TestBuildDirectoryTree_DeepNesting(t *testing.T) {
+	files := []*MKVFile{
+		{Name: "a/b/c/d/e/f/deep.mkv", Size: 100},
+	}
+
+	tree := BuildDirectoryTree(files, false, nil)
+
+	// Navigate to the deepest level
+	current := tree
+	expectedPath := []string{"a", "b", "c", "d", "e", "f"}
+	for i, dir := range expectedPath {
+		if len(current.subdirs) != 1 {
+			t.Errorf("expected 1 subdir at level %d, got %d", i, len(current.subdirs))
+		}
+		next, ok := current.subdirs[dir]
+		if !ok {
+			t.Fatalf("expected subdir '%s' at level %d", dir, i)
+		}
+		current = next
+	}
+
+	// Check the file is at the deepest level
+	if len(current.files) != 1 {
+		t.Errorf("expected 1 file at deepest level, got %d", len(current.files))
+	}
+	if _, ok := current.files["deep.mkv"]; !ok {
+		t.Error("expected deep.mkv at deepest level")
+	}
+}
+
+func TestBuildDirectoryTree_LargeScale(t *testing.T) {
+	// Create 10,000 files across various directories
+	files := make([]*MKVFile, 10000)
+	for i := range files {
+		category := i % 10
+		subcategory := (i / 10) % 100
+		fileNum := i
+		name := "Category" + string(rune('A'+category)) + "/Sub" + itoa(subcategory) + "/movie" + itoa(fileNum) + ".mkv"
+		files[i] = &MKVFile{
+			Name: name,
+			Size: int64(i * 100),
+		}
+	}
+
+	tree := BuildDirectoryTree(files, false, nil)
+
+	// Verify structure - should have 10 category directories (A-J)
+	if len(tree.subdirs) != 10 {
+		t.Errorf("expected 10 category subdirs, got %d", len(tree.subdirs))
+	}
+
+	// Count total files
+	totalFiles := countFiles(tree)
+	if totalFiles != 10000 {
+		t.Errorf("expected 10000 total files, got %d", totalFiles)
+	}
+}
+
+// itoa converts int to string without importing strconv
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var result []byte
+	for i > 0 {
+		result = append([]byte{byte('0' + i%10)}, result...)
+		i /= 10
+	}
+	return string(result)
+}
+
+func countFiles(dir *MKVFSDirNode) int {
+	count := len(dir.files)
+	for _, subdir := range dir.subdirs {
+		count += countFiles(subdir)
+	}
+	return count
+}
+
+func TestMKVFSDirNode_Readdir(t *testing.T) {
+	dir := &MKVFSDirNode{
+		name: "test",
+		path: "test",
+		files: map[string]*MKVFile{
+			"file1.mkv": {Name: "test/file1.mkv", Size: 100},
+			"file2.mkv": {Name: "test/file2.mkv", Size: 200},
+		},
+		subdirs: map[string]*MKVFSDirNode{
+			"subdir1": {name: "subdir1", path: "test/subdir1"},
+			"subdir2": {name: "subdir2", path: "test/subdir2"},
+		},
+	}
+
+	stream, errno := dir.Readdir(context.Background())
+	if errno != 0 {
+		t.Fatalf("Readdir returned error: %v", errno)
+	}
+
+	// Collect all entries
+	var entries []fuse.DirEntry
+	for stream.HasNext() {
+		entry, _ := stream.Next()
+		entries = append(entries, entry)
+	}
+
+	if len(entries) != 4 {
+		t.Errorf("expected 4 entries, got %d", len(entries))
+	}
+
+	// Check we have 2 directories and 2 files
+	dirs := 0
+	regularFiles := 0
+	for _, e := range entries {
+		if e.Mode&fuse.S_IFDIR != 0 {
+			dirs++
+		} else {
+			regularFiles++
+		}
+	}
+
+	if dirs != 2 {
+		t.Errorf("expected 2 directories, got %d", dirs)
+	}
+	if regularFiles != 2 {
+		t.Errorf("expected 2 files, got %d", regularFiles)
+	}
+}
+
+func TestMKVFSDirNode_Getattr(t *testing.T) {
+	dir := &MKVFSDirNode{
+		name: "test",
+		path: "test",
+		subdirs: map[string]*MKVFSDirNode{
+			"sub1": {},
+			"sub2": {},
+			"sub3": {},
+		},
+	}
+
+	var out fuse.AttrOut
+	errno := dir.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned error: %v", errno)
+	}
+
+	// Check mode is directory with 0555 permissions
+	expectedMode := uint32(fuse.S_IFDIR | 0555)
+	if out.Mode != expectedMode {
+		t.Errorf("expected mode %o, got %o", expectedMode, out.Mode)
+	}
+
+	// nlink should be 2 + number of subdirs
+	expectedNlink := uint32(2 + 3)
+	if out.Nlink != expectedNlink {
+		t.Errorf("expected nlink %d, got %d", expectedNlink, out.Nlink)
+	}
+}
+
+func TestMKVFSDirNode_Mkdir_EROFS(t *testing.T) {
+	dir := &MKVFSDirNode{name: "test", path: "test"}
+
+	var out fuse.EntryOut
+	_, errno := dir.Mkdir(context.Background(), "newdir", 0755, &out)
+	if errno != syscall.EROFS {
+		t.Errorf("expected EROFS, got %v", errno)
+	}
+}
+
+func TestMKVFSDirNode_Rmdir_EROFS(t *testing.T) {
+	dir := &MKVFSDirNode{name: "test", path: "test"}
+
+	errno := dir.Rmdir(context.Background(), "somedir")
+	if errno != syscall.EROFS {
+		t.Errorf("expected EROFS, got %v", errno)
+	}
+}
+
+func TestMKVFSDirNode_Unlink_EROFS(t *testing.T) {
+	dir := &MKVFSDirNode{name: "test", path: "test"}
+
+	errno := dir.Unlink(context.Background(), "somefile")
+	if errno != syscall.EROFS {
+		t.Errorf("expected EROFS, got %v", errno)
+	}
+}
+
+func TestMKVFSDirNode_Create_EROFS(t *testing.T) {
+	dir := &MKVFSDirNode{name: "test", path: "test"}
+
+	var out fuse.EntryOut
+	_, _, _, errno := dir.Create(context.Background(), "newfile", 0, 0644, &out)
+	if errno != syscall.EROFS {
+		t.Errorf("expected EROFS, got %v", errno)
+	}
+}
+
+func TestMKVFSWithDirectories(t *testing.T) {
+	// Test that files with paths are organized into directories
+	configReader := &mockConfigReader{
+		configs: map[string]*Config{
+			"/configs/action.yaml": {
+				Name:      "Movies/Action/Matrix.mkv",
+				DedupFile: "/data/matrix.dedup",
+				SourceDir: "/data/source",
+			},
+			"/configs/comedy.yaml": {
+				Name:      "Movies/Comedy/Hangover.mkv",
+				DedupFile: "/data/hangover.dedup",
+				SourceDir: "/data/source",
+			},
+			"/configs/root.yaml": {
+				Name:      "standalone.mkv",
+				DedupFile: "/data/standalone.dedup",
+				SourceDir: "/data/source",
+			},
+		},
+	}
+
+	readerFactory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/matrix.dedup":     {data: []byte("matrix"), originalSize: 6},
+			"/data/hangover.dedup":   {data: []byte("hangover"), originalSize: 8},
+			"/data/standalone.dedup": {data: []byte("standalone"), originalSize: 10},
+		},
+	}
+
+	root, err := NewMKVFSWithFactories(
+		[]string{"/configs/action.yaml", "/configs/comedy.yaml", "/configs/root.yaml"},
+		false,
+		readerFactory,
+		configReader,
+	)
+	if err != nil {
+		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
+	}
+
+	// Check the directory tree structure
+	if root.rootDir == nil {
+		t.Fatal("rootDir should not be nil")
+	}
+
+	// Root should have 1 file and 1 directory
+	if len(root.rootDir.files) != 1 {
+		t.Errorf("expected 1 file at root, got %d", len(root.rootDir.files))
+	}
+	if len(root.rootDir.subdirs) != 1 {
+		t.Errorf("expected 1 subdir at root, got %d", len(root.rootDir.subdirs))
+	}
+
+	// Check Movies directory
+	movies, ok := root.rootDir.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory")
+	}
+	if len(movies.subdirs) != 2 {
+		t.Errorf("expected 2 subdirs in Movies (Action, Comedy), got %d", len(movies.subdirs))
+	}
+
+	// Check Action has Matrix
+	action, ok := movies.subdirs["Action"]
+	if !ok {
+		t.Fatal("expected Action subdirectory")
+	}
+	if _, ok := action.files["Matrix.mkv"]; !ok {
+		t.Error("expected Matrix.mkv in Action directory")
+	}
+
+	// Check Comedy has Hangover
+	comedy, ok := movies.subdirs["Comedy"]
+	if !ok {
+		t.Fatal("expected Comedy subdirectory")
+	}
+	if _, ok := comedy.files["Hangover.mkv"]; !ok {
+		t.Error("expected Hangover.mkv in Comedy directory")
+	}
+}

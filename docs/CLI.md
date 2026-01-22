@@ -56,6 +56,9 @@ mkvdup create \
 - `video.mkvdup` - The dedup data file (index + delta)
 - `video.mkvdup.yaml` - Config file for this mapping
 
+**Directory paths in `--name`:**
+The `--name` option supports directory paths (e.g., `"Movies/Action/Matrix.mkv"`). When mounted via FUSE, directories are auto-created from path components. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
+
 ### mount
 
 Mount virtual filesystem from config files.
