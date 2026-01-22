@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="298" failures="0" errors="0" time="1.780150">
-	<testsuite tests="20" failures="0" time="0.010000" name="github.com/stuckj/mkvdup/cmd/mkvdup" timestamp="2026-01-22T12:49:51Z">
+<testsuites tests="326" failures="0" errors="0" time="2.070441">
+	<testsuite tests="20" failures="0" time="0.022000" name="github.com/stuckj/mkvdup/cmd/mkvdup" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -16,16 +16,16 @@
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/normal_file" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/empty_file" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/file_not_found" time="0.000000"></testcase>
-		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/large_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/large_file" time="0.010000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum/consistency" time="0.000000"></testcase>
-		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestCalculateFileChecksum" time="0.010000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestProbeResult" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestProbeResult_ZeroValues" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestZero" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestTwo" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestFour" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="13" failures="0" time="0.004000" name="github.com/stuckj/mkvdup/internal/daemon" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="13" failures="0" time="0.012000" name="github.com/stuckj/mkvdup/internal/daemon" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -43,7 +43,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyError_Message" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestWritePidFile_InvalidPath" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="80" failures="0" time="0.030000" name="github.com/stuckj/mkvdup/internal/dedup" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="80" failures="0" time="0.033000" name="github.com/stuckj/mkvdup/internal/dedup" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -136,12 +136,56 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestClose_Idempotent" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestSetESReader" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="0" failures="0" time="0.006000" name="github.com/stuckj/mkvdup/internal/fuse" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="28" failures="0" time="0.009000" name="github.com/stuckj/mkvdup/internal/fuse" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestFUSEMount_Integration" time="0.000000">
+			<skipped message="=== RUN   TestFUSEMount_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestFUSEMount_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestFUSERead_Integration" time="0.000000">
+			<skipped message="=== RUN   TestFUSERead_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestFUSERead_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestFUSEFileSize_Integration" time="0.000000">
+			<skipped message="=== RUN   TestFUSEFileSize_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestFUSEFileSize_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestFUSEChecksum_Integration" time="0.000000">
+			<skipped message="=== RUN   TestFUSEChecksum_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestFUSEChecksum_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestFUSEMountUnmount_Integration" time="0.000000">
+			<skipped message="=== RUN   TestFUSEMountUnmount_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestFUSEMountUnmount_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestAdapters_Integration" time="0.000000">
+			<skipped message="=== RUN   TestAdapters_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestAdapters_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestDefaultConfigReader_Integration" time="0.000000">
+			<skipped message="=== RUN   TestDefaultConfigReader_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestDefaultConfigReader_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFS_Integration" time="0.000000">
+			<skipped message="=== RUN   TestNewMKVFS_Integration&#xA;    testdata.go:114: Test data not available. See testdata/README.md for setup instructions.&#xA;--- SKIP: TestNewMKVFS_Integration (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFSWithFactories" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFSWithFactories_ConfigError" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFSWithFactories_ReaderError" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSRoot_Readdir" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSRoot_Lookup_Found" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSRoot_Lookup_NotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Getattr" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Read" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Read_Partial" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Read_BeyondEOF" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Read_NoReader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Open" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Open_InitError" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFile_Close" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFile_Close_NoReader" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestHashString" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFSWithFactories_RelativePaths" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFSWithFactories_AbsolutePaths" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewMKVFSWithFactories_MultipleConfigs" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestEnsureReader_AlreadyInitialized" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="21" failures="0" time="0.005000" name="github.com/stuckj/mkvdup/internal/matcher" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="21" failures="0" time="0.008000" name="github.com/stuckj/mkvdup/internal/matcher" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -167,7 +211,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_EmptyData" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_AudioWithNoSyncPoint" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="84" failures="0" time="0.008000" name="github.com/stuckj/mkvdup/internal/mkv" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="84" failures="0" time="0.007000" name="github.com/stuckj/mkvdup/internal/mkv" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -256,7 +300,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParser_Accessors" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestIsTopLevelElement" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="16" failures="0" time="0.008000" name="github.com/stuckj/mkvdup/internal/mmap" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="16" failures="0" time="0.007000" name="github.com/stuckj/mkvdup/internal/mmap" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -277,7 +321,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose_Idempotent" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose_EmptyFile" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="64" failures="0" time="0.009000" name="github.com/stuckj/mkvdup/internal/source" timestamp="2026-01-22T12:49:51Z">
+	<testsuite tests="64" failures="0" time="0.010000" name="github.com/stuckj/mkvdup/internal/source" timestamp="2026-01-22T15:42:01Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>

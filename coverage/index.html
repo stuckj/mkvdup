@@ -69,25 +69,27 @@
 				
 				<option value="file6">github.com/stuckj/mkvdup/internal/dedup/writer.go (0.0%)</option>
 				
-				<option value="file7">github.com/stuckj/mkvdup/internal/fuse/fs.go (0.0%)</option>
+				<option value="file7">github.com/stuckj/mkvdup/internal/fuse/adapters.go (0.0%)</option>
 				
-				<option value="file8">github.com/stuckj/mkvdup/internal/matcher/matcher.go (9.5%)</option>
+				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (72.9%)</option>
 				
-				<option value="file9">github.com/stuckj/mkvdup/internal/mkv/ebml.go (89.4%)</option>
+				<option value="file9">github.com/stuckj/mkvdup/internal/matcher/matcher.go (9.5%)</option>
 				
-				<option value="file10">github.com/stuckj/mkvdup/internal/mkv/parser.go (13.6%)</option>
+				<option value="file10">github.com/stuckj/mkvdup/internal/mkv/ebml.go (89.4%)</option>
 				
-				<option value="file11">github.com/stuckj/mkvdup/internal/mmap/mmap.go (93.5%)</option>
+				<option value="file11">github.com/stuckj/mkvdup/internal/mkv/parser.go (13.6%)</option>
 				
-				<option value="file12">github.com/stuckj/mkvdup/internal/source/audio.go (81.5%)</option>
+				<option value="file12">github.com/stuckj/mkvdup/internal/mmap/mmap.go (93.5%)</option>
 				
-				<option value="file13">github.com/stuckj/mkvdup/internal/source/indexer.go (11.2%)</option>
+				<option value="file13">github.com/stuckj/mkvdup/internal/source/audio.go (81.5%)</option>
 				
-				<option value="file14">github.com/stuckj/mkvdup/internal/source/mpegps.go (14.8%)</option>
+				<option value="file14">github.com/stuckj/mkvdup/internal/source/indexer.go (11.2%)</option>
 				
-				<option value="file15">github.com/stuckj/mkvdup/internal/source/source.go (46.8%)</option>
+				<option value="file15">github.com/stuckj/mkvdup/internal/source/mpegps.go (14.8%)</option>
 				
-				<option value="file16">github.com/stuckj/mkvdup/internal/source/video.go (92.9%)</option>
+				<option value="file16">github.com/stuckj/mkvdup/internal/source/source.go (46.8%)</option>
+				
+				<option value="file17">github.com/stuckj/mkvdup/internal/source/video.go (92.9%)</option>
 				
 				</select>
 			</div>
@@ -3050,7 +3052,109 @@ func (w *Writer) writeFooter(indexChecksum, deltaChecksum uint64) error <span cl
 }
 </pre>
 		
-		<pre class="file" id="file7" style="display: none">// Package fuse provides a FUSE filesystem for accessing deduplicated MKV files.
+		<pre class="file" id="file7" style="display: none">package fuse
+
+import (
+        "fmt"
+
+        "github.com/stuckj/mkvdup/internal/dedup"
+        "github.com/stuckj/mkvdup/internal/source"
+)
+
+// Ensure adapters implement interfaces
+var _ ReaderInitializer = (*dedupReaderAdapter)(nil)
+var _ ReaderFactory = (*DefaultReaderFactory)(nil)
+var _ ConfigReader = (*DefaultConfigReader)(nil)
+
+// dedupReaderAdapter wraps dedup.Reader to implement ReaderInitializer interface.
+type dedupReaderAdapter struct {
+        reader *dedup.Reader
+        // index stores the source index for cleanup when using ES offsets.
+        // This is nil when using raw source files.
+        index *source.Index
+}
+
+func (a *dedupReaderAdapter) OriginalSize() int64 <span class="cov0" title="0">{
+        return a.reader.OriginalSize()
+}</span>
+
+func (a *dedupReaderAdapter) UsesESOffsets() bool <span class="cov0" title="0">{
+        return a.reader.UsesESOffsets()
+}</span>
+
+func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error <span class="cov0" title="0">{
+        if a.reader.UsesESOffsets() </span><span class="cov0" title="0">{
+                // Create indexer to get ES reader
+                indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("create indexer: %w", err)
+                }</span>
+                <span class="cov0" title="0">if err := indexer.Build(nil); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("build index: %w", err)
+                }</span>
+                <span class="cov0" title="0">index := indexer.Index()
+                if len(index.ESReaders) &gt; 0 </span><span class="cov0" title="0">{
+                        a.reader.SetESReader(index.ESReaders[0])
+                }</span>
+                // Store index for cleanup in Close()
+                <span class="cov0" title="0">a.index = index</span>
+        } else<span class="cov0" title="0"> {
+                // Load source files for raw access
+                if err := a.reader.LoadSourceFiles(); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("load source files: %w", err)
+                }</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) <span class="cov0" title="0">{
+        return a.reader.ReadAt(p, off)
+}</span>
+
+func (a *dedupReaderAdapter) Close() error <span class="cov0" title="0">{
+        var errs []error
+        if err := a.reader.Close(); err != nil </span><span class="cov0" title="0">{
+                errs = append(errs, err)
+        }</span>
+        <span class="cov0" title="0">if a.index != nil </span><span class="cov0" title="0">{
+                if err := a.index.Close(); err != nil </span><span class="cov0" title="0">{
+                        errs = append(errs, err)
+                }</span>
+        }
+        <span class="cov0" title="0">if len(errs) &gt; 0 </span><span class="cov0" title="0">{
+                return errs[0]
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+// DefaultReaderFactory is the default implementation of ReaderFactory.
+type DefaultReaderFactory struct{}
+
+func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (ReaderInitializer, error) <span class="cov0" title="0">{
+        reader, err := dedup.NewReaderLazy(dedupPath, sourceDir)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">return &amp;dedupReaderAdapter{reader: reader}, nil</span>
+}
+
+// DefaultConfigReader is the default implementation of ConfigReader.
+type DefaultConfigReader struct{}
+
+func (r *DefaultConfigReader) ReadConfig(path string) (*Config, error) <span class="cov0" title="0">{
+        config, err := dedup.ReadConfig(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">return &amp;Config{
+                Name:      config.Name,
+                DedupFile: config.DedupFile,
+                SourceDir: config.SourceDir,
+        }, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">// Package fuse provides a FUSE filesystem for accessing deduplicated MKV files.
 package fuse
 
 import (
@@ -3064,8 +3168,6 @@ import (
 
         "github.com/hanwen/go-fuse/v2/fs"
         "github.com/hanwen/go-fuse/v2/fuse"
-        "github.com/stuckj/mkvdup/internal/dedup"
-        "github.com/stuckj/mkvdup/internal/source"
 )
 
 // MKVFile represents a virtual MKV file backed by a dedup file.
@@ -3074,9 +3176,11 @@ type MKVFile struct {
         DedupPath string
         SourceDir string
         Size      int64
-        reader    *dedup.Reader
-        index     *source.Index
+        reader    DedupReader
         mu        sync.RWMutex
+
+        // Factory for lazy initialization (injected from root)
+        readerFactory ReaderFactory
 }
 
 // MKVFSRoot is the root node of the FUSE filesystem.
@@ -3085,6 +3189,10 @@ type MKVFSRoot struct {
         files   map[string]*MKVFile
         mu      sync.RWMutex
         verbose bool
+
+        // Factories for dependency injection (allows mocking in tests)
+        readerFactory ReaderFactory
+        configReader  ConfigReader
 }
 
 // MKVFSNode represents a file node in the FUSE filesystem.
@@ -3106,55 +3214,64 @@ var _ fs.NodeGetattrer = (*MKVFSNode)(nil)
 // NewMKVFS creates a new MKVFS root from a list of config files.
 // Set verbose=true to enable debug logging.
 func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) <span class="cov0" title="0">{
+        return NewMKVFSWithFactories(configPaths, verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{})
+}</span>
+
+// NewMKVFSWithFactories creates a new MKVFS root with custom factories.
+// This allows injecting mock implementations for testing.
+func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader) (*MKVFSRoot, error) <span class="cov5" title="6">{
         root := &amp;MKVFSRoot{
-                files:   make(map[string]*MKVFile),
-                verbose: verbose,
+                files:         make(map[string]*MKVFile),
+                verbose:       verbose,
+                readerFactory: readerFactory,
+                configReader:  configReader,
         }
 
         if verbose </span><span class="cov0" title="0">{
                 log.Printf("Creating MKVFS with %d config files", len(configPaths))
         }</span>
 
-        <span class="cov0" title="0">for _, configPath := range configPaths </span><span class="cov0" title="0">{
+        <span class="cov5" title="6">for _, configPath := range configPaths </span><span class="cov6" title="7">{
                 if verbose </span><span class="cov0" title="0">{
                         log.Printf("Reading config: %s", configPath)
                 }</span>
-                <span class="cov0" title="0">config, err := dedup.ReadConfig(configPath)
-                if err != nil </span><span class="cov0" title="0">{
+                <span class="cov6" title="7">config, err := root.configReader.ReadConfig(configPath)
+                if err != nil </span><span class="cov1" title="1">{
                         return nil, fmt.Errorf("read config %s: %w", configPath, err)
                 }</span>
-                <span class="cov0" title="0">if verbose </span><span class="cov0" title="0">{
+                <span class="cov5" title="6">if verbose </span><span class="cov0" title="0">{
                         log.Printf("Config: name=%s, dedup=%s, source=%s", config.Name, config.DedupFile, config.SourceDir)
                 }</span>
 
                 // Resolve relative paths
-                <span class="cov0" title="0">configDir := filepath.Dir(configPath)
+                <span class="cov5" title="6">configDir := filepath.Dir(configPath)
                 dedupPath := config.DedupFile
-                if !filepath.IsAbs(dedupPath) </span><span class="cov0" title="0">{
+                if !filepath.IsAbs(dedupPath) </span><span class="cov1" title="1">{
                         dedupPath = filepath.Join(configDir, dedupPath)
                 }</span>
-                <span class="cov0" title="0">sourceDir := config.SourceDir
-                if !filepath.IsAbs(sourceDir) </span><span class="cov0" title="0">{
+                <span class="cov5" title="6">sourceDir := config.SourceDir
+                if !filepath.IsAbs(sourceDir) </span><span class="cov1" title="1">{
                         sourceDir = filepath.Join(configDir, sourceDir)
                 }</span>
 
                 // Open dedup file to get size (lazy loading - only reads header)
-                <span class="cov0" title="0">if verbose </span><span class="cov0" title="0">{
+                <span class="cov5" title="6">if verbose </span><span class="cov0" title="0">{
                         log.Printf("Opening dedup file: %s", dedupPath)
                 }</span>
-                <span class="cov0" title="0">reader, err := dedup.NewReaderLazy(dedupPath, sourceDir)
-                if err != nil </span><span class="cov0" title="0">{
+                <span class="cov5" title="6">reader, err := root.readerFactory.NewReaderLazy(dedupPath, sourceDir)
+                if err != nil </span><span class="cov1" title="1">{
                         if verbose </span><span class="cov0" title="0">{
                                 log.Printf("Failed to open dedup file: %v", err)
                         }</span>
-                        <span class="cov0" title="0">return nil, fmt.Errorf("open dedup file %s: %w", dedupPath, err)</span>
+                        <span class="cov1" title="1">return nil, fmt.Errorf("open dedup file %s: %w", dedupPath, err)</span>
                 }
 
-                <span class="cov0" title="0">mkvFile := &amp;MKVFile{
-                        Name:      config.Name,
-                        DedupPath: dedupPath,
-                        SourceDir: sourceDir,
-                        Size:      reader.OriginalSize(),
+                <span class="cov5" title="5">mkvFile := &amp;MKVFile{
+                        Name:          config.Name,
+                        DedupPath:     dedupPath,
+                        SourceDir:     sourceDir,
+                        Size:          reader.OriginalSize(),
+                        readerFactory: root.readerFactory,
                 }
 
                 // Don't keep reader open - we'll open it lazily
@@ -3166,15 +3283,15 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) <span clas
                 }</span>
         }
 
-        <span class="cov0" title="0">if verbose </span><span class="cov0" title="0">{
+        <span class="cov4" title="4">if verbose </span><span class="cov0" title="0">{
                 log.Printf("Total files: %d", len(root.files))
         }</span>
 
-        <span class="cov0" title="0">return root, nil</span>
+        <span class="cov4" title="4">return root, nil</span>
 }
 
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
-func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov0" title="0">{
+func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov1" title="1">{
         r.mu.RLock()
         defer r.mu.RUnlock()
 
@@ -3182,30 +3299,30 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <
                 log.Printf("Readdir: listing %d files", len(r.files))
         }</span>
 
-        <span class="cov0" title="0">entries := make([]fuse.DirEntry, 0, len(r.files))
-        for name := range r.files </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">entries := make([]fuse.DirEntry, 0, len(r.files))
+        for name := range r.files </span><span class="cov2" title="2">{
                 if r.verbose </span><span class="cov0" title="0">{
                         log.Printf("Readdir: adding %s", name)
                 }</span>
-                <span class="cov0" title="0">entries = append(entries, fuse.DirEntry{
+                <span class="cov2" title="2">entries = append(entries, fuse.DirEntry{
                         Name: name,
                         Mode: fuse.S_IFREG,
                 })</span>
         }
-        <span class="cov0" title="0">return fs.NewListDirStream(entries), 0</span>
+        <span class="cov1" title="1">return fs.NewListDirStream(entries), 0</span>
 }
 
 // Lookup implements fs.NodeLookuper - looks up a file by name.
-func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov0" title="0">{
+func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov1" title="1">{
         r.mu.RLock()
         file, ok := r.files[name]
         r.mu.RUnlock()
 
-        if !ok </span><span class="cov0" title="0">{
+        if !ok </span><span class="cov1" title="1">{
                 if r.verbose </span><span class="cov0" title="0">{
                         log.Printf("Lookup: file not found: %s", name)
                 }</span>
-                <span class="cov0" title="0">return nil, syscall.ENOENT</span>
+                <span class="cov1" title="1">return nil, syscall.ENOENT</span>
         }
 
         <span class="cov0" title="0">if r.verbose </span><span class="cov0" title="0">{
@@ -3234,7 +3351,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 }
 
 // Getattr implements fs.NodeGetattrer - returns file attributes.
-func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov0" title="0">{
+func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov1" title="1">{
         now := time.Now()
         out.Size = uint64(n.file.Size)
         out.Mode = fuse.S_IFREG | 0444
@@ -3246,45 +3363,45 @@ func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Att
 }</span>
 
 // Open implements fs.NodeOpener - opens a file for reading.
-func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) <span class="cov0" title="0">{
+func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) <span class="cov2" title="2">{
         if n.verbose </span><span class="cov0" title="0">{
                 log.Printf("Open: %s", n.file.Name)
         }</span>
         // Initialize reader lazily if needed
-        <span class="cov0" title="0">if err := n.ensureReader(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if err := n.ensureReader(); err != nil </span><span class="cov1" title="1">{
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Open error: %s: %v", n.file.Name, err)
                 }</span>
-                <span class="cov0" title="0">return nil, 0, syscall.EIO</span>
+                <span class="cov1" title="1">return nil, 0, syscall.EIO</span>
         }
-        <span class="cov0" title="0">return nil, fuse.FOPEN_KEEP_CACHE | fuse.FOPEN_CACHE_DIR, 0</span>
+        <span class="cov1" title="1">return nil, fuse.FOPEN_KEEP_CACHE | fuse.FOPEN_CACHE_DIR, 0</span>
 }
 
 // Read implements fs.NodeReader - reads data from the file.
-func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov0" title="0">{
+func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov4" title="4">{
         n.file.mu.RLock()
         defer n.file.mu.RUnlock()
 
-        if n.file.reader == nil </span><span class="cov0" title="0">{
+        if n.file.reader == nil </span><span class="cov1" title="1">{
                 // Reader not initialized
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Read error: %s: reader not initialized", n.file.Name)
                 }</span>
-                <span class="cov0" title="0">return nil, syscall.EIO</span>
+                <span class="cov1" title="1">return nil, syscall.EIO</span>
         }
 
         // Clamp read to file size
-        <span class="cov0" title="0">if off &gt;= n.file.Size </span><span class="cov0" title="0">{
+        <span class="cov4" title="3">if off &gt;= n.file.Size </span><span class="cov1" title="1">{
                 return fuse.ReadResultData(nil), 0
         }</span>
 
-        <span class="cov0" title="0">endOff := off + int64(len(dest))
+        <span class="cov2" title="2">endOff := off + int64(len(dest))
         if endOff &gt; n.file.Size </span><span class="cov0" title="0">{
                 dest = dest[:n.file.Size-off]
         }</span>
 
         // Read from dedup reader
-        <span class="cov0" title="0">nRead, err := n.file.reader.ReadAt(dest, off)
+        <span class="cov2" title="2">nRead, err := n.file.reader.ReadAt(dest, off)
         if err != nil &amp;&amp; nRead == 0 </span><span class="cov0" title="0">{
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Read error: %s at offset %d: %v", n.file.Name, off, err)
@@ -3292,83 +3409,60 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
                 <span class="cov0" title="0">return nil, syscall.EIO</span>
         }
 
-        <span class="cov0" title="0">if n.verbose </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if n.verbose </span><span class="cov0" title="0">{
                 log.Printf("Read: %s offset=%d len=%d read=%d", n.file.Name, off, len(dest), nRead)
         }</span>
 
-        <span class="cov0" title="0">return fuse.ReadResultData(dest[:nRead]), 0</span>
+        <span class="cov2" title="2">return fuse.ReadResultData(dest[:nRead]), 0</span>
 }
 
 // ensureReader ensures the dedup reader is initialized.
-func (n *MKVFSNode) ensureReader() error <span class="cov0" title="0">{
+func (n *MKVFSNode) ensureReader() error <span class="cov4" title="3">{
         n.file.mu.Lock()
         defer n.file.mu.Unlock()
 
-        if n.file.reader != nil </span><span class="cov0" title="0">{
+        if n.file.reader != nil </span><span class="cov1" title="1">{
                 return nil
         }</span>
 
-        // Open dedup file with lazy loading
-        <span class="cov0" title="0">reader, err := dedup.NewReaderLazy(n.file.DedupPath, n.file.SourceDir)
+        // Open dedup file with lazy loading using the factory
+        <span class="cov2" title="2">reader, err := n.file.readerFactory.NewReaderLazy(n.file.DedupPath, n.file.SourceDir)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("open dedup file: %w", err)
         }</span>
 
-        // Check if this is an ES-based source
-        <span class="cov0" title="0">if reader.UsesESOffsets() </span><span class="cov0" title="0">{
-                // Create indexer to get ES reader
-                indexer, err := source.NewIndexer(n.file.SourceDir, source.DefaultWindowSize)
-                if err != nil </span><span class="cov0" title="0">{
-                        reader.Close()
-                        return fmt.Errorf("create indexer: %w", err)
-                }</span>
-                <span class="cov0" title="0">if err := indexer.Build(nil); err != nil </span><span class="cov0" title="0">{
-                        reader.Close()
-                        return fmt.Errorf("build index: %w", err)
-                }</span>
-                <span class="cov0" title="0">n.file.index = indexer.Index()
+        // Initialize the reader for reading (handles ES vs raw internally)
+        <span class="cov2" title="2">if err := reader.InitializeForReading(n.file.SourceDir); err != nil </span><span class="cov1" title="1">{
+                reader.Close()
+                return fmt.Errorf("initialize reader: %w", err)
+        }</span>
 
-                if len(n.file.index.ESReaders) &gt; 0 </span><span class="cov0" title="0">{
-                        reader.SetESReader(n.file.index.ESReaders[0])
-                }</span>
-        } else<span class="cov0" title="0"> {
-                // Load source files for raw access
-                if err := reader.LoadSourceFiles(); err != nil </span><span class="cov0" title="0">{
-                        reader.Close()
-                        return fmt.Errorf("load source files: %w", err)
-                }</span>
-        }
-
-        <span class="cov0" title="0">n.file.reader = reader
+        <span class="cov1" title="1">n.file.reader = reader
         return nil</span>
 }
 
 // Close cleans up the file's resources.
-func (f *MKVFile) Close() <span class="cov0" title="0">{
+func (f *MKVFile) Close() <span class="cov2" title="2">{
         f.mu.Lock()
         defer f.mu.Unlock()
 
-        if f.reader != nil </span><span class="cov0" title="0">{
+        if f.reader != nil </span><span class="cov1" title="1">{
                 f.reader.Close()
                 f.reader = nil
-        }</span>
-        <span class="cov0" title="0">if f.index != nil </span><span class="cov0" title="0">{
-                f.index.Close()
-                f.index = nil
         }</span>
 }
 
 // hashString creates a stable inode number from a string.
-func hashString(s string) uint64 <span class="cov0" title="0">{
+func hashString(s string) uint64 <span class="cov4" title="4">{
         var h uint64 = 5381
-        for _, c := range s </span><span class="cov0" title="0">{
+        for _, c := range s </span><span class="cov10" title="27">{
                 h = ((h &lt;&lt; 5) + h) + uint64(c)
         }</span>
-        <span class="cov0" title="0">return h</span>
+        <span class="cov4" title="4">return h</span>
 }
 </pre>
 		
-		<pre class="file" id="file8" style="display: none">// Package matcher provides the core deduplication logic for matching MKV packets to source files.
+		<pre class="file" id="file9" style="display: none">// Package matcher provides the core deduplication logic for matching MKV packets to source files.
 package matcher
 
 import (
@@ -3984,7 +4078,7 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) <span class="cov0" title="0">
 }
 </pre>
 		
-		<pre class="file" id="file9" style="display: none">// Package mkv provides functionality for parsing MKV (Matroska) files.
+		<pre class="file" id="file10" style="display: none">// Package mkv provides functionality for parsing MKV (Matroska) files.
 package mkv
 
 import (
@@ -4356,7 +4450,7 @@ func (h SimpleBlockHeader) LacingType() byte <span class="cov4" title="4">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file10" style="display: none">package mkv
+		<pre class="file" id="file11" style="display: none">package mkv
 
 import (
         "bytes"
@@ -4803,7 +4897,7 @@ func (p *Parser) Data() []byte <span class="cov1" title="1">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file11" style="display: none">// Package mmap provides zero-copy memory-mapped file access.
+		<pre class="file" id="file12" style="display: none">// Package mmap provides zero-copy memory-mapped file access.
 package mmap
 
 import (
@@ -4898,7 +4992,7 @@ func (m *File) Close() error <span class="cov10" title="11">{
 }
 </pre>
 		
-		<pre class="file" id="file12" style="display: none">package source
+		<pre class="file" id="file13" style="display: none">package source
 
 // FindAudioSyncPoints finds all audio sync pattern positions in the data.
 // Detects AC3, DTS, TrueHD, and MPEG Audio sync patterns.
@@ -5021,7 +5115,7 @@ func FindAllSyncPoints(data []byte) []int <span class="cov1" title="1">{
 }
 </pre>
 		
-		<pre class="file" id="file13" style="display: none">package source
+		<pre class="file" id="file14" style="display: none">package source
 
 import (
         "fmt"
@@ -5494,7 +5588,7 @@ func (idx *Index) Close() error <span class="cov4" title="2">{
 }
 </pre>
 		
-		<pre class="file" id="file14" style="display: none">package source
+		<pre class="file" id="file15" style="display: none">package source
 
 import (
         "encoding/binary"
@@ -6341,7 +6435,7 @@ func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, 
 }
 </pre>
 		
-		<pre class="file" id="file15" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
+		<pre class="file" id="file16" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
 package source
 
 import (
@@ -6701,7 +6795,7 @@ func (idx *Index) RawSlice(loc Location, size int) []byte <span class="cov1" tit
 }
 </pre>
 		
-		<pre class="file" id="file16" style="display: none">package source
+		<pre class="file" id="file17" style="display: none">package source
 
 // FindVideoStartCodes finds all video start code positions (00 00 01 XX pattern) in the data.
 // These are potential sync points where video frames or other structures begin.
