@@ -23,28 +23,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.0
+
       - name: Build
         run: go build ./...
 
       - name: Test with coverage
-        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+        run: gotestsum --junitfile test-results.xml -- -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Test with race detection
-        run: go test -race ./...
+        run: gotestsum --junitfile test-results-race.xml -- -race ./...
 
       - name: Generate coverage report
         run: |
           go tool cover -func=coverage.out | tee coverage-summary.txt
           go tool cover -html=coverage.out -o coverage.html
 
-      - name: Upload coverage artifacts
+      - name: Upload test artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
+          name: test-results
           path: |
             coverage.out
             coverage.html
             coverage-summary.txt
+            test-results.xml
+            test-results-race.xml
 
   lint:
     name: Lint
