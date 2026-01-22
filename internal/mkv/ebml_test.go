@@ -768,15 +768,45 @@ func TestParser_EmptyFile(t *testing.T) {
 
 	parser, err := NewParser(emptyFile)
 	if err != nil {
-		// Empty file might fail to open, that's ok
+		// Empty file fails at NewParser level - this is acceptable behavior
+		t.Logf("NewParser failed on empty file (expected): %v", err)
 		return
 	}
 	defer parser.Close()
 
-	// Parsing should fail
+	// If NewParser succeeded, parsing should fail
 	err = parser.Parse(nil)
 	if err == nil {
 		t.Error("Parse() expected error for empty file")
+	}
+}
+
+func TestParser_EmptyContent(t *testing.T) {
+	// Test Parse() on a file with minimal content that passes NewParser
+	// but fails during parsing
+	tmpDir := t.TempDir()
+	testFile := tmpDir + "/minimal.mkv"
+
+	f, err := os.Create(testFile)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	// Write just a few bytes - not enough to be valid EBML
+	f.Write([]byte{0x1A, 0x45})
+	f.Close()
+
+	parser, err := NewParser(testFile)
+	if err != nil {
+		// May fail at open time due to insufficient content
+		t.Logf("NewParser failed on minimal file: %v", err)
+		return
+	}
+	defer parser.Close()
+
+	// Parse should fail on incomplete/invalid content
+	err = parser.Parse(nil)
+	if err == nil {
+		t.Error("Parse() expected error for incomplete EBML content")
 	}
 }
 

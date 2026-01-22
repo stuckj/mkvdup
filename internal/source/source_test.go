@@ -409,10 +409,17 @@ func TestComputeHash(t *testing.T) {
 }
 
 func TestComputeHash_Empty(t *testing.T) {
-	// Empty data should produce a valid hash
-	hash := ComputeHash([]byte{})
-	if hash == 0 {
-		t.Error("ComputeHash() of empty data should not be zero")
+	// Empty data should produce a consistent hash
+	hash1 := ComputeHash([]byte{})
+	hash2 := ComputeHash([]byte{})
+	if hash1 != hash2 {
+		t.Errorf("ComputeHash() not consistent for empty data: got %d and %d", hash1, hash2)
+	}
+
+	// Empty data hash should differ from non-empty data
+	nonEmptyHash := ComputeHash([]byte{0})
+	if hash1 == nonEmptyHash {
+		t.Error("ComputeHash() produced same hash for empty and non-empty data")
 	}
 }
 

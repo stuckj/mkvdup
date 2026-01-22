@@ -11,49 +11,86 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// testDedupFileOptions configures how createTestDedupFileWithOptions creates the test file.
+type testDedupFileOptions struct {
+	filename         string
+	numEntries       int
+	originalSize     int64
+	originalChecksum uint64
+	includeSource    bool
+	deltaSize        int64
+}
+
+// defaultTestDedupOptions returns the default options for creating a test dedup file.
+func defaultTestDedupOptions() testDedupFileOptions {
+	return testDedupFileOptions{
+		filename:         "test.mkvdup",
+		numEntries:       10,
+		originalSize:     1000000,
+		originalChecksum: 0x1234567890,
+		includeSource:    true,
+		deltaSize:        100,
+	}
+}
+
 // createTestDedupFile creates a minimal valid .mkvdup file for testing.
 // It creates entries with predictable values for verification.
 func createTestDedupFile(t *testing.T, tmpDir string, numEntries int) string {
 	t.Helper()
+	opts := defaultTestDedupOptions()
+	opts.numEntries = numEntries
+	return createTestDedupFileWithOptions(t, tmpDir, opts)
+}
 
-	dedupPath := filepath.Join(tmpDir, "test.mkvdup")
+// createTestDedupFileWithOptions creates a test dedup file with custom options.
+func createTestDedupFileWithOptions(t *testing.T, tmpDir string, opts testDedupFileOptions) string {
+	t.Helper()
+
+	dedupPath := filepath.Join(tmpDir, opts.filename)
 	f, err := os.Create(dedupPath)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 	defer f.Close()
 
-	// Write header
-	f.Write([]byte(Magic))                                     // Magic (8 bytes)
-	binary.Write(f, binary.LittleEndian, uint32(Version))      // Version (4 bytes)
-	binary.Write(f, binary.LittleEndian, uint32(0))            // Flags (4 bytes)
-	binary.Write(f, binary.LittleEndian, int64(1000000))       // OriginalSize (8 bytes)
-	binary.Write(f, binary.LittleEndian, uint64(0x1234567890)) // OriginalChecksum (8 bytes)
-	binary.Write(f, binary.LittleEndian, uint8(SourceTypeDVD)) // SourceType (1 byte)
-	binary.Write(f, binary.LittleEndian, uint8(0))             // UsesESOffsets (1 byte)
-	binary.Write(f, binary.LittleEndian, uint16(1))            // SourceFileCount (2 bytes)
-	binary.Write(f, binary.LittleEndian, uint64(numEntries))   // EntryCount (8 bytes)
+	// Determine source file count and size
+	var sourceFileCount uint16
+	var sourceFilesSize int64
+	sourceFilePath := "test/source.vob"
+	if opts.includeSource {
+		sourceFileCount = 1
+		sourceFilesSize = int64(2 + len(sourceFilePath) + 8 + 8)
+	}
 
 	// Calculate delta offset after header + source files + entries
-	sourceFilePath := "test/source.vob"
-	sourceFilesSize := int64(2 + len(sourceFilePath) + 8 + 8)
-	indexSize := int64(numEntries) * EntrySize
+	indexSize := int64(opts.numEntries) * EntrySize
 	deltaOffset := int64(HeaderSize) + sourceFilesSize + indexSize
-	deltaSize := int64(100) // 100 bytes of delta data
 
-	binary.Write(f, binary.LittleEndian, deltaOffset) // DeltaOffset (8 bytes)
-	binary.Write(f, binary.LittleEndian, deltaSize)   // DeltaSize (8 bytes)
+	// Write header
+	f.Write([]byte(Magic))                                        // Magic (8 bytes)
+	binary.Write(f, binary.LittleEndian, uint32(Version))         // Version (4 bytes)
+	binary.Write(f, binary.LittleEndian, uint32(0))               // Flags (4 bytes)
+	binary.Write(f, binary.LittleEndian, opts.originalSize)       // OriginalSize (8 bytes)
+	binary.Write(f, binary.LittleEndian, opts.originalChecksum)   // OriginalChecksum (8 bytes)
+	binary.Write(f, binary.LittleEndian, uint8(SourceTypeDVD))    // SourceType (1 byte)
+	binary.Write(f, binary.LittleEndian, uint8(0))                // UsesESOffsets (1 byte)
+	binary.Write(f, binary.LittleEndian, sourceFileCount)         // SourceFileCount (2 bytes)
+	binary.Write(f, binary.LittleEndian, uint64(opts.numEntries)) // EntryCount (8 bytes)
+	binary.Write(f, binary.LittleEndian, deltaOffset)             // DeltaOffset (8 bytes)
+	binary.Write(f, binary.LittleEndian, opts.deltaSize)          // DeltaSize (8 bytes)
 
-	// Write source file section
-	binary.Write(f, binary.LittleEndian, uint16(len(sourceFilePath)))
-	f.Write([]byte(sourceFilePath))
-	binary.Write(f, binary.LittleEndian, int64(5000000))       // Size
-	binary.Write(f, binary.LittleEndian, uint64(0xABCDEF1234)) // Checksum
+	// Write source file section if included
+	if opts.includeSource {
+		binary.Write(f, binary.LittleEndian, uint16(len(sourceFilePath)))
+		f.Write([]byte(sourceFilePath))
+		binary.Write(f, binary.LittleEndian, int64(5000000))       // Size
+		binary.Write(f, binary.LittleEndian, uint64(0xABCDEF1234)) // Checksum
+	}
 
 	// Write entries with predictable values
 	// Each entry: MkvOffset = i*100, Length = 50+i, Source = 1, SourceOffset = i*200
 	indexHasher := xxhash.New()
-	for i := 0; i < numEntries; i++ {
+	for i := 0; i < opts.numEntries; i++ {
 		entryBuf := make([]byte, EntrySize)
 		binary.LittleEndian.PutUint64(entryBuf[0:8], uint64(i*100))   // MkvOffset
 		binary.LittleEndian.PutUint64(entryBuf[8:16], uint64(50+i))   // Length
@@ -68,7 +105,7 @@ func createTestDedupFile(t *testing.T, tmpDir string, numEntries int) string {
 	indexChecksum := indexHasher.Sum64()
 
 	// Write delta data
-	deltaData := make([]byte, deltaSize)
+	deltaData := make([]byte, opts.deltaSize)
 	for i := range deltaData {
 		deltaData[i] = byte(i % 256)
 	}
@@ -848,38 +885,15 @@ func TestInfo(t *testing.T) {
 // createTestDedupFileZeroEntries creates a valid dedup file with zero entries
 func createTestDedupFileZeroEntries(t *testing.T, tmpDir string) string {
 	t.Helper()
-
-	dedupPath := filepath.Join(tmpDir, "zero.mkvdup")
-	f, err := os.Create(dedupPath)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	opts := testDedupFileOptions{
+		filename:         "zero.mkvdup",
+		numEntries:       0,
+		originalSize:     0,
+		originalChecksum: 0,
+		includeSource:    false,
+		deltaSize:        0,
 	}
-	defer f.Close()
-
-	// Write header with zero entries
-	f.Write([]byte(Magic))
-	binary.Write(f, binary.LittleEndian, uint32(Version))
-	binary.Write(f, binary.LittleEndian, uint32(0))            // Flags
-	binary.Write(f, binary.LittleEndian, int64(0))             // OriginalSize
-	binary.Write(f, binary.LittleEndian, uint64(0))            // OriginalChecksum
-	binary.Write(f, binary.LittleEndian, uint8(SourceTypeDVD)) // SourceType
-	binary.Write(f, binary.LittleEndian, uint8(0))             // UsesESOffsets
-	binary.Write(f, binary.LittleEndian, uint16(0))            // SourceFileCount (0)
-	binary.Write(f, binary.LittleEndian, uint64(0))            // EntryCount (0)
-
-	// Delta offset and size (right after header since no source files or entries)
-	deltaOffset := int64(HeaderSize)
-	deltaSize := int64(0)
-	binary.Write(f, binary.LittleEndian, deltaOffset)
-	binary.Write(f, binary.LittleEndian, deltaSize)
-
-	// Write footer (no index to checksum, no delta to checksum)
-	emptyHash := xxhash.Sum64(nil) // xxhash of empty data
-	binary.Write(f, binary.LittleEndian, emptyHash)
-	binary.Write(f, binary.LittleEndian, emptyHash)
-	f.Write([]byte(Magic))
-
-	return dedupPath
+	return createTestDedupFileWithOptions(t, tmpDir, opts)
 }
 
 func TestZeroEntries(t *testing.T) {
