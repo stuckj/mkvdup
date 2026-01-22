@@ -12,8 +12,6 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/stuckj/mkvdup/internal/dedup"
-	"github.com/stuckj/mkvdup/internal/source"
 )
 
 // MKVFile represents a virtual MKV file backed by a dedup file.
@@ -22,9 +20,11 @@ type MKVFile struct {
 	DedupPath string
 	SourceDir string
 	Size      int64
-	reader    *dedup.Reader
-	index     *source.Index
+	reader    DedupReader
 	mu        sync.RWMutex
+
+	// Factory for lazy initialization (injected from root)
+	readerFactory ReaderFactory
 }
 
 // MKVFSRoot is the root node of the FUSE filesystem.
@@ -33,6 +33,10 @@ type MKVFSRoot struct {
 	files   map[string]*MKVFile
 	mu      sync.RWMutex
 	verbose bool
+
+	// Factories for dependency injection (allows mocking in tests)
+	readerFactory ReaderFactory
+	configReader  ConfigReader
 }
 
 // MKVFSNode represents a file node in the FUSE filesystem.
@@ -54,9 +58,17 @@ var _ fs.NodeGetattrer = (*MKVFSNode)(nil)
 // NewMKVFS creates a new MKVFS root from a list of config files.
 // Set verbose=true to enable debug logging.
 func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
+	return NewMKVFSWithFactories(configPaths, verbose, &DefaultReaderFactory{}, &DefaultConfigReader{})
+}
+
+// NewMKVFSWithFactories creates a new MKVFS root with custom factories.
+// This allows injecting mock implementations for testing.
+func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader) (*MKVFSRoot, error) {
 	root := &MKVFSRoot{
-		files:   make(map[string]*MKVFile),
-		verbose: verbose,
+		files:         make(map[string]*MKVFile),
+		verbose:       verbose,
+		readerFactory: readerFactory,
+		configReader:  configReader,
 	}
 
 	if verbose {
@@ -67,7 +79,7 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
 		if verbose {
 			log.Printf("Reading config: %s", configPath)
 		}
-		config, err := dedup.ReadConfig(configPath)
+		config, err := root.configReader.ReadConfig(configPath)
 		if err != nil {
 			return nil, fmt.Errorf("read config %s: %w", configPath, err)
 		}
@@ -90,7 +102,7 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
 		if verbose {
 			log.Printf("Opening dedup file: %s", dedupPath)
 		}
-		reader, err := dedup.NewReaderLazy(dedupPath, sourceDir)
+		reader, err := root.readerFactory.NewReaderLazy(dedupPath, sourceDir)
 		if err != nil {
 			if verbose {
 				log.Printf("Failed to open dedup file: %v", err)
@@ -99,10 +111,11 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
 		}
 
 		mkvFile := &MKVFile{
-			Name:      config.Name,
-			DedupPath: dedupPath,
-			SourceDir: sourceDir,
-			Size:      reader.OriginalSize(),
+			Name:          config.Name,
+			DedupPath:     dedupPath,
+			SourceDir:     sourceDir,
+			Size:          reader.OriginalSize(),
+			readerFactory: root.readerFactory,
 		}
 
 		// Don't keep reader open - we'll open it lazily
@@ -256,35 +269,16 @@ func (n *MKVFSNode) ensureReader() error {
 		return nil
 	}
 
-	// Open dedup file with lazy loading
-	reader, err := dedup.NewReaderLazy(n.file.DedupPath, n.file.SourceDir)
+	// Open dedup file with lazy loading using the factory
+	reader, err := n.file.readerFactory.NewReaderLazy(n.file.DedupPath, n.file.SourceDir)
 	if err != nil {
 		return fmt.Errorf("open dedup file: %w", err)
 	}
 
-	// Check if this is an ES-based source
-	if reader.UsesESOffsets() {
-		// Create indexer to get ES reader
-		indexer, err := source.NewIndexer(n.file.SourceDir, source.DefaultWindowSize)
-		if err != nil {
-			reader.Close()
-			return fmt.Errorf("create indexer: %w", err)
-		}
-		if err := indexer.Build(nil); err != nil {
-			reader.Close()
-			return fmt.Errorf("build index: %w", err)
-		}
-		n.file.index = indexer.Index()
-
-		if len(n.file.index.ESReaders) > 0 {
-			reader.SetESReader(n.file.index.ESReaders[0])
-		}
-	} else {
-		// Load source files for raw access
-		if err := reader.LoadSourceFiles(); err != nil {
-			reader.Close()
-			return fmt.Errorf("load source files: %w", err)
-		}
+	// Initialize the reader for reading (handles ES vs raw internally)
+	if err := reader.InitializeForReading(n.file.SourceDir); err != nil {
+		reader.Close()
+		return fmt.Errorf("initialize reader: %w", err)
 	}
 
 	n.file.reader = reader
@@ -299,10 +293,6 @@ func (f *MKVFile) Close() {
 	if f.reader != nil {
 		f.reader.Close()
 		f.reader = nil
-	}
-	if f.index != nil {
-		f.index.Close()
-		f.index = nil
 	}
 }
 
