@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -546,7 +547,7 @@ func TestNewReader_Version1Error(t *testing.T) {
 		t.Error("NewReader should fail for version 1")
 	}
 	// Check error message suggests recreating
-	if err != nil && !contains(err.Error(), "recreate") {
+	if err != nil && !strings.Contains(err.Error(), "recreate") {
 		t.Errorf("Error should suggest recreating: %v", err)
 	}
 }
@@ -873,8 +874,9 @@ func createTestDedupFileZeroEntries(t *testing.T, tmpDir string) string {
 	binary.Write(f, binary.LittleEndian, deltaSize)
 
 	// Write footer (no index to checksum, no delta to checksum)
-	binary.Write(f, binary.LittleEndian, uint64(0xef46db3751d8e999)) // xxhash of empty
-	binary.Write(f, binary.LittleEndian, uint64(0xef46db3751d8e999)) // xxhash of empty
+	emptyHash := xxhash.Sum64(nil) // xxhash of empty data
+	binary.Write(f, binary.LittleEndian, emptyHash)
+	binary.Write(f, binary.LittleEndian, emptyHash)
 	f.Write([]byte(Magic))
 
 	return dedupPath
