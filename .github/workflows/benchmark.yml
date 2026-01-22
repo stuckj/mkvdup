@@ -101,8 +101,8 @@ jobs:
             exit 0
           fi
           cp benchmark-output.txt benchmarks/baseline.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "stuckj"
+          git config user.email "stuckj@users.noreply.github.com"
           git add benchmarks/baseline.txt
           git diff --staged --quiet || git commit -m "Update benchmark baseline [skip ci]"
           # Pull any changes that occurred during the workflow run
