@@ -1,5 +1,8 @@
 name: Add to Project
 
+permissions:
+  contents: read
+
 on:
   issues:
     types: [opened]
