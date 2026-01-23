@@ -68,13 +68,13 @@ jobs:
         run: ls -la *.deb *.rpm
 
       - name: Upload deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: deb-package-${{ matrix.goarch }}
           path: "*.deb"
 
       - name: Upload rpm artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rpm-package-${{ matrix.goarch }}
           path: "*.rpm"
