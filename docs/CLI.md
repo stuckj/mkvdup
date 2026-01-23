@@ -57,7 +57,7 @@ mkvdup create \
 - `video.mkvdup.yaml` - Config file for this mapping
 
 **Directory paths in `--name`:**
-The `--name` option supports directory paths (e.g., `"Movies/Action/Video1.mkv"`). When mounted via FUSE, directories are auto-created from path components. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
+The `--name` option supports directory paths (e.g., `"Movies/Action/Video1.mkv"`). Each `create` command produces one `.mkvdup` file with one name stored in its config. The directory structure becomes visible when mounting multiple configs together—directories are auto-created from path components across all mounted files. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
 
 ### mount
 
