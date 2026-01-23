@@ -729,23 +729,23 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 const defaultConfigPath = "/etc/mkvdup.conf"
 
 // mountFuse mounts a FUSE filesystem exposing dedup files as MKV files.
-func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool, pidFile string, daemonTimeout time.Duration) error {
+func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error {
 	// Daemonize unless --foreground is set or we're already a daemon child
-	if !foreground && !daemon.IsChild() {
-		return daemon.Daemonize(pidFile, daemonTimeout)
+	if !opts.Foreground && !daemon.IsChild() {
+		return daemon.Daemonize(opts.PidFile, opts.DaemonTimeout)
 	}
 
 	// Write PID file in foreground mode (daemon mode writes it in Daemonize)
-	if foreground && pidFile != "" {
-		if err := daemon.WritePidFile(pidFile, os.Getpid()); err != nil {
+	if opts.Foreground && opts.PidFile != "" {
+		if err := daemon.WritePidFile(opts.PidFile, os.Getpid()); err != nil {
 			return fmt.Errorf("write pid file: %w", err)
 		}
 	}
 
 	// Clean up PID file on exit (for both foreground and daemon child modes)
-	if pidFile != "" && (foreground || daemon.IsChild()) {
+	if opts.PidFile != "" && (opts.Foreground || daemon.IsChild()) {
 		defer func() {
-			_ = daemon.RemovePidFile(pidFile)
+			_ = daemon.RemovePidFile(opts.PidFile)
 		}()
 	}
 
@@ -762,7 +762,7 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 	}
 
 	// If configDir is set, expand directory to list of .yaml files
-	if configDir {
+	if opts.ConfigDir {
 		if len(configPaths) != 1 {
 			err := fmt.Errorf("--config-dir requires exactly one directory path, got %d", len(configPaths))
 			if daemon.IsChild() {
@@ -794,8 +794,26 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 		}
 	}
 
+	// Set up permission store
+	defaults := mkvfuse.Defaults{
+		FileUID:  opts.DefaultUID,
+		FileGID:  opts.DefaultGID,
+		FileMode: opts.DefaultFileMode,
+		DirUID:   opts.DefaultUID,
+		DirGID:   opts.DefaultGID,
+		DirMode:  opts.DefaultDirMode,
+	}
+	permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile)
+	permStore := mkvfuse.NewPermissionStore(permPath, defaults, verbose)
+	if err := permStore.Load(); err != nil {
+		if daemon.IsChild() {
+			daemon.NotifyError(fmt.Errorf("load permissions: %w", err))
+		}
+		return fmt.Errorf("load permissions: %w", err)
+	}
+
 	// Create the root filesystem
-	root, err := mkvfuse.NewMKVFS(configPaths, verbose)
+	root, err := mkvfuse.NewMKVFSWithPermissions(configPaths, verbose, permStore)
 	if err != nil {
 		err = fmt.Errorf("create filesystem: %w", err)
 		if daemon.IsChild() {
@@ -805,15 +823,15 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
 	}
 
 	// Mount the filesystem
-	opts := &fs.Options{
+	fuseOpts := &fs.Options{
 		MountOptions: fuse.MountOptions{
-			AllowOther: allowOther,
+			AllowOther: opts.AllowOther,
 			Name:       "mkvdup",
 			FsName:     "mkvdup",
 		},
 	}
 
-	server, err := fs.Mount(mountpoint, root, opts)
+	server, err := fs.Mount(mountpoint, root, fuseOpts)
 	if err != nil {
 		err = fmt.Errorf("mount: %w", err)
 		if daemon.IsChild() {

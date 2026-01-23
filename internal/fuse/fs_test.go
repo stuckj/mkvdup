@@ -112,6 +112,7 @@ func TestNewMKVFSWithFactories(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
@@ -143,6 +144,7 @@ func TestNewMKVFSWithFactories_ConfigError(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -172,6 +174,7 @@ func TestNewMKVFSWithFactories_ReaderError(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -493,6 +496,7 @@ func TestNewMKVFSWithFactories_RelativePaths(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
@@ -534,6 +538,7 @@ func TestNewMKVFSWithFactories_AbsolutePaths(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
@@ -585,6 +590,7 @@ func TestNewMKVFSWithFactories_MultipleConfigs(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
@@ -635,7 +641,7 @@ func TestBuildDirectoryTree(t *testing.T) {
 		{Name: "root.mkv", Size: 50},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Check root level
 	if len(tree.files) != 1 {
@@ -693,7 +699,7 @@ func TestBuildDirectoryTree_RootFiles(t *testing.T) {
 		{Name: "movie3.mkv", Size: 300},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	if len(tree.files) != 3 {
 		t.Errorf("expected 3 files at root, got %d", len(tree.files))
@@ -708,7 +714,7 @@ func TestBuildDirectoryTree_DeepNesting(t *testing.T) {
 		{Name: "a/b/c/d/e/f/deep.mkv", Size: 100},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Navigate to the deepest level
 	current := tree
@@ -747,7 +753,7 @@ func TestBuildDirectoryTree_LargeScale(t *testing.T) {
 		}
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Verify structure - should have 10 category directories (A-J)
 	if len(tree.subdirs) != 10 {
@@ -921,6 +927,7 @@ func TestMKVFSWithDirectories(t *testing.T) {
 		false,
 		readerFactory,
 		configReader,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
@@ -976,7 +983,7 @@ func TestBuildDirectoryTree_EmptyName(t *testing.T) {
 		{Name: "valid.mkv", Size: 200},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Only valid.mkv should be in the tree
 	if len(tree.files) != 1 {
@@ -993,7 +1000,7 @@ func TestBuildDirectoryTree_AbsolutePath(t *testing.T) {
 		{Name: "/Movies/test.mkv", Size: 100},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Should create Movies directory (leading slash stripped)
 	if len(tree.subdirs) != 1 {
@@ -1015,7 +1022,7 @@ func TestBuildDirectoryTree_DotDotPath(t *testing.T) {
 		{Name: "valid.mkv", Size: 200},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Only valid.mkv should be in the tree (malicious path rejected)
 	if len(tree.files) != 1 {
@@ -1036,7 +1043,7 @@ func TestBuildDirectoryTree_DuplicatePaths(t *testing.T) {
 		{Name: "movie.mkv", DedupPath: "/second.dedup", Size: 200},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Should have one file with the second dedup path
 	if len(tree.files) != 1 {
@@ -1062,7 +1069,7 @@ func TestBuildDirectoryTree_FileDirectoryCollision_DirWins(t *testing.T) {
 		{Name: "Movies", Size: 200},                 // Tries to create file named "Movies"
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Movies should be a directory, not a file
 	if len(tree.subdirs) != 1 {
@@ -1083,7 +1090,7 @@ func TestBuildDirectoryTree_PathComponentCollision(t *testing.T) {
 		{Name: "Movies.mkv/Action/test.mkv", Size: 200}, // Tries to use "Movies.mkv" as directory
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Only Movies.mkv file should exist
 	if len(tree.files) != 1 {
@@ -1104,7 +1111,7 @@ func TestBuildDirectoryTree_MultipleSlashes(t *testing.T) {
 		{Name: "Movies//Action///test.mkv", Size: 100},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Should create proper hierarchy despite multiple slashes
 	movies, ok := tree.subdirs["Movies"]
@@ -1126,7 +1133,7 @@ func TestBuildDirectoryTree_DotPath(t *testing.T) {
 		{Name: "./Movies/./test.mkv", Size: 100},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Should create Movies directory (. components stripped)
 	movies, ok := tree.subdirs["Movies"]
@@ -1145,7 +1152,7 @@ func TestBuildDirectoryTree_TrailingSlash(t *testing.T) {
 		{Name: "valid.mkv", Size: 200},
 	}
 
-	tree := BuildDirectoryTree(files, false, nil)
+	tree := BuildDirectoryTree(files, false, nil, nil)
 
 	// Both files should be in the tree ("Movies/" becomes "Movies")
 	if len(tree.files) != 2 {
@@ -1197,5 +1204,268 @@ func TestMKVFSDirNode_Readdir_Sorted(t *testing.T) {
 		if entries[i] != name {
 			t.Errorf("entry %d: expected %s, got %s", i, name, entries[i])
 		}
+	}
+}
+
+// --- Permission Store Integration Tests ---
+
+func TestMKVFSNode_Getattr_WithPermStore(t *testing.T) {
+	// Create permission store with custom defaults
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1001,
+		FileMode: 0640,
+		DirUID:   1000,
+		DirGID:   1001,
+		DirMode:  0750,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	// Set custom permissions for a specific file
+	uid := uint32(2000)
+	mode := uint32(0600)
+	_ = store.SetFilePerms("test/video.mkv", &uid, nil, &mode)
+
+	file := &MKVFile{
+		Name: "video.mkv",
+		Size: 54321,
+	}
+	node := &MKVFSNode{file: file, path: "test/video.mkv", permStore: store}
+
+	var out fuse.AttrOut
+	errno := node.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+
+	// Should use custom UID from store
+	if out.Uid != 2000 {
+		t.Errorf("expected UID 2000, got %d", out.Uid)
+	}
+	// GID should fall back to default (not overridden)
+	if out.Gid != 1001 {
+		t.Errorf("expected GID 1001 (default), got %d", out.Gid)
+	}
+	// Mode should use custom mode
+	expectedMode := uint32(fuse.S_IFREG | 0600)
+	if out.Mode != expectedMode {
+		t.Errorf("expected mode %o, got %o", expectedMode, out.Mode)
+	}
+}
+
+func TestMKVFSNode_Getattr_WithPermStore_Defaults(t *testing.T) {
+	// Create permission store with custom defaults
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1001,
+		FileMode: 0640,
+		DirUID:   1000,
+		DirGID:   1001,
+		DirMode:  0750,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	file := &MKVFile{
+		Name: "other.mkv",
+		Size: 12345,
+	}
+	// File with no custom permissions set
+	node := &MKVFSNode{file: file, path: "other.mkv", permStore: store}
+
+	var out fuse.AttrOut
+	errno := node.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+
+	// Should use defaults
+	if out.Uid != 1000 {
+		t.Errorf("expected UID 1000, got %d", out.Uid)
+	}
+	if out.Gid != 1001 {
+		t.Errorf("expected GID 1001, got %d", out.Gid)
+	}
+	expectedMode := uint32(fuse.S_IFREG | 0640)
+	if out.Mode != expectedMode {
+		t.Errorf("expected mode %o, got %o", expectedMode, out.Mode)
+	}
+}
+
+func TestMKVFSDirNode_Getattr_WithPermStore(t *testing.T) {
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1001,
+		FileMode: 0640,
+		DirUID:   1000,
+		DirGID:   1001,
+		DirMode:  0750,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	// Set custom permissions for directory
+	mode := uint32(0755)
+	_ = store.SetDirPerms("Movies/Action", nil, nil, &mode)
+
+	dir := &MKVFSDirNode{
+		name:      "Action",
+		path:      "Movies/Action",
+		subdirs:   make(map[string]*MKVFSDirNode),
+		files:     make(map[string]*MKVFile),
+		permStore: store,
+	}
+
+	var out fuse.AttrOut
+	errno := dir.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+
+	// Should use defaults for UID/GID, custom for mode
+	if out.Uid != 1000 {
+		t.Errorf("expected UID 1000, got %d", out.Uid)
+	}
+	if out.Gid != 1001 {
+		t.Errorf("expected GID 1001, got %d", out.Gid)
+	}
+	expectedMode := uint32(fuse.S_IFDIR | 0755)
+	if out.Mode != expectedMode {
+		t.Errorf("expected mode %o, got %o", expectedMode, out.Mode)
+	}
+}
+
+func TestMKVFSNode_Setattr_NoPermStore(t *testing.T) {
+	file := &MKVFile{Name: "test.mkv", Size: 100}
+	node := &MKVFSNode{file: file, path: "test.mkv", permStore: nil}
+
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0644
+
+	var out fuse.AttrOut
+	errno := node.Setattr(context.Background(), nil, in, &out)
+
+	// Should return EROFS when no permission store
+	if errno != syscall.EROFS {
+		t.Errorf("expected EROFS, got %d", errno)
+	}
+}
+
+func TestMKVFSNode_Setattr_Chmod(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	file := &MKVFile{Name: "test.mkv", Size: 100}
+	node := &MKVFSNode{file: file, path: "test.mkv", permStore: store}
+
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0644
+
+	var out fuse.AttrOut
+	errno := node.Setattr(context.Background(), nil, in, &out)
+	if errno != 0 {
+		t.Fatalf("Setattr returned errno %d", errno)
+	}
+
+	// Verify mode was updated
+	expectedMode := uint32(fuse.S_IFREG | 0644)
+	if out.Mode != expectedMode {
+		t.Errorf("expected mode %o, got %o", expectedMode, out.Mode)
+	}
+
+	// Verify it persisted in the store
+	_, _, mode := store.GetFilePerms("test.mkv")
+	if mode != 0644 {
+		t.Errorf("expected stored mode 0644, got %o", mode)
+	}
+}
+
+func TestMKVFSNode_Setattr_Chown(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	file := &MKVFile{Name: "test.mkv", Size: 100}
+	node := &MKVFSNode{file: file, path: "test.mkv", permStore: store}
+
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_UID | fuse.FATTR_GID
+	in.Uid = 1000
+	in.Gid = 1001
+
+	var out fuse.AttrOut
+	errno := node.Setattr(context.Background(), nil, in, &out)
+	if errno != 0 {
+		t.Fatalf("Setattr returned errno %d", errno)
+	}
+
+	// Verify uid/gid were updated
+	if out.Uid != 1000 {
+		t.Errorf("expected UID 1000, got %d", out.Uid)
+	}
+	if out.Gid != 1001 {
+		t.Errorf("expected GID 1001, got %d", out.Gid)
+	}
+
+	// Verify it persisted in the store
+	uid, gid, _ := store.GetFilePerms("test.mkv")
+	if uid != 1000 {
+		t.Errorf("expected stored UID 1000, got %d", uid)
+	}
+	if gid != 1001 {
+		t.Errorf("expected stored GID 1001, got %d", gid)
+	}
+}
+
+func TestMKVFSDirNode_Setattr_NoPermStore(t *testing.T) {
+	dir := &MKVFSDirNode{
+		name:      "test",
+		path:      "test",
+		subdirs:   make(map[string]*MKVFSDirNode),
+		files:     make(map[string]*MKVFile),
+		permStore: nil,
+	}
+
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0755
+
+	var out fuse.AttrOut
+	errno := dir.Setattr(context.Background(), nil, in, &out)
+
+	// Should return EROFS when no permission store
+	if errno != syscall.EROFS {
+		t.Errorf("expected EROFS, got %d", errno)
+	}
+}
+
+func TestMKVFSDirNode_Setattr_Chmod(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	dir := &MKVFSDirNode{
+		name:      "test",
+		path:      "Movies/Action",
+		subdirs:   make(map[string]*MKVFSDirNode),
+		files:     make(map[string]*MKVFile),
+		permStore: store,
+	}
+
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0755
+
+	var out fuse.AttrOut
+	errno := dir.Setattr(context.Background(), nil, in, &out)
+	if errno != 0 {
+		t.Fatalf("Setattr returned errno %d", errno)
+	}
+
+	// Verify mode was updated
+	expectedMode := uint32(fuse.S_IFDIR | 0755)
+	if out.Mode != expectedMode {
+		t.Errorf("expected mode %o, got %o", expectedMode, out.Mode)
+	}
+
+	// Verify it persisted in the store
+	_, _, mode := store.GetDirPerms("Movies/Action")
+	if mode != 0755 {
+		t.Errorf("expected stored mode 0755, got %o", mode)
 	}
 }

@@ -20,7 +20,7 @@ import (
 // Conflicts:
 //   - Duplicate paths: later file wins, warning logged
 //   - File/directory collision: directory wins, file skipped with warning
-func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFactory) *MKVFSDirNode {
+func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) *MKVFSDirNode {
 	root := &MKVFSDirNode{
 		name:          "",
 		path:          "",
@@ -28,17 +28,18 @@ func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFact
 		subdirs:       make(map[string]*MKVFSDirNode),
 		verbose:       verbose,
 		readerFactory: readerFactory,
+		permStore:     permStore,
 	}
 
 	for _, file := range files {
-		insertFile(root, file, verbose, readerFactory)
+		insertFile(root, file, verbose, readerFactory, permStore)
 	}
 
 	return root
 }
 
 // insertFile inserts a file into the directory tree, creating directories as needed.
-func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory) {
+func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) {
 	// Validate: reject paths with ".." components (security)
 	if strings.Contains(file.Name, "..") {
 		log.Printf("Warning: skipping file with invalid path (contains '..'): %s", file.Name)
@@ -98,6 +99,7 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
 				subdirs:       make(map[string]*MKVFSDirNode),
 				verbose:       verbose,
 				readerFactory: readerFactory,
+				permStore:     permStore,
 			}
 			current.subdirs[dirName] = subdir
 		}

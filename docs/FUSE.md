@@ -154,16 +154,32 @@ kill -HUP $(pidof mkvdup)
 
 ## Permissions and Ownership
 
-Virtual files support `chmod` and `chown` operations. Metadata is stored in a separate permissions file.
+Virtual files and directories support `chmod` and `chown` operations. Permission metadata is stored in a separate YAML file, keeping `.mkvdup` files immutable while allowing customization.
 
-**Permissions file location:**
-- Default: `~/.config/mkvdup/permissions.yaml`
-- Configurable via `--permissions-file` or in mount config
+### Permissions File Location
 
-**Permissions file format:**
+**Search order (first match wins):**
+1. `--permissions-file PATH` command-line option
+2. `~/.config/mkvdup/permissions.yaml` (if exists)
+3. `/etc/mkvdup/permissions.yaml` (if exists)
+
+**Default write location (when no file exists):**
+- Running as root: `/etc/mkvdup/permissions.yaml`
+- Running as non-root: `~/.config/mkvdup/permissions.yaml`
+
+### Permissions File Format
+
 ```yaml
+# ~/.config/mkvdup/permissions.yaml or /etc/mkvdup/permissions.yaml
 # Auto-managed by mkvdup daemon (also human-editable)
-# Changes are picked up on SIGHUP reload
+
+defaults:
+  file_uid: 1000
+  file_gid: 1000
+  file_mode: 0444
+  dir_uid: 1000
+  dir_gid: 1000
+  dir_mode: 0555
 
 files:
   "Videos/Video1.mkv":
@@ -171,25 +187,53 @@ files:
     gid: 1001
     mode: 0640
   "Videos/Video2.mkv":
-    mode: 0444  # read-only, inherits uid/gid from defaults
+    mode: 0444  # inherits uid/gid from defaults
+
+directories:
+  "Movies":
+    uid: 1000
+    gid: 1000
+    mode: 0755
+  "Movies/Action":
+    mode: 0755  # inherits uid/gid from defaults
 ```
 
-**Default behavior (when file not in permissions.yaml):**
-1. Use daemon defaults from config/command line if specified
-2. Otherwise use `root:root` (uid=0, gid=0) with mode `0644`
+**Field semantics:**
+- `uid`, `gid`, `mode`: Only specified fields are overridden; `null` or omitted fields inherit from defaults
+- Paths are relative to the mount root (no leading slash)
+- Mode values are stored in octal
 
-**CLI/config options for defaults:**
+### CLI Options for Defaults
+
 ```bash
 # Mount with custom default ownership
-mkvdup mount --config mount.yaml --default-uid 1000 --default-gid 1000 --default-mode 0644
+mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
 
-# Or in mount config yaml
-defaults:
-  uid: 1000
-  gid: 1000
-  mode: 0644
-  permissions_file: /var/lib/mkvdup/permissions.yaml
+# Mount with custom file and directory modes
+mkvdup mount --default-file-mode 0644 --default-dir-mode 0755 /mnt/videos config.yaml
+
+# Specify explicit permissions file location
+mkvdup mount --permissions-file /var/lib/mkvdup/permissions.yaml /mnt/videos config.yaml
 ```
+
+### Behavior
+
+**Default behavior (when file/directory not in permissions.yaml):**
+1. Use defaults from command-line options if specified
+2. Otherwise use `root:root` (uid=0, gid=0) with mode `0444` for files, `0555` for directories
+
+**On chmod/chown:**
+1. Permission changes are saved immediately to the permissions file
+2. The parent directory is created if it doesn't exist
+3. Changes persist across daemon restarts
+
+**On mount:**
+1. Permissions file is loaded (or created with defaults)
+2. Stale entries (for files/directories that no longer exist) are automatically removed
+
+**On SIGHUP reload:**
+1. Permissions file is reloaded from disk
+2. Stale entries are cleaned up
 
 ## Memory Management
 

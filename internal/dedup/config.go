@@ -3,6 +3,8 @@ package dedup
 import (
 	"fmt"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the contents of a .mkvdup.yaml file.
@@ -30,67 +32,14 @@ func ReadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
-	// Simple YAML parsing - look for key: "value" lines
-	config := &Config{}
-	lines := string(data)
-
-	// Parse name
-	if name := parseYAMLValue(lines, "name"); name != "" {
-		config.Name = name
-	}
-
-	// Parse dedup_file
-	if dedupFile := parseYAMLValue(lines, "dedup_file"); dedupFile != "" {
-		config.DedupFile = dedupFile
-	}
-
-	// Parse source_dir
-	if sourceDir := parseYAMLValue(lines, "source_dir"); sourceDir != "" {
-		config.SourceDir = sourceDir
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
 	if config.Name == "" || config.DedupFile == "" || config.SourceDir == "" {
 		return nil, fmt.Errorf("invalid config: missing required fields")
 	}
 
-	return config, nil
-}
-
-// parseYAMLValue extracts a quoted value from a YAML line.
-func parseYAMLValue(content, key string) string {
-	// Look for key: "value" pattern
-	prefix := key + ": \""
-	start := 0
-	for {
-		idx := indexOf(content[start:], prefix)
-		if idx < 0 {
-			return ""
-		}
-		idx += start
-
-		// Make sure this is at the start of a line
-		if idx > 0 && content[idx-1] != '\n' {
-			start = idx + 1
-			continue
-		}
-
-		// Find the value
-		valueStart := idx + len(prefix)
-		valueEnd := indexOf(content[valueStart:], "\"")
-		if valueEnd < 0 {
-			return ""
-		}
-
-		return content[valueStart : valueStart+valueEnd]
-	}
-}
-
-// indexOf returns the index of substr in s, or -1 if not found.
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	return &config, nil
 }

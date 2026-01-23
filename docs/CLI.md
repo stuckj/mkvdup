@@ -64,12 +64,50 @@ The `--name` option supports directory paths (e.g., `"Movies/Action/Video1.mkv"`
 Mount virtual filesystem from config files.
 
 ```bash
-# Mount from config file
-mkvdup mount --config /path/to/config.yaml
+# Mount from config file(s)
+mkvdup mount /mnt/videos config1.mkvdup.yaml config2.mkvdup.yaml
 
-# Mount with auto-reload on config changes
-mkvdup mount --config /path/to/config.yaml --watch
+# Mount from config directory
+mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
+
+# Mount with custom default permissions
+mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
+
+# Mount with allow-other (for other users to access)
+mkvdup mount --allow-other /mnt/videos config.yaml
+
+# Run in foreground (for debugging or systemd)
+mkvdup mount --foreground /mnt/videos config.yaml
 ```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--allow-other` | Allow other users to access the mount (requires `/etc/fuse.conf` setting) |
+| `--foreground`, `-f` | Run in foreground (don't daemonize) |
+| `--config-dir` | Treat config argument as directory of `.yaml` files |
+| `--pid-file PATH` | Write daemon PID to file |
+| `--daemon-timeout DUR` | Timeout waiting for daemon startup (default: `30s`) |
+
+**Permission Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--default-uid UID` | Default UID for files and directories (default: `0`) |
+| `--default-gid GID` | Default GID for files and directories (default: `0`) |
+| `--default-file-mode MODE` | Default mode for files, in octal (default: `0444`) |
+| `--default-dir-mode MODE` | Default mode for directories, in octal (default: `0555`) |
+| `--permissions-file PATH` | Explicit path to permissions file |
+
+**Permissions file search order:**
+1. `--permissions-file PATH` (if specified)
+2. `~/.config/mkvdup/permissions.yaml` (if exists)
+3. `/etc/mkvdup/permissions.yaml` (if exists)
+
+New permissions are written to:
+- `~/.config/mkvdup/permissions.yaml` (for non-root users)
+- `/etc/mkvdup/permissions.yaml` (when running as root)
 
 ### verify
 
