@@ -2,50 +2,50 @@ goos: linux
 goarch: amd64
 pkg: github.com/stuckj/mkvdup/internal/dedup
 cpu: AMD EPYC 7763 64-Core Processor                
-BenchmarkGetEntry_Sequential-4   	32513150	        36.71 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4   	32500869	        36.72 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4   	32613336	        36.70 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4   	32565799	        36.71 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4   	32580307	        36.69 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4       	29594301	        40.21 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4       	29804295	        40.17 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4       	29544668	        40.08 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4       	29678944	        40.11 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4       	26422323	        40.57 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4          	100000000	        10.27 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4          	100000000	        10.55 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4          	100000000	        10.60 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4          	100000000	        10.42 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4          	114314605	        10.44 ns/op	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4     	   25401	     46786 ns/op	1400.75 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Sequential-4     	   25663	     46292 ns/op	1415.71 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Sequential-4     	   25737	     46556 ns/op	1407.69 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Sequential-4     	   25922	     46661 ns/op	1404.52 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Sequential-4     	   25875	     46415 ns/op	1411.97 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Random-4         	   27242	     44236 ns/op	1481.52 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Random-4         	   27367	     44009 ns/op	1489.16 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Random-4         	   27145	     44000 ns/op	1489.46 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Random-4         	   27412	     43843 ns/op	1494.79 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Random-4         	   27303	     44144 ns/op	1484.58 MB/s	   84192 B/op	      11 allocs/op
-BenchmarkReadAt_Small-4          	 2625733	       454.9 ns/op	 562.75 MB/s	     287 B/op	       2 allocs/op
-BenchmarkReadAt_Small-4          	 2626612	       455.3 ns/op	 562.29 MB/s	     287 B/op	       2 allocs/op
-BenchmarkReadAt_Small-4          	 2619122	       457.5 ns/op	 559.59 MB/s	     287 B/op	       2 allocs/op
-BenchmarkReadAt_Small-4          	 2626381	       455.7 ns/op	 561.71 MB/s	     287 B/op	       2 allocs/op
-BenchmarkReadAt_Small-4          	 2617342	       453.4 ns/op	 564.60 MB/s	     287 B/op	       2 allocs/op
-BenchmarkFindEntriesForRange-4   	 1314218	       917.6 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4   	 1306299	       914.1 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4   	 1309424	       913.3 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4   	 1309431	       910.7 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4   	 1306662	       922.8 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkNewReader-4             	   39265	     30106 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReader-4             	   39070	     30044 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReader-4             	   39211	     30070 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReader-4             	   39046	     30091 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReader-4             	   38906	     30034 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4         	   39562	     30341 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4         	   39074	     30211 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4         	   38948	     30174 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4         	   39402	     30320 ns/op	    1064 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4         	   39212	     30006 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkGetEntry_Sequential-4   	32509294	        36.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4   	32481243	        36.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4   	32433254	        36.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4   	32408106	        36.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4   	32514859	        36.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4       	28548423	        40.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4       	27529410	        40.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4       	29060793	        40.25 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4       	28620382	        40.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4       	28622557	        40.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4          	100000000	        10.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4          	95360868	        10.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4          	92817897	        10.87 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4          	99302054	        10.64 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4          	98582222	        10.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4     	   25981	     44965 ns/op	1457.50 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-4     	   26572	     45253 ns/op	1448.23 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-4     	   26646	     45230 ns/op	1448.95 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-4     	   26680	     45249 ns/op	1448.35 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Sequential-4     	   26350	     45442 ns/op	1442.18 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Random-4         	   26947	     44772 ns/op	1463.79 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Random-4         	   26830	     45092 ns/op	1453.39 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Random-4         	   25416	     47075 ns/op	1392.17 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Random-4         	   25569	     46690 ns/op	1403.65 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Random-4         	   25534	     47133 ns/op	1390.44 MB/s	   84192 B/op	      11 allocs/op
+BenchmarkReadAt_Small-4          	 2596861	       464.9 ns/op	 550.63 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-4          	 2583066	       457.2 ns/op	 559.92 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-4          	 2581453	       461.2 ns/op	 555.02 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-4          	 2636798	       455.5 ns/op	 561.99 MB/s	     287 B/op	       2 allocs/op
+BenchmarkReadAt_Small-4          	 2623680	       456.3 ns/op	 560.99 MB/s	     287 B/op	       2 allocs/op
+BenchmarkFindEntriesForRange-4   	 1273100	       931.9 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4   	 1270762	       941.5 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4   	 1264500	       939.2 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4   	 1272597	       947.9 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4   	 1282694	       939.9 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkNewReader-4             	   39187	     30660 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-4             	   38619	     30716 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-4             	   38833	     30542 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-4             	   39013	     30427 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReader-4             	   38542	     30474 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4         	   39019	     30514 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4         	   38965	     30573 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4         	   38832	     31161 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4         	   39114	     30487 ns/op	    1064 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4         	   38838	     30456 ns/op	    1064 B/op	      27 allocs/op
 PASS
-ok  	github.com/stuckj/mkvdup/internal/dedup	88.993s
+ok  	github.com/stuckj/mkvdup/internal/dedup	87.716s
