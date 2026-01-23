@@ -1469,3 +1469,43 @@ func TestMKVFSDirNode_Setattr_Chmod(t *testing.T) {
 		t.Errorf("expected stored mode 0755, got %o", mode)
 	}
 }
+
+func TestMKVFSDirNode_Setattr_Chown(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	dir := &MKVFSDirNode{
+		name:      "Action",
+		path:      "Movies/Action",
+		subdirs:   make(map[string]*MKVFSDirNode),
+		files:     make(map[string]*MKVFile),
+		permStore: store,
+	}
+
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_UID | fuse.FATTR_GID
+	in.Uid = 1000
+	in.Gid = 1001
+
+	var out fuse.AttrOut
+	errno := dir.Setattr(context.Background(), nil, in, &out)
+	if errno != 0 {
+		t.Fatalf("Setattr returned errno %d", errno)
+	}
+
+	// Verify UID/GID were updated in the response
+	if out.Uid != 1000 {
+		t.Errorf("expected UID 1000, got %d", out.Uid)
+	}
+	if out.Gid != 1001 {
+		t.Errorf("expected GID 1001, got %d", out.Gid)
+	}
+
+	// Verify it persisted in the store
+	uid, gid, _ := store.GetDirPerms("Movies/Action")
+	if uid != 1000 {
+		t.Errorf("expected stored UID 1000, got %d", uid)
+	}
+	if gid != 1001 {
+		t.Errorf("expected stored GID 1001, got %d", gid)
+	}
+}

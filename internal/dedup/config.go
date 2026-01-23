@@ -34,7 +34,7 @@ func ReadConfig(configPath string) (*Config, error) {
 
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
+		return nil, fmt.Errorf("parse config %s: %w", configPath, err)
 	}
 
 	if config.Name == "" || config.DedupFile == "" || config.SourceDir == "" {

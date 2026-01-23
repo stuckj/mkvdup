@@ -107,7 +107,7 @@ mkvdup mount --foreground /mnt/videos config.yaml
 
 New permissions are written to:
 - `~/.config/mkvdup/permissions.yaml` (for non-root users)
-- `/etc/mkvdup/permissions.yaml` (when running as root)
+- `/etc/mkvdup/permissions.yaml` (when running as root, unless `~/.config/mkvdup/permissions.yaml` exists)
 
 ### verify
 

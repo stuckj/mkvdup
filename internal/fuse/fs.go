@@ -94,6 +94,22 @@ var _ fs.NodeGetattrer = (*MKVFSNode)(nil)
 var _ fs.NodeSetattrer = (*MKVFSNode)(nil)
 var _ fs.NodeSetattrer = (*MKVFSDirNode)(nil)
 
+// getFilePerms returns file permissions from the store, or defaults if store is nil.
+func getFilePerms(store *PermissionStore, path string) (uid, gid, mode uint32) {
+	if store != nil {
+		return store.GetFilePerms(path)
+	}
+	return 0, 0, 0444
+}
+
+// getDirPerms returns directory permissions from the store, or defaults if store is nil.
+func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) {
+	if store != nil {
+		return store.GetDirPerms(path)
+	}
+	return 0, 0, 0555
+}
+
 // NewMKVFS creates a new MKVFS root from a list of config files.
 // Set verbose=true to enable debug logging.
 func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
@@ -250,13 +266,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			subdirCount := len(subdir.subdirs)
 			subdir.mu.RUnlock()
 
-			// Get permissions from store or use defaults
-			var uid, gid, mode uint32
-			if r.permStore != nil {
-				uid, gid, mode = r.permStore.GetDirPerms(subdir.path)
-			} else {
-				uid, gid, mode = 0, 0, 0555
-			}
+			uid, gid, mode := getDirPerms(r.permStore, subdir.path)
 
 			now := time.Now()
 			out.Mode = fuse.S_IFDIR | mode
@@ -281,13 +291,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				log.Printf("Lookup: found file %s at root (size=%d)", name, file.Size)
 			}
 
-			// Get permissions from store or use defaults
-			var uid, gid, mode uint32
-			if r.permStore != nil {
-				uid, gid, mode = r.permStore.GetFilePerms(name)
-			} else {
-				uid, gid, mode = 0, 0, 0444
-			}
+			uid, gid, mode := getFilePerms(r.permStore, name)
 
 			now := time.Now()
 			out.Size = uint64(file.Size)
@@ -330,13 +334,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		log.Printf("Lookup: %s (size=%d)", name, file.Size)
 	}
 
-	// Get permissions from store or use defaults
-	var uid, gid, mode uint32
-	if r.permStore != nil {
-		uid, gid, mode = r.permStore.GetFilePerms(name)
-	} else {
-		uid, gid, mode = 0, 0, 0444
-	}
+	uid, gid, mode := getFilePerms(r.permStore, name)
 
 	// Create a new file node
 	node := &MKVFSNode{file: file, path: name, verbose: r.verbose, permStore: r.permStore}
@@ -366,13 +364,7 @@ func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Att
 	now := time.Now()
 	out.Size = uint64(n.file.Size)
 
-	// Get permissions from store or use defaults
-	var uid, gid, mode uint32
-	if n.permStore != nil {
-		uid, gid, mode = n.permStore.GetFilePerms(n.path)
-	} else {
-		uid, gid, mode = 0, 0, 0444
-	}
+	uid, gid, mode := getFilePerms(n.permStore, n.path)
 
 	out.Mode = fuse.S_IFREG | mode
 	out.Uid = uid
@@ -627,13 +619,7 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 		subdirCount := len(subdir.subdirs)
 		subdir.mu.RUnlock()
 
-		// Get permissions from store or use defaults
-		var uid, gid, mode uint32
-		if d.permStore != nil {
-			uid, gid, mode = d.permStore.GetDirPerms(subdir.path)
-		} else {
-			uid, gid, mode = 0, 0, 0555
-		}
+		uid, gid, mode := getDirPerms(d.permStore, subdir.path)
 
 		now := time.Now()
 		out.Mode = fuse.S_IFDIR | mode
@@ -665,13 +651,7 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 			filePath = d.path + "/" + name
 		}
 
-		// Get permissions from store or use defaults
-		var uid, gid, mode uint32
-		if d.permStore != nil {
-			uid, gid, mode = d.permStore.GetFilePerms(filePath)
-		} else {
-			uid, gid, mode = 0, 0, 0444
-		}
+		uid, gid, mode := getFilePerms(d.permStore, filePath)
 
 		now := time.Now()
 		out.Size = uint64(file.Size)
@@ -705,13 +685,7 @@ func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.
 
 	now := time.Now()
 
-	// Get permissions from store or use defaults
-	var uid, gid, mode uint32
-	if d.permStore != nil {
-		uid, gid, mode = d.permStore.GetDirPerms(d.path)
-	} else {
-		uid, gid, mode = 0, 0, 0555
-	}
+	uid, gid, mode := getDirPerms(d.permStore, d.path)
 
 	out.Mode = fuse.S_IFDIR | mode
 	out.Uid = uid

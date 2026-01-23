@@ -230,14 +230,14 @@ mkvdup mount --permissions-file /var/lib/mkvdup/permissions.yaml /mnt/videos con
 
 **On chmod/chown:**
 1. Permission changes are saved immediately to the permissions file
-2. The parent directory is created if it doesn't exist
+2. The permissions file's parent directory (e.g., `~/.config/mkvdup/`) is created if it doesn't exist
 3. Changes persist across daemon restarts
 
 **On mount:**
 1. Permissions file is loaded (or created with defaults)
 2. Stale entries (for files/directories that no longer exist) are automatically removed
 
-**On SIGHUP reload:**
+**On SIGHUP reload (future work):**
 1. Permissions file is reloaded from disk
 2. Stale entries are cleaned up
 
