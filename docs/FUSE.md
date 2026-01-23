@@ -45,18 +45,91 @@ virtual_files:
 
 ## Directory Structure
 
-The FUSE filesystem presents a virtual directory tree:
+The FUSE filesystem presents a virtual directory tree. Directories are **auto-created** from path components in the `name` field of config files.
+
+### Path-Based File Names
+
+When a config file specifies a path in the `name` field:
+
+```yaml
+# video1.mkvdup.yaml
+name: "Movies/Action/Video1.mkv"
+dedup_file: "video1.mkvdup"
+source_dir: "/data/sources/Video1_Bluray"
+```
+
+The filesystem automatically creates the directory hierarchy:
 
 ```
 /mnt/media/                          (mountpoint)
-└── Videos/
-    ├── Video1.mkv                   (virtual file)
-    ├── Video2.mkv                   (virtual file)
-    └── Collection1/
-        ├── Video3.mkv               (virtual file)
-        ├── Video4.mkv               (virtual file)
-        └── Video5.mkv               (virtual file)
+├── standalone.mkv                   (file at root)
+└── Movies/
+    ├── Action/
+    │   └── Video1.mkv               (virtual file)
+    └── Comedy/
+        └── Video2.mkv               (virtual file)
 ```
+
+### Path Handling
+
+The `name` field in config files supports directory paths. Path handling follows these rules:
+
+- **Separator:** Only forward slashes (`/`) are treated as path separators
+- **Leading slashes:** Stripped (absolute paths become relative within the mount)
+- **Trailing slashes:** Stripped (`Movies/` becomes `Movies`)
+- **Path normalization:** Multiple consecutive slashes are collapsed (`foo//bar` becomes `foo/bar`)
+- **Current directory:** Single dots (`.`) are filtered out (`./Movies/./test.mkv` becomes `Movies/test.mkv`)
+- **Parent directory:** Paths containing `..` components are **rejected** for security
+- **Empty names:** Files with empty names are rejected
+
+**Conflict resolution:**
+
+- **Duplicate paths:** If multiple configs specify the same path, the later one wins (warning logged)
+- **File/directory collision:** If a file and directory have the same name, the directory wins (file skipped with warning)
+
+### Directory Properties
+
+- **Auto-creation:** Directories are created automatically from path components
+- **Read-only:** All directories return `EROFS` (Read-only file system) for write operations:
+  - `mkdir`, `rmdir`, `unlink`, `create`, `rename`, `symlink`, `link`, `mknod`
+- **Permissions:** Directories have mode `0555` (read + execute for all)
+- **Virtual:** Directories exist only in the FUSE mount, not on disk
+
+### OverlayFS Integration
+
+The directory structure enables OverlayFS integration with existing media libraries.
+
+**Scenario: Gradually migrate from full MKVs to deduplicated versions**
+
+```bash
+# Existing ZFS structure with full MKV files
+/zfs/media/
+├── Movies/
+│   └── Action/
+│       └── Video1.mkv  (3.4GB full file)
+
+# mkvdup configs with matching paths
+# video1.mkvdup.yaml:
+name: "Movies/Action/Video1.mkv"
+
+# Mount mkvdup
+mkvdup mount --config /etc/mkvdup/*.yaml /mnt/mkvdup
+
+# Layer with OverlayFS (mkvdup as lower, ZFS as upper)
+mount -t overlay overlay \
+  -o lowerdir=/mnt/mkvdup,upperdir=/zfs/media,workdir=/tmp/overlay \
+  /merged/media
+
+# Result: /merged/media shows ZFS files where they exist,
+# falls back to mkvdup virtual files otherwise
+```
+
+**Migration workflow:**
+1. Create mkvdup dedup files for your MKVs
+2. Configure with paths matching your existing directory structure
+3. Mount overlay with mkvdup as lower layer
+4. Delete original MKV from ZFS when ready
+5. Overlay automatically serves mkvdup virtual version
 
 ## Hot Reload Support
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -30,7 +31,13 @@ type MKVFile struct {
 // MKVFSRoot is the root node of the FUSE filesystem.
 type MKVFSRoot struct {
 	fs.Inode
-	files   map[string]*MKVFile
+
+	// Directory tree for hierarchical file organization
+	rootDir *MKVFSDirNode
+
+	// Flat map for O(1) lookup by full path (kept for backwards compatibility)
+	files map[string]*MKVFile
+
 	mu      sync.RWMutex
 	verbose bool
 
@@ -46,11 +53,33 @@ type MKVFSNode struct {
 	verbose bool
 }
 
+// MKVFSDirNode represents a directory node in the FUSE filesystem.
+type MKVFSDirNode struct {
+	fs.Inode
+	name    string                   // basename (e.g., "Action")
+	path    string                   // full path from root (e.g., "Movies/Action")
+	files   map[string]*MKVFile      // files directly in this directory
+	subdirs map[string]*MKVFSDirNode // child directories
+	mu      sync.RWMutex
+	verbose bool
+
+	// Factory for creating file nodes (injected from root)
+	readerFactory ReaderFactory
+}
+
 // Ensure interfaces are implemented
 var _ fs.InodeEmbedder = (*MKVFSRoot)(nil)
 var _ fs.InodeEmbedder = (*MKVFSNode)(nil)
+var _ fs.InodeEmbedder = (*MKVFSDirNode)(nil)
 var _ fs.NodeReaddirer = (*MKVFSRoot)(nil)
 var _ fs.NodeLookuper = (*MKVFSRoot)(nil)
+var _ fs.NodeReaddirer = (*MKVFSDirNode)(nil)
+var _ fs.NodeLookuper = (*MKVFSDirNode)(nil)
+var _ fs.NodeGetattrer = (*MKVFSDirNode)(nil)
+var _ fs.NodeMkdirer = (*MKVFSDirNode)(nil)
+var _ fs.NodeRmdirer = (*MKVFSDirNode)(nil)
+var _ fs.NodeUnlinker = (*MKVFSDirNode)(nil)
+var _ fs.NodeCreater = (*MKVFSDirNode)(nil)
 var _ fs.NodeOpener = (*MKVFSNode)(nil)
 var _ fs.NodeReader = (*MKVFSNode)(nil)
 var _ fs.NodeGetattrer = (*MKVFSNode)(nil)
@@ -131,16 +160,33 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 		log.Printf("Total files: %d", len(root.files))
 	}
 
+	// Build directory tree from collected files
+	fileList := make([]*MKVFile, 0, len(root.files))
+	for _, f := range root.files {
+		fileList = append(fileList, f)
+	}
+	root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory)
+
+	if verbose {
+		log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))
+	}
+
 	return root, nil
 }
 
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
+// Delegates to the directory tree for hierarchical listing.
 func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	if r.rootDir != nil {
+		return r.rootDir.Readdir(ctx)
+	}
+
+	// Fallback to flat listing if no directory tree (shouldn't happen)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	if r.verbose {
-		log.Printf("Readdir: listing %d files", len(r.files))
+		log.Printf("Readdir: listing %d files (flat)", len(r.files))
 	}
 
 	entries := make([]fuse.DirEntry, 0, len(r.files))
@@ -156,8 +202,71 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	return fs.NewListDirStream(entries), 0
 }
 
-// Lookup implements fs.NodeLookuper - looks up a file by name.
+// Lookup implements fs.NodeLookuper - looks up a file or directory by name.
+// Uses the directory tree for hierarchical lookup.
 func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	if r.rootDir != nil {
+		r.rootDir.mu.RLock()
+		defer r.rootDir.mu.RUnlock()
+
+		// Check subdirectories first
+		if subdir, ok := r.rootDir.subdirs[name]; ok {
+			if r.verbose {
+				log.Printf("Lookup: found subdir %s at root", name)
+			}
+
+			// Lock subdir to safely access its fields
+			subdir.mu.RLock()
+			subdirCount := len(subdir.subdirs)
+			subdir.mu.RUnlock()
+
+			now := time.Now()
+			out.Mode = fuse.S_IFDIR | 0555
+			out.Uid = 0
+			out.Gid = 0
+			out.Atime = uint64(now.Unix())
+			out.Mtime = uint64(now.Unix())
+			out.Ctime = uint64(now.Unix())
+			out.Nlink = 2 + uint32(subdirCount)
+
+			stable := fs.StableAttr{
+				Mode: fuse.S_IFDIR,
+				Ino:  hashString(subdir.path),
+			}
+			child := r.NewPersistentInode(ctx, subdir, stable)
+			return child, 0
+		}
+
+		// Check files
+		if file, ok := r.rootDir.files[name]; ok {
+			if r.verbose {
+				log.Printf("Lookup: found file %s at root (size=%d)", name, file.Size)
+			}
+
+			now := time.Now()
+			out.Size = uint64(file.Size)
+			out.Mode = fuse.S_IFREG | 0444
+			out.Atime = uint64(now.Unix())
+			out.Mtime = uint64(now.Unix())
+			out.Ctime = uint64(now.Unix())
+			out.Nlink = 1
+
+			node := &MKVFSNode{file: file, verbose: r.verbose}
+			stable := fs.StableAttr{
+				Mode: fuse.S_IFREG,
+				Ino:  hashString(name),
+			}
+			child := r.NewInode(ctx, node, stable)
+			return child, 0
+		}
+
+		if r.verbose {
+			log.Printf("Lookup: not found %s at root", name)
+		}
+		return nil, syscall.ENOENT
+	}
+
+	// Fallback to flat lookup if no directory tree (shouldn't happen)
 	r.mu.RLock()
 	file, ok := r.files[name]
 	r.mu.RUnlock()
@@ -303,4 +412,175 @@ func hashString(s string) uint64 {
 		h = ((h << 5) + h) + uint64(c)
 	}
 	return h
+}
+
+// --- MKVFSDirNode interface implementations ---
+
+// Readdir implements fs.NodeReaddirer - lists files and subdirectories.
+func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if d.verbose {
+		log.Printf("Readdir: %s (files=%d, subdirs=%d)", d.path, len(d.files), len(d.subdirs))
+	}
+
+	entries := make([]fuse.DirEntry, 0, len(d.files)+len(d.subdirs))
+
+	// Collect and sort subdirectory names for deterministic ordering
+	subdirNames := make([]string, 0, len(d.subdirs))
+	for name := range d.subdirs {
+		subdirNames = append(subdirNames, name)
+	}
+	sort.Strings(subdirNames)
+
+	// Add subdirectories first (sorted)
+	for _, name := range subdirNames {
+		if d.verbose {
+			log.Printf("Readdir: adding subdir %s", name)
+		}
+		entries = append(entries, fuse.DirEntry{
+			Name: name,
+			Mode: fuse.S_IFDIR,
+		})
+	}
+
+	// Collect and sort file names for deterministic ordering
+	fileNames := make([]string, 0, len(d.files))
+	for name := range d.files {
+		fileNames = append(fileNames, name)
+	}
+	sort.Strings(fileNames)
+
+	// Add files (sorted)
+	for _, name := range fileNames {
+		if d.verbose {
+			log.Printf("Readdir: adding file %s", name)
+		}
+		entries = append(entries, fuse.DirEntry{
+			Name: name,
+			Mode: fuse.S_IFREG,
+		})
+	}
+
+	return fs.NewListDirStream(entries), 0
+}
+
+// Lookup implements fs.NodeLookuper - looks up a file or subdirectory by name.
+func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	// Check subdirectories first
+	if subdir, ok := d.subdirs[name]; ok {
+		if d.verbose {
+			log.Printf("Lookup: found subdir %s in %s", name, d.path)
+		}
+
+		// Lock subdir to safely access its fields
+		subdir.mu.RLock()
+		subdirCount := len(subdir.subdirs)
+		subdir.mu.RUnlock()
+
+		now := time.Now()
+		out.Mode = fuse.S_IFDIR | 0555
+		out.Uid = 0
+		out.Gid = 0
+		out.Atime = uint64(now.Unix())
+		out.Mtime = uint64(now.Unix())
+		out.Ctime = uint64(now.Unix())
+		out.Nlink = 2 + uint32(subdirCount)
+
+		stable := fs.StableAttr{
+			Mode: fuse.S_IFDIR,
+			Ino:  hashString(subdir.path),
+		}
+		child := d.NewPersistentInode(ctx, subdir, stable)
+		return child, 0
+	}
+
+	// Check files
+	if file, ok := d.files[name]; ok {
+		if d.verbose {
+			log.Printf("Lookup: found file %s in %s (size=%d)", name, d.path, file.Size)
+		}
+
+		now := time.Now()
+		out.Size = uint64(file.Size)
+		out.Mode = fuse.S_IFREG | 0444
+		out.Atime = uint64(now.Unix())
+		out.Mtime = uint64(now.Unix())
+		out.Ctime = uint64(now.Unix())
+		out.Nlink = 1
+
+		node := &MKVFSNode{file: file, verbose: d.verbose}
+		var inodePath string
+		if d.path == "" {
+			inodePath = name
+		} else {
+			inodePath = d.path + "/" + name
+		}
+		stable := fs.StableAttr{
+			Mode: fuse.S_IFREG,
+			Ino:  hashString(inodePath),
+		}
+		child := d.NewInode(ctx, node, stable)
+		return child, 0
+	}
+
+	if d.verbose {
+		log.Printf("Lookup: not found %s in %s", name, d.path)
+	}
+	return nil, syscall.ENOENT
+}
+
+// Getattr implements fs.NodeGetattrer - returns directory attributes.
+func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	now := time.Now()
+	out.Mode = fuse.S_IFDIR | 0555
+	out.Uid = 0
+	out.Gid = 0
+	out.Atime = uint64(now.Unix())
+	out.Mtime = uint64(now.Unix())
+	out.Ctime = uint64(now.Unix())
+	out.Nlink = 2 + uint32(len(d.subdirs))
+	return 0
+}
+
+// --- Read-only filesystem error handlers ---
+// These return EROFS (Read-only file system) for write operations.
+
+// Mkdir implements fs.NodeMkdirer - rejects directory creation.
+func (d *MKVFSDirNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	if d.verbose {
+		log.Printf("Mkdir: rejected (read-only) %s in %s", name, d.path)
+	}
+	return nil, syscall.EROFS
+}
+
+// Rmdir implements fs.NodeRmdirer - rejects directory removal.
+func (d *MKVFSDirNode) Rmdir(ctx context.Context, name string) syscall.Errno {
+	if d.verbose {
+		log.Printf("Rmdir: rejected (read-only) %s in %s", name, d.path)
+	}
+	return syscall.EROFS
+}
+
+// Unlink implements fs.NodeUnlinker - rejects file deletion.
+func (d *MKVFSDirNode) Unlink(ctx context.Context, name string) syscall.Errno {
+	if d.verbose {
+		log.Printf("Unlink: rejected (read-only) %s in %s", name, d.path)
+	}
+	return syscall.EROFS
+}
+
+// Create implements fs.NodeCreater - rejects file creation.
+func (d *MKVFSDirNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if d.verbose {
+		log.Printf("Create: rejected (read-only) %s in %s", name, d.path)
+	}
+	return nil, nil, 0, syscall.EROFS
 }

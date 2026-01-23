@@ -630,3 +630,335 @@ func TestNewMKVFS_Integration(t *testing.T) {
 		t.Errorf("Expected 'test.mkv', got %s", names[0])
 	}
 }
+
+// createTestDedupFileWithName creates a dedup file with a custom name in the config.
+// This allows testing directory structures like "Movies/Action/test.mkv".
+func createTestDedupFileWithName(t *testing.T, paths testdata.Paths, tmpDir, name, dedupName string) string {
+	t.Helper()
+
+	dedupPath := filepath.Join(tmpDir, dedupName)
+	configPath := filepath.Join(tmpDir, dedupName+".yaml")
+
+	// Parse MKV
+	parser, err := mkv.NewParser(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to create MKV parser: %v", err)
+	}
+	defer parser.Close()
+
+	if err := parser.Parse(nil); err != nil {
+		t.Fatalf("Failed to parse MKV: %v", err)
+	}
+
+	// Index source
+	srcIndexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
+	if err != nil {
+		t.Fatalf("Failed to create indexer: %v", err)
+	}
+
+	if err := srcIndexer.Build(nil); err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+	index := srcIndexer.Index()
+	defer index.Close()
+
+	// Match packets
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer m.Close()
+
+	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
+	if err != nil {
+		t.Fatalf("Failed to match: %v", err)
+	}
+
+	// Get MKV file info and checksum
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to stat MKV: %v", err)
+	}
+
+	mkvFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open MKV: %v", err)
+	}
+	h := xxhash.New()
+	if _, err := io.Copy(h, mkvFile); err != nil {
+		mkvFile.Close()
+		t.Fatalf("Failed to checksum MKV: %v", err)
+	}
+	mkvChecksum := h.Sum64()
+	mkvFile.Close()
+
+	// Write dedup file
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create writer: %v", err)
+	}
+	defer writer.Close()
+
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, srcIndexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		t.Fatalf("Failed to set match result: %v", err)
+	}
+
+	if err := writer.Write(); err != nil {
+		t.Fatalf("Failed to write dedup file: %v", err)
+	}
+
+	// Write config with custom name
+	if err := dedup.WriteConfig(configPath, name, dedupName, paths.ISODir); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	return configPath
+}
+
+// TestFUSEMount_DirectoryStructure tests mounting with nested directory paths.
+func TestFUSEMount_DirectoryStructure(t *testing.T) {
+	skipIfFUSEUnavailable(t)
+	paths := testdata.SkipIfNotAvailable(t)
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-dir-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create dedup files with directory paths in names
+	config1 := createTestDedupFileWithName(t, paths, tmpDir, "Movies/Action/test.mkv", "action.mkvdup")
+	config2 := createTestDedupFileWithName(t, paths, tmpDir, "Movies/Comedy/funny.mkv", "comedy.mkvdup")
+	config3 := createTestDedupFileWithName(t, paths, tmpDir, "root.mkv", "root.mkvdup")
+
+	// Create mount point
+	mountPoint := filepath.Join(tmpDir, "mount")
+	if err := os.Mkdir(mountPoint, 0755); err != nil {
+		t.Fatalf("Failed to create mount point: %v", err)
+	}
+
+	// Create FUSE filesystem
+	root, err := fusepkg.NewMKVFS([]string{config1, config2, config3}, false)
+	if err != nil {
+		t.Fatalf("Failed to create MKVFS: %v", err)
+	}
+
+	// Mount
+	server, err := fuselib.Mount(mountPoint, root, &fuselib.Options{
+		MountOptions: fuse.MountOptions{
+			AllowOther: false,
+			Debug:      false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to mount: %v", err)
+	}
+
+	// Unmount when done
+	defer func() {
+		if err := server.Unmount(); err != nil {
+			t.Logf("Warning: unmount failed: %v", err)
+		}
+	}()
+
+	// Wait for mount to be ready
+	server.WaitMount()
+
+	// Test: List root directory - should have "Movies" dir and "root.mkv" file
+	entries, err := os.ReadDir(mountPoint)
+	if err != nil {
+		t.Fatalf("Failed to read mount directory: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Errorf("Expected 2 entries at root (Movies dir + root.mkv), got %d", len(entries))
+		for _, e := range entries {
+			t.Logf("  - %s (dir=%v)", e.Name(), e.IsDir())
+		}
+	}
+
+	// Check for Movies directory
+	moviesPath := filepath.Join(mountPoint, "Movies")
+	info, err := os.Stat(moviesPath)
+	if err != nil {
+		t.Fatalf("Failed to stat Movies directory: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error("Movies should be a directory")
+	}
+
+	// Test: List Movies directory - should have Action and Comedy
+	moviesEntries, err := os.ReadDir(moviesPath)
+	if err != nil {
+		t.Fatalf("Failed to read Movies directory: %v", err)
+	}
+
+	if len(moviesEntries) != 2 {
+		t.Errorf("Expected 2 subdirs in Movies (Action, Comedy), got %d", len(moviesEntries))
+	}
+
+	// Test: List Action directory - should have test.mkv
+	actionPath := filepath.Join(mountPoint, "Movies", "Action")
+	actionEntries, err := os.ReadDir(actionPath)
+	if err != nil {
+		t.Fatalf("Failed to read Action directory: %v", err)
+	}
+
+	if len(actionEntries) != 1 {
+		t.Errorf("Expected 1 file in Action, got %d", len(actionEntries))
+	}
+	if len(actionEntries) > 0 && actionEntries[0].Name() != "test.mkv" {
+		t.Errorf("Expected 'test.mkv' in Action, got %s", actionEntries[0].Name())
+	}
+}
+
+// TestFUSE_ReadFileInSubdirectory tests reading a file through a directory path.
+func TestFUSE_ReadFileInSubdirectory(t *testing.T) {
+	skipIfFUSEUnavailable(t)
+	paths := testdata.SkipIfNotAvailable(t)
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-subdir-read-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create dedup file with directory path
+	configPath := createTestDedupFileWithName(t, paths, tmpDir, "Movies/Action/test.mkv", "test.mkvdup")
+
+	// Create mount point
+	mountPoint := filepath.Join(tmpDir, "mount")
+	if err := os.Mkdir(mountPoint, 0755); err != nil {
+		t.Fatalf("Failed to create mount point: %v", err)
+	}
+
+	// Create and mount FUSE filesystem
+	root, err := fusepkg.NewMKVFS([]string{configPath}, false)
+	if err != nil {
+		t.Fatalf("Failed to create MKVFS: %v", err)
+	}
+
+	server, err := fuselib.Mount(mountPoint, root, &fuselib.Options{
+		MountOptions: fuse.MountOptions{
+			AllowOther: false,
+			Debug:      false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to mount: %v", err)
+	}
+
+	defer func() {
+		if err := server.Unmount(); err != nil {
+			t.Logf("Warning: unmount failed: %v", err)
+		}
+	}()
+
+	server.WaitMount()
+
+	// Read file through directory path
+	filePath := filepath.Join(mountPoint, "Movies", "Action", "test.mkv")
+	f, err := os.Open(filePath)
+	if err != nil {
+		t.Fatalf("Failed to open file in subdirectory: %v", err)
+	}
+	defer f.Close()
+
+	// Read first 1KB
+	buf := make([]byte, 1024)
+	n, err := f.Read(buf)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if n != 1024 {
+		t.Errorf("Expected to read 1024 bytes, got %d", n)
+	}
+
+	// Verify it's valid MKV data (starts with EBML header)
+	if !bytes.HasPrefix(buf, []byte{0x1A, 0x45, 0xDF, 0xA3}) {
+		t.Error("File content doesn't start with EBML header")
+	}
+}
+
+// TestFUSE_ReadOnlyOperations tests that write operations return EROFS.
+func TestFUSE_ReadOnlyOperations(t *testing.T) {
+	skipIfFUSEUnavailable(t)
+	paths := testdata.SkipIfNotAvailable(t)
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-readonly-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create dedup file with directory structure
+	configPath := createTestDedupFileWithName(t, paths, tmpDir, "Movies/test.mkv", "test.mkvdup")
+
+	// Create mount point
+	mountPoint := filepath.Join(tmpDir, "mount")
+	if err := os.Mkdir(mountPoint, 0755); err != nil {
+		t.Fatalf("Failed to create mount point: %v", err)
+	}
+
+	// Create and mount FUSE filesystem
+	root, err := fusepkg.NewMKVFS([]string{configPath}, false)
+	if err != nil {
+		t.Fatalf("Failed to create MKVFS: %v", err)
+	}
+
+	server, err := fuselib.Mount(mountPoint, root, &fuselib.Options{
+		MountOptions: fuse.MountOptions{
+			AllowOther: false,
+			Debug:      false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to mount: %v", err)
+	}
+
+	defer func() {
+		if err := server.Unmount(); err != nil {
+			t.Logf("Warning: unmount failed: %v", err)
+		}
+	}()
+
+	server.WaitMount()
+
+	moviesDir := filepath.Join(mountPoint, "Movies")
+
+	// Test mkdir should fail with EROFS
+	err = os.Mkdir(filepath.Join(moviesDir, "NewDir"), 0755)
+	if err == nil {
+		t.Error("Expected mkdir to fail with EROFS")
+	}
+
+	// Test creating a file should fail with EROFS
+	_, err = os.Create(filepath.Join(moviesDir, "newfile.txt"))
+	if err == nil {
+		t.Error("Expected file creation to fail with EROFS")
+	}
+
+	// Test removing a file should fail with EROFS
+	err = os.Remove(filepath.Join(moviesDir, "test.mkv"))
+	if err == nil {
+		t.Error("Expected file removal to fail with EROFS")
+	}
+}

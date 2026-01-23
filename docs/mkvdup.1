@@ -28,7 +28,9 @@ Directory containing source media (ISO files or BDMV folders)
 Output .mkvdup file (default: \fImkv-file\fR.mkvdup)
 .TP
 .I name
-Display name in FUSE mount (default: basename of mkv-file)
+Display name in FUSE mount (default: basename of mkv-file).
+Supports directory paths (e.g., "Movies/Action/Video1.mkv").
+Directories are auto-created when mounted via FUSE.
 .RE
 .TP
 .B probe \fImkv-file\fR \fIsource-dir\fR...
@@ -150,8 +152,20 @@ and virtual file name:
 .RS
 .nf
 name: "movie.mkv"
-dedup: "/path/to/movie.mkvdup"
-source: "/path/to/source/dir"
+dedup_file: "/path/to/movie.mkvdup"
+source_dir: "/path/to/source/dir"
+.fi
+.RE
+.PP
+The
+.B name
+field supports directory paths. Directories are auto-created in the FUSE mount:
+.PP
+.RS
+.nf
+name: "Movies/Action/Video1.mkv"
+dedup_file: "video1.mkvdup"
+source_dir: "/media/bluray/Video1"
 .fi
 .RE
 .SH FSTAB AND SYSTEMD
