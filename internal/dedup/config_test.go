@@ -3,6 +3,7 @@ package dedup
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,13 +25,13 @@ func TestWriteConfig(t *testing.T) {
 	content := string(data)
 
 	// Verify content contains expected fields
-	if !contains(content, `name: "Test Movie"`) {
+	if !strings.Contains(content, `name: "Test Movie"`) {
 		t.Errorf("Config missing name field, got: %s", content)
 	}
-	if !contains(content, `dedup_file: "/path/to/dedup.mkvdup"`) {
+	if !strings.Contains(content, `dedup_file: "/path/to/dedup.mkvdup"`) {
 		t.Errorf("Config missing dedup_file field, got: %s", content)
 	}
-	if !contains(content, `source_dir: "/path/to/source"`) {
+	if !strings.Contains(content, `source_dir: "/path/to/source"`) {
 		t.Errorf("Config missing source_dir field, got: %s", content)
 	}
 }
@@ -40,8 +41,6 @@ func TestWriteConfig_SpecialChars(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "test.mkvdup.yaml")
 
 	// Test with special characters in name (colons, parentheses, etc.)
-	// Note: The simple YAML parser doesn't handle escaped quotes properly,
-	// so we test with characters that don't require escaping.
 	specialName := "Movie: The Sequel (2024) - Director's Cut"
 	err := WriteConfig(configPath, specialName, "/path/to/file", "/path/to/source")
 	if err != nil {
@@ -138,172 +137,48 @@ func TestReadConfig_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestParseYAMLValue(t *testing.T) {
-	tests := []struct {
-		name     string
-		content  string
-		key      string
-		expected string
-	}{
-		{
-			name:     "simple value",
-			content:  "name: \"Test Movie\"\n",
-			key:      "name",
-			expected: "Test Movie",
-		},
-		{
-			name:     "value with spaces",
-			content:  "name: \"Movie With Spaces\"\n",
-			key:      "name",
-			expected: "Movie With Spaces",
-		},
-		{
-			name:     "value with path",
-			content:  "source_dir: \"/path/to/source\"\n",
-			key:      "source_dir",
-			expected: "/path/to/source",
-		},
-		{
-			name:     "key not found",
-			content:  "other_key: \"value\"\n",
-			key:      "name",
-			expected: "",
-		},
-		{
-			name:     "multiple lines",
-			content:  "name: \"First\"\ndedup_file: \"/path\"\nsource_dir: \"/source\"\n",
-			key:      "dedup_file",
-			expected: "/path",
-		},
-		{
-			name:     "key in comment should not match",
-			content:  "# name: \"Comment\"\nname: \"Actual\"\n",
-			key:      "name",
-			expected: "Actual",
-		},
-		{
-			name:     "key as substring should not match",
-			content:  "full_name: \"Wrong\"\nname: \"Right\"\n",
-			key:      "name",
-			expected: "Right",
-		},
+func TestReadConfig_InvalidYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test.mkvdup.yaml")
+
+	// Write invalid YAML
+	err := os.WriteFile(configPath, []byte("invalid: yaml: content: ["), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseYAMLValue(tt.content, tt.key)
-			if result != tt.expected {
-				t.Errorf("parseYAMLValue(%q, %q) = %q, want %q", tt.content, tt.key, result, tt.expected)
-			}
-		})
+	_, err = ReadConfig(configPath)
+	if err == nil {
+		t.Error("ReadConfig should have failed for invalid YAML")
 	}
 }
 
-func TestParseYAMLValue_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name     string
-		content  string
-		key      string
-		expected string
-	}{
-		{
-			name:     "empty content",
-			content:  "",
-			key:      "name",
-			expected: "",
-		},
-		{
-			name:     "no closing quote",
-			content:  "name: \"Unclosed\n",
-			key:      "name",
-			expected: "",
-		},
-		{
-			name:     "key without colon space quote",
-			content:  "name:value\n",
-			key:      "name",
-			expected: "",
-		},
-		{
-			name:     "key with different format",
-			content:  "name = \"value\"\n",
-			key:      "name",
-			expected: "",
-		},
+func TestReadConfig_UnquotedValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test.mkvdup.yaml")
+
+	// YAML supports unquoted values - test that yaml.v3 handles them
+	content := `name: Test Movie
+dedup_file: /path/to/dedup.mkvdup
+source_dir: /path/to/source
+`
+	err := os.WriteFile(configPath, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseYAMLValue(tt.content, tt.key)
-			if result != tt.expected {
-				t.Errorf("parseYAMLValue(%q, %q) = %q, want %q", tt.content, tt.key, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestIndexOf(t *testing.T) {
-	tests := []struct {
-		name     string
-		s        string
-		substr   string
-		expected int
-	}{
-		{
-			name:     "found at beginning",
-			s:        "hello world",
-			substr:   "hello",
-			expected: 0,
-		},
-		{
-			name:     "found in middle",
-			s:        "hello world",
-			substr:   "wor",
-			expected: 6,
-		},
-		{
-			name:     "found at end",
-			s:        "hello world",
-			substr:   "world",
-			expected: 6,
-		},
-		{
-			name:     "not found",
-			s:        "hello world",
-			substr:   "xyz",
-			expected: -1,
-		},
-		{
-			name:     "empty substr",
-			s:        "hello",
-			substr:   "",
-			expected: 0,
-		},
-		{
-			name:     "substr longer than s",
-			s:        "hi",
-			substr:   "hello",
-			expected: -1,
-		},
-		{
-			name:     "exact match",
-			s:        "hello",
-			substr:   "hello",
-			expected: 0,
-		},
+	config, err := ReadConfig(configPath)
+	if err != nil {
+		t.Fatalf("ReadConfig failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := indexOf(tt.s, tt.substr)
-			if result != tt.expected {
-				t.Errorf("indexOf(%q, %q) = %d, want %d", tt.s, tt.substr, result, tt.expected)
-			}
-		})
+	if config.Name != "Test Movie" {
+		t.Errorf("Name mismatch: got %q, want %q", config.Name, "Test Movie")
 	}
-}
-
-// contains is a helper function for string contains check
-func contains(s, substr string) bool {
-	return indexOf(s, substr) >= 0
+	if config.DedupFile != "/path/to/dedup.mkvdup" {
+		t.Errorf("DedupFile mismatch: got %q, want %q", config.DedupFile, "/path/to/dedup.mkvdup")
+	}
+	if config.SourceDir != "/path/to/source" {
+		t.Errorf("SourceDir mismatch: got %q, want %q", config.SourceDir, "/path/to/source")
+	}
 }

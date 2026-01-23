@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,39 @@ import (
 	"github.com/stuckj/mkvdup/internal/mkv"
 	"github.com/stuckj/mkvdup/internal/source"
 )
+
+// MountOptions holds all options for the mount command.
+type MountOptions struct {
+	AllowOther      bool
+	Foreground      bool
+	ConfigDir       bool
+	PidFile         string
+	DaemonTimeout   time.Duration
+	PermissionsFile string
+	DefaultUID      uint32
+	DefaultGID      uint32
+	DefaultFileMode uint32
+	DefaultDirMode  uint32
+}
+
+// parseUint32 parses a string as uint32.
+func parseUint32(s string) (uint32, error) {
+	v, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(v), nil
+}
+
+// parseOctalMode parses a string as an octal file mode.
+func parseOctalMode(s string) (uint32, error) {
+	// Strip leading 0 prefix for octal if present
+	v, err := strconv.ParseUint(s, 8, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(v), nil
+}
 
 // version is set at build time via -ldflags
 var version = "dev"
@@ -95,8 +129,22 @@ Options:
     --pid-file PATH        Write daemon PID to file
     --daemon-timeout DUR   Timeout waiting for daemon startup (default: 30s)
 
+Permission Options:
+    --default-uid UID          Default UID for files and directories (default: 0)
+    --default-gid GID          Default GID for files and directories (default: 0)
+    --default-file-mode MODE   Default mode for files (octal, default: 0444)
+    --default-dir-mode MODE    Default mode for directories (octal, default: 0555)
+    --permissions-file PATH    Path to permissions file (overrides default locations)
+
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
+
+Permission files are searched in order:
+  1. --permissions-file (if specified)
+  2. ~/.config/mkvdup/permissions.yaml (if exists)
+  3. /etc/mkvdup/permissions.yaml (if exists)
+New permissions are written to ~/.config/mkvdup/permissions.yaml (user) or
+/etc/mkvdup/permissions.yaml (root).
 
 Examples:
     mkvdup mount /mnt/videos movie.mkvdup.yaml
@@ -104,6 +152,7 @@ Examples:
     mkvdup mount --allow-other /mnt/videos
     mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
     mkvdup mount --foreground /mnt/videos config.yaml
+    mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
 `)
 	case "info":
 		fmt.Print(`Usage: mkvdup info <dedup-file>
@@ -248,6 +297,11 @@ func main() {
 		configDir := false
 		pidFile := ""
 		daemonTimeout := 30 * time.Second
+		permissionsFile := ""
+		defaultUID := uint32(0)
+		defaultGID := uint32(0)
+		defaultFileMode := uint32(0444)
+		defaultDirMode := uint32(0555)
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -275,6 +329,57 @@ func main() {
 				} else {
 					log.Fatalf("Error: --daemon-timeout requires a duration argument (e.g., 30s, 1m)")
 				}
+			case "--permissions-file":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					permissionsFile = args[i+1]
+					i++
+				} else {
+					log.Fatalf("Error: --permissions-file requires a path argument")
+				}
+			case "--default-uid":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					uid, err := parseUint32(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --default-uid invalid: %v", err)
+					}
+					defaultUID = uid
+					i++
+				} else {
+					log.Fatalf("Error: --default-uid requires a numeric argument")
+				}
+			case "--default-gid":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					gid, err := parseUint32(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --default-gid invalid: %v", err)
+					}
+					defaultGID = gid
+					i++
+				} else {
+					log.Fatalf("Error: --default-gid requires a numeric argument")
+				}
+			case "--default-file-mode":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					mode, err := parseOctalMode(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --default-file-mode invalid: %v", err)
+					}
+					defaultFileMode = mode
+					i++
+				} else {
+					log.Fatalf("Error: --default-file-mode requires an octal mode argument")
+				}
+			case "--default-dir-mode":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					mode, err := parseOctalMode(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --default-dir-mode invalid: %v", err)
+					}
+					defaultDirMode = mode
+					i++
+				} else {
+					log.Fatalf("Error: --default-dir-mode requires an octal mode argument")
+				}
 			default:
 				mountArgs = append(mountArgs, args[i])
 			}
@@ -285,7 +390,19 @@ func main() {
 		}
 		mountpoint := mountArgs[0]
 		configPaths := mountArgs[1:]
-		if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir, pidFile, daemonTimeout); err != nil {
+		mountOpts := MountOptions{
+			AllowOther:      allowOther,
+			Foreground:      foreground,
+			ConfigDir:       configDir,
+			PidFile:         pidFile,
+			DaemonTimeout:   daemonTimeout,
+			PermissionsFile: permissionsFile,
+			DefaultUID:      defaultUID,
+			DefaultGID:      defaultGID,
+			DefaultFileMode: defaultFileMode,
+			DefaultDirMode:  defaultDirMode,
+		}
+		if err := mountFuse(mountpoint, configPaths, mountOpts); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

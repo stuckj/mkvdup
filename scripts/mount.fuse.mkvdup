@@ -72,6 +72,21 @@ for opt in "${OPTS[@]}"; do
         foreground)
             MKVDUP_ARGS+=("--foreground")
             ;;
+        default_uid=*)
+            MKVDUP_ARGS+=("--default-uid" "${opt#default_uid=}")
+            ;;
+        default_gid=*)
+            MKVDUP_ARGS+=("--default-gid" "${opt#default_gid=}")
+            ;;
+        default_file_mode=*)
+            MKVDUP_ARGS+=("--default-file-mode" "${opt#default_file_mode=}")
+            ;;
+        default_dir_mode=*)
+            MKVDUP_ARGS+=("--default-dir-mode" "${opt#default_dir_mode=}")
+            ;;
+        permissions_file=*)
+            MKVDUP_ARGS+=("--permissions-file" "${opt#permissions_file=}")
+            ;;
         ro|rw|defaults|auto|noauto|user|nouser|exec|noexec|suid|nosuid|dev|nodev|_netdev)
             # Standard mount options - ignore (FUSE handles most of these)
             ;;
