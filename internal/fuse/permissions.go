@@ -141,10 +141,28 @@ func (s *PermissionStore) Save() error {
 	}
 
 	s.mu.RLock()
+	// Deep copy the maps to avoid data races during marshalling.
+	// We copy both the map and the Perms values to ensure complete isolation.
 	pf := permissionsFile{
-		Defaults:    s.defaults,
-		Files:       s.files,
-		Directories: s.dirs,
+		Defaults: s.defaults,
+	}
+	if s.files != nil {
+		pf.Files = make(map[string]*Perms, len(s.files))
+		for k, v := range s.files {
+			if v != nil {
+				permsCopy := *v // copy the Perms struct
+				pf.Files[k] = &permsCopy
+			}
+		}
+	}
+	if s.dirs != nil {
+		pf.Directories = make(map[string]*Perms, len(s.dirs))
+		for k, v := range s.dirs {
+			if v != nil {
+				permsCopy := *v // copy the Perms struct
+				pf.Directories[k] = &permsCopy
+			}
+		}
 	}
 	s.mu.RUnlock()
 
@@ -238,15 +256,18 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
 		s.files[path] = p
 	}
 
-	// Only update non-nil values
+	// Only update non-nil values; copy values so the store owns their lifetime.
 	if uid != nil {
-		p.UID = uid
+		v := *uid
+		p.UID = &v
 	}
 	if gid != nil {
-		p.GID = gid
+		v := *gid
+		p.GID = &v
 	}
 	if mode != nil {
-		p.Mode = mode
+		v := *mode
+		p.Mode = &v
 	}
 
 	s.mu.Unlock()
@@ -290,15 +311,18 @@ func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint3
 		s.dirs[path] = p
 	}
 
-	// Only update non-nil values
+	// Only update non-nil values; copy values so the store owns their lifetime.
 	if uid != nil {
-		p.UID = uid
+		v := *uid
+		p.UID = &v
 	}
 	if gid != nil {
-		p.GID = gid
+		v := *gid
+		p.GID = &v
 	}
 	if mode != nil {
-		p.Mode = mode
+		v := *mode
+		p.Mode = &v
 	}
 
 	s.mu.Unlock()
@@ -368,38 +392,48 @@ func (s *PermissionStore) Defaults() Defaults {
 // ResolvePermissionsPath determines which permissions file to use.
 // Priority:
 //  1. explicitPath (from --permissions-file flag)
-//  2. ~/.config/mkvdup/permissions.yaml (if exists)
-//  3. /etc/mkvdup/permissions.yaml (if exists)
+//  2. ~/.config/mkvdup/permissions.yaml (if exists) - for both root and non-root
+//  3. /etc/mkvdup/permissions.yaml (if exists AND running as root)
 //  4. Default based on euid: root uses /etc/, non-root uses ~/.config/
+//
+// Non-root users always get a user-writable path (unless explicitly overridden)
+// to avoid EACCES errors when saving permission changes.
 func ResolvePermissionsPath(explicitPath string) string {
 	if explicitPath != "" {
 		return explicitPath
 	}
 
-	// Check user config
 	home, err := os.UserHomeDir()
+	userPath := ""
 	if err == nil {
-		userPath := filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
+		userPath = filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
+	}
+
+	// Check user config - takes priority for both root and non-root
+	if userPath != "" {
 		if _, err := os.Stat(userPath); err == nil {
 			return userPath
 		}
 	}
 
-	// Check system config
 	systemPath := "/etc/mkvdup/permissions.yaml"
-	if _, err := os.Stat(systemPath); err == nil {
-		return systemPath
-	}
 
-	// Default based on euid
+	// For root: check system config, then default to system path
 	if os.Geteuid() == 0 {
+		if _, err := os.Stat(systemPath); err == nil {
+			return systemPath
+		}
 		return systemPath
 	}
 
-	if home != "" {
-		return filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
+	// For non-root: always use user path to ensure writability.
+	// Do NOT use system path even if it exists, as non-root users
+	// typically cannot write to /etc/ and chmod/chown operations
+	// would fail with EACCES.
+	if userPath != "" {
+		return userPath
 	}
 
-	// Fallback if no home directory
+	// Fallback if no home directory (unusual for non-root)
 	return systemPath
 }

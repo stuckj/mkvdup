@@ -158,10 +158,16 @@ Virtual files and directories support `chmod` and `chown` operations. Permission
 
 ### Permissions File Location
 
-**Search order (first match wins):**
+**For root users - search order (first match wins):**
 1. `--permissions-file PATH` command-line option
 2. `~/.config/mkvdup/permissions.yaml` (if exists)
-3. `/etc/mkvdup/permissions.yaml` (if exists)
+3. `/etc/mkvdup/permissions.yaml` (if exists, or as default)
+
+**For non-root users - search order (first match wins):**
+1. `--permissions-file PATH` command-line option
+2. `~/.config/mkvdup/permissions.yaml` (existing or default)
+
+Non-root users always use a user-writable path (`~/.config/...`) unless explicitly overridden with `--permissions-file`. This ensures that `chmod`/`chown` operations can save changes without `EACCES` errors.
 
 **Default write location (when no file exists):**
 - Running as root: `/etc/mkvdup/permissions.yaml`
