@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (8.2%)</option>
+				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (8.1%)</option>
 				
 				<option value="file1">github.com/stuckj/mkvdup/cmd/mkvdup/main.go (0.0%)</option>
 				
@@ -71,27 +71,29 @@
 				
 				<option value="file7">github.com/stuckj/mkvdup/internal/fuse/adapters.go (0.0%)</option>
 				
-				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (52.8%)</option>
+				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (50.9%)</option>
 				
-				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/tree.go (95.7%)</option>
+				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/permissions.go (81.7%)</option>
 				
-				<option value="file10">github.com/stuckj/mkvdup/internal/matcher/matcher.go (9.5%)</option>
+				<option value="file10">github.com/stuckj/mkvdup/internal/fuse/tree.go (95.7%)</option>
 				
-				<option value="file11">github.com/stuckj/mkvdup/internal/mkv/ebml.go (89.4%)</option>
+				<option value="file11">github.com/stuckj/mkvdup/internal/matcher/matcher.go (9.5%)</option>
 				
-				<option value="file12">github.com/stuckj/mkvdup/internal/mkv/parser.go (13.6%)</option>
+				<option value="file12">github.com/stuckj/mkvdup/internal/mkv/ebml.go (89.4%)</option>
 				
-				<option value="file13">github.com/stuckj/mkvdup/internal/mmap/mmap.go (93.5%)</option>
+				<option value="file13">github.com/stuckj/mkvdup/internal/mkv/parser.go (13.6%)</option>
 				
-				<option value="file14">github.com/stuckj/mkvdup/internal/source/audio.go (81.5%)</option>
+				<option value="file14">github.com/stuckj/mkvdup/internal/mmap/mmap.go (93.5%)</option>
 				
-				<option value="file15">github.com/stuckj/mkvdup/internal/source/indexer.go (11.2%)</option>
+				<option value="file15">github.com/stuckj/mkvdup/internal/source/audio.go (81.5%)</option>
 				
-				<option value="file16">github.com/stuckj/mkvdup/internal/source/mpegps.go (14.8%)</option>
+				<option value="file16">github.com/stuckj/mkvdup/internal/source/indexer.go (11.2%)</option>
 				
-				<option value="file17">github.com/stuckj/mkvdup/internal/source/source.go (46.8%)</option>
+				<option value="file17">github.com/stuckj/mkvdup/internal/source/mpegps.go (14.8%)</option>
 				
-				<option value="file18">github.com/stuckj/mkvdup/internal/source/video.go (92.9%)</option>
+				<option value="file18">github.com/stuckj/mkvdup/internal/source/source.go (46.8%)</option>
+				
+				<option value="file19">github.com/stuckj/mkvdup/internal/source/video.go (92.9%)</option>
 				
 				</select>
 			</div>
@@ -845,23 +847,23 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet <span class="cov6" 
 const defaultConfigPath = "/etc/mkvdup.conf"
 
 // mountFuse mounts a FUSE filesystem exposing dedup files as MKV files.
-func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, configDir bool, pidFile string, daemonTimeout time.Duration) error <span class="cov0" title="0">{
+func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error <span class="cov0" title="0">{
         // Daemonize unless --foreground is set or we're already a daemon child
-        if !foreground &amp;&amp; !daemon.IsChild() </span><span class="cov0" title="0">{
-                return daemon.Daemonize(pidFile, daemonTimeout)
+        if !opts.Foreground &amp;&amp; !daemon.IsChild() </span><span class="cov0" title="0">{
+                return daemon.Daemonize(opts.PidFile, opts.DaemonTimeout)
         }</span>
 
         // Write PID file in foreground mode (daemon mode writes it in Daemonize)
-        <span class="cov0" title="0">if foreground &amp;&amp; pidFile != "" </span><span class="cov0" title="0">{
-                if err := daemon.WritePidFile(pidFile, os.Getpid()); err != nil </span><span class="cov0" title="0">{
+        <span class="cov0" title="0">if opts.Foreground &amp;&amp; opts.PidFile != "" </span><span class="cov0" title="0">{
+                if err := daemon.WritePidFile(opts.PidFile, os.Getpid()); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("write pid file: %w", err)
                 }</span>
         }
 
         // Clean up PID file on exit (for both foreground and daemon child modes)
-        <span class="cov0" title="0">if pidFile != "" &amp;&amp; (foreground || daemon.IsChild()) </span><span class="cov0" title="0">{
+        <span class="cov0" title="0">if opts.PidFile != "" &amp;&amp; (opts.Foreground || daemon.IsChild()) </span><span class="cov0" title="0">{
                 defer func() </span><span class="cov0" title="0">{
-                        _ = daemon.RemovePidFile(pidFile)
+                        _ = daemon.RemovePidFile(opts.PidFile)
                 }</span>()
         }
 
@@ -878,7 +880,7 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
         }
 
         // If configDir is set, expand directory to list of .yaml files
-        <span class="cov0" title="0">if configDir </span><span class="cov0" title="0">{
+        <span class="cov0" title="0">if opts.ConfigDir </span><span class="cov0" title="0">{
                 if len(configPaths) != 1 </span><span class="cov0" title="0">{
                         err := fmt.Errorf("--config-dir requires exactly one directory path, got %d", len(configPaths))
                         if daemon.IsChild() </span><span class="cov0" title="0">{
@@ -910,8 +912,26 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
                 }
         }
 
+        // Set up permission store
+        <span class="cov0" title="0">defaults := mkvfuse.Defaults{
+                FileUID:  opts.DefaultUID,
+                FileGID:  opts.DefaultGID,
+                FileMode: opts.DefaultFileMode,
+                DirUID:   opts.DefaultUID,
+                DirGID:   opts.DefaultGID,
+                DirMode:  opts.DefaultDirMode,
+        }
+        permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile)
+        permStore := mkvfuse.NewPermissionStore(permPath, defaults, verbose)
+        if err := permStore.Load(); err != nil </span><span class="cov0" title="0">{
+                if daemon.IsChild() </span><span class="cov0" title="0">{
+                        daemon.NotifyError(fmt.Errorf("load permissions: %w", err))
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("load permissions: %w", err)</span>
+        }
+
         // Create the root filesystem
-        <span class="cov0" title="0">root, err := mkvfuse.NewMKVFS(configPaths, verbose)
+        <span class="cov0" title="0">root, err := mkvfuse.NewMKVFSWithPermissions(configPaths, verbose, permStore)
         if err != nil </span><span class="cov0" title="0">{
                 err = fmt.Errorf("create filesystem: %w", err)
                 if daemon.IsChild() </span><span class="cov0" title="0">{
@@ -921,15 +941,15 @@ func mountFuse(mountpoint string, configPaths []string, allowOther, foreground, 
         }
 
         // Mount the filesystem
-        <span class="cov0" title="0">opts := &amp;fs.Options{
+        <span class="cov0" title="0">fuseOpts := &amp;fs.Options{
                 MountOptions: fuse.MountOptions{
-                        AllowOther: allowOther,
+                        AllowOther: opts.AllowOther,
                         Name:       "mkvdup",
                         FsName:     "mkvdup",
                 },
         }
 
-        server, err := fs.Mount(mountpoint, root, opts)
+        server, err := fs.Mount(mountpoint, root, fuseOpts)
         if err != nil </span><span class="cov0" title="0">{
                 err = fmt.Errorf("mount: %w", err)
                 if daemon.IsChild() </span><span class="cov0" title="0">{
@@ -992,6 +1012,7 @@ import (
         "fmt"
         "log"
         "os"
+        "strconv"
         "strings"
         "time"
 
@@ -999,6 +1020,39 @@ import (
         "github.com/stuckj/mkvdup/internal/mkv"
         "github.com/stuckj/mkvdup/internal/source"
 )
+
+// MountOptions holds all options for the mount command.
+type MountOptions struct {
+        AllowOther      bool
+        Foreground      bool
+        ConfigDir       bool
+        PidFile         string
+        DaemonTimeout   time.Duration
+        PermissionsFile string
+        DefaultUID      uint32
+        DefaultGID      uint32
+        DefaultFileMode uint32
+        DefaultDirMode  uint32
+}
+
+// parseUint32 parses a string as uint32.
+func parseUint32(s string) (uint32, error) <span class="cov0" title="0">{
+        v, err := strconv.ParseUint(s, 10, 32)
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+        <span class="cov0" title="0">return uint32(v), nil</span>
+}
+
+// parseOctalMode parses a string as an octal file mode.
+func parseOctalMode(s string) (uint32, error) <span class="cov0" title="0">{
+        // Strip leading 0 prefix for octal if present
+        v, err := strconv.ParseUint(s, 8, 32)
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+        <span class="cov0" title="0">return uint32(v), nil</span>
+}
 
 // version is set at build time via -ldflags
 var version = "dev"
@@ -1082,8 +1136,22 @@ Options:
     --pid-file PATH        Write daemon PID to file
     --daemon-timeout DUR   Timeout waiting for daemon startup (default: 30s)
 
+Permission Options:
+    --default-uid UID          Default UID for files and directories (default: 0)
+    --default-gid GID          Default GID for files and directories (default: 0)
+    --default-file-mode MODE   Default mode for files (octal, default: 0444)
+    --default-dir-mode MODE    Default mode for directories (octal, default: 0555)
+    --permissions-file PATH    Path to permissions file (overrides default locations)
+
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
+
+Permission files are searched in order:
+  1. --permissions-file (if specified)
+  2. ~/.config/mkvdup/permissions.yaml (if exists)
+  3. /etc/mkvdup/permissions.yaml (if exists)
+New permissions are written to ~/.config/mkvdup/permissions.yaml (user) or
+/etc/mkvdup/permissions.yaml (root).
 
 Examples:
     mkvdup mount /mnt/videos movie.mkvdup.yaml
@@ -1091,6 +1159,7 @@ Examples:
     mkvdup mount --allow-other /mnt/videos
     mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
     mkvdup mount --foreground /mnt/videos config.yaml
+    mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
 `)</span>
         case "info":<span class="cov0" title="0">
                 fmt.Print(`Usage: mkvdup info &lt;dedup-file&gt;
@@ -1235,6 +1304,11 @@ func main() <span class="cov0" title="0">{
                 configDir := false
                 pidFile := ""
                 daemonTimeout := 30 * time.Second
+                permissionsFile := ""
+                defaultUID := uint32(0)
+                defaultGID := uint32(0)
+                defaultFileMode := uint32(0444)
+                defaultDirMode := uint32(0555)
                 var mountArgs []string
                 for i := 0; i &lt; len(args); i++ </span><span class="cov0" title="0">{
                         switch args[i] </span>{
@@ -1262,6 +1336,57 @@ func main() <span class="cov0" title="0">{
                                 } else<span class="cov0" title="0"> {
                                         log.Fatalf("Error: --daemon-timeout requires a duration argument (e.g., 30s, 1m)")
                                 }</span>
+                        case "--permissions-file":<span class="cov0" title="0">
+                                if i+1 &lt; len(args) &amp;&amp; !strings.HasPrefix(args[i+1], "--") </span><span class="cov0" title="0">{
+                                        permissionsFile = args[i+1]
+                                        i++
+                                }</span> else<span class="cov0" title="0"> {
+                                        log.Fatalf("Error: --permissions-file requires a path argument")
+                                }</span>
+                        case "--default-uid":<span class="cov0" title="0">
+                                if i+1 &lt; len(args) &amp;&amp; !strings.HasPrefix(args[i+1], "--") </span><span class="cov0" title="0">{
+                                        uid, err := parseUint32(args[i+1])
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                log.Fatalf("Error: --default-uid invalid: %v", err)
+                                        }</span>
+                                        <span class="cov0" title="0">defaultUID = uid
+                                        i++</span>
+                                } else<span class="cov0" title="0"> {
+                                        log.Fatalf("Error: --default-uid requires a numeric argument")
+                                }</span>
+                        case "--default-gid":<span class="cov0" title="0">
+                                if i+1 &lt; len(args) &amp;&amp; !strings.HasPrefix(args[i+1], "--") </span><span class="cov0" title="0">{
+                                        gid, err := parseUint32(args[i+1])
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                log.Fatalf("Error: --default-gid invalid: %v", err)
+                                        }</span>
+                                        <span class="cov0" title="0">defaultGID = gid
+                                        i++</span>
+                                } else<span class="cov0" title="0"> {
+                                        log.Fatalf("Error: --default-gid requires a numeric argument")
+                                }</span>
+                        case "--default-file-mode":<span class="cov0" title="0">
+                                if i+1 &lt; len(args) &amp;&amp; !strings.HasPrefix(args[i+1], "--") </span><span class="cov0" title="0">{
+                                        mode, err := parseOctalMode(args[i+1])
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                log.Fatalf("Error: --default-file-mode invalid: %v", err)
+                                        }</span>
+                                        <span class="cov0" title="0">defaultFileMode = mode
+                                        i++</span>
+                                } else<span class="cov0" title="0"> {
+                                        log.Fatalf("Error: --default-file-mode requires an octal mode argument")
+                                }</span>
+                        case "--default-dir-mode":<span class="cov0" title="0">
+                                if i+1 &lt; len(args) &amp;&amp; !strings.HasPrefix(args[i+1], "--") </span><span class="cov0" title="0">{
+                                        mode, err := parseOctalMode(args[i+1])
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                log.Fatalf("Error: --default-dir-mode invalid: %v", err)
+                                        }</span>
+                                        <span class="cov0" title="0">defaultDirMode = mode
+                                        i++</span>
+                                } else<span class="cov0" title="0"> {
+                                        log.Fatalf("Error: --default-dir-mode requires an octal mode argument")
+                                }</span>
                         default:<span class="cov0" title="0">
                                 mountArgs = append(mountArgs, args[i])</span>
                         }
@@ -1272,7 +1397,19 @@ func main() <span class="cov0" title="0">{
                 }</span>
                 <span class="cov0" title="0">mountpoint := mountArgs[0]
                 configPaths := mountArgs[1:]
-                if err := mountFuse(mountpoint, configPaths, allowOther, foreground, configDir, pidFile, daemonTimeout); err != nil </span><span class="cov0" title="0">{
+                mountOpts := MountOptions{
+                        AllowOther:      allowOther,
+                        Foreground:      foreground,
+                        ConfigDir:       configDir,
+                        PidFile:         pidFile,
+                        DaemonTimeout:   daemonTimeout,
+                        PermissionsFile: permissionsFile,
+                        DefaultUID:      defaultUID,
+                        DefaultGID:      defaultGID,
+                        DefaultFileMode: defaultFileMode,
+                        DefaultDirMode:  defaultDirMode,
+                }
+                if err := mountFuse(mountpoint, configPaths, mountOpts); err != nil </span><span class="cov0" title="0">{
                         log.Fatalf("Error: %v", err)
                 }</span>
 
@@ -1795,6 +1932,8 @@ func RemovePidFile(path string) error <span class="cov4" title="2">{
 import (
         "fmt"
         "os"
+
+        "gopkg.in/yaml.v3"
 )
 
 // Config represents the contents of a .mkvdup.yaml file.
@@ -1805,7 +1944,7 @@ type Config struct {
 }
 
 // WriteConfig writes the .mkvdup.yaml config file.
-func WriteConfig(configPath, name, dedupFile, sourceDir string) error <span class="cov2" title="3">{
+func WriteConfig(configPath, name, dedupFile, sourceDir string) error <span class="cov5" title="3">{
         content := fmt.Sprintf(`# Auto-generated by mkvdup create
 name: %q
 dedup_file: %q
@@ -1816,75 +1955,22 @@ source_dir: %q
 }</span>
 
 // ReadConfig reads a .mkvdup.yaml config file.
-func ReadConfig(configPath string) (*Config, error) <span class="cov3" title="8">{
+func ReadConfig(configPath string) (*Config, error) <span class="cov10" title="10">{
         data, err := os.ReadFile(configPath)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("read config file: %w", err)
         }</span>
 
-        // Simple YAML parsing - look for key: "value" lines
-        <span class="cov3" title="7">config := &amp;Config{}
-        lines := string(data)
-
-        // Parse name
-        if name := parseYAMLValue(lines, "name"); name != "" </span><span class="cov2" title="4">{
-                config.Name = name
+        <span class="cov9" title="9">var config Config
+        if err := yaml.Unmarshal(data, &amp;config); err != nil </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("parse config %s: %w", configPath, err)
         }</span>
 
-        // Parse dedup_file
-        <span class="cov3" title="7">if dedupFile := parseYAMLValue(lines, "dedup_file"); dedupFile != "" </span><span class="cov2" title="4">{
-                config.DedupFile = dedupFile
-        }</span>
-
-        // Parse source_dir
-        <span class="cov3" title="7">if sourceDir := parseYAMLValue(lines, "source_dir"); sourceDir != "" </span><span class="cov2" title="4">{
-                config.SourceDir = sourceDir
-        }</span>
-
-        <span class="cov3" title="7">if config.Name == "" || config.DedupFile == "" || config.SourceDir == "" </span><span class="cov3" title="5">{
+        <span class="cov9" title="8">if config.Name == "" || config.DedupFile == "" || config.SourceDir == "" </span><span class="cov7" title="5">{
                 return nil, fmt.Errorf("invalid config: missing required fields")
         }</span>
 
-        <span class="cov1" title="2">return config, nil</span>
-}
-
-// parseYAMLValue extracts a quoted value from a YAML line.
-func parseYAMLValue(content, key string) string <span class="cov5" title="32">{
-        // Look for key: "value" pattern
-        prefix := key + ": \""
-        start := 0
-        for </span><span class="cov5" title="34">{
-                idx := indexOf(content[start:], prefix)
-                if idx &lt; 0 </span><span class="cov4" title="13">{
-                        return ""
-                }</span>
-                <span class="cov4" title="21">idx += start
-
-                // Make sure this is at the start of a line
-                if idx &gt; 0 &amp;&amp; content[idx-1] != '\n' </span><span class="cov1" title="2">{
-                        start = idx + 1
-                        continue</span>
-                }
-
-                // Find the value
-                <span class="cov4" title="19">valueStart := idx + len(prefix)
-                valueEnd := indexOf(content[valueStart:], "\"")
-                if valueEnd &lt; 0 </span><span class="cov1" title="1">{
-                        return ""
-                }</span>
-
-                <span class="cov4" title="18">return content[valueStart : valueStart+valueEnd]</span>
-        }
-}
-
-// indexOf returns the index of substr in s, or -1 if not found.
-func indexOf(s, substr string) int <span class="cov6" title="63">{
-        for i := 0; i &lt;= len(s)-len(substr); i++ </span><span class="cov10" title="1222">{
-                if s[i:i+len(substr)] == substr </span><span class="cov5" title="47">{
-                        return i
-                }</span>
-        }
-        <span class="cov4" title="16">return -1</span>
+        <span class="cov5" title="3">return &amp;config, nil</span>
 }
 </pre>
 		
@@ -3202,13 +3288,18 @@ type MKVFSRoot struct {
         // Factories for dependency injection (allows mocking in tests)
         readerFactory ReaderFactory
         configReader  ConfigReader
+
+        // Permission store for chmod/chown support
+        permStore *PermissionStore
 }
 
 // MKVFSNode represents a file node in the FUSE filesystem.
 type MKVFSNode struct {
         fs.Inode
-        file    *MKVFile
-        verbose bool
+        file      *MKVFile
+        path      string // full path for permission lookups
+        verbose   bool
+        permStore *PermissionStore
 }
 
 // MKVFSDirNode represents a directory node in the FUSE filesystem.
@@ -3223,6 +3314,9 @@ type MKVFSDirNode struct {
 
         // Factory for creating file nodes (injected from root)
         readerFactory ReaderFactory
+
+        // Permission store for chmod/chown support
+        permStore *PermissionStore
 }
 
 // Ensure interfaces are implemented
@@ -3241,21 +3335,45 @@ var _ fs.NodeCreater = (*MKVFSDirNode)(nil)
 var _ fs.NodeOpener = (*MKVFSNode)(nil)
 var _ fs.NodeReader = (*MKVFSNode)(nil)
 var _ fs.NodeGetattrer = (*MKVFSNode)(nil)
+var _ fs.NodeSetattrer = (*MKVFSNode)(nil)
+var _ fs.NodeSetattrer = (*MKVFSDirNode)(nil)
+
+// getFilePerms returns file permissions from the store, or defaults if store is nil.
+func getFilePerms(store *PermissionStore, path string) (uid, gid, mode uint32) <span class="cov5" title="5">{
+        if store != nil </span><span class="cov4" title="4">{
+                return store.GetFilePerms(path)
+        }</span>
+        <span class="cov1" title="1">return 0, 0, 0444</span>
+}
+
+// getDirPerms returns directory permissions from the store, or defaults if store is nil.
+func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) <span class="cov4" title="4">{
+        if store != nil </span><span class="cov4" title="3">{
+                return store.GetDirPerms(path)
+        }</span>
+        <span class="cov1" title="1">return 0, 0, 0555</span>
+}
 
 // NewMKVFS creates a new MKVFS root from a list of config files.
 // Set verbose=true to enable debug logging.
 func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) <span class="cov0" title="0">{
-        return NewMKVFSWithFactories(configPaths, verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{})
+        return NewMKVFSWithFactories(configPaths, verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{}, nil)
+}</span>
+
+// NewMKVFSWithPermissions creates a new MKVFS root with a permission store.
+func NewMKVFSWithPermissions(configPaths []string, verbose bool, permStore *PermissionStore) (*MKVFSRoot, error) <span class="cov0" title="0">{
+        return NewMKVFSWithFactories(configPaths, verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{}, permStore)
 }</span>
 
 // NewMKVFSWithFactories creates a new MKVFS root with custom factories.
 // This allows injecting mock implementations for testing.
-func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader) (*MKVFSRoot, error) <span class="cov6" title="7">{
+func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader, permStore *PermissionStore) (*MKVFSRoot, error) <span class="cov6" title="7">{
         root := &amp;MKVFSRoot{
                 files:         make(map[string]*MKVFile),
                 verbose:       verbose,
                 readerFactory: readerFactory,
                 configReader:  configReader,
+                permStore:     permStore,
         }
 
         if verbose </span><span class="cov0" title="0">{
@@ -3323,9 +3441,23 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
         for _, f := range root.files </span><span class="cov6" title="8">{
                 fileList = append(fileList, f)
         }</span>
-        <span class="cov5" title="5">root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory)
+        <span class="cov5" title="5">root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory, permStore)
 
-        if verbose </span><span class="cov0" title="0">{
+        // Clean up stale permission entries if we have a permission store
+        if permStore != nil </span><span class="cov0" title="0">{
+                validFiles, validDirs := root.collectValidPaths()
+                removed := permStore.CleanupStale(validFiles, validDirs)
+                if removed &gt; 0 </span><span class="cov0" title="0">{
+                        if verbose </span><span class="cov0" title="0">{
+                                log.Printf("Cleaned up %d stale permission entries", removed)
+                        }</span>
+                        <span class="cov0" title="0">if err := permStore.Save(); err != nil </span><span class="cov0" title="0">{
+                                log.Printf("Warning: failed to save permissions after cleanup: %v", err)
+                        }</span>
+                }
+        }
+
+        <span class="cov5" title="5">if verbose </span><span class="cov0" title="0">{
                 log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))
         }</span>
 
@@ -3378,10 +3510,12 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
                         subdirCount := len(subdir.subdirs)
                         subdir.mu.RUnlock()
 
+                        uid, gid, mode := getDirPerms(r.permStore, subdir.path)
+
                         now := time.Now()
-                        out.Mode = fuse.S_IFDIR | 0555
-                        out.Uid = 0
-                        out.Gid = 0
+                        out.Mode = fuse.S_IFDIR | mode
+                        out.Uid = uid
+                        out.Gid = gid
                         out.Atime = uint64(now.Unix())
                         out.Mtime = uint64(now.Unix())
                         out.Ctime = uint64(now.Unix())
@@ -3401,15 +3535,19 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
                                 log.Printf("Lookup: found file %s at root (size=%d)", name, file.Size)
                         }</span>
 
-                        <span class="cov0" title="0">now := time.Now()
+                        <span class="cov0" title="0">uid, gid, mode := getFilePerms(r.permStore, name)
+
+                        now := time.Now()
                         out.Size = uint64(file.Size)
-                        out.Mode = fuse.S_IFREG | 0444
+                        out.Mode = fuse.S_IFREG | mode
+                        out.Uid = uid
+                        out.Gid = gid
                         out.Atime = uint64(now.Unix())
                         out.Mtime = uint64(now.Unix())
                         out.Ctime = uint64(now.Unix())
                         out.Nlink = 1
 
-                        node := &amp;MKVFSNode{file: file, verbose: r.verbose}
+                        node := &amp;MKVFSNode{file: file, path: name, verbose: r.verbose, permStore: r.permStore}
                         stable := fs.StableAttr{
                                 Mode: fuse.S_IFREG,
                                 Ino:  hashString(name),
@@ -3440,13 +3578,17 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
                 log.Printf("Lookup: %s (size=%d)", name, file.Size)
         }</span>
 
+        <span class="cov0" title="0">uid, gid, mode := getFilePerms(r.permStore, name)
+
         // Create a new file node
-        <span class="cov0" title="0">node := &amp;MKVFSNode{file: file, verbose: r.verbose}
+        node := &amp;MKVFSNode{file: file, path: name, verbose: r.verbose, permStore: r.permStore}
 
         // Set attributes
         now := time.Now()
         out.Size = uint64(file.Size)
-        out.Mode = fuse.S_IFREG | 0444
+        out.Mode = fuse.S_IFREG | mode
+        out.Uid = uid
+        out.Gid = gid
         out.Atime = uint64(now.Unix())
         out.Mtime = uint64(now.Unix())
         out.Ctime = uint64(now.Unix())
@@ -3462,16 +3604,58 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 }
 
 // Getattr implements fs.NodeGetattrer - returns file attributes.
-func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov1" title="1">{
+func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov5" title="5">{
         now := time.Now()
         out.Size = uint64(n.file.Size)
-        out.Mode = fuse.S_IFREG | 0444
+
+        uid, gid, mode := getFilePerms(n.permStore, n.path)
+
+        out.Mode = fuse.S_IFREG | mode
+        out.Uid = uid
+        out.Gid = gid
         out.Atime = uint64(now.Unix())
         out.Mtime = uint64(now.Unix())
         out.Ctime = uint64(now.Unix())
         out.Nlink = 1
         return 0
 }</span>
+
+// Setattr implements fs.NodeSetattrer - handles chmod/chown on files.
+func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno <span class="cov4" title="3">{
+        if n.permStore == nil </span><span class="cov1" title="1">{
+                // No permission store - can't change permissions
+                return syscall.EROFS
+        }</span>
+
+        <span class="cov2" title="2">var newUID, newGID, newMode *uint32
+
+        // Check which fields are being changed
+        if in.Valid&amp;fuse.FATTR_UID != 0 </span><span class="cov1" title="1">{
+                newUID = &amp;in.Uid
+        }</span>
+        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_GID != 0 </span><span class="cov1" title="1">{
+                newGID = &amp;in.Gid
+        }</span>
+        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_MODE != 0 </span><span class="cov1" title="1">{
+                mode := in.Mode &amp; 0777 // Only permission bits
+                newMode = &amp;mode
+        }</span>
+
+        // Update permission store
+        <span class="cov2" title="2">if err := n.permStore.SetFilePerms(n.path, newUID, newGID, newMode); err != nil </span><span class="cov0" title="0">{
+                if n.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Setattr error: %s: %v", n.path, err)
+                }</span>
+                <span class="cov0" title="0">return syscall.EIO</span>
+        }
+
+        <span class="cov2" title="2">if n.verbose </span><span class="cov0" title="0">{
+                log.Printf("Setattr: %s uid=%v gid=%v mode=%v", n.path, newUID, newGID, newMode)
+        }</span>
+
+        // Return updated attributes
+        <span class="cov2" title="2">return n.Getattr(ctx, fh, out)</span>
+}
 
 // Open implements fs.NodeOpener - opens a file for reading.
 func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) <span class="cov2" title="2">{
@@ -3572,6 +3756,45 @@ func hashString(s string) uint64 <span class="cov4" title="4">{
         <span class="cov4" title="4">return h</span>
 }
 
+// collectValidPaths returns maps of all valid file and directory paths.
+func (r *MKVFSRoot) collectValidPaths() (files, dirs map[string]bool) <span class="cov0" title="0">{
+        files = make(map[string]bool)
+        dirs = make(map[string]bool)
+
+        if r.rootDir == nil </span><span class="cov0" title="0">{
+                return files, dirs
+        }</span>
+
+        <span class="cov0" title="0">r.collectPathsRecursive(r.rootDir, files, dirs)
+        return files, dirs</span>
+}
+
+func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[string]bool) <span class="cov0" title="0">{
+        node.mu.RLock()
+        defer node.mu.RUnlock()
+
+        // Add this directory (skip root which has empty path)
+        if node.path != "" </span><span class="cov0" title="0">{
+                dirs[node.path] = true
+        }</span>
+
+        // Add files
+        <span class="cov0" title="0">for name := range node.files </span><span class="cov0" title="0">{
+                var filePath string
+                if node.path == "" </span><span class="cov0" title="0">{
+                        filePath = name
+                }</span> else<span class="cov0" title="0"> {
+                        filePath = node.path + "/" + name
+                }</span>
+                <span class="cov0" title="0">files[filePath] = true</span>
+        }
+
+        // Recurse into subdirectories
+        <span class="cov0" title="0">for _, subdir := range node.subdirs </span><span class="cov0" title="0">{
+                r.collectPathsRecursive(subdir, files, dirs)
+        }</span>
+}
+
 // --- MKVFSDirNode interface implementations ---
 
 // Readdir implements fs.NodeReaddirer - lists files and subdirectories.
@@ -3640,10 +3863,12 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
                 subdirCount := len(subdir.subdirs)
                 subdir.mu.RUnlock()
 
+                uid, gid, mode := getDirPerms(d.permStore, subdir.path)
+
                 now := time.Now()
-                out.Mode = fuse.S_IFDIR | 0555
-                out.Uid = 0
-                out.Gid = 0
+                out.Mode = fuse.S_IFDIR | mode
+                out.Uid = uid
+                out.Gid = gid
                 out.Atime = uint64(now.Unix())
                 out.Mtime = uint64(now.Unix())
                 out.Ctime = uint64(now.Unix())
@@ -3663,24 +3888,29 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
                         log.Printf("Lookup: found file %s in %s (size=%d)", name, d.path, file.Size)
                 }</span>
 
-                <span class="cov0" title="0">now := time.Now()
+                <span class="cov0" title="0">var filePath string
+                if d.path == "" </span><span class="cov0" title="0">{
+                        filePath = name
+                }</span> else<span class="cov0" title="0"> {
+                        filePath = d.path + "/" + name
+                }</span>
+
+                <span class="cov0" title="0">uid, gid, mode := getFilePerms(d.permStore, filePath)
+
+                now := time.Now()
                 out.Size = uint64(file.Size)
-                out.Mode = fuse.S_IFREG | 0444
+                out.Mode = fuse.S_IFREG | mode
+                out.Uid = uid
+                out.Gid = gid
                 out.Atime = uint64(now.Unix())
                 out.Mtime = uint64(now.Unix())
                 out.Ctime = uint64(now.Unix())
                 out.Nlink = 1
 
-                node := &amp;MKVFSNode{file: file, verbose: d.verbose}
-                var inodePath string
-                if d.path == "" </span><span class="cov0" title="0">{
-                        inodePath = name
-                }</span> else<span class="cov0" title="0"> {
-                        inodePath = d.path + "/" + name
-                }</span>
-                <span class="cov0" title="0">stable := fs.StableAttr{
+                node := &amp;MKVFSNode{file: file, path: filePath, verbose: d.verbose, permStore: d.permStore}
+                stable := fs.StableAttr{
                         Mode: fuse.S_IFREG,
-                        Ino:  hashString(inodePath),
+                        Ino:  hashString(filePath),
                 }
                 child := d.NewInode(ctx, node, stable)
                 return child, 0</span>
@@ -3693,20 +3923,60 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 }
 
 // Getattr implements fs.NodeGetattrer - returns directory attributes.
-func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov1" title="1">{
+func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov4" title="4">{
         d.mu.RLock()
         defer d.mu.RUnlock()
 
         now := time.Now()
-        out.Mode = fuse.S_IFDIR | 0555
-        out.Uid = 0
-        out.Gid = 0
+
+        uid, gid, mode := getDirPerms(d.permStore, d.path)
+
+        out.Mode = fuse.S_IFDIR | mode
+        out.Uid = uid
+        out.Gid = gid
         out.Atime = uint64(now.Unix())
         out.Mtime = uint64(now.Unix())
         out.Ctime = uint64(now.Unix())
         out.Nlink = 2 + uint32(len(d.subdirs))
         return 0
 }</span>
+
+// Setattr implements fs.NodeSetattrer - handles chmod/chown on directories.
+func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno <span class="cov4" title="3">{
+        if d.permStore == nil </span><span class="cov1" title="1">{
+                // No permission store - can't change permissions
+                return syscall.EROFS
+        }</span>
+
+        <span class="cov2" title="2">var newUID, newGID, newMode *uint32
+
+        // Check which fields are being changed
+        if in.Valid&amp;fuse.FATTR_UID != 0 </span><span class="cov1" title="1">{
+                newUID = &amp;in.Uid
+        }</span>
+        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_GID != 0 </span><span class="cov1" title="1">{
+                newGID = &amp;in.Gid
+        }</span>
+        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_MODE != 0 </span><span class="cov1" title="1">{
+                mode := in.Mode &amp; 0777 // Only permission bits
+                newMode = &amp;mode
+        }</span>
+
+        // Update permission store
+        <span class="cov2" title="2">if err := d.permStore.SetDirPerms(d.path, newUID, newGID, newMode); err != nil </span><span class="cov0" title="0">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Setattr error: %s: %v", d.path, err)
+                }</span>
+                <span class="cov0" title="0">return syscall.EIO</span>
+        }
+
+        <span class="cov2" title="2">if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Setattr: %s uid=%v gid=%v mode=%v", d.path, newUID, newGID, newMode)
+        }</span>
+
+        // Return updated attributes
+        <span class="cov2" title="2">return d.Getattr(ctx, fh, out)</span>
+}
 
 // --- Read-only filesystem error handlers ---
 // These return EROFS (Read-only file system) for write operations.
@@ -3744,7 +4014,448 @@ func (d *MKVFSDirNode) Create(ctx context.Context, name string, flags uint32, mo
 }
 </pre>
 		
-		<pre class="file" id="file9" style="display: none">package fuse
+		<pre class="file" id="file9" style="display: none">// Package fuse provides a FUSE filesystem for accessing deduplicated MKV files.
+package fuse
+
+import (
+        "fmt"
+        "log"
+        "os"
+        "path/filepath"
+        "sync"
+
+        "gopkg.in/yaml.v3"
+)
+
+// Perms holds uid, gid, and mode for a file or directory.
+// Nil values indicate the field should inherit from defaults.
+type Perms struct {
+        UID  *uint32 `yaml:"uid,omitempty"`
+        GID  *uint32 `yaml:"gid,omitempty"`
+        Mode *uint32 `yaml:"mode,omitempty"`
+}
+
+// Defaults holds default permissions for files and directories.
+type Defaults struct {
+        FileUID  uint32 `yaml:"file_uid"`
+        FileGID  uint32 `yaml:"file_gid"`
+        FileMode uint32 `yaml:"file_mode"`
+        DirUID   uint32 `yaml:"dir_uid"`
+        DirGID   uint32 `yaml:"dir_gid"`
+        DirMode  uint32 `yaml:"dir_mode"`
+}
+
+// DefaultPerms returns the default permission values.
+func DefaultPerms() Defaults <span class="cov6" title="15">{
+        return Defaults{
+                FileUID:  0,
+                FileGID:  0,
+                FileMode: 0444,
+                DirUID:   0,
+                DirGID:   0,
+                DirMode:  0555,
+        }
+}</span>
+
+// permissionsFile is the structure of the permissions YAML file.
+type permissionsFile struct {
+        Defaults    Defaults          `yaml:"defaults"`
+        Files       map[string]*Perms `yaml:"files,omitempty"`
+        Directories map[string]*Perms `yaml:"directories,omitempty"`
+}
+
+// PermissionStore manages file/directory permissions with persistence.
+type PermissionStore struct {
+        path     string
+        defaults Defaults
+        files    map[string]*Perms
+        dirs     map[string]*Perms
+        mu       sync.RWMutex
+        verbose  bool
+}
+
+// NewPermissionStore creates a new permission store.
+// If path is empty, permissions will not be persisted.
+func NewPermissionStore(path string, defaults Defaults, verbose bool) *PermissionStore <span class="cov6" title="21">{
+        return &amp;PermissionStore{
+                path:     path,
+                defaults: defaults,
+                files:    make(map[string]*Perms),
+                dirs:     make(map[string]*Perms),
+                verbose:  verbose,
+        }
+}</span>
+
+// Load loads permissions from the file.
+// If the file doesn't exist, the store remains empty (using defaults).
+func (s *PermissionStore) Load() error <span class="cov2" title="2">{
+        if s.path == "" </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        <span class="cov2" title="2">data, err := os.ReadFile(s.path)
+        if err != nil </span><span class="cov1" title="1">{
+                if os.IsNotExist(err) </span><span class="cov1" title="1">{
+                        if s.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Permissions file %s does not exist, using defaults", s.path)
+                        }</span>
+                        <span class="cov1" title="1">return nil</span>
+                }
+                <span class="cov0" title="0">return fmt.Errorf("read permissions file: %w", err)</span>
+        }
+
+        <span class="cov1" title="1">var pf permissionsFile
+        if err := yaml.Unmarshal(data, &amp;pf); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("parse permissions file: %w", err)
+        }</span>
+
+        <span class="cov1" title="1">s.mu.Lock()
+        defer s.mu.Unlock()
+
+        // Override defaults if specified in file
+        if pf.Defaults.FileMode != 0 || pf.Defaults.FileUID != 0 || pf.Defaults.FileGID != 0 ||
+                pf.Defaults.DirMode != 0 || pf.Defaults.DirUID != 0 || pf.Defaults.DirGID != 0 </span><span class="cov1" title="1">{
+                // Only override non-zero values from file
+                if pf.Defaults.FileMode != 0 </span><span class="cov1" title="1">{
+                        s.defaults.FileMode = pf.Defaults.FileMode
+                }</span>
+                <span class="cov1" title="1">if pf.Defaults.FileUID != 0 </span><span class="cov0" title="0">{
+                        s.defaults.FileUID = pf.Defaults.FileUID
+                }</span>
+                <span class="cov1" title="1">if pf.Defaults.FileGID != 0 </span><span class="cov0" title="0">{
+                        s.defaults.FileGID = pf.Defaults.FileGID
+                }</span>
+                <span class="cov1" title="1">if pf.Defaults.DirMode != 0 </span><span class="cov1" title="1">{
+                        s.defaults.DirMode = pf.Defaults.DirMode
+                }</span>
+                <span class="cov1" title="1">if pf.Defaults.DirUID != 0 </span><span class="cov0" title="0">{
+                        s.defaults.DirUID = pf.Defaults.DirUID
+                }</span>
+                <span class="cov1" title="1">if pf.Defaults.DirGID != 0 </span><span class="cov0" title="0">{
+                        s.defaults.DirGID = pf.Defaults.DirGID
+                }</span>
+        }
+
+        <span class="cov1" title="1">if pf.Files != nil </span><span class="cov1" title="1">{
+                s.files = pf.Files
+        }</span>
+        <span class="cov1" title="1">if pf.Directories != nil </span><span class="cov1" title="1">{
+                s.dirs = pf.Directories
+        }</span>
+
+        <span class="cov1" title="1">if s.verbose </span><span class="cov0" title="0">{
+                log.Printf("Loaded permissions: %d files, %d directories", len(s.files), len(s.dirs))
+        }</span>
+
+        <span class="cov1" title="1">return nil</span>
+}
+
+// Save saves permissions to the file.
+func (s *PermissionStore) Save() error <span class="cov10" title="120">{
+        if s.path == "" </span><span class="cov9" title="115">{
+                return nil
+        }</span>
+
+        <span class="cov4" title="5">s.mu.RLock()
+        // Deep copy the maps to avoid data races during marshalling.
+        // We copy both the map and the Perms values to ensure complete isolation.
+        pf := permissionsFile{
+                Defaults: s.defaults,
+        }
+        if s.files != nil </span><span class="cov4" title="5">{
+                pf.Files = make(map[string]*Perms, len(s.files))
+                for k, v := range s.files </span><span class="cov3" title="4">{
+                        if v != nil </span><span class="cov3" title="4">{
+                                permsCopy := *v // copy the Perms struct
+                                pf.Files[k] = &amp;permsCopy
+                        }</span>
+                }
+        }
+        <span class="cov4" title="5">if s.dirs != nil </span><span class="cov4" title="5">{
+                pf.Directories = make(map[string]*Perms, len(s.dirs))
+                for k, v := range s.dirs </span><span class="cov2" title="2">{
+                        if v != nil </span><span class="cov2" title="2">{
+                                permsCopy := *v // copy the Perms struct
+                                pf.Directories[k] = &amp;permsCopy
+                        }</span>
+                }
+        }
+        <span class="cov4" title="5">s.mu.RUnlock()
+
+        // Create parent directory if needed
+        dir := filepath.Dir(s.path)
+        if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("create permissions directory: %w", err)
+        }</span>
+
+        <span class="cov4" title="5">data, err := yaml.Marshal(&amp;pf)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("marshal permissions: %w", err)
+        }</span>
+
+        <span class="cov4" title="5">if err := os.WriteFile(s.path, data, 0644); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("write permissions file: %w", err)
+        }</span>
+
+        <span class="cov4" title="5">if s.verbose </span><span class="cov0" title="0">{
+                log.Printf("Saved permissions to %s", s.path)
+        }</span>
+
+        <span class="cov4" title="5">return nil</span>
+}
+
+// GetFilePerms returns the effective permissions for a file.
+// Returns uid, gid, mode with defaults applied for any unset values.
+func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <span class="cov9" title="115">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        uid = s.defaults.FileUID
+        gid = s.defaults.FileGID
+        mode = s.defaults.FileMode
+
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="111">{
+                if p.UID != nil </span><span class="cov9" title="108">{
+                        uid = *p.UID
+                }</span>
+                <span class="cov9" title="111">if p.GID != nil </span><span class="cov3" title="4">{
+                        gid = *p.GID
+                }</span>
+                <span class="cov9" title="111">if p.Mode != nil </span><span class="cov4" title="6">{
+                        mode = *p.Mode
+                }</span>
+        }
+
+        <span class="cov9" title="115">return uid, gid, mode</span>
+}
+
+// GetDirPerms returns the effective permissions for a directory.
+// Returns uid, gid, mode with defaults applied for any unset values.
+func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) <span class="cov5" title="10">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        uid = s.defaults.DirUID
+        gid = s.defaults.DirGID
+        mode = s.defaults.DirMode
+
+        if p, ok := s.dirs[path]; ok </span><span class="cov4" title="8">{
+                if p.UID != nil </span><span class="cov3" title="3">{
+                        uid = *p.UID
+                }</span>
+                <span class="cov4" title="8">if p.GID != nil </span><span class="cov2" title="2">{
+                        gid = *p.GID
+                }</span>
+                <span class="cov4" title="8">if p.Mode != nil </span><span class="cov4" title="5">{
+                        mode = *p.Mode
+                }</span>
+        }
+
+        <span class="cov5" title="10">return uid, gid, mode</span>
+}
+
+// SetFilePerms sets permissions for a file.
+// Only non-nil values are updated; nil values leave existing values unchanged.
+// Automatically saves to disk.
+func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov9" title="112">{
+        s.mu.Lock()
+
+        // If all values are nil, nothing to do
+        if uid == nil &amp;&amp; gid == nil &amp;&amp; mode == nil </span><span class="cov0" title="0">{
+                s.mu.Unlock()
+                return nil
+        }</span>
+
+        <span class="cov9" title="112">p, ok := s.files[path]
+        if !ok </span><span class="cov5" title="12">{
+                p = &amp;Perms{}
+                s.files[path] = p
+        }</span>
+
+        // Only update non-nil values; copy values so the store owns their lifetime.
+        <span class="cov9" title="112">if uid != nil </span><span class="cov9" title="109">{
+                v := *uid
+                p.UID = &amp;v
+        }</span>
+        <span class="cov9" title="112">if gid != nil </span><span class="cov3" title="3">{
+                v := *gid
+                p.GID = &amp;v
+        }</span>
+        <span class="cov9" title="112">if mode != nil </span><span class="cov4" title="6">{
+                v := *mode
+                p.Mode = &amp;v
+        }</span>
+
+        <span class="cov9" title="112">s.mu.Unlock()
+
+        if s.verbose </span><span class="cov0" title="0">{
+                log.Printf("SetFilePerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
+        }</span>
+
+        <span class="cov9" title="112">return s.Save()</span>
+}
+
+// RemoveFilePerms removes all permission overrides for a file.
+// The file will use default permissions. Automatically saves to disk.
+func (s *PermissionStore) RemoveFilePerms(path string) error <span class="cov1" title="1">{
+        s.mu.Lock()
+        delete(s.files, path)
+        s.mu.Unlock()
+
+        if s.verbose </span><span class="cov0" title="0">{
+                log.Printf("RemoveFilePerms: %s", path)
+        }</span>
+
+        <span class="cov1" title="1">return s.Save()</span>
+}
+
+// SetDirPerms sets permissions for a directory.
+// Only non-nil values are updated; nil values leave existing values unchanged.
+// Automatically saves to disk.
+func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov4" title="7">{
+        s.mu.Lock()
+
+        // If all values are nil, nothing to do
+        if uid == nil &amp;&amp; gid == nil &amp;&amp; mode == nil </span><span class="cov0" title="0">{
+                s.mu.Unlock()
+                return nil
+        }</span>
+
+        <span class="cov4" title="7">p, ok := s.dirs[path]
+        if !ok </span><span class="cov4" title="7">{
+                p = &amp;Perms{}
+                s.dirs[path] = p
+        }</span>
+
+        // Only update non-nil values; copy values so the store owns their lifetime.
+        <span class="cov4" title="7">if uid != nil </span><span class="cov3" title="3">{
+                v := *uid
+                p.UID = &amp;v
+        }</span>
+        <span class="cov4" title="7">if gid != nil </span><span class="cov1" title="1">{
+                v := *gid
+                p.GID = &amp;v
+        }</span>
+        <span class="cov4" title="7">if mode != nil </span><span class="cov3" title="4">{
+                v := *mode
+                p.Mode = &amp;v
+        }</span>
+
+        <span class="cov4" title="7">s.mu.Unlock()
+
+        if s.verbose </span><span class="cov0" title="0">{
+                log.Printf("SetDirPerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
+        }</span>
+
+        <span class="cov4" title="7">return s.Save()</span>
+}
+
+// RemoveDirPerms removes all permission overrides for a directory.
+// The directory will use default permissions. Automatically saves to disk.
+func (s *PermissionStore) RemoveDirPerms(path string) error <span class="cov0" title="0">{
+        s.mu.Lock()
+        delete(s.dirs, path)
+        s.mu.Unlock()
+
+        if s.verbose </span><span class="cov0" title="0">{
+                log.Printf("RemoveDirPerms: %s", path)
+        }</span>
+
+        <span class="cov0" title="0">return s.Save()</span>
+}
+
+// CleanupStale removes entries for paths that don't exist in the mounted filesystem.
+// validFiles and validDirs are maps of valid paths (value is ignored, just checking keys).
+// Returns the number of stale entries removed.
+func (s *PermissionStore) CleanupStale(validFiles, validDirs map[string]bool) int <span class="cov1" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        removed := 0
+
+        // Clean up stale file entries
+        for path := range s.files </span><span class="cov2" title="2">{
+                if !validFiles[path] </span><span class="cov1" title="1">{
+                        delete(s.files, path)
+                        removed++
+                        if s.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Removed stale file permission entry: %s", path)
+                        }</span>
+                }
+        }
+
+        // Clean up stale directory entries
+        <span class="cov1" title="1">for path := range s.dirs </span><span class="cov2" title="2">{
+                if !validDirs[path] </span><span class="cov1" title="1">{
+                        delete(s.dirs, path)
+                        removed++
+                        if s.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Removed stale directory permission entry: %s", path)
+                        }</span>
+                }
+        }
+
+        <span class="cov1" title="1">return removed</span>
+}
+
+// Defaults returns the current default permissions.
+func (s *PermissionStore) Defaults() Defaults <span class="cov1" title="1">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+        return s.defaults
+}</span>
+
+// ResolvePermissionsPath determines which permissions file to use.
+// Priority:
+//  1. explicitPath (from --permissions-file flag)
+//  2. ~/.config/mkvdup/permissions.yaml (if exists) - for both root and non-root
+//  3. /etc/mkvdup/permissions.yaml (if exists AND running as root)
+//  4. Default based on euid: root uses /etc/, non-root uses ~/.config/
+//
+// Non-root users always get a user-writable path (unless explicitly overridden)
+// to avoid EACCES errors when saving permission changes.
+func ResolvePermissionsPath(explicitPath string) string <span class="cov2" title="2">{
+        if explicitPath != "" </span><span class="cov1" title="1">{
+                return explicitPath
+        }</span>
+
+        <span class="cov1" title="1">home, err := os.UserHomeDir()
+        userPath := ""
+        if err == nil </span><span class="cov1" title="1">{
+                userPath = filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
+        }</span>
+
+        // Check user config - takes priority for both root and non-root
+        <span class="cov1" title="1">if userPath != "" </span><span class="cov1" title="1">{
+                if _, err := os.Stat(userPath); err == nil </span><span class="cov0" title="0">{
+                        return userPath
+                }</span>
+        }
+
+        <span class="cov1" title="1">systemPath := "/etc/mkvdup/permissions.yaml"
+
+        // For root: check system config, then default to system path
+        if os.Geteuid() == 0 </span><span class="cov0" title="0">{
+                if _, err := os.Stat(systemPath); err == nil </span><span class="cov0" title="0">{
+                        return systemPath
+                }</span>
+                <span class="cov0" title="0">return systemPath</span>
+        }
+
+        // For non-root: always use user path to ensure writability.
+        // Do NOT use system path even if it exists, as non-root users
+        // typically cannot write to /etc/ and chmod/chown operations
+        // would fail with EACCES.
+        <span class="cov1" title="1">if userPath != "" </span><span class="cov1" title="1">{
+                return userPath
+        }</span>
+
+        // Fallback if no home directory (unusual for non-root)
+        <span class="cov0" title="0">return systemPath</span>
+}
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">package fuse
 
 import (
         "log"
@@ -3766,7 +4477,7 @@ import (
 // Conflicts:
 //   - Duplicate paths: later file wins, warning logged
 //   - File/directory collision: directory wins, file skipped with warning
-func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFactory) *MKVFSDirNode <span class="cov3" title="18">{
+func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) *MKVFSDirNode <span class="cov3" title="18">{
         root := &amp;MKVFSDirNode{
                 name:          "",
                 path:          "",
@@ -3774,17 +4485,18 @@ func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFact
                 subdirs:       make(map[string]*MKVFSDirNode),
                 verbose:       verbose,
                 readerFactory: readerFactory,
+                permStore:     permStore,
         }
 
         for _, file := range files </span><span class="cov9" title="10031">{
-                insertFile(root, file, verbose, readerFactory)
+                insertFile(root, file, verbose, readerFactory, permStore)
         }</span>
 
         <span class="cov3" title="18">return root</span>
 }
 
 // insertFile inserts a file into the directory tree, creating directories as needed.
-func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory) <span class="cov9" title="10031">{
+func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) <span class="cov9" title="10031">{
         // Validate: reject paths with ".." components (security)
         if strings.Contains(file.Name, "..") </span><span class="cov1" title="1">{
                 log.Printf("Warning: skipping file with invalid path (contains '..'): %s", file.Name)
@@ -3844,6 +4556,7 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
                                 subdirs:       make(map[string]*MKVFSDirNode),
                                 verbose:       verbose,
                                 readerFactory: readerFactory,
+                                permStore:     permStore,
                         }
                         current.subdirs[dirName] = subdir</span>
                 }
@@ -3870,7 +4583,7 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
 }
 </pre>
 		
-		<pre class="file" id="file10" style="display: none">// Package matcher provides the core deduplication logic for matching MKV packets to source files.
+		<pre class="file" id="file11" style="display: none">// Package matcher provides the core deduplication logic for matching MKV packets to source files.
 package matcher
 
 import (
@@ -4486,7 +5199,7 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) <span class="cov0" title="0">
 }
 </pre>
 		
-		<pre class="file" id="file11" style="display: none">// Package mkv provides functionality for parsing MKV (Matroska) files.
+		<pre class="file" id="file12" style="display: none">// Package mkv provides functionality for parsing MKV (Matroska) files.
 package mkv
 
 import (
@@ -4858,7 +5571,7 @@ func (h SimpleBlockHeader) LacingType() byte <span class="cov4" title="4">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file12" style="display: none">package mkv
+		<pre class="file" id="file13" style="display: none">package mkv
 
 import (
         "bytes"
@@ -5305,7 +6018,7 @@ func (p *Parser) Data() []byte <span class="cov1" title="1">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file13" style="display: none">// Package mmap provides zero-copy memory-mapped file access.
+		<pre class="file" id="file14" style="display: none">// Package mmap provides zero-copy memory-mapped file access.
 package mmap
 
 import (
@@ -5400,7 +6113,7 @@ func (m *File) Close() error <span class="cov10" title="11">{
 }
 </pre>
 		
-		<pre class="file" id="file14" style="display: none">package source
+		<pre class="file" id="file15" style="display: none">package source
 
 // FindAudioSyncPoints finds all audio sync pattern positions in the data.
 // Detects AC3, DTS, TrueHD, and MPEG Audio sync patterns.
@@ -5523,7 +6236,7 @@ func FindAllSyncPoints(data []byte) []int <span class="cov1" title="1">{
 }
 </pre>
 		
-		<pre class="file" id="file15" style="display: none">package source
+		<pre class="file" id="file16" style="display: none">package source
 
 import (
         "fmt"
@@ -5996,7 +6709,7 @@ func (idx *Index) Close() error <span class="cov4" title="2">{
 }
 </pre>
 		
-		<pre class="file" id="file16" style="display: none">package source
+		<pre class="file" id="file17" style="display: none">package source
 
 import (
         "encoding/binary"
@@ -6843,7 +7556,7 @@ func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, 
 }
 </pre>
 		
-		<pre class="file" id="file17" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
+		<pre class="file" id="file18" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
 package source
 
 import (
@@ -7203,7 +7916,7 @@ func (idx *Index) RawSlice(loc Location, size int) []byte <span class="cov1" tit
 }
 </pre>
 		
-		<pre class="file" id="file18" style="display: none">package source
+		<pre class="file" id="file19" style="display: none">package source
 
 // FindVideoStartCodes finds all video start code positions (00 00 01 XX pattern) in the data.
 // These are potential sync points where video frames or other structures begin.
