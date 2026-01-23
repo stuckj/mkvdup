@@ -71,25 +71,27 @@
 				
 				<option value="file7">github.com/stuckj/mkvdup/internal/fuse/adapters.go (0.0%)</option>
 				
-				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (72.9%)</option>
+				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (52.8%)</option>
 				
-				<option value="file9">github.com/stuckj/mkvdup/internal/matcher/matcher.go (9.5%)</option>
+				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/tree.go (95.7%)</option>
 				
-				<option value="file10">github.com/stuckj/mkvdup/internal/mkv/ebml.go (89.4%)</option>
+				<option value="file10">github.com/stuckj/mkvdup/internal/matcher/matcher.go (9.5%)</option>
 				
-				<option value="file11">github.com/stuckj/mkvdup/internal/mkv/parser.go (13.6%)</option>
+				<option value="file11">github.com/stuckj/mkvdup/internal/mkv/ebml.go (89.4%)</option>
 				
-				<option value="file12">github.com/stuckj/mkvdup/internal/mmap/mmap.go (93.5%)</option>
+				<option value="file12">github.com/stuckj/mkvdup/internal/mkv/parser.go (13.6%)</option>
 				
-				<option value="file13">github.com/stuckj/mkvdup/internal/source/audio.go (81.5%)</option>
+				<option value="file13">github.com/stuckj/mkvdup/internal/mmap/mmap.go (93.5%)</option>
 				
-				<option value="file14">github.com/stuckj/mkvdup/internal/source/indexer.go (11.2%)</option>
+				<option value="file14">github.com/stuckj/mkvdup/internal/source/audio.go (81.5%)</option>
 				
-				<option value="file15">github.com/stuckj/mkvdup/internal/source/mpegps.go (14.8%)</option>
+				<option value="file15">github.com/stuckj/mkvdup/internal/source/indexer.go (11.2%)</option>
 				
-				<option value="file16">github.com/stuckj/mkvdup/internal/source/source.go (46.8%)</option>
+				<option value="file16">github.com/stuckj/mkvdup/internal/source/mpegps.go (14.8%)</option>
 				
-				<option value="file17">github.com/stuckj/mkvdup/internal/source/video.go (92.9%)</option>
+				<option value="file17">github.com/stuckj/mkvdup/internal/source/source.go (46.8%)</option>
+				
+				<option value="file18">github.com/stuckj/mkvdup/internal/source/video.go (92.9%)</option>
 				
 				</select>
 			</div>
@@ -3162,6 +3164,7 @@ import (
         "fmt"
         "log"
         "path/filepath"
+        "sort"
         "sync"
         "syscall"
         "time"
@@ -3186,7 +3189,13 @@ type MKVFile struct {
 // MKVFSRoot is the root node of the FUSE filesystem.
 type MKVFSRoot struct {
         fs.Inode
-        files   map[string]*MKVFile
+
+        // Directory tree for hierarchical file organization
+        rootDir *MKVFSDirNode
+
+        // Flat map for O(1) lookup by full path (kept for backwards compatibility)
+        files map[string]*MKVFile
+
         mu      sync.RWMutex
         verbose bool
 
@@ -3202,11 +3211,33 @@ type MKVFSNode struct {
         verbose bool
 }
 
+// MKVFSDirNode represents a directory node in the FUSE filesystem.
+type MKVFSDirNode struct {
+        fs.Inode
+        name    string                   // basename (e.g., "Action")
+        path    string                   // full path from root (e.g., "Movies/Action")
+        files   map[string]*MKVFile      // files directly in this directory
+        subdirs map[string]*MKVFSDirNode // child directories
+        mu      sync.RWMutex
+        verbose bool
+
+        // Factory for creating file nodes (injected from root)
+        readerFactory ReaderFactory
+}
+
 // Ensure interfaces are implemented
 var _ fs.InodeEmbedder = (*MKVFSRoot)(nil)
 var _ fs.InodeEmbedder = (*MKVFSNode)(nil)
+var _ fs.InodeEmbedder = (*MKVFSDirNode)(nil)
 var _ fs.NodeReaddirer = (*MKVFSRoot)(nil)
 var _ fs.NodeLookuper = (*MKVFSRoot)(nil)
+var _ fs.NodeReaddirer = (*MKVFSDirNode)(nil)
+var _ fs.NodeLookuper = (*MKVFSDirNode)(nil)
+var _ fs.NodeGetattrer = (*MKVFSDirNode)(nil)
+var _ fs.NodeMkdirer = (*MKVFSDirNode)(nil)
+var _ fs.NodeRmdirer = (*MKVFSDirNode)(nil)
+var _ fs.NodeUnlinker = (*MKVFSDirNode)(nil)
+var _ fs.NodeCreater = (*MKVFSDirNode)(nil)
 var _ fs.NodeOpener = (*MKVFSNode)(nil)
 var _ fs.NodeReader = (*MKVFSNode)(nil)
 var _ fs.NodeGetattrer = (*MKVFSNode)(nil)
@@ -3219,7 +3250,7 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) <span clas
 
 // NewMKVFSWithFactories creates a new MKVFS root with custom factories.
 // This allows injecting mock implementations for testing.
-func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader) (*MKVFSRoot, error) <span class="cov5" title="6">{
+func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader) (*MKVFSRoot, error) <span class="cov6" title="7">{
         root := &amp;MKVFSRoot{
                 files:         make(map[string]*MKVFile),
                 verbose:       verbose,
@@ -3231,34 +3262,34 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                 log.Printf("Creating MKVFS with %d config files", len(configPaths))
         }</span>
 
-        <span class="cov5" title="6">for _, configPath := range configPaths </span><span class="cov6" title="7">{
+        <span class="cov6" title="7">for _, configPath := range configPaths </span><span class="cov7" title="10">{
                 if verbose </span><span class="cov0" title="0">{
                         log.Printf("Reading config: %s", configPath)
                 }</span>
-                <span class="cov6" title="7">config, err := root.configReader.ReadConfig(configPath)
+                <span class="cov7" title="10">config, err := root.configReader.ReadConfig(configPath)
                 if err != nil </span><span class="cov1" title="1">{
                         return nil, fmt.Errorf("read config %s: %w", configPath, err)
                 }</span>
-                <span class="cov5" title="6">if verbose </span><span class="cov0" title="0">{
+                <span class="cov7" title="9">if verbose </span><span class="cov0" title="0">{
                         log.Printf("Config: name=%s, dedup=%s, source=%s", config.Name, config.DedupFile, config.SourceDir)
                 }</span>
 
                 // Resolve relative paths
-                <span class="cov5" title="6">configDir := filepath.Dir(configPath)
+                <span class="cov7" title="9">configDir := filepath.Dir(configPath)
                 dedupPath := config.DedupFile
                 if !filepath.IsAbs(dedupPath) </span><span class="cov1" title="1">{
                         dedupPath = filepath.Join(configDir, dedupPath)
                 }</span>
-                <span class="cov5" title="6">sourceDir := config.SourceDir
+                <span class="cov7" title="9">sourceDir := config.SourceDir
                 if !filepath.IsAbs(sourceDir) </span><span class="cov1" title="1">{
                         sourceDir = filepath.Join(configDir, sourceDir)
                 }</span>
 
                 // Open dedup file to get size (lazy loading - only reads header)
-                <span class="cov5" title="6">if verbose </span><span class="cov0" title="0">{
+                <span class="cov7" title="9">if verbose </span><span class="cov0" title="0">{
                         log.Printf("Opening dedup file: %s", dedupPath)
                 }</span>
-                <span class="cov5" title="6">reader, err := root.readerFactory.NewReaderLazy(dedupPath, sourceDir)
+                <span class="cov7" title="9">reader, err := root.readerFactory.NewReaderLazy(dedupPath, sourceDir)
                 if err != nil </span><span class="cov1" title="1">{
                         if verbose </span><span class="cov0" title="0">{
                                 log.Printf("Failed to open dedup file: %v", err)
@@ -3266,7 +3297,7 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                         <span class="cov1" title="1">return nil, fmt.Errorf("open dedup file %s: %w", dedupPath, err)</span>
                 }
 
-                <span class="cov5" title="5">mkvFile := &amp;MKVFile{
+                <span class="cov6" title="8">mkvFile := &amp;MKVFile{
                         Name:          config.Name,
                         DedupPath:     dedupPath,
                         SourceDir:     sourceDir,
@@ -3283,20 +3314,37 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                 }</span>
         }
 
-        <span class="cov4" title="4">if verbose </span><span class="cov0" title="0">{
+        <span class="cov5" title="5">if verbose </span><span class="cov0" title="0">{
                 log.Printf("Total files: %d", len(root.files))
         }</span>
 
-        <span class="cov4" title="4">return root, nil</span>
+        // Build directory tree from collected files
+        <span class="cov5" title="5">fileList := make([]*MKVFile, 0, len(root.files))
+        for _, f := range root.files </span><span class="cov6" title="8">{
+                fileList = append(fileList, f)
+        }</span>
+        <span class="cov5" title="5">root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory)
+
+        if verbose </span><span class="cov0" title="0">{
+                log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))
+        }</span>
+
+        <span class="cov5" title="5">return root, nil</span>
 }
 
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
+// Delegates to the directory tree for hierarchical listing.
 func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov1" title="1">{
-        r.mu.RLock()
+        if r.rootDir != nil </span><span class="cov0" title="0">{
+                return r.rootDir.Readdir(ctx)
+        }</span>
+
+        // Fallback to flat listing if no directory tree (shouldn't happen)
+        <span class="cov1" title="1">r.mu.RLock()
         defer r.mu.RUnlock()
 
         if r.verbose </span><span class="cov0" title="0">{
-                log.Printf("Readdir: listing %d files", len(r.files))
+                log.Printf("Readdir: listing %d files (flat)", len(r.files))
         }</span>
 
         <span class="cov1" title="1">entries := make([]fuse.DirEntry, 0, len(r.files))
@@ -3312,9 +3360,72 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <
         <span class="cov1" title="1">return fs.NewListDirStream(entries), 0</span>
 }
 
-// Lookup implements fs.NodeLookuper - looks up a file by name.
+// Lookup implements fs.NodeLookuper - looks up a file or directory by name.
+// Uses the directory tree for hierarchical lookup.
 func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov1" title="1">{
-        r.mu.RLock()
+        if r.rootDir != nil </span><span class="cov0" title="0">{
+                r.rootDir.mu.RLock()
+                defer r.rootDir.mu.RUnlock()
+
+                // Check subdirectories first
+                if subdir, ok := r.rootDir.subdirs[name]; ok </span><span class="cov0" title="0">{
+                        if r.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Lookup: found subdir %s at root", name)
+                        }</span>
+
+                        // Lock subdir to safely access its fields
+                        <span class="cov0" title="0">subdir.mu.RLock()
+                        subdirCount := len(subdir.subdirs)
+                        subdir.mu.RUnlock()
+
+                        now := time.Now()
+                        out.Mode = fuse.S_IFDIR | 0555
+                        out.Uid = 0
+                        out.Gid = 0
+                        out.Atime = uint64(now.Unix())
+                        out.Mtime = uint64(now.Unix())
+                        out.Ctime = uint64(now.Unix())
+                        out.Nlink = 2 + uint32(subdirCount)
+
+                        stable := fs.StableAttr{
+                                Mode: fuse.S_IFDIR,
+                                Ino:  hashString(subdir.path),
+                        }
+                        child := r.NewPersistentInode(ctx, subdir, stable)
+                        return child, 0</span>
+                }
+
+                // Check files
+                <span class="cov0" title="0">if file, ok := r.rootDir.files[name]; ok </span><span class="cov0" title="0">{
+                        if r.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Lookup: found file %s at root (size=%d)", name, file.Size)
+                        }</span>
+
+                        <span class="cov0" title="0">now := time.Now()
+                        out.Size = uint64(file.Size)
+                        out.Mode = fuse.S_IFREG | 0444
+                        out.Atime = uint64(now.Unix())
+                        out.Mtime = uint64(now.Unix())
+                        out.Ctime = uint64(now.Unix())
+                        out.Nlink = 1
+
+                        node := &amp;MKVFSNode{file: file, verbose: r.verbose}
+                        stable := fs.StableAttr{
+                                Mode: fuse.S_IFREG,
+                                Ino:  hashString(name),
+                        }
+                        child := r.NewInode(ctx, node, stable)
+                        return child, 0</span>
+                }
+
+                <span class="cov0" title="0">if r.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Lookup: not found %s at root", name)
+                }</span>
+                <span class="cov0" title="0">return nil, syscall.ENOENT</span>
+        }
+
+        // Fallback to flat lookup if no directory tree (shouldn't happen)
+        <span class="cov1" title="1">r.mu.RLock()
         file, ok := r.files[name]
         r.mu.RUnlock()
 
@@ -3460,9 +3571,306 @@ func hashString(s string) uint64 <span class="cov4" title="4">{
         }</span>
         <span class="cov4" title="4">return h</span>
 }
+
+// --- MKVFSDirNode interface implementations ---
+
+// Readdir implements fs.NodeReaddirer - lists files and subdirectories.
+func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov2" title="2">{
+        d.mu.RLock()
+        defer d.mu.RUnlock()
+
+        if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Readdir: %s (files=%d, subdirs=%d)", d.path, len(d.files), len(d.subdirs))
+        }</span>
+
+        <span class="cov2" title="2">entries := make([]fuse.DirEntry, 0, len(d.files)+len(d.subdirs))
+
+        // Collect and sort subdirectory names for deterministic ordering
+        subdirNames := make([]string, 0, len(d.subdirs))
+        for name := range d.subdirs </span><span class="cov5" title="5">{
+                subdirNames = append(subdirNames, name)
+        }</span>
+        <span class="cov2" title="2">sort.Strings(subdirNames)
+
+        // Add subdirectories first (sorted)
+        for _, name := range subdirNames </span><span class="cov5" title="5">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Readdir: adding subdir %s", name)
+                }</span>
+                <span class="cov5" title="5">entries = append(entries, fuse.DirEntry{
+                        Name: name,
+                        Mode: fuse.S_IFDIR,
+                })</span>
+        }
+
+        // Collect and sort file names for deterministic ordering
+        <span class="cov2" title="2">fileNames := make([]string, 0, len(d.files))
+        for name := range d.files </span><span class="cov5" title="5">{
+                fileNames = append(fileNames, name)
+        }</span>
+        <span class="cov2" title="2">sort.Strings(fileNames)
+
+        // Add files (sorted)
+        for _, name := range fileNames </span><span class="cov5" title="5">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Readdir: adding file %s", name)
+                }</span>
+                <span class="cov5" title="5">entries = append(entries, fuse.DirEntry{
+                        Name: name,
+                        Mode: fuse.S_IFREG,
+                })</span>
+        }
+
+        <span class="cov2" title="2">return fs.NewListDirStream(entries), 0</span>
+}
+
+// Lookup implements fs.NodeLookuper - looks up a file or subdirectory by name.
+func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov0" title="0">{
+        d.mu.RLock()
+        defer d.mu.RUnlock()
+
+        // Check subdirectories first
+        if subdir, ok := d.subdirs[name]; ok </span><span class="cov0" title="0">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Lookup: found subdir %s in %s", name, d.path)
+                }</span>
+
+                // Lock subdir to safely access its fields
+                <span class="cov0" title="0">subdir.mu.RLock()
+                subdirCount := len(subdir.subdirs)
+                subdir.mu.RUnlock()
+
+                now := time.Now()
+                out.Mode = fuse.S_IFDIR | 0555
+                out.Uid = 0
+                out.Gid = 0
+                out.Atime = uint64(now.Unix())
+                out.Mtime = uint64(now.Unix())
+                out.Ctime = uint64(now.Unix())
+                out.Nlink = 2 + uint32(subdirCount)
+
+                stable := fs.StableAttr{
+                        Mode: fuse.S_IFDIR,
+                        Ino:  hashString(subdir.path),
+                }
+                child := d.NewPersistentInode(ctx, subdir, stable)
+                return child, 0</span>
+        }
+
+        // Check files
+        <span class="cov0" title="0">if file, ok := d.files[name]; ok </span><span class="cov0" title="0">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Lookup: found file %s in %s (size=%d)", name, d.path, file.Size)
+                }</span>
+
+                <span class="cov0" title="0">now := time.Now()
+                out.Size = uint64(file.Size)
+                out.Mode = fuse.S_IFREG | 0444
+                out.Atime = uint64(now.Unix())
+                out.Mtime = uint64(now.Unix())
+                out.Ctime = uint64(now.Unix())
+                out.Nlink = 1
+
+                node := &amp;MKVFSNode{file: file, verbose: d.verbose}
+                var inodePath string
+                if d.path == "" </span><span class="cov0" title="0">{
+                        inodePath = name
+                }</span> else<span class="cov0" title="0"> {
+                        inodePath = d.path + "/" + name
+                }</span>
+                <span class="cov0" title="0">stable := fs.StableAttr{
+                        Mode: fuse.S_IFREG,
+                        Ino:  hashString(inodePath),
+                }
+                child := d.NewInode(ctx, node, stable)
+                return child, 0</span>
+        }
+
+        <span class="cov0" title="0">if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Lookup: not found %s in %s", name, d.path)
+        }</span>
+        <span class="cov0" title="0">return nil, syscall.ENOENT</span>
+}
+
+// Getattr implements fs.NodeGetattrer - returns directory attributes.
+func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov1" title="1">{
+        d.mu.RLock()
+        defer d.mu.RUnlock()
+
+        now := time.Now()
+        out.Mode = fuse.S_IFDIR | 0555
+        out.Uid = 0
+        out.Gid = 0
+        out.Atime = uint64(now.Unix())
+        out.Mtime = uint64(now.Unix())
+        out.Ctime = uint64(now.Unix())
+        out.Nlink = 2 + uint32(len(d.subdirs))
+        return 0
+}</span>
+
+// --- Read-only filesystem error handlers ---
+// These return EROFS (Read-only file system) for write operations.
+
+// Mkdir implements fs.NodeMkdirer - rejects directory creation.
+func (d *MKVFSDirNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov1" title="1">{
+        if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Mkdir: rejected (read-only) %s in %s", name, d.path)
+        }</span>
+        <span class="cov1" title="1">return nil, syscall.EROFS</span>
+}
+
+// Rmdir implements fs.NodeRmdirer - rejects directory removal.
+func (d *MKVFSDirNode) Rmdir(ctx context.Context, name string) syscall.Errno <span class="cov1" title="1">{
+        if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Rmdir: rejected (read-only) %s in %s", name, d.path)
+        }</span>
+        <span class="cov1" title="1">return syscall.EROFS</span>
+}
+
+// Unlink implements fs.NodeUnlinker - rejects file deletion.
+func (d *MKVFSDirNode) Unlink(ctx context.Context, name string) syscall.Errno <span class="cov1" title="1">{
+        if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Unlink: rejected (read-only) %s in %s", name, d.path)
+        }</span>
+        <span class="cov1" title="1">return syscall.EROFS</span>
+}
+
+// Create implements fs.NodeCreater - rejects file creation.
+func (d *MKVFSDirNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) <span class="cov1" title="1">{
+        if d.verbose </span><span class="cov0" title="0">{
+                log.Printf("Create: rejected (read-only) %s in %s", name, d.path)
+        }</span>
+        <span class="cov1" title="1">return nil, nil, 0, syscall.EROFS</span>
+}
 </pre>
 		
-		<pre class="file" id="file9" style="display: none">// Package matcher provides the core deduplication logic for matching MKV packets to source files.
+		<pre class="file" id="file9" style="display: none">package fuse
+
+import (
+        "log"
+        "path"
+        "strings"
+)
+
+// BuildDirectoryTree creates a directory tree from files with path-containing names.
+// Directories are auto-created for each path component.
+// Files with names like "Movies/Action/film.mkv" will create the directory hierarchy.
+//
+// Path handling:
+//   - Leading slashes are stripped (absolute paths become relative)
+//   - Paths are cleaned (e.g., "foo//bar" becomes "foo/bar")
+//   - Only forward slashes (/) are treated as path separators
+//   - Paths containing ".." components are rejected
+//   - Empty filenames are rejected
+//
+// Conflicts:
+//   - Duplicate paths: later file wins, warning logged
+//   - File/directory collision: directory wins, file skipped with warning
+func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFactory) *MKVFSDirNode <span class="cov3" title="18">{
+        root := &amp;MKVFSDirNode{
+                name:          "",
+                path:          "",
+                files:         make(map[string]*MKVFile),
+                subdirs:       make(map[string]*MKVFSDirNode),
+                verbose:       verbose,
+                readerFactory: readerFactory,
+        }
+
+        for _, file := range files </span><span class="cov9" title="10031">{
+                insertFile(root, file, verbose, readerFactory)
+        }</span>
+
+        <span class="cov3" title="18">return root</span>
+}
+
+// insertFile inserts a file into the directory tree, creating directories as needed.
+func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory) <span class="cov9" title="10031">{
+        // Validate: reject paths with ".." components (security)
+        if strings.Contains(file.Name, "..") </span><span class="cov1" title="1">{
+                log.Printf("Warning: skipping file with invalid path (contains '..'): %s", file.Name)
+                return
+        }</span>
+
+        // Clean and split the path
+        <span class="cov9" title="10030">cleanPath := path.Clean(file.Name)
+        parts := strings.Split(cleanPath, "/")
+
+        // Filter out empty parts (handles leading slashes and multiple slashes)
+        validParts := make([]string, 0, len(parts))
+        for _, p := range parts </span><span class="cov10" title="30055">{
+                if p != "" &amp;&amp; p != "." </span><span class="cov9" title="30053">{
+                        validParts = append(validParts, p)
+                }</span>
+        }
+
+        // Validate: reject empty filenames
+        <span class="cov9" title="10030">if len(validParts) == 0 </span><span class="cov1" title="1">{
+                log.Printf("Warning: skipping file with empty name: %q", file.Name)
+                return
+        }</span>
+
+        <span class="cov9" title="10029">fileName := validParts[len(validParts)-1]
+        if fileName == "" </span><span class="cov0" title="0">{
+                log.Printf("Warning: skipping file with empty filename: %q", file.Name)
+                return
+        }</span>
+
+        // Navigate/create directories for each path component except the last (filename)
+        <span class="cov9" title="10029">current := root
+        for i := 0; i &lt; len(validParts)-1; i++ </span><span class="cov9" title="20023">{
+                dirName := validParts[i]
+
+                current.mu.Lock()
+                // Check for file/directory collision: if a file exists with this name, skip
+                if _, fileExists := current.files[dirName]; fileExists </span><span class="cov1" title="1">{
+                        log.Printf("Warning: path component %q conflicts with existing file, skipping: %s", dirName, file.Name)
+                        current.mu.Unlock()
+                        return
+                }</span>
+
+                <span class="cov9" title="20022">subdir, exists := current.subdirs[dirName]
+                if !exists </span><span class="cov7" title="1028">{
+                        // Create new directory node
+                        var newPath string
+                        if current.path == "" </span><span class="cov3" title="17">{
+                                newPath = dirName
+                        }</span> else<span class="cov7" title="1011"> {
+                                newPath = current.path + "/" + dirName
+                        }</span>
+                        <span class="cov7" title="1028">subdir = &amp;MKVFSDirNode{
+                                name:          dirName,
+                                path:          newPath,
+                                files:         make(map[string]*MKVFile),
+                                subdirs:       make(map[string]*MKVFSDirNode),
+                                verbose:       verbose,
+                                readerFactory: readerFactory,
+                        }
+                        current.subdirs[dirName] = subdir</span>
+                }
+                <span class="cov9" title="20022">current.mu.Unlock()
+                current = subdir</span>
+        }
+
+        // Insert the file into the final directory
+        <span class="cov9" title="10028">current.mu.Lock()
+        defer current.mu.Unlock()
+
+        // Check for file/directory collision: if a directory exists with this name, skip the file
+        if _, dirExists := current.subdirs[fileName]; dirExists </span><span class="cov1" title="1">{
+                log.Printf("Warning: file %q conflicts with existing directory, skipping", file.Name)
+                return
+        }</span>
+
+        // Check for duplicate: warn if overwriting
+        <span class="cov9" title="10027">if existing, exists := current.files[fileName]; exists </span><span class="cov1" title="1">{
+                log.Printf("Warning: duplicate path %q, replacing %s with %s", file.Name, existing.DedupPath, file.DedupPath)
+        }</span>
+
+        <span class="cov9" title="10027">current.files[fileName] = file</span>
+}
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">// Package matcher provides the core deduplication logic for matching MKV packets to source files.
 package matcher
 
 import (
@@ -4078,7 +4486,7 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) <span class="cov0" title="0">
 }
 </pre>
 		
-		<pre class="file" id="file10" style="display: none">// Package mkv provides functionality for parsing MKV (Matroska) files.
+		<pre class="file" id="file11" style="display: none">// Package mkv provides functionality for parsing MKV (Matroska) files.
 package mkv
 
 import (
@@ -4450,7 +4858,7 @@ func (h SimpleBlockHeader) LacingType() byte <span class="cov4" title="4">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file11" style="display: none">package mkv
+		<pre class="file" id="file12" style="display: none">package mkv
 
 import (
         "bytes"
@@ -4897,7 +5305,7 @@ func (p *Parser) Data() []byte <span class="cov1" title="1">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file12" style="display: none">// Package mmap provides zero-copy memory-mapped file access.
+		<pre class="file" id="file13" style="display: none">// Package mmap provides zero-copy memory-mapped file access.
 package mmap
 
 import (
@@ -4992,7 +5400,7 @@ func (m *File) Close() error <span class="cov10" title="11">{
 }
 </pre>
 		
-		<pre class="file" id="file13" style="display: none">package source
+		<pre class="file" id="file14" style="display: none">package source
 
 // FindAudioSyncPoints finds all audio sync pattern positions in the data.
 // Detects AC3, DTS, TrueHD, and MPEG Audio sync patterns.
@@ -5115,7 +5523,7 @@ func FindAllSyncPoints(data []byte) []int <span class="cov1" title="1">{
 }
 </pre>
 		
-		<pre class="file" id="file14" style="display: none">package source
+		<pre class="file" id="file15" style="display: none">package source
 
 import (
         "fmt"
@@ -5588,7 +5996,7 @@ func (idx *Index) Close() error <span class="cov4" title="2">{
 }
 </pre>
 		
-		<pre class="file" id="file15" style="display: none">package source
+		<pre class="file" id="file16" style="display: none">package source
 
 import (
         "encoding/binary"
@@ -6435,7 +6843,7 @@ func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, 
 }
 </pre>
 		
-		<pre class="file" id="file16" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
+		<pre class="file" id="file17" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
 package source
 
 import (
@@ -6795,7 +7203,7 @@ func (idx *Index) RawSlice(loc Location, size int) []byte <span class="cov1" tit
 }
 </pre>
 		
-		<pre class="file" id="file17" style="display: none">package source
+		<pre class="file" id="file18" style="display: none">package source
 
 // FindVideoStartCodes finds all video start code positions (00 00 01 XX pattern) in the data.
 // These are potential sync points where video frames or other structures begin.
