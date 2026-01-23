@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -214,6 +215,11 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				log.Printf("Lookup: found subdir %s at root", name)
 			}
 
+			// Lock subdir to safely access its fields
+			subdir.mu.RLock()
+			subdirCount := len(subdir.subdirs)
+			subdir.mu.RUnlock()
+
 			now := time.Now()
 			out.Mode = fuse.S_IFDIR | 0555
 			out.Uid = 0
@@ -221,7 +227,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			out.Atime = uint64(now.Unix())
 			out.Mtime = uint64(now.Unix())
 			out.Ctime = uint64(now.Unix())
-			out.Nlink = 2 + uint32(len(subdir.subdirs))
+			out.Nlink = 2 + uint32(subdirCount)
 
 			stable := fs.StableAttr{
 				Mode: fuse.S_IFDIR,
@@ -421,8 +427,15 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
 
 	entries := make([]fuse.DirEntry, 0, len(d.files)+len(d.subdirs))
 
-	// Add subdirectories first
+	// Collect and sort subdirectory names for deterministic ordering
+	subdirNames := make([]string, 0, len(d.subdirs))
 	for name := range d.subdirs {
+		subdirNames = append(subdirNames, name)
+	}
+	sort.Strings(subdirNames)
+
+	// Add subdirectories first (sorted)
+	for _, name := range subdirNames {
 		if d.verbose {
 			log.Printf("Readdir: adding subdir %s", name)
 		}
@@ -432,8 +445,15 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
 		})
 	}
 
-	// Add files
+	// Collect and sort file names for deterministic ordering
+	fileNames := make([]string, 0, len(d.files))
 	for name := range d.files {
+		fileNames = append(fileNames, name)
+	}
+	sort.Strings(fileNames)
+
+	// Add files (sorted)
+	for _, name := range fileNames {
 		if d.verbose {
 			log.Printf("Readdir: adding file %s", name)
 		}
@@ -457,6 +477,11 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 			log.Printf("Lookup: found subdir %s in %s", name, d.path)
 		}
 
+		// Lock subdir to safely access its fields
+		subdir.mu.RLock()
+		subdirCount := len(subdir.subdirs)
+		subdir.mu.RUnlock()
+
 		now := time.Now()
 		out.Mode = fuse.S_IFDIR | 0555
 		out.Uid = 0
@@ -464,7 +489,7 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 		out.Atime = uint64(now.Unix())
 		out.Mtime = uint64(now.Unix())
 		out.Ctime = uint64(now.Unix())
-		out.Nlink = 2 + uint32(len(subdir.subdirs))
+		out.Nlink = 2 + uint32(subdirCount)
 
 		stable := fs.StableAttr{
 			Mode: fuse.S_IFDIR,

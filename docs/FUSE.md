@@ -70,6 +70,23 @@ The filesystem automatically creates the directory hierarchy:
         └── The Hangover.mkv         (virtual file)
 ```
 
+### Path Handling
+
+The `name` field in config files supports directory paths. Path handling follows these rules:
+
+- **Separator:** Only forward slashes (`/`) are treated as path separators
+- **Leading slashes:** Stripped (absolute paths become relative within the mount)
+- **Trailing slashes:** Stripped (`Movies/` becomes `Movies`)
+- **Path normalization:** Multiple consecutive slashes are collapsed (`foo//bar` becomes `foo/bar`)
+- **Current directory:** Single dots (`.`) are filtered out (`./Movies/./test.mkv` becomes `Movies/test.mkv`)
+- **Parent directory:** Paths containing `..` components are **rejected** for security
+- **Empty names:** Files with empty names are rejected
+
+**Conflict resolution:**
+
+- **Duplicate paths:** If multiple configs specify the same path, the later one wins (warning logged)
+- **File/directory collision:** If a file and directory have the same name, the directory wins (file skipped with warning)
+
 ### Directory Properties
 
 - **Auto-creation:** Directories are created automatically from path components
