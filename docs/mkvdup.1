@@ -29,7 +29,7 @@ Output .mkvdup file (default: \fImkv-file\fR.mkvdup)
 .TP
 .I name
 Display name in FUSE mount (default: basename of mkv-file).
-Supports directory paths (e.g., "Movies/Action/Matrix.mkv").
+Supports directory paths (e.g., "Movies/Action/Video1.mkv").
 Directories are auto-created when mounted via FUSE.
 .RE
 .TP
@@ -163,9 +163,9 @@ field supports directory paths. Directories are auto-created in the FUSE mount:
 .PP
 .RS
 .nf
-name: "Movies/Action/Matrix.mkv"
-dedup_file: "matrix.mkvdup"
-source_dir: "/media/bluray/Matrix"
+name: "Movies/Action/Video1.mkv"
+dedup_file: "video1.mkvdup"
+source_dir: "/media/bluray/Video1"
 .fi
 .RE
 .SH FSTAB AND SYSTEMD

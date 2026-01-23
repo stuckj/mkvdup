@@ -629,9 +629,9 @@ func TestEnsureReader_AlreadyInitialized(t *testing.T) {
 
 func TestBuildDirectoryTree(t *testing.T) {
 	files := []*MKVFile{
-		{Name: "Movies/Action/Matrix.mkv", Size: 100},
-		{Name: "Movies/Action/JohnWick.mkv", Size: 200},
-		{Name: "Movies/Comedy/Hangover.mkv", Size: 150},
+		{Name: "Movies/Action/Video1.mkv", Size: 100},
+		{Name: "Movies/Action/Video2.mkv", Size: 200},
+		{Name: "Movies/Comedy/Video3.mkv", Size: 150},
 		{Name: "root.mkv", Size: 50},
 	}
 
@@ -891,13 +891,13 @@ func TestMKVFSWithDirectories(t *testing.T) {
 	configReader := &mockConfigReader{
 		configs: map[string]*Config{
 			"/configs/action.yaml": {
-				Name:      "Movies/Action/Matrix.mkv",
-				DedupFile: "/data/matrix.dedup",
+				Name:      "Movies/Action/Video1.mkv",
+				DedupFile: "/data/video1.dedup",
 				SourceDir: "/data/source",
 			},
 			"/configs/comedy.yaml": {
-				Name:      "Movies/Comedy/Hangover.mkv",
-				DedupFile: "/data/hangover.dedup",
+				Name:      "Movies/Comedy/Video2.mkv",
+				DedupFile: "/data/video2.dedup",
 				SourceDir: "/data/source",
 			},
 			"/configs/root.yaml": {
@@ -910,8 +910,8 @@ func TestMKVFSWithDirectories(t *testing.T) {
 
 	readerFactory := &mockReaderFactory{
 		readers: map[string]*mockReader{
-			"/data/matrix.dedup":     {data: []byte("matrix"), originalSize: 6},
-			"/data/hangover.dedup":   {data: []byte("hangover"), originalSize: 8},
+			"/data/video1.dedup":     {data: []byte("video1"), originalSize: 6},
+			"/data/video2.dedup":     {data: []byte("video2"), originalSize: 6},
 			"/data/standalone.dedup": {data: []byte("standalone"), originalSize: 10},
 		},
 	}
@@ -948,22 +948,22 @@ func TestMKVFSWithDirectories(t *testing.T) {
 		t.Errorf("expected 2 subdirs in Movies (Action, Comedy), got %d", len(movies.subdirs))
 	}
 
-	// Check Action has Matrix
+	// Check Action has Video1
 	action, ok := movies.subdirs["Action"]
 	if !ok {
 		t.Fatal("expected Action subdirectory")
 	}
-	if _, ok := action.files["Matrix.mkv"]; !ok {
-		t.Error("expected Matrix.mkv in Action directory")
+	if _, ok := action.files["Video1.mkv"]; !ok {
+		t.Error("expected Video1.mkv in Action directory")
 	}
 
-	// Check Comedy has Hangover
+	// Check Comedy has Video2
 	comedy, ok := movies.subdirs["Comedy"]
 	if !ok {
 		t.Fatal("expected Comedy subdirectory")
 	}
-	if _, ok := comedy.files["Hangover.mkv"]; !ok {
-		t.Error("expected Hangover.mkv in Comedy directory")
+	if _, ok := comedy.files["Video2.mkv"]; !ok {
+		t.Error("expected Video2.mkv in Comedy directory")
 	}
 }
 

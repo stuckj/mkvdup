@@ -53,9 +53,9 @@ When a config file specifies a path in the `name` field:
 
 ```yaml
 # video1.mkvdup.yaml
-name: "Movies/Action/The Matrix.mkv"
-dedup_file: "matrix.mkvdup"
-source_dir: "/data/sources/Matrix_Bluray"
+name: "Movies/Action/Video1.mkv"
+dedup_file: "video1.mkvdup"
+source_dir: "/data/sources/Video1_Bluray"
 ```
 
 The filesystem automatically creates the directory hierarchy:
@@ -65,9 +65,9 @@ The filesystem automatically creates the directory hierarchy:
 ├── standalone.mkv                   (file at root)
 └── Movies/
     ├── Action/
-    │   └── The Matrix.mkv           (virtual file)
+    │   └── Video1.mkv               (virtual file)
     └── Comedy/
-        └── The Hangover.mkv         (virtual file)
+        └── Video2.mkv               (virtual file)
 ```
 
 ### Path Handling
@@ -106,11 +106,11 @@ The directory structure enables OverlayFS integration with existing media librar
 /zfs/media/
 ├── Movies/
 │   └── Action/
-│       └── The Matrix.mkv  (3.4GB full file)
+│       └── Video1.mkv  (3.4GB full file)
 
 # mkvdup configs with matching paths
-# matrix.mkvdup.yaml:
-name: "Movies/Action/The Matrix.mkv"
+# video1.mkvdup.yaml:
+name: "Movies/Action/Video1.mkv"
 
 # Mount mkvdup
 mkvdup mount --config /etc/mkvdup/*.yaml /mnt/mkvdup
