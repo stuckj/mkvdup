@@ -1079,7 +1079,7 @@ func TestBuildDirectoryTree_FileDirectoryCollision_DirWins(t *testing.T) {
 func TestBuildDirectoryTree_PathComponentCollision(t *testing.T) {
 	// When trying to use a file name as a path component, the file is skipped
 	files := []*MKVFile{
-		{Name: "Movies.mkv", Size: 100},           // Creates file "Movies.mkv"
+		{Name: "Movies.mkv", Size: 100},                 // Creates file "Movies.mkv"
 		{Name: "Movies.mkv/Action/test.mkv", Size: 200}, // Tries to use "Movies.mkv" as directory
 	}
 
@@ -1165,9 +1165,9 @@ func TestMKVFSDirNode_Readdir_Sorted(t *testing.T) {
 		name: "test",
 		path: "test",
 		files: map[string]*MKVFile{
-			"zebra.mkv":    {Name: "test/zebra.mkv", Size: 100},
-			"apple.mkv":    {Name: "test/apple.mkv", Size: 200},
-			"mango.mkv":    {Name: "test/mango.mkv", Size: 150},
+			"zebra.mkv": {Name: "test/zebra.mkv", Size: 100},
+			"apple.mkv": {Name: "test/apple.mkv", Size: 200},
+			"mango.mkv": {Name: "test/mango.mkv", Size: 150},
 		},
 		subdirs: map[string]*MKVFSDirNode{
 			"zoo":    {name: "zoo", path: "test/zoo"},
