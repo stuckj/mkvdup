@@ -1,0 +1,64 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_cache:
+        description: 'Skip cache and regenerate testdata'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse-dev fuse3 wget ffmpeg
+
+      - name: Cache testdata
+        id: cache-testdata
+        uses: actions/cache@v4
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Generate testdata
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || inputs.skip_cache == 'true'
+        run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
+
+      - name: Setup FUSE permissions
+        run: |
+          sudo modprobe fuse
+          sudo chmod 666 /dev/fuse
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.0
+
+      - name: Run integration tests
+        env:
+          MKVDUP_TESTDATA: /tmp/mkvdup-testdata
+        run: |
+          gotestsum --junitfile integration-results.xml -- \
+            -tags=integration \
+            -v \
+            ./...
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-test-results
+          path: integration-results.xml
