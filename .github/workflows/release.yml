@@ -1,21 +1,87 @@
 name: Build and Release Packages
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to build (without v prefix, e.g. 1.0.0)'
         required: true
+      commit:
+        description: 'Commit SHA to tag (optional - defaults to latest non-benchmark commit on main)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
   pages: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      commit: ${{ steps.resolve.outputs.commit }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50  # Fetch enough history to find non-benchmark commits
+
+      - name: Resolve commit and create tag
+        id: resolve
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+
+          # Validate version format (no leading 'v', basic version like 1.2.3 or 1.2.3-beta.1)
+          if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+)*([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "::error::Invalid version '${VERSION}'. Expected format like '1.0' or '1.2.3' without 'v' prefix."
+            exit 1
+          fi
+
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+          # Check if tag already exists
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists"
+            exit 1
+          fi
+
+          # Determine which commit to tag
+          if [[ -n "${{ github.event.inputs.commit }}" ]]; then
+            COMMIT="${{ github.event.inputs.commit }}"
+            echo "Using specified commit: ${COMMIT}"
+          else
+            # Find the latest commit on main that isn't a benchmark commit
+            echo "Finding latest non-benchmark commit on main..."
+            COMMIT=$(git log origin/main --oneline -50 | grep -v -iE '\[(skip ci|ci skip|no ci|skip actions|actions skip|benchmark)\]' | head -1 | awk '{print $1}')
+            if [[ -z "${COMMIT}" ]]; then
+              echo "::error::Could not find a non-benchmark commit in recent history"
+              exit 1
+            fi
+            echo "Found non-benchmark commit: ${COMMIT}"
+          fi
+
+          # Resolve to full SHA
+          FULL_SHA=$(git rev-parse "${COMMIT}")
+          echo "commit=${FULL_SHA}" >> $GITHUB_OUTPUT
+          echo "Resolved commit: ${FULL_SHA}"
+
+          # Show what we're tagging
+          echo "Will create tag ${TAG} on commit:"
+          git log -1 --oneline "${FULL_SHA}"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.resolve.outputs.tag }}" "${{ steps.resolve.outputs.commit }}"
+          git push origin "${{ steps.resolve.outputs.tag }}"
+
   build:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -23,21 +89,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
-
-      - name: Set version from tag or input
-        id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            # Extract version from tag (remove 'v' prefix)
-            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-          fi
+          go-version: '1.25'  # nfpm@latest requires Go >= 1.25
 
       - name: Build binary
         env:
@@ -45,21 +103,21 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o mkvdup ./cmd/mkvdup
+          go build -ldflags="-s -w -X main.version=${{ needs.prepare.outputs.version }}" -o mkvdup ./cmd/mkvdup
 
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build deb package
         env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           nfpm package --packager deb --target .
 
       - name: Build rpm package
         env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           nfpm package --packager rpm --target .
@@ -80,8 +138,7 @@ jobs:
           path: "*.rpm"
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -96,13 +153,14 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
           files: packages/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-repo:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
@@ -286,7 +344,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "Update packages for ${{ github.ref_name }}"
+          git diff --staged --quiet || git commit -m "Update packages for ${{ needs.prepare.outputs.tag }}"
           git push origin gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
