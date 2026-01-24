@@ -223,8 +223,18 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
 // Delegates to the directory tree for hierarchical listing.
 func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	// Check directory read permission for root
+	dirUID, dirGID, mode := getDirPerms(r.permStore, "")
+	caller := GetCaller(ctx)
+	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessRead); errno != 0 {
+		if r.verbose {
+			log.Printf("Readdir: permission denied for root (caller uid=%d)", caller.Uid)
+		}
+		return nil, errno
+	}
+
 	if r.rootDir != nil {
-		return r.rootDir.Readdir(ctx)
+		return r.rootDir.readdirInternal(ctx)
 	}
 
 	// Fallback to flat listing if no directory tree (shouldn't happen)
@@ -251,6 +261,16 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 // Lookup implements fs.NodeLookuper - looks up a file or directory by name.
 // Uses the directory tree for hierarchical lookup.
 func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	// Check directory execute permission for root (required for traversal)
+	dirUID, dirGID, mode := getDirPerms(r.permStore, "")
+	caller := GetCaller(ctx)
+	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessExecute); errno != 0 {
+		if r.verbose {
+			log.Printf("Lookup: permission denied for root (caller uid=%d)", caller.Uid)
+		}
+		return nil, errno
+	}
+
 	if r.rootDir != nil {
 		r.rootDir.mu.RLock()
 		defer r.rootDir.mu.RUnlock()
@@ -383,6 +403,10 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 		return syscall.EROFS
 	}
 
+	// Get current permissions and caller
+	fileUID, _, _ := getFilePerms(n.permStore, n.path)
+	caller := GetCaller(ctx)
+
 	var newUID, newGID, newMode *uint32
 
 	// Check which fields are being changed
@@ -395,6 +419,26 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 	if in.Valid&fuse.FATTR_MODE != 0 {
 		mode := in.Mode & 0777 // Only permission bits
 		newMode = &mode
+	}
+
+	// Permission checks for chown
+	if newUID != nil || newGID != nil {
+		if errno := CheckChown(caller, fileUID, newUID, newGID); errno != 0 {
+			if n.verbose {
+				log.Printf("Setattr: chown permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+			}
+			return errno
+		}
+	}
+
+	// Permission checks for chmod
+	if newMode != nil {
+		if errno := CheckChmod(caller, fileUID); errno != 0 {
+			if n.verbose {
+				log.Printf("Setattr: chmod permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+			}
+			return errno
+		}
 	}
 
 	// Update permission store
@@ -415,6 +459,17 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 
 // Open implements fs.NodeOpener - opens a file for reading.
 func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	// Check read permission
+	fileUID, fileGID, mode := getFilePerms(n.permStore, n.path)
+	caller := GetCaller(ctx)
+
+	if errno := CheckAccess(caller, fileUID, fileGID, mode, AccessRead); errno != 0 {
+		if n.verbose {
+			log.Printf("Open: read permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+		}
+		return nil, 0, errno
+	}
+
 	if n.verbose {
 		log.Printf("Open: %s", n.file.Name)
 	}
@@ -430,6 +485,16 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 
 // Read implements fs.NodeReader - reads data from the file.
 func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	// Defense in depth: check read permission again
+	fileUID, fileGID, mode := getFilePerms(n.permStore, n.path)
+	caller := GetCaller(ctx)
+	if errno := CheckAccess(caller, fileUID, fileGID, mode, AccessRead); errno != 0 {
+		if n.verbose {
+			log.Printf("Read: permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+		}
+		return nil, errno
+	}
+
 	n.file.mu.RLock()
 	defer n.file.mu.RUnlock()
 
@@ -555,6 +620,22 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 
 // Readdir implements fs.NodeReaddirer - lists files and subdirectories.
 func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	// Check directory read permission
+	dirUID, dirGID, mode := getDirPerms(d.permStore, d.path)
+	caller := GetCaller(ctx)
+	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessRead); errno != 0 {
+		if d.verbose {
+			log.Printf("Readdir: permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+		}
+		return nil, errno
+	}
+
+	return d.readdirInternal(ctx)
+}
+
+// readdirInternal performs the directory listing without permission checks.
+// Used by both MKVFSRoot.Readdir and MKVFSDirNode.Readdir after permission checks.
+func (d *MKVFSDirNode) readdirInternal(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -605,6 +686,16 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
 
 // Lookup implements fs.NodeLookuper - looks up a file or subdirectory by name.
 func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	// Check directory execute permission (required for traversal)
+	dirUID, dirGID, mode := getDirPerms(d.permStore, d.path)
+	caller := GetCaller(ctx)
+	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessExecute); errno != 0 {
+		if d.verbose {
+			log.Printf("Lookup: permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+		}
+		return nil, errno
+	}
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -704,6 +795,10 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 		return syscall.EROFS
 	}
 
+	// Get current permissions and caller
+	dirUID, _, _ := getDirPerms(d.permStore, d.path)
+	caller := GetCaller(ctx)
+
 	var newUID, newGID, newMode *uint32
 
 	// Check which fields are being changed
@@ -716,6 +811,26 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 	if in.Valid&fuse.FATTR_MODE != 0 {
 		mode := in.Mode & 0777 // Only permission bits
 		newMode = &mode
+	}
+
+	// Permission checks for chown
+	if newUID != nil || newGID != nil {
+		if errno := CheckChown(caller, dirUID, newUID, newGID); errno != 0 {
+			if d.verbose {
+				log.Printf("Setattr: chown permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+			}
+			return errno
+		}
+	}
+
+	// Permission checks for chmod
+	if newMode != nil {
+		if errno := CheckChmod(caller, dirUID); errno != 0 {
+			if d.verbose {
+				log.Printf("Setattr: chmod permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+			}
+			return errno
+		}
 	}
 
 	// Update permission store
