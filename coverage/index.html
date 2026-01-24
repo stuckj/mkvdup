@@ -71,9 +71,9 @@
 				
 				<option value="file7">github.com/stuckj/mkvdup/internal/fuse/adapters.go (0.0%)</option>
 				
-				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (50.9%)</option>
+				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/fs.go (57.5%)</option>
 				
-				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/permissions.go (81.7%)</option>
+				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/permissions.go (83.5%)</option>
 				
 				<option value="file10">github.com/stuckj/mkvdup/internal/fuse/tree.go (95.7%)</option>
 				
@@ -3339,19 +3339,19 @@ var _ fs.NodeSetattrer = (*MKVFSNode)(nil)
 var _ fs.NodeSetattrer = (*MKVFSDirNode)(nil)
 
 // getFilePerms returns file permissions from the store, or defaults if store is nil.
-func getFilePerms(store *PermissionStore, path string) (uid, gid, mode uint32) <span class="cov5" title="5">{
-        if store != nil </span><span class="cov4" title="4">{
+func getFilePerms(store *PermissionStore, path string) (uid, gid, mode uint32) <span class="cov9" title="26">{
+        if store != nil </span><span class="cov9" title="19">{
                 return store.GetFilePerms(path)
         }</span>
-        <span class="cov1" title="1">return 0, 0, 0444</span>
+        <span class="cov6" title="7">return 0, 0, 0444</span>
 }
 
 // getDirPerms returns directory permissions from the store, or defaults if store is nil.
-func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) <span class="cov4" title="4">{
-        if store != nil </span><span class="cov4" title="3">{
+func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) <span class="cov9" title="20">{
+        if store != nil </span><span class="cov8" title="15">{
                 return store.GetDirPerms(path)
         }</span>
-        <span class="cov1" title="1">return 0, 0, 0555</span>
+        <span class="cov5" title="5">return 0, 0, 0555</span>
 }
 
 // NewMKVFS creates a new MKVFS root from a list of config files.
@@ -3466,9 +3466,19 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
 // Delegates to the directory tree for hierarchical listing.
-func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov1" title="1">{
-        if r.rootDir != nil </span><span class="cov0" title="0">{
-                return r.rootDir.Readdir(ctx)
+func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov2" title="2">{
+        // Check directory read permission for root
+        dirUID, dirGID, mode := getDirPerms(r.permStore, "")
+        caller := GetCaller(ctx)
+        if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessRead); errno != 0 </span><span class="cov1" title="1">{
+                if r.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Readdir: permission denied for root (caller uid=%d)", caller.Uid)
+                }</span>
+                <span class="cov1" title="1">return nil, errno</span>
+        }
+
+        <span class="cov1" title="1">if r.rootDir != nil </span><span class="cov0" title="0">{
+                return r.rootDir.readdirInternal(ctx)
         }</span>
 
         // Fallback to flat listing if no directory tree (shouldn't happen)
@@ -3494,8 +3504,18 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <
 
 // Lookup implements fs.NodeLookuper - looks up a file or directory by name.
 // Uses the directory tree for hierarchical lookup.
-func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov1" title="1">{
-        if r.rootDir != nil </span><span class="cov0" title="0">{
+func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov2" title="2">{
+        // Check directory execute permission for root (required for traversal)
+        dirUID, dirGID, mode := getDirPerms(r.permStore, "")
+        caller := GetCaller(ctx)
+        if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessExecute); errno != 0 </span><span class="cov1" title="1">{
+                if r.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Lookup: permission denied for root (caller uid=%d)", caller.Uid)
+                }</span>
+                <span class="cov1" title="1">return nil, errno</span>
+        }
+
+        <span class="cov1" title="1">if r.rootDir != nil </span><span class="cov0" title="0">{
                 r.rootDir.mu.RLock()
                 defer r.rootDir.mu.RUnlock()
 
@@ -3604,7 +3624,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 }
 
 // Getattr implements fs.NodeGetattrer - returns file attributes.
-func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov5" title="5">{
+func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov6" title="8">{
         now := time.Now()
         out.Size = uint64(n.file.Size)
 
@@ -3621,60 +3641,105 @@ func (n *MKVFSNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Att
 }</span>
 
 // Setattr implements fs.NodeSetattrer - handles chmod/chown on files.
-func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno <span class="cov4" title="3">{
+func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno <span class="cov7" title="9">{
         if n.permStore == nil </span><span class="cov1" title="1">{
                 // No permission store - can't change permissions
                 return syscall.EROFS
         }</span>
 
-        <span class="cov2" title="2">var newUID, newGID, newMode *uint32
+        // Get current permissions and caller
+        <span class="cov6" title="8">fileUID, _, _ := getFilePerms(n.permStore, n.path)
+        caller := GetCaller(ctx)
+
+        var newUID, newGID, newMode *uint32
 
         // Check which fields are being changed
-        if in.Valid&amp;fuse.FATTR_UID != 0 </span><span class="cov1" title="1">{
+        if in.Valid&amp;fuse.FATTR_UID != 0 </span><span class="cov4" title="3">{
                 newUID = &amp;in.Uid
         }</span>
-        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_GID != 0 </span><span class="cov1" title="1">{
+        <span class="cov6" title="8">if in.Valid&amp;fuse.FATTR_GID != 0 </span><span class="cov4" title="3">{
                 newGID = &amp;in.Gid
         }</span>
-        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_MODE != 0 </span><span class="cov1" title="1">{
+        <span class="cov6" title="8">if in.Valid&amp;fuse.FATTR_MODE != 0 </span><span class="cov4" title="3">{
                 mode := in.Mode &amp; 0777 // Only permission bits
                 newMode = &amp;mode
         }</span>
 
+        // Permission checks for chown
+        <span class="cov6" title="8">if newUID != nil || newGID != nil </span><span class="cov5" title="5">{
+                if errno := CheckChown(caller, fileUID, newUID, newGID); errno != 0 </span><span class="cov2" title="2">{
+                        if n.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Setattr: chown permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+                        }</span>
+                        <span class="cov2" title="2">return errno</span>
+                }
+        }
+
+        // Permission checks for chmod
+        <span class="cov5" title="6">if newMode != nil </span><span class="cov4" title="3">{
+                if errno := CheckChmod(caller, fileUID); errno != 0 </span><span class="cov1" title="1">{
+                        if n.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Setattr: chmod permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+                        }</span>
+                        <span class="cov1" title="1">return errno</span>
+                }
+        }
+
         // Update permission store
-        <span class="cov2" title="2">if err := n.permStore.SetFilePerms(n.path, newUID, newGID, newMode); err != nil </span><span class="cov0" title="0">{
+        <span class="cov5" title="5">if err := n.permStore.SetFilePerms(n.path, newUID, newGID, newMode); err != nil </span><span class="cov0" title="0">{
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Setattr error: %s: %v", n.path, err)
                 }</span>
                 <span class="cov0" title="0">return syscall.EIO</span>
         }
 
-        <span class="cov2" title="2">if n.verbose </span><span class="cov0" title="0">{
+        <span class="cov5" title="5">if n.verbose </span><span class="cov0" title="0">{
                 log.Printf("Setattr: %s uid=%v gid=%v mode=%v", n.path, newUID, newGID, newMode)
         }</span>
 
         // Return updated attributes
-        <span class="cov2" title="2">return n.Getattr(ctx, fh, out)</span>
+        <span class="cov5" title="5">return n.Getattr(ctx, fh, out)</span>
 }
 
 // Open implements fs.NodeOpener - opens a file for reading.
-func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) <span class="cov2" title="2">{
-        if n.verbose </span><span class="cov0" title="0">{
+func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) <span class="cov5" title="5">{
+        // Check read permission
+        fileUID, fileGID, mode := getFilePerms(n.permStore, n.path)
+        caller := GetCaller(ctx)
+
+        if errno := CheckAccess(caller, fileUID, fileGID, mode, AccessRead); errno != 0 </span><span class="cov1" title="1">{
+                if n.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Open: read permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+                }</span>
+                <span class="cov1" title="1">return nil, 0, errno</span>
+        }
+
+        <span class="cov4" title="4">if n.verbose </span><span class="cov0" title="0">{
                 log.Printf("Open: %s", n.file.Name)
         }</span>
         // Initialize reader lazily if needed
-        <span class="cov2" title="2">if err := n.ensureReader(); err != nil </span><span class="cov1" title="1">{
+        <span class="cov4" title="4">if err := n.ensureReader(); err != nil </span><span class="cov1" title="1">{
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Open error: %s: %v", n.file.Name, err)
                 }</span>
                 <span class="cov1" title="1">return nil, 0, syscall.EIO</span>
         }
-        <span class="cov1" title="1">return nil, fuse.FOPEN_KEEP_CACHE | fuse.FOPEN_CACHE_DIR, 0</span>
+        <span class="cov4" title="3">return nil, fuse.FOPEN_KEEP_CACHE | fuse.FOPEN_CACHE_DIR, 0</span>
 }
 
 // Read implements fs.NodeReader - reads data from the file.
-func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov4" title="4">{
-        n.file.mu.RLock()
+func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov5" title="5">{
+        // Defense in depth: check read permission again
+        fileUID, fileGID, mode := getFilePerms(n.permStore, n.path)
+        caller := GetCaller(ctx)
+        if errno := CheckAccess(caller, fileUID, fileGID, mode, AccessRead); errno != 0 </span><span class="cov1" title="1">{
+                if n.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Read: permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+                }</span>
+                <span class="cov1" title="1">return nil, errno</span>
+        }
+
+        <span class="cov4" title="4">n.file.mu.RLock()
         defer n.file.mu.RUnlock()
 
         if n.file.reader == nil </span><span class="cov1" title="1">{
@@ -3712,7 +3777,7 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
 }
 
 // ensureReader ensures the dedup reader is initialized.
-func (n *MKVFSNode) ensureReader() error <span class="cov4" title="3">{
+func (n *MKVFSNode) ensureReader() error <span class="cov5" title="5">{
         n.file.mu.Lock()
         defer n.file.mu.Unlock()
 
@@ -3721,18 +3786,18 @@ func (n *MKVFSNode) ensureReader() error <span class="cov4" title="3">{
         }</span>
 
         // Open dedup file with lazy loading using the factory
-        <span class="cov2" title="2">reader, err := n.file.readerFactory.NewReaderLazy(n.file.DedupPath, n.file.SourceDir)
+        <span class="cov4" title="4">reader, err := n.file.readerFactory.NewReaderLazy(n.file.DedupPath, n.file.SourceDir)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("open dedup file: %w", err)
         }</span>
 
         // Initialize the reader for reading (handles ES vs raw internally)
-        <span class="cov2" title="2">if err := reader.InitializeForReading(n.file.SourceDir); err != nil </span><span class="cov1" title="1">{
+        <span class="cov4" title="4">if err := reader.InitializeForReading(n.file.SourceDir); err != nil </span><span class="cov1" title="1">{
                 reader.Close()
                 return fmt.Errorf("initialize reader: %w", err)
         }</span>
 
-        <span class="cov1" title="1">n.file.reader = reader
+        <span class="cov4" title="3">n.file.reader = reader
         return nil</span>
 }
 
@@ -3798,7 +3863,23 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 // --- MKVFSDirNode interface implementations ---
 
 // Readdir implements fs.NodeReaddirer - lists files and subdirectories.
-func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov2" title="2">{
+func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov4" title="4">{
+        // Check directory read permission
+        dirUID, dirGID, mode := getDirPerms(d.permStore, d.path)
+        caller := GetCaller(ctx)
+        if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessRead); errno != 0 </span><span class="cov1" title="1">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Readdir: permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+                }</span>
+                <span class="cov1" title="1">return nil, errno</span>
+        }
+
+        <span class="cov4" title="3">return d.readdirInternal(ctx)</span>
+}
+
+// readdirInternal performs the directory listing without permission checks.
+// Used by both MKVFSRoot.Readdir and MKVFSDirNode.Readdir after permission checks.
+func (d *MKVFSDirNode) readdirInternal(ctx context.Context) (fs.DirStream, syscall.Errno) <span class="cov4" title="3">{
         d.mu.RLock()
         defer d.mu.RUnlock()
 
@@ -3806,14 +3887,14 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
                 log.Printf("Readdir: %s (files=%d, subdirs=%d)", d.path, len(d.files), len(d.subdirs))
         }</span>
 
-        <span class="cov2" title="2">entries := make([]fuse.DirEntry, 0, len(d.files)+len(d.subdirs))
+        <span class="cov4" title="3">entries := make([]fuse.DirEntry, 0, len(d.files)+len(d.subdirs))
 
         // Collect and sort subdirectory names for deterministic ordering
         subdirNames := make([]string, 0, len(d.subdirs))
         for name := range d.subdirs </span><span class="cov5" title="5">{
                 subdirNames = append(subdirNames, name)
         }</span>
-        <span class="cov2" title="2">sort.Strings(subdirNames)
+        <span class="cov4" title="3">sort.Strings(subdirNames)
 
         // Add subdirectories first (sorted)
         for _, name := range subdirNames </span><span class="cov5" title="5">{
@@ -3827,29 +3908,39 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
         }
 
         // Collect and sort file names for deterministic ordering
-        <span class="cov2" title="2">fileNames := make([]string, 0, len(d.files))
-        for name := range d.files </span><span class="cov5" title="5">{
+        <span class="cov4" title="3">fileNames := make([]string, 0, len(d.files))
+        for name := range d.files </span><span class="cov5" title="6">{
                 fileNames = append(fileNames, name)
         }</span>
-        <span class="cov2" title="2">sort.Strings(fileNames)
+        <span class="cov4" title="3">sort.Strings(fileNames)
 
         // Add files (sorted)
-        for _, name := range fileNames </span><span class="cov5" title="5">{
+        for _, name := range fileNames </span><span class="cov5" title="6">{
                 if d.verbose </span><span class="cov0" title="0">{
                         log.Printf("Readdir: adding file %s", name)
                 }</span>
-                <span class="cov5" title="5">entries = append(entries, fuse.DirEntry{
+                <span class="cov5" title="6">entries = append(entries, fuse.DirEntry{
                         Name: name,
                         Mode: fuse.S_IFREG,
                 })</span>
         }
 
-        <span class="cov2" title="2">return fs.NewListDirStream(entries), 0</span>
+        <span class="cov4" title="3">return fs.NewListDirStream(entries), 0</span>
 }
 
 // Lookup implements fs.NodeLookuper - looks up a file or subdirectory by name.
-func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov0" title="0">{
-        d.mu.RLock()
+func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) <span class="cov2" title="2">{
+        // Check directory execute permission (required for traversal)
+        dirUID, dirGID, mode := getDirPerms(d.permStore, d.path)
+        caller := GetCaller(ctx)
+        if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessExecute); errno != 0 </span><span class="cov1" title="1">{
+                if d.verbose </span><span class="cov0" title="0">{
+                        log.Printf("Lookup: permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+                }</span>
+                <span class="cov1" title="1">return nil, errno</span>
+        }
+
+        <span class="cov1" title="1">d.mu.RLock()
         defer d.mu.RUnlock()
 
         // Check subdirectories first
@@ -3883,7 +3974,7 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
         }
 
         // Check files
-        <span class="cov0" title="0">if file, ok := d.files[name]; ok </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if file, ok := d.files[name]; ok </span><span class="cov0" title="0">{
                 if d.verbose </span><span class="cov0" title="0">{
                         log.Printf("Lookup: found file %s in %s (size=%d)", name, d.path, file.Size)
                 }</span>
@@ -3916,14 +4007,14 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
                 return child, 0</span>
         }
 
-        <span class="cov0" title="0">if d.verbose </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if d.verbose </span><span class="cov0" title="0">{
                 log.Printf("Lookup: not found %s in %s", name, d.path)
         }</span>
-        <span class="cov0" title="0">return nil, syscall.ENOENT</span>
+        <span class="cov1" title="1">return nil, syscall.ENOENT</span>
 }
 
 // Getattr implements fs.NodeGetattrer - returns directory attributes.
-func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov4" title="4">{
+func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno <span class="cov5" title="5">{
         d.mu.RLock()
         defer d.mu.RUnlock()
 
@@ -3942,40 +4033,64 @@ func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.
 }</span>
 
 // Setattr implements fs.NodeSetattrer - handles chmod/chown on directories.
-func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno <span class="cov4" title="3">{
+func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno <span class="cov5" title="6">{
         if d.permStore == nil </span><span class="cov1" title="1">{
                 // No permission store - can't change permissions
                 return syscall.EROFS
         }</span>
 
-        <span class="cov2" title="2">var newUID, newGID, newMode *uint32
+        // Get current permissions and caller
+        <span class="cov5" title="5">dirUID, _, _ := getDirPerms(d.permStore, d.path)
+        caller := GetCaller(ctx)
+
+        var newUID, newGID, newMode *uint32
 
         // Check which fields are being changed
-        if in.Valid&amp;fuse.FATTR_UID != 0 </span><span class="cov1" title="1">{
+        if in.Valid&amp;fuse.FATTR_UID != 0 </span><span class="cov4" title="3">{
                 newUID = &amp;in.Uid
         }</span>
-        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_GID != 0 </span><span class="cov1" title="1">{
+        <span class="cov5" title="5">if in.Valid&amp;fuse.FATTR_GID != 0 </span><span class="cov2" title="2">{
                 newGID = &amp;in.Gid
         }</span>
-        <span class="cov2" title="2">if in.Valid&amp;fuse.FATTR_MODE != 0 </span><span class="cov1" title="1">{
+        <span class="cov5" title="5">if in.Valid&amp;fuse.FATTR_MODE != 0 </span><span class="cov2" title="2">{
                 mode := in.Mode &amp; 0777 // Only permission bits
                 newMode = &amp;mode
         }</span>
 
+        // Permission checks for chown
+        <span class="cov5" title="5">if newUID != nil || newGID != nil </span><span class="cov4" title="3">{
+                if errno := CheckChown(caller, dirUID, newUID, newGID); errno != 0 </span><span class="cov1" title="1">{
+                        if d.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Setattr: chown permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+                        }</span>
+                        <span class="cov1" title="1">return errno</span>
+                }
+        }
+
+        // Permission checks for chmod
+        <span class="cov4" title="4">if newMode != nil </span><span class="cov2" title="2">{
+                if errno := CheckChmod(caller, dirUID); errno != 0 </span><span class="cov1" title="1">{
+                        if d.verbose </span><span class="cov0" title="0">{
+                                log.Printf("Setattr: chmod permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+                        }</span>
+                        <span class="cov1" title="1">return errno</span>
+                }
+        }
+
         // Update permission store
-        <span class="cov2" title="2">if err := d.permStore.SetDirPerms(d.path, newUID, newGID, newMode); err != nil </span><span class="cov0" title="0">{
+        <span class="cov4" title="3">if err := d.permStore.SetDirPerms(d.path, newUID, newGID, newMode); err != nil </span><span class="cov0" title="0">{
                 if d.verbose </span><span class="cov0" title="0">{
                         log.Printf("Setattr error: %s: %v", d.path, err)
                 }</span>
                 <span class="cov0" title="0">return syscall.EIO</span>
         }
 
-        <span class="cov2" title="2">if d.verbose </span><span class="cov0" title="0">{
+        <span class="cov4" title="3">if d.verbose </span><span class="cov0" title="0">{
                 log.Printf("Setattr: %s uid=%v gid=%v mode=%v", d.path, newUID, newGID, newMode)
         }</span>
 
         // Return updated attributes
-        <span class="cov2" title="2">return d.Getattr(ctx, fh, out)</span>
+        <span class="cov4" title="3">return d.Getattr(ctx, fh, out)</span>
 }
 
 // --- Read-only filesystem error handlers ---
@@ -4018,12 +4133,15 @@ func (d *MKVFSDirNode) Create(ctx context.Context, name string, flags uint32, mo
 package fuse
 
 import (
+        "context"
         "fmt"
         "log"
         "os"
         "path/filepath"
         "sync"
+        "syscall"
 
+        "github.com/hanwen/go-fuse/v2/fuse"
         "gopkg.in/yaml.v3"
 )
 
@@ -4046,7 +4164,7 @@ type Defaults struct {
 }
 
 // DefaultPerms returns the default permission values.
-func DefaultPerms() Defaults <span class="cov6" title="15">{
+func DefaultPerms() Defaults <span class="cov7" title="34">{
         return Defaults{
                 FileUID:  0,
                 FileGID:  0,
@@ -4076,7 +4194,7 @@ type PermissionStore struct {
 
 // NewPermissionStore creates a new permission store.
 // If path is empty, permissions will not be persisted.
-func NewPermissionStore(path string, defaults Defaults, verbose bool) *PermissionStore <span class="cov6" title="21">{
+func NewPermissionStore(path string, defaults Defaults, verbose bool) *PermissionStore <span class="cov7" title="40">{
         return &amp;PermissionStore{
                 path:     path,
                 defaults: defaults,
@@ -4151,18 +4269,18 @@ func (s *PermissionStore) Load() error <span class="cov2" title="2">{
 }
 
 // Save saves permissions to the file.
-func (s *PermissionStore) Save() error <span class="cov10" title="120">{
-        if s.path == "" </span><span class="cov9" title="115">{
+func (s *PermissionStore) Save() error <span class="cov10" title="143">{
+        if s.path == "" </span><span class="cov9" title="138">{
                 return nil
         }</span>
 
-        <span class="cov4" title="5">s.mu.RLock()
+        <span class="cov3" title="5">s.mu.RLock()
         // Deep copy the maps to avoid data races during marshalling.
         // We copy both the map and the Perms values to ensure complete isolation.
         pf := permissionsFile{
                 Defaults: s.defaults,
         }
-        if s.files != nil </span><span class="cov4" title="5">{
+        if s.files != nil </span><span class="cov3" title="5">{
                 pf.Files = make(map[string]*Perms, len(s.files))
                 for k, v := range s.files </span><span class="cov3" title="4">{
                         if v != nil </span><span class="cov3" title="4">{
@@ -4171,7 +4289,7 @@ func (s *PermissionStore) Save() error <span class="cov10" title="120">{
                         }</span>
                 }
         }
-        <span class="cov4" title="5">if s.dirs != nil </span><span class="cov4" title="5">{
+        <span class="cov3" title="5">if s.dirs != nil </span><span class="cov3" title="5">{
                 pf.Directories = make(map[string]*Perms, len(s.dirs))
                 for k, v := range s.dirs </span><span class="cov2" title="2">{
                         if v != nil </span><span class="cov2" title="2">{
@@ -4180,7 +4298,7 @@ func (s *PermissionStore) Save() error <span class="cov10" title="120">{
                         }</span>
                 }
         }
-        <span class="cov4" title="5">s.mu.RUnlock()
+        <span class="cov3" title="5">s.mu.RUnlock()
 
         // Create parent directory if needed
         dir := filepath.Dir(s.path)
@@ -4188,25 +4306,25 @@ func (s *PermissionStore) Save() error <span class="cov10" title="120">{
                 return fmt.Errorf("create permissions directory: %w", err)
         }</span>
 
-        <span class="cov4" title="5">data, err := yaml.Marshal(&amp;pf)
+        <span class="cov3" title="5">data, err := yaml.Marshal(&amp;pf)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("marshal permissions: %w", err)
         }</span>
 
-        <span class="cov4" title="5">if err := os.WriteFile(s.path, data, 0644); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="5">if err := os.WriteFile(s.path, data, 0644); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write permissions file: %w", err)
         }</span>
 
-        <span class="cov4" title="5">if s.verbose </span><span class="cov0" title="0">{
+        <span class="cov3" title="5">if s.verbose </span><span class="cov0" title="0">{
                 log.Printf("Saved permissions to %s", s.path)
         }</span>
 
-        <span class="cov4" title="5">return nil</span>
+        <span class="cov3" title="5">return nil</span>
 }
 
 // GetFilePerms returns the effective permissions for a file.
 // Returns uid, gid, mode with defaults applied for any unset values.
-func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <span class="cov9" title="115">{
+func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <span class="cov9" title="133">{
         s.mu.RLock()
         defer s.mu.RUnlock()
 
@@ -4214,24 +4332,24 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="110">{
-                if p.UID != nil </span><span class="cov9" title="107">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="126">{
+                if p.UID != nil </span><span class="cov9" title="123">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="110">if p.GID != nil </span><span class="cov3" title="4">{
+                <span class="cov9" title="126">if p.GID != nil </span><span class="cov4" title="6">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="110">if p.Mode != nil </span><span class="cov4" title="6">{
+                <span class="cov9" title="126">if p.Mode != nil </span><span class="cov5" title="12">{
                         mode = *p.Mode
                 }</span>
         }
 
-        <span class="cov9" title="115">return uid, gid, mode</span>
+        <span class="cov9" title="133">return uid, gid, mode</span>
 }
 
 // GetDirPerms returns the effective permissions for a directory.
 // Returns uid, gid, mode with defaults applied for any unset values.
-func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) <span class="cov5" title="10">{
+func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) <span class="cov6" title="23">{
         s.mu.RLock()
         defer s.mu.RUnlock()
 
@@ -4239,25 +4357,25 @@ func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) <span
         gid = s.defaults.DirGID
         mode = s.defaults.DirMode
 
-        if p, ok := s.dirs[path]; ok </span><span class="cov4" title="8">{
-                if p.UID != nil </span><span class="cov3" title="3">{
+        if p, ok := s.dirs[path]; ok </span><span class="cov6" title="19">{
+                if p.UID != nil </span><span class="cov5" title="14">{
                         uid = *p.UID
                 }</span>
-                <span class="cov4" title="8">if p.GID != nil </span><span class="cov2" title="2">{
+                <span class="cov6" title="19">if p.GID != nil </span><span class="cov3" title="4">{
                         gid = *p.GID
                 }</span>
-                <span class="cov4" title="8">if p.Mode != nil </span><span class="cov4" title="5">{
+                <span class="cov6" title="19">if p.Mode != nil </span><span class="cov5" title="11">{
                         mode = *p.Mode
                 }</span>
         }
 
-        <span class="cov5" title="10">return uid, gid, mode</span>
+        <span class="cov6" title="23">return uid, gid, mode</span>
 }
 
 // SetFilePerms sets permissions for a file.
 // Only non-nil values are updated; nil values leave existing values unchanged.
 // Automatically saves to disk.
-func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov9" title="112">{
+func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov9" title="125">{
         s.mu.Lock()
 
         // If all values are nil, nothing to do
@@ -4266,33 +4384,33 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
                 return nil
         }</span>
 
-        <span class="cov9" title="112">p, ok := s.files[path]
-        if !ok </span><span class="cov5" title="12">{
+        <span class="cov9" title="125">p, ok := s.files[path]
+        if !ok </span><span class="cov6" title="22">{
                 p = &amp;Perms{}
                 s.files[path] = p
         }</span>
 
         // Only update non-nil values; copy values so the store owns their lifetime.
-        <span class="cov9" title="112">if uid != nil </span><span class="cov9" title="109">{
+        <span class="cov9" title="125">if uid != nil </span><span class="cov9" title="120">{
                 v := *uid
                 p.UID = &amp;v
         }</span>
-        <span class="cov9" title="112">if gid != nil </span><span class="cov3" title="3">{
+        <span class="cov9" title="125">if gid != nil </span><span class="cov3" title="4">{
                 v := *gid
                 p.GID = &amp;v
         }</span>
-        <span class="cov9" title="112">if mode != nil </span><span class="cov4" title="6">{
+        <span class="cov9" title="125">if mode != nil </span><span class="cov5" title="11">{
                 v := *mode
                 p.Mode = &amp;v
         }</span>
 
-        <span class="cov9" title="112">s.mu.Unlock()
+        <span class="cov9" title="125">s.mu.Unlock()
 
         if s.verbose </span><span class="cov0" title="0">{
                 log.Printf("SetFilePerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
         }</span>
 
-        <span class="cov9" title="112">return s.Save()</span>
+        <span class="cov9" title="125">return s.Save()</span>
 }
 
 // RemoveFilePerms removes all permission overrides for a file.
@@ -4312,7 +4430,7 @@ func (s *PermissionStore) RemoveFilePerms(path string) error <span class="cov1" 
 // SetDirPerms sets permissions for a directory.
 // Only non-nil values are updated; nil values leave existing values unchanged.
 // Automatically saves to disk.
-func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov4" title="7">{
+func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov6" title="17">{
         s.mu.Lock()
 
         // If all values are nil, nothing to do
@@ -4321,33 +4439,33 @@ func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint3
                 return nil
         }</span>
 
-        <span class="cov4" title="7">p, ok := s.dirs[path]
-        if !ok </span><span class="cov4" title="7">{
+        <span class="cov6" title="17">p, ok := s.dirs[path]
+        if !ok </span><span class="cov6" title="16">{
                 p = &amp;Perms{}
                 s.dirs[path] = p
         }</span>
 
         // Only update non-nil values; copy values so the store owns their lifetime.
-        <span class="cov4" title="7">if uid != nil </span><span class="cov3" title="3">{
+        <span class="cov6" title="17">if uid != nil </span><span class="cov5" title="13">{
                 v := *uid
                 p.UID = &amp;v
         }</span>
-        <span class="cov4" title="7">if gid != nil </span><span class="cov1" title="1">{
+        <span class="cov6" title="17">if gid != nil </span><span class="cov2" title="2">{
                 v := *gid
                 p.GID = &amp;v
         }</span>
-        <span class="cov4" title="7">if mode != nil </span><span class="cov3" title="4">{
+        <span class="cov6" title="17">if mode != nil </span><span class="cov5" title="10">{
                 v := *mode
                 p.Mode = &amp;v
         }</span>
 
-        <span class="cov4" title="7">s.mu.Unlock()
+        <span class="cov6" title="17">s.mu.Unlock()
 
         if s.verbose </span><span class="cov0" title="0">{
                 log.Printf("SetDirPerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
         }</span>
 
-        <span class="cov4" title="7">return s.Save()</span>
+        <span class="cov6" title="17">return s.Save()</span>
 }
 
 // RemoveDirPerms removes all permission overrides for a directory.
@@ -4452,6 +4570,104 @@ func ResolvePermissionsPath(explicitPath string) string <span class="cov2" title
 
         // Fallback if no home directory (unusual for non-root)
         <span class="cov0" title="0">return systemPath</span>
+}
+
+// CallerInfo represents the calling process's credentials.
+type CallerInfo struct {
+        Uid uint32
+        Gid uint32
+}
+
+// testCallerKey is used to inject caller credentials in tests.
+type testCallerKeyType struct{}
+
+var testCallerKey = testCallerKeyType{}
+
+// GetCaller extracts caller credentials from the FUSE context.
+// Falls back to test-injected caller if FUSE context unavailable.
+// Returns root (uid=0, gid=0) as default for backwards compatibility.
+func GetCaller(ctx context.Context) CallerInfo <span class="cov7" title="39">{
+        if caller, ok := fuse.FromContext(ctx); ok </span><span class="cov0" title="0">{
+                return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}
+        }</span>
+        // Check for test-injected caller
+        <span class="cov7" title="39">if caller, ok := ctx.Value(testCallerKey).(CallerInfo); ok </span><span class="cov6" title="23">{
+                return caller
+        }</span>
+        // Default to root (maintains backwards compatibility with existing tests)
+        <span class="cov6" title="16">return CallerInfo{Uid: 0, Gid: 0}</span>
+}
+
+// ContextWithCaller creates a context with injected caller credentials for testing.
+func ContextWithCaller(ctx context.Context, uid, gid uint32) context.Context <span class="cov6" title="23">{
+        return context.WithValue(ctx, testCallerKey, CallerInfo{Uid: uid, Gid: gid})
+}</span>
+
+// IsRoot returns true if the caller is root (uid 0).
+func (c CallerInfo) IsRoot() bool <span class="cov8" title="80">{
+        return c.Uid == 0
+}</span>
+
+// AccessMode represents the type of access being requested.
+type AccessMode uint32
+
+const (
+        AccessRead    AccessMode = 0004
+        AccessWrite   AccessMode = 0002
+        AccessExecute AccessMode = 0001
+)
+
+// CheckAccess verifies the caller has the requested access to a file or directory.
+// Returns 0 if access is granted, syscall.EACCES if denied.
+// Root (uid 0) bypasses all permission checks.
+func CheckAccess(caller CallerInfo, fileUID, fileGID, mode uint32, access AccessMode) syscall.Errno <span class="cov7" title="46">{
+        if caller.IsRoot() </span><span class="cov5" title="14">{
+                return 0
+        }</span>
+
+        <span class="cov7" title="32">var permBits uint32
+        if caller.Uid == fileUID </span><span class="cov5" title="12">{
+                // Owner bits
+                permBits = (mode &gt;&gt; 6) &amp; 0007
+        }</span> else<span class="cov6" title="20"> if caller.Gid == fileGID </span><span class="cov4" title="7">{
+                // Group bits
+                permBits = (mode &gt;&gt; 3) &amp; 0007
+        }</span> else<span class="cov5" title="13"> {
+                // Other bits
+                permBits = mode &amp; 0007
+        }</span>
+
+        <span class="cov7" title="32">if permBits&amp;uint32(access) != 0 </span><span class="cov5" title="14">{
+                return 0
+        }</span>
+        <span class="cov6" title="18">return syscall.EACCES</span>
+}
+
+// CheckChown verifies the caller can change file ownership.
+// Returns 0 if allowed, syscall.EPERM if denied.
+// Only root can change UID. Root or file owner can change GID.
+func CheckChown(caller CallerInfo, fileUID uint32, newUID, newGID *uint32) syscall.Errno <span class="cov6" title="18">{
+        // Only root can change UID to a different user
+        if newUID != nil &amp;&amp; *newUID != fileUID &amp;&amp; !caller.IsRoot() </span><span class="cov3" title="5">{
+                return syscall.EPERM
+        }</span>
+
+        // Only root or owner can change GID
+        <span class="cov5" title="13">if newGID != nil &amp;&amp; !caller.IsRoot() &amp;&amp; caller.Uid != fileUID </span><span class="cov2" title="2">{
+                return syscall.EPERM
+        }</span>
+
+        <span class="cov5" title="11">return 0</span>
+}
+
+// CheckChmod verifies the caller can change file mode.
+// Returns 0 if allowed, syscall.EPERM if denied.
+// Only root or file owner can chmod.
+func CheckChmod(caller CallerInfo, fileUID uint32) syscall.Errno <span class="cov5" title="10">{
+        if caller.IsRoot() || caller.Uid == fileUID </span><span class="cov4" title="6">{
+                return 0
+        }</span>
+        <span class="cov3" title="4">return syscall.EPERM</span>
 }
 </pre>
 		

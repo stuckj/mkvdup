@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="355" failures="0" errors="0" time="1.161226">
-	<testsuite tests="20" failures="0" time="0.015000" name="github.com/stuckj/mkvdup/cmd/mkvdup" timestamp="2026-01-24T19:04:56Z">
+<testsuites tests="429" failures="0" errors="0" time="1.965369">
+	<testsuite tests="20" failures="0" time="0.014000" name="github.com/stuckj/mkvdup/cmd/mkvdup" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -25,7 +25,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestTwo" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/cmd/mkvdup" name="TestSamplePackets_RequestFour" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="13" failures="0" time="0.006000" name="github.com/stuckj/mkvdup/internal/daemon" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="13" failures="0" time="0.009000" name="github.com/stuckj/mkvdup/internal/daemon" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -43,7 +43,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestNotifyError_Message" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/daemon" name="TestWritePidFile_InvalidPath" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="61" failures="0" time="0.031000" name="github.com/stuckj/mkvdup/internal/dedup" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="61" failures="0" time="0.031000" name="github.com/stuckj/mkvdup/internal/dedup" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -117,7 +117,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestClose_Idempotent" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/dedup" name="TestSetESReader" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="76" failures="0" time="0.026000" name="github.com/stuckj/mkvdup/internal/fuse" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="150" failures="0" time="0.031000" name="github.com/stuckj/mkvdup/internal/fuse" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -204,6 +204,25 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Setattr_NoPermStore" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Setattr_Chmod" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Setattr_Chown" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Open_PermissionDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Open_OwnerAllowed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Open_RootBypass" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Read_PermissionDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Setattr_ChownUIDDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Setattr_RootCanChownUID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Setattr_OwnerCanChownGID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Setattr_NonOwnerCannotChownGID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Setattr_ChmodDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSNode_Setattr_OwnerCanChmod" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Setattr_ChownDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Setattr_RootCanChown" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Setattr_ChmodDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Readdir_PermissionDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Readdir_OwnerAllowed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Lookup_PermissionDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSDirNode_Lookup_OwnerAllowed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSRoot_Lookup_PermissionDenied" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestMKVFSRoot_Readdir_PermissionDenied" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestNewPermissionStore" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestPermissionStore_LoadSave" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestPermissionStore_GetFilePerms_Default" time="0.000000"></testcase>
@@ -219,8 +238,63 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestResolvePermissionsPath_Explicit" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestResolvePermissionsPath_Default" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestPermissionStore_SaveCreatesDirectory" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCallerInfo_IsRoot/root_user" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCallerInfo_IsRoot/root_user_with_non-root_group" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCallerInfo_IsRoot/non-root_user" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCallerInfo_IsRoot/user_with_gid_0" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCallerInfo_IsRoot" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestGetCaller/empty_context_returns_root" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestGetCaller/injected_caller" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestGetCaller/injected_root" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestGetCaller/different_uid_and_gid" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestGetCaller" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestContextWithCaller" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/root_bypasses_mode_0000_read" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/root_bypasses_mode_0000_write" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/root_bypasses_mode_0000_execute" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_read_allowed_with_0400" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_read_denied_with_0300" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_write_allowed_with_0200" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_write_denied_with_0500" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_execute_allowed_with_0100" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_execute_denied_with_0600" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_full_perms_with_0700" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_read_allowed_with_0040" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_read_denied_with_0030" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_write_allowed_with_0020" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_write_denied_with_0050" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_execute_allowed_with_0010" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_execute_denied_with_0060" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/group_inherits_nothing_from_owner" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_read_allowed_with_0004" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_read_denied_with_0770" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_write_allowed_with_0002" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_write_denied_with_0775" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_execute_allowed_with_0001" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_execute_denied_with_0776" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/other_inherits_nothing_from_group" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_checked_before_group" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess/owner_denied_even_with_group_allowed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckAccess" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/root_can_change_UID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/root_can_change_GID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/root_can_change_both" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/non-root_cannot_change_UID_to_different_user" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/non-root_can_set_UID_to_same_value" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/non-owner_cannot_change_UID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/owner_can_change_GID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/non-owner_cannot_change_GID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/owner_cannot_change_UID_but_can_change_GID" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown/nil_UID_and_GID_always_allowed" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChown" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChmod/root_can_chmod_any_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChmod/root_can_chmod_root-owned_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChmod/owner_can_chmod_own_file" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChmod/non-owner_cannot_chmod" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChmod/same_group_but_not_owner_cannot_chmod" time="0.000000"></testcase>
+		<testcase classname="github.com/stuckj/mkvdup/internal/fuse" name="TestCheckChmod" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="21" failures="0" time="0.006000" name="github.com/stuckj/mkvdup/internal/matcher" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="21" failures="0" time="0.005000" name="github.com/stuckj/mkvdup/internal/matcher" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -246,7 +320,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_EmptyData" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/matcher" name="TestExtractProbeHashes_AudioWithNoSyncPoint" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="84" failures="0" time="0.008000" name="github.com/stuckj/mkvdup/internal/mkv" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="84" failures="0" time="0.011000" name="github.com/stuckj/mkvdup/internal/mkv" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -335,7 +409,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestParser_Accessors" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/mkv" name="TestIsTopLevelElement" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="16" failures="0" time="0.006000" name="github.com/stuckj/mkvdup/internal/mmap" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="16" failures="0" time="0.014000" name="github.com/stuckj/mkvdup/internal/mmap" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
@@ -356,7 +430,7 @@
 		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose_Idempotent" time="0.000000"></testcase>
 		<testcase classname="github.com/stuckj/mkvdup/internal/mmap" name="TestClose_EmptyFile" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="64" failures="0" time="0.009000" name="github.com/stuckj/mkvdup/internal/source" timestamp="2026-01-24T19:04:56Z">
+	<testsuite tests="64" failures="0" time="0.009000" name="github.com/stuckj/mkvdup/internal/source" timestamp="2026-01-24T22:08:28Z">
 		<properties>
 			<property name="go.version" value="go1.24.12 linux/amd64"></property>
 		</properties>
