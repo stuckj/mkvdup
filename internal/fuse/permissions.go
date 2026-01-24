@@ -2,15 +2,12 @@
 package fuse
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
 	"gopkg.in/yaml.v3"
 )
 
@@ -439,102 +436,4 @@ func ResolvePermissionsPath(explicitPath string) string {
 
 	// Fallback if no home directory (unusual for non-root)
 	return systemPath
-}
-
-// CallerInfo represents the calling process's credentials.
-type CallerInfo struct {
-	Uid uint32
-	Gid uint32
-}
-
-// testCallerKey is used to inject caller credentials in tests.
-type testCallerKeyType struct{}
-
-var testCallerKey = testCallerKeyType{}
-
-// GetCaller extracts caller credentials from the FUSE context.
-// Falls back to test-injected caller if FUSE context unavailable.
-// Returns root (uid=0, gid=0) as default for backwards compatibility.
-func GetCaller(ctx context.Context) CallerInfo {
-	if caller, ok := fuse.FromContext(ctx); ok {
-		return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}
-	}
-	// Check for test-injected caller
-	if caller, ok := ctx.Value(testCallerKey).(CallerInfo); ok {
-		return caller
-	}
-	// Default to root (maintains backwards compatibility with existing tests)
-	return CallerInfo{Uid: 0, Gid: 0}
-}
-
-// ContextWithCaller creates a context with injected caller credentials for testing.
-func ContextWithCaller(ctx context.Context, uid, gid uint32) context.Context {
-	return context.WithValue(ctx, testCallerKey, CallerInfo{Uid: uid, Gid: gid})
-}
-
-// IsRoot returns true if the caller is root (uid 0).
-func (c CallerInfo) IsRoot() bool {
-	return c.Uid == 0
-}
-
-// AccessMode represents the type of access being requested.
-type AccessMode uint32
-
-const (
-	AccessRead    AccessMode = 0004
-	AccessWrite   AccessMode = 0002
-	AccessExecute AccessMode = 0001
-)
-
-// CheckAccess verifies the caller has the requested access to a file or directory.
-// Returns 0 if access is granted, syscall.EACCES if denied.
-// Root (uid 0) bypasses all permission checks.
-func CheckAccess(caller CallerInfo, fileUID, fileGID, mode uint32, access AccessMode) syscall.Errno {
-	if caller.IsRoot() {
-		return 0
-	}
-
-	var permBits uint32
-	if caller.Uid == fileUID {
-		// Owner bits
-		permBits = (mode >> 6) & 0007
-	} else if caller.Gid == fileGID {
-		// Group bits
-		permBits = (mode >> 3) & 0007
-	} else {
-		// Other bits
-		permBits = mode & 0007
-	}
-
-	if permBits&uint32(access) != 0 {
-		return 0
-	}
-	return syscall.EACCES
-}
-
-// CheckChown verifies the caller can change file ownership.
-// Returns 0 if allowed, syscall.EPERM if denied.
-// Only root can change UID. Root or file owner can change GID.
-func CheckChown(caller CallerInfo, fileUID uint32, newUID, newGID *uint32) syscall.Errno {
-	// Only root can change UID to a different user
-	if newUID != nil && *newUID != fileUID && !caller.IsRoot() {
-		return syscall.EPERM
-	}
-
-	// Only root or owner can change GID
-	if newGID != nil && !caller.IsRoot() && caller.Uid != fileUID {
-		return syscall.EPERM
-	}
-
-	return 0
-}
-
-// CheckChmod verifies the caller can change file mode.
-// Returns 0 if allowed, syscall.EPERM if denied.
-// Only root or file owner can chmod.
-func CheckChmod(caller CallerInfo, fileUID uint32) syscall.Errno {
-	if caller.IsRoot() || caller.Uid == fileUID {
-		return 0
-	}
-	return syscall.EPERM
 }
