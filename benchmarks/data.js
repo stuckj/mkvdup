@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769281588066,
+  "lastUpdate": 1769292603007,
   "repoUrl": "https://github.com/stuckj/mkvdup",
   "entries": {
     "Benchmark": [
@@ -22686,6 +22686,1200 @@ window.BENCHMARK_DATA = {
             "value": 27,
             "unit": "allocs/op",
             "extra": "39097 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "stuckj@gmail.com",
+            "name": "Jonathan Stucklen",
+            "username": "stuckj"
+          },
+          "committer": {
+            "email": "stuckj@gmail.com",
+            "name": "Jonathan Stucklen",
+            "username": "stuckj"
+          },
+          "distinct": true,
+          "id": "16c533e70474bce22afd3bd49f54433c136302a4",
+          "message": "Enforce Unix-style permissions in FUSE filesystem (#70)\n\nPreviously, permissions were stored but never enforced - any user could\nread any file and perform chmod/chown operations regardless of ownership.\n\nThis commit adds proper Unix permission enforcement:\n\n- Open/Read: Check read permission based on mode bits (owner/group/other)\n- Setattr chown: Only root can change UID; root or owner can change GID\n- Setattr chmod: Only root or owner can change mode\n- Readdir: Requires directory read permission\n- Lookup: Requires directory execute permission\n- Root (uid 0) bypasses all permission checks\n\nAdds comprehensive test coverage with 65+ test cases covering all\npermission scenarios.\n\nFixes #70\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+          "timestamp": "2026-01-24T17:07:13-05:00",
+          "tree_id": "c08325527bbc99c7e0454313cea9ccdeba5b50af",
+          "url": "https://github.com/stuckj/mkvdup/commit/16c533e70474bce22afd3bd49f54433c136302a4"
+        },
+        "date": 1769292602095,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkGetEntry_Sequential",
+            "value": 36.57,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "32500498 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - ns/op",
+            "value": 36.57,
+            "unit": "ns/op",
+            "extra": "32500498 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32500498 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32500498 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential",
+            "value": 36.59,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "32489562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - ns/op",
+            "value": 36.59,
+            "unit": "ns/op",
+            "extra": "32489562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32489562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32489562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential",
+            "value": 36.62,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "32448318 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - ns/op",
+            "value": 36.62,
+            "unit": "ns/op",
+            "extra": "32448318 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32448318 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32448318 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential",
+            "value": 36.56,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "32548287 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - ns/op",
+            "value": 36.56,
+            "unit": "ns/op",
+            "extra": "32548287 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32548287 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32548287 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential",
+            "value": 36.54,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "32472949 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - ns/op",
+            "value": 36.54,
+            "unit": "ns/op",
+            "extra": "32472949 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32472949 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32472949 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random",
+            "value": 40.25,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28989744 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - ns/op",
+            "value": 40.25,
+            "unit": "ns/op",
+            "extra": "28989744 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28989744 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28989744 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random",
+            "value": 40.25,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29407125 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - ns/op",
+            "value": 40.25,
+            "unit": "ns/op",
+            "extra": "29407125 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29407125 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29407125 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random",
+            "value": 40.68,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28828286 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - ns/op",
+            "value": 40.68,
+            "unit": "ns/op",
+            "extra": "28828286 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28828286 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28828286 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random",
+            "value": 41.28,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29280013 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - ns/op",
+            "value": 41.28,
+            "unit": "ns/op",
+            "extra": "29280013 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29280013 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29280013 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random",
+            "value": 40.6,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28293694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - ns/op",
+            "value": 40.6,
+            "unit": "ns/op",
+            "extra": "28293694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28293694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28293694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset",
+            "value": 10.68,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "98251009 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - ns/op",
+            "value": 10.68,
+            "unit": "ns/op",
+            "extra": "98251009 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "98251009 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "98251009 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset",
+            "value": 10.55,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "113651793 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - ns/op",
+            "value": 10.55,
+            "unit": "ns/op",
+            "extra": "113651793 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "113651793 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "113651793 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset",
+            "value": 10.71,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "98824368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - ns/op",
+            "value": 10.71,
+            "unit": "ns/op",
+            "extra": "98824368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "98824368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "98824368 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset",
+            "value": 10.65,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - ns/op",
+            "value": 10.65,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset",
+            "value": 10.83,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - ns/op",
+            "value": 10.83,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential",
+            "value": 44895,
+            "unit": "ns/op\t1459.78 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "25786 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - ns/op",
+            "value": 44895,
+            "unit": "ns/op",
+            "extra": "25786 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - MB/s",
+            "value": 1459.78,
+            "unit": "MB/s",
+            "extra": "25786 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "25786 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "25786 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential",
+            "value": 44794,
+            "unit": "ns/op\t1463.06 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - ns/op",
+            "value": 44794,
+            "unit": "ns/op",
+            "extra": "26581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - MB/s",
+            "value": 1463.06,
+            "unit": "MB/s",
+            "extra": "26581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential",
+            "value": 44910,
+            "unit": "ns/op\t1459.28 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26808 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - ns/op",
+            "value": 44910,
+            "unit": "ns/op",
+            "extra": "26808 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - MB/s",
+            "value": 1459.28,
+            "unit": "MB/s",
+            "extra": "26808 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26808 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26808 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential",
+            "value": 45232,
+            "unit": "ns/op\t1448.87 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - ns/op",
+            "value": 45232,
+            "unit": "ns/op",
+            "extra": "26590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - MB/s",
+            "value": 1448.87,
+            "unit": "MB/s",
+            "extra": "26590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential",
+            "value": 45684,
+            "unit": "ns/op\t1434.56 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26511 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - ns/op",
+            "value": 45684,
+            "unit": "ns/op",
+            "extra": "26511 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - MB/s",
+            "value": 1434.56,
+            "unit": "MB/s",
+            "extra": "26511 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26511 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26511 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random",
+            "value": 45662,
+            "unit": "ns/op\t1435.26 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - ns/op",
+            "value": 45662,
+            "unit": "ns/op",
+            "extra": "26366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - MB/s",
+            "value": 1435.26,
+            "unit": "MB/s",
+            "extra": "26366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random",
+            "value": 45206,
+            "unit": "ns/op\t1449.73 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26173 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - ns/op",
+            "value": 45206,
+            "unit": "ns/op",
+            "extra": "26173 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - MB/s",
+            "value": 1449.73,
+            "unit": "MB/s",
+            "extra": "26173 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26173 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26173 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random",
+            "value": 44683,
+            "unit": "ns/op\t1466.69 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26372 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - ns/op",
+            "value": 44683,
+            "unit": "ns/op",
+            "extra": "26372 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - MB/s",
+            "value": 1466.69,
+            "unit": "MB/s",
+            "extra": "26372 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26372 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26372 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random",
+            "value": 45306,
+            "unit": "ns/op\t1446.51 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "27163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - ns/op",
+            "value": 45306,
+            "unit": "ns/op",
+            "extra": "27163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - MB/s",
+            "value": 1446.51,
+            "unit": "MB/s",
+            "extra": "27163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "27163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "27163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random",
+            "value": 46230,
+            "unit": "ns/op\t1417.60 MB/s\t   84192 B/op\t      11 allocs/op",
+            "extra": "26068 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - ns/op",
+            "value": 46230,
+            "unit": "ns/op",
+            "extra": "26068 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - MB/s",
+            "value": 1417.6,
+            "unit": "MB/s",
+            "extra": "26068 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - B/op",
+            "value": 84192,
+            "unit": "B/op",
+            "extra": "26068 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "26068 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small",
+            "value": 458.5,
+            "unit": "ns/op\t 558.38 MB/s\t     287 B/op\t       2 allocs/op",
+            "extra": "2603366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - ns/op",
+            "value": 458.5,
+            "unit": "ns/op",
+            "extra": "2603366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - MB/s",
+            "value": 558.38,
+            "unit": "MB/s",
+            "extra": "2603366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - B/op",
+            "value": 287,
+            "unit": "B/op",
+            "extra": "2603366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "2603366 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small",
+            "value": 462.2,
+            "unit": "ns/op\t 553.89 MB/s\t     287 B/op\t       2 allocs/op",
+            "extra": "2613972 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - ns/op",
+            "value": 462.2,
+            "unit": "ns/op",
+            "extra": "2613972 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - MB/s",
+            "value": 553.89,
+            "unit": "MB/s",
+            "extra": "2613972 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - B/op",
+            "value": 287,
+            "unit": "B/op",
+            "extra": "2613972 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "2613972 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small",
+            "value": 463.6,
+            "unit": "ns/op\t 552.17 MB/s\t     287 B/op\t       2 allocs/op",
+            "extra": "2569518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - ns/op",
+            "value": 463.6,
+            "unit": "ns/op",
+            "extra": "2569518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - MB/s",
+            "value": 552.17,
+            "unit": "MB/s",
+            "extra": "2569518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - B/op",
+            "value": 287,
+            "unit": "B/op",
+            "extra": "2569518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "2569518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small",
+            "value": 461.8,
+            "unit": "ns/op\t 554.39 MB/s\t     287 B/op\t       2 allocs/op",
+            "extra": "2553733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - ns/op",
+            "value": 461.8,
+            "unit": "ns/op",
+            "extra": "2553733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - MB/s",
+            "value": 554.39,
+            "unit": "MB/s",
+            "extra": "2553733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - B/op",
+            "value": 287,
+            "unit": "B/op",
+            "extra": "2553733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "2553733 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small",
+            "value": 456.5,
+            "unit": "ns/op\t 560.82 MB/s\t     287 B/op\t       2 allocs/op",
+            "extra": "2582796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - ns/op",
+            "value": 456.5,
+            "unit": "ns/op",
+            "extra": "2582796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - MB/s",
+            "value": 560.82,
+            "unit": "MB/s",
+            "extra": "2582796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - B/op",
+            "value": 287,
+            "unit": "B/op",
+            "extra": "2582796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "2582796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange",
+            "value": 993.1,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1216563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - ns/op",
+            "value": 993.1,
+            "unit": "ns/op",
+            "extra": "1216563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1216563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1216563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange",
+            "value": 954.7,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1239637 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - ns/op",
+            "value": 954.7,
+            "unit": "ns/op",
+            "extra": "1239637 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1239637 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1239637 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange",
+            "value": 979.1,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1211826 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - ns/op",
+            "value": 979.1,
+            "unit": "ns/op",
+            "extra": "1211826 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1211826 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1211826 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange",
+            "value": 1027,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1244659 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - ns/op",
+            "value": 1027,
+            "unit": "ns/op",
+            "extra": "1244659 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1244659 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1244659 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange",
+            "value": 923.7,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1270119 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - ns/op",
+            "value": 923.7,
+            "unit": "ns/op",
+            "extra": "1270119 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1270119 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1270119 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader",
+            "value": 29913,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39631 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - ns/op",
+            "value": 29913,
+            "unit": "ns/op",
+            "extra": "39631 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39631 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39631 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader",
+            "value": 30156,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39486 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - ns/op",
+            "value": 30156,
+            "unit": "ns/op",
+            "extra": "39486 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39486 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39486 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader",
+            "value": 30033,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39810 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - ns/op",
+            "value": 30033,
+            "unit": "ns/op",
+            "extra": "39810 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39810 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39810 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader",
+            "value": 30110,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - ns/op",
+            "value": 30110,
+            "unit": "ns/op",
+            "extra": "39354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39354 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader",
+            "value": 30090,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - ns/op",
+            "value": 30090,
+            "unit": "ns/op",
+            "extra": "39657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy",
+            "value": 29968,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39468 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - ns/op",
+            "value": 29968,
+            "unit": "ns/op",
+            "extra": "39468 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39468 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39468 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy",
+            "value": 30092,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - ns/op",
+            "value": 30092,
+            "unit": "ns/op",
+            "extra": "39764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy",
+            "value": 29879,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - ns/op",
+            "value": 29879,
+            "unit": "ns/op",
+            "extra": "39873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39873 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy",
+            "value": 29870,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39913 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - ns/op",
+            "value": 29870,
+            "unit": "ns/op",
+            "extra": "39913 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39913 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39913 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy",
+            "value": 30004,
+            "unit": "ns/op\t    1064 B/op\t      27 allocs/op",
+            "extra": "39856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - ns/op",
+            "value": 30004,
+            "unit": "ns/op",
+            "extra": "39856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - B/op",
+            "value": 1064,
+            "unit": "B/op",
+            "extra": "39856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "39856 times\n4 procs"
           }
         ]
       }
