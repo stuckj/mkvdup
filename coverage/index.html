@@ -4214,14 +4214,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="111">{
-                if p.UID != nil </span><span class="cov9" title="108">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="110">{
+                if p.UID != nil </span><span class="cov9" title="107">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="111">if p.GID != nil </span><span class="cov3" title="4">{
+                <span class="cov9" title="110">if p.GID != nil </span><span class="cov3" title="4">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="111">if p.Mode != nil </span><span class="cov4" title="6">{
+                <span class="cov9" title="110">if p.Mode != nil </span><span class="cov4" title="6">{
                         mode = *p.Mode
                 }</span>
         }
