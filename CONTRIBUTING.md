@@ -36,10 +36,13 @@ go build ./...
 
 ## Pull Requests
 
+- **All changes must go through a pull request** - do not push directly to `main`
+- Create a feature branch, push it, and open a PR for review
 - All PRs are **squash merged** to maintain a clean, linear commit history
 - Feature branches are deleted after merge
 - Write clear PR titles that describe the change (these become commit messages)
 - Include context in the PR description for complex changes
+- Never amend commits or use `git rebase` on shared branches to avoid divergent branch issues
 
 ## Code Style
 
