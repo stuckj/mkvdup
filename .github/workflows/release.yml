@@ -32,6 +32,13 @@ jobs:
         id: resolve
         run: |
           VERSION="${{ github.event.inputs.version }}"
+
+          # Validate version format (no leading 'v', basic version like 1.2.3 or 1.2.3-beta.1)
+          if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+)*([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "::error::Invalid version '${VERSION}'. Expected format like '1.0' or '1.2.3' without 'v' prefix."
+            exit 1
+          fi
+
           TAG="v${VERSION}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
@@ -49,7 +56,7 @@ jobs:
           else
             # Find the latest commit on main that isn't a benchmark commit
             echo "Finding latest non-benchmark commit on main..."
-            COMMIT=$(git log origin/main --oneline -50 | grep -v '\[skip ci\]' | grep -v '\[benchmark\]' | head -1 | awk '{print $1}')
+            COMMIT=$(git log origin/main --oneline -50 | grep -v -iE '\[(skip ci|ci skip|no ci|skip actions|actions skip|benchmark)\]' | head -1 | awk '{print $1}')
             if [[ -z "${COMMIT}" ]]; then
               echo "::error::Could not find a non-benchmark commit in recent history"
               exit 1
@@ -88,7 +95,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25'  # nfpm@latest requires Go >= 1.25
 
       - name: Build binary
         env:
