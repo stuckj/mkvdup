@@ -639,9 +639,9 @@ type testDedupData struct {
 	paths        testdata.Paths
 	mkvSize      int64
 	mkvChecksum  uint64
-	sourceType   string
-	sourceFiles  []source.FileInfo
-	result       *matcher.MatchResult
+	sourceType   source.Type
+	sourceFiles  []source.File
+	result       *matcher.Result
 	esConverters []source.ESRangeConverter
 	index        *source.Index
 	matcher      *matcher.Matcher
@@ -780,6 +780,15 @@ func (d *testDedupData) writeTestDedupFile(t *testing.T, tmpDir, name, dedupName
 	}
 
 	return configPath
+}
+
+// createTestDedupFileWithName is a convenience wrapper for tests that only need one dedup file.
+// For tests creating multiple dedup files, use prepareTestDedupData + writeTestDedupFile instead.
+func createTestDedupFileWithName(t *testing.T, paths testdata.Paths, tmpDir, name, dedupName string) string {
+	t.Helper()
+	data, cleanup := prepareTestDedupData(t, paths)
+	defer cleanup()
+	return data.writeTestDedupFile(t, tmpDir, name, dedupName)
 }
 
 // TestFUSEMount_DirectoryStructure tests mounting with nested directory paths.
