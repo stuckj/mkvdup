@@ -468,8 +468,9 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 
 // Open implements fs.NodeOpener - opens a file for reading.
 func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	// This is a read-only filesystem - reject write attempts
-	if flags&(syscall.O_WRONLY|syscall.O_RDWR) != 0 {
+	// This is a read-only filesystem - reject write and write-intent attempts.
+	// O_TRUNC, O_CREAT, O_APPEND imply write intent even with O_RDONLY.
+	if flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC|syscall.O_CREAT|syscall.O_APPEND) != 0 {
 		return nil, 0, syscall.EROFS
 	}
 

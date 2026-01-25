@@ -3,7 +3,6 @@ name: Coverage
 on:
   workflow_run:
     workflows: ["CI", "Integration Tests"]
-    branches: [main]
     types: [completed]
 
 permissions:
@@ -15,12 +14,13 @@ jobs:
   coverage:
     name: Merge Coverage
     runs-on: ubuntu-latest
-    # Only run on successful workflow completions on main branch
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    # Only run on successful workflow completions
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
           token: ${{ secrets.BENCHMARK_PAT }}
 
       - name: Set up Go
@@ -37,7 +37,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v6
         with:
           workflow: ci.yml
-          branch: main
+          commit: ${{ github.event.workflow_run.head_sha }}
           name: unit-coverage
           path: ./coverage-artifacts
         continue-on-error: true
@@ -46,7 +46,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v6
         with:
           workflow: integration.yml
-          branch: main
+          commit: ${{ github.event.workflow_run.head_sha }}
           name: integration-coverage
           path: ./coverage-artifacts
         continue-on-error: true
@@ -77,19 +77,20 @@ jobs:
           # Merge available coverage files
           if [ -n "$UNIT_COV" ] && [ -n "$INT_COV" ]; then
             echo "Merging unit and integration coverage"
+            echo "coverage_type=merged" >> $GITHUB_OUTPUT
             gocovmerge "$UNIT_COV" "$INT_COV" > merged-coverage.out
           elif [ -n "$UNIT_COV" ]; then
             echo "Using unit coverage only"
+            echo "coverage_type=unit" >> $GITHUB_OUTPUT
             cp "$UNIT_COV" merged-coverage.out
           elif [ -n "$INT_COV" ]; then
             echo "Using integration coverage only"
+            echo "coverage_type=integration" >> $GITHUB_OUTPUT
             cp "$INT_COV" merged-coverage.out
           else
             echo "No coverage files found"
             exit 1
           fi
-
-          echo "merged=true" >> $GITHUB_OUTPUT
 
       - name: Generate coverage reports
         id: coverage
@@ -110,12 +111,93 @@ jobs:
           {
             "coverage": ${COVERAGE},
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "commit": "${GITHUB_SHA}",
-            "trigger_workflow": "${{ github.event.workflow_run.name }}"
+            "commit": "${{ github.event.workflow_run.head_sha }}",
+            "trigger_workflow": "${{ github.event.workflow_run.name }}",
+            "coverage_type": "${{ steps.merge.outputs.coverage_type }}"
           }
           EOF
 
+      - name: Find associated PR
+        id: find-pr
+        if: github.event.workflow_run.head_branch != 'main'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${{ github.event.workflow_run.head_branch }}`,
+              state: 'open'
+            });
+            if (prs.data.length > 0) {
+              core.setOutput('pr_number', prs.data[0].number);
+              return prs.data[0].number;
+            }
+            return '';
+
+      - name: Comment coverage on PR
+        if: steps.find-pr.outputs.pr_number
+        continue-on-error: true
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('coverage-summary.txt', 'utf8');
+            const coverage = '${{ steps.coverage.outputs.coverage }}';
+            const coverageType = '${{ steps.merge.outputs.coverage_type }}';
+            const prNumber = ${{ steps.find-pr.outputs.pr_number }};
+
+            let typeNote = '';
+            if (coverageType === 'unit') {
+              typeNote = '\n\n*Note: Integration coverage not yet available for this commit.*';
+            } else if (coverageType === 'integration') {
+              typeNote = '\n\n*Note: Unit coverage not yet available for this commit.*';
+            }
+
+            // Find existing coverage comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const coverageComment = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.includes('## Test Coverage Report')
+            );
+
+            const body = `## Test Coverage Report
+
+            **Total Coverage: ${coverage}%**${typeNote}
+
+            <details>
+            <summary>Coverage by function</summary>
+
+            \`\`\`
+            ${summary}
+            \`\`\`
+
+            </details>`;
+
+            if (coverageComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: coverageComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body
+              });
+            }
+
       - name: Publish coverage to gh-pages
+        if: github.event.workflow_run.head_branch == 'main'
         run: |
           # Validate that BENCHMARK_PAT was configured
           if [ "${{ secrets.BENCHMARK_PAT }}" = "" ]; then
