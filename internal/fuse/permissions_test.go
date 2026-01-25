@@ -9,6 +9,26 @@ import (
 	"testing"
 )
 
+// testCallerKey is used to inject caller credentials in tests.
+type testCallerKeyType struct{}
+
+var testCallerKey = testCallerKeyType{}
+
+func init() {
+	// Set up the test caller hook to allow ContextWithCaller to work
+	testCallerHook = func(ctx context.Context) (CallerInfo, bool) {
+		if caller, ok := ctx.Value(testCallerKey).(CallerInfo); ok {
+			return caller, true
+		}
+		return CallerInfo{}, false
+	}
+}
+
+// ContextWithCaller creates a context with injected caller credentials for testing.
+func ContextWithCaller(ctx context.Context, uid, gid uint32) context.Context {
+	return context.WithValue(ctx, testCallerKey, CallerInfo{Uid: uid, Gid: gid})
+}
+
 func TestNewPermissionStore(t *testing.T) {
 	defaults := DefaultPerms()
 	store := NewPermissionStore("", defaults, false)

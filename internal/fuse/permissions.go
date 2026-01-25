@@ -447,30 +447,25 @@ type CallerInfo struct {
 	Gid uint32
 }
 
-// testCallerKey is used to inject caller credentials in tests.
-type testCallerKeyType struct{}
-
-var testCallerKey = testCallerKeyType{}
+// testCallerHook is set by test code to allow injecting caller credentials.
+// This is nil in production, ensuring only real FUSE contexts are trusted.
+var testCallerHook func(context.Context) (CallerInfo, bool)
 
 // GetCaller extracts caller credentials from the FUSE context.
-// Falls back to test-injected caller if FUSE context unavailable.
 // Returns (caller, true) if credentials are available, (zero, false) otherwise.
 // Callers should deny access when ok is false to fail closed.
 func GetCaller(ctx context.Context) (CallerInfo, bool) {
 	if caller, ok := fuse.FromContext(ctx); ok {
 		return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}, true
 	}
-	// Check for test-injected caller
-	if caller, ok := ctx.Value(testCallerKey).(CallerInfo); ok {
-		return caller, true
+	// Check for test-injected caller (only available in tests)
+	if testCallerHook != nil {
+		if caller, ok := testCallerHook(ctx); ok {
+			return caller, true
+		}
 	}
 	// Fail closed: return zero value and false to indicate no credentials
 	return CallerInfo{}, false
-}
-
-// ContextWithCaller creates a context with injected caller credentials for testing.
-func ContextWithCaller(ctx context.Context, uid, gid uint32) context.Context {
-	return context.WithValue(ctx, testCallerKey, CallerInfo{Uid: uid, Gid: gid})
 }
 
 // IsRoot returns true if the caller is root (uid 0).
