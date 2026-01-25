@@ -73,6 +73,8 @@ jobs:
         run: |
           gotestsum --junitfile integration-results.xml -- \
             -tags=integration \
+            -coverprofile=integration-coverage.out \
+            -covermode=atomic \
             -timeout=30m \
             -v \
             ./...
@@ -83,3 +85,10 @@ jobs:
         with:
           name: integration-test-results
           path: integration-results.xml
+
+      - name: Upload integration coverage for merge
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-coverage
+          path: integration-coverage.out

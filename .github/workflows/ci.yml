@@ -45,11 +45,16 @@ jobs:
         with:
           name: test-results
           path: |
-            coverage.out
             coverage.html
             coverage-summary.txt
             test-results.xml
             test-results-race.xml
+
+      - name: Upload unit coverage for merge
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-coverage
+          path: coverage.out
 
   lint:
     name: Lint

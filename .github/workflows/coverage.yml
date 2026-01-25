@@ -1,19 +1,22 @@
 name: Coverage
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI", "Integration Tests"]
     branches: [main]
-  pull_request:
-    branches: [main]
+    types: [completed]
 
 permissions:
   contents: write
   pull-requests: write
+  actions: read
 
 jobs:
   coverage:
-    name: Test Coverage
+    name: Merge Coverage
     runs-on: ubuntu-latest
+    # Only run on successful workflow completions on main branch
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,101 +33,89 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.0
+      - name: Download unit coverage artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          branch: main
+          name: unit-coverage
+          path: ./coverage-artifacts
+        continue-on-error: true
 
-      - name: Run tests with coverage
-        run: gotestsum --junitfile test-results.xml --jsonfile test-results.json -- -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Download integration coverage artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: integration.yml
+          branch: main
+          name: integration-coverage
+          path: ./coverage-artifacts
+        continue-on-error: true
+
+      - name: List downloaded artifacts
+        run: ls -la ./coverage-artifacts/ || echo "No artifacts downloaded"
+
+      - name: Install gocovmerge
+        run: go install github.com/wadey/gocovmerge@latest
+
+      - name: Merge coverage profiles
+        id: merge
+        run: |
+          # Check what coverage files we have
+          UNIT_COV=""
+          INT_COV=""
+
+          if [ -f "./coverage-artifacts/coverage.out" ]; then
+            UNIT_COV="./coverage-artifacts/coverage.out"
+            echo "Found unit coverage"
+          fi
+
+          if [ -f "./coverage-artifacts/integration-coverage.out" ]; then
+            INT_COV="./coverage-artifacts/integration-coverage.out"
+            echo "Found integration coverage"
+          fi
+
+          # Merge available coverage files
+          if [ -n "$UNIT_COV" ] && [ -n "$INT_COV" ]; then
+            echo "Merging unit and integration coverage"
+            gocovmerge "$UNIT_COV" "$INT_COV" > merged-coverage.out
+          elif [ -n "$UNIT_COV" ]; then
+            echo "Using unit coverage only"
+            cp "$UNIT_COV" merged-coverage.out
+          elif [ -n "$INT_COV" ]; then
+            echo "Using integration coverage only"
+            cp "$INT_COV" merged-coverage.out
+          else
+            echo "No coverage files found"
+            exit 1
+          fi
+
+          echo "merged=true" >> $GITHUB_OUTPUT
 
       - name: Generate coverage reports
         id: coverage
         run: |
           # Generate function coverage summary
-          go tool cover -func=coverage.out | tee coverage-summary.txt
+          go tool cover -func=merged-coverage.out | tee coverage-summary.txt
 
           # Extract total coverage percentage
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          COVERAGE=$(go tool cover -func=merged-coverage.out | grep total | awk '{print $3}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
           echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
 
           # Generate HTML report
-          go tool cover -html=coverage.out -o coverage.html
+          go tool cover -html=merged-coverage.out -o coverage.html
 
-          # Extract test counts from gotestsum JSON output (only count test-level events, not package-level)
-          TESTS_PASSED=$(jq -s '[.[] | select(.Action=="pass" and .Test != null and .Test != "")] | length' test-results.json)
-          TESTS_FAILED=$(jq -s '[.[] | select(.Action=="fail" and .Test != null and .Test != "")] | length' test-results.json)
-          TESTS_SKIPPED=$(jq -s '[.[] | select(.Action=="skip" and .Test != null and .Test != "")] | length' test-results.json)
-
-          # Generate JSON for badge and tracking (includes test stats)
+          # Generate JSON for badge and tracking
           cat > coverage.json << EOF
           {
             "coverage": ${COVERAGE},
-            "tests_passed": ${TESTS_PASSED},
-            "tests_failed": ${TESTS_FAILED},
-            "tests_skipped": ${TESTS_SKIPPED},
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "commit": "${GITHUB_SHA}"
+            "commit": "${GITHUB_SHA}",
+            "trigger_workflow": "${{ github.event.workflow_run.name }}"
           }
           EOF
 
-          echo "tests_passed=${TESTS_PASSED}" >> $GITHUB_OUTPUT
-          echo "tests_failed=${TESTS_FAILED}" >> $GITHUB_OUTPUT
-          echo "tests_skipped=${TESTS_SKIPPED}" >> $GITHUB_OUTPUT
-
-      - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: actions/github-script@v8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('coverage-summary.txt', 'utf8');
-            const coverage = '${{ steps.coverage.outputs.coverage }}';
-
-            // Find existing coverage comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const coverageComment = comments.find(c =>
-              c.user.login === 'github-actions[bot]' &&
-              c.body.includes('## Test Coverage Report')
-            );
-
-            const body = `## Test Coverage Report
-
-            **Total Coverage: ${coverage}%**
-
-            <details>
-            <summary>Coverage by function</summary>
-
-            \`\`\`
-            ${summary}
-            \`\`\`
-
-            </details>`;
-
-            if (coverageComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: coverageComment.id,
-                body: body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-            }
-
       - name: Publish coverage to gh-pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           # Validate that BENCHMARK_PAT was configured
           if [ "${{ secrets.BENCHMARK_PAT }}" = "" ]; then
@@ -136,13 +127,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Save coverage and test files
+          # Save coverage files
           mkdir -p /tmp/coverage
           cp coverage.html /tmp/coverage/
           cp coverage.json /tmp/coverage/
           cp coverage-summary.txt /tmp/coverage/
-          cp test-results.xml /tmp/coverage/
-          cp test-results.json /tmp/coverage/
+          cp merged-coverage.out /tmp/coverage/
 
           # Switch to gh-pages branch
           git fetch origin gh-pages
@@ -155,8 +145,7 @@ jobs:
           cp /tmp/coverage/coverage.html coverage/index.html
           cp /tmp/coverage/coverage.json coverage/
           cp /tmp/coverage/coverage-summary.txt coverage/
-          cp /tmp/coverage/test-results.xml coverage/
-          cp /tmp/coverage/test-results.json coverage/
+          cp /tmp/coverage/merged-coverage.out coverage/coverage.out
 
           # Commit and push
           git add coverage/
