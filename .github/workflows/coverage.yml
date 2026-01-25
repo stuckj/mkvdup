@@ -1,134 +1,121 @@
 name: Coverage
 
 on:
-  workflow_run:
-    workflows: ["CI", "Integration Tests"]
-    types: [completed]
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_cache:
+        description: 'Skip cache and regenerate testdata'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: write
   pull-requests: write
-  actions: read
+  actions: write
 
 jobs:
   coverage:
-    name: Merge Coverage
+    name: Full Coverage
     runs-on: ubuntu-latest
-    # Only run on successful workflow completions
-    if: github.event.workflow_run.conclusion == 'success'
     steps:
-      # No checkout of untrusted code - we only need Go and the coverage artifacts
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: '1.24'
 
-      - name: Download unit coverage artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: ci.yml
-          commit: ${{ github.event.workflow_run.head_sha }}
-          name: unit-coverage
-          path: ./coverage-artifacts
-        continue-on-error: true
-
-      - name: Download integration coverage artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: integration.yml
-          commit: ${{ github.event.workflow_run.head_sha }}
-          name: integration-coverage
-          path: ./coverage-artifacts
-        continue-on-error: true
-
-      - name: List downloaded artifacts
-        run: ls -la ./coverage-artifacts/ || echo "No artifacts downloaded"
-
-      - name: Install gocovmerge
-        run: go install github.com/wadey/gocovmerge@latest
-
-      - name: Merge coverage profiles
-        id: merge
+      - name: Install dependencies
         run: |
-          # Check what coverage files we have
-          UNIT_COV=""
-          INT_COV=""
+          sudo apt-get update
+          sudo apt-get install -y libfuse-dev fuse3 wget ffmpeg
 
-          if [ -f "./coverage-artifacts/coverage.out" ]; then
-            UNIT_COV="./coverage-artifacts/coverage.out"
-            echo "Found unit coverage"
-          fi
+      - name: Install tools
+        run: |
+          go install gotest.tools/gotestsum@v1.12.0
+          go install github.com/wadey/gocovmerge@latest
 
-          if [ -f "./coverage-artifacts/integration-coverage.out" ]; then
-            INT_COV="./coverage-artifacts/integration-coverage.out"
-            echo "Found integration coverage"
-          fi
+      # ========== UNIT TESTS (fail fast) ==========
+      - name: Run unit tests with coverage
+        run: |
+          gotestsum --junitfile unit-results.xml -- \
+            -coverprofile=unit-coverage.out \
+            -covermode=atomic \
+            ./...
 
-          # Merge available coverage files
-          if [ -n "$UNIT_COV" ] && [ -n "$INT_COV" ]; then
-            echo "Merging unit and integration coverage"
-            echo "coverage_type=merged" >> $GITHUB_OUTPUT
-            gocovmerge "$UNIT_COV" "$INT_COV" > merged-coverage.out
-          elif [ -n "$UNIT_COV" ]; then
-            echo "Using unit coverage only"
-            echo "coverage_type=unit" >> $GITHUB_OUTPUT
-            cp "$UNIT_COV" merged-coverage.out
-          elif [ -n "$INT_COV" ]; then
-            echo "Using integration coverage only"
-            echo "coverage_type=integration" >> $GITHUB_OUTPUT
-            cp "$INT_COV" merged-coverage.out
-          else
-            echo "No coverage files found"
-            exit 1
-          fi
+      # ========== INTEGRATION TEST SETUP ==========
+      - name: Restore testdata cache
+        id: cache-testdata
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Delete existing cache (skip_cache only)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_cache && steps.cache-testdata.outputs.cache-hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08 --repo ${{ github.repository }} || true
+
+      - name: Generate testdata
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
+        run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
+
+      - name: Save testdata cache
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Setup FUSE permissions
+        run: |
+          sudo modprobe fuse
+          sudo chmod 666 /dev/fuse
+
+      # ========== INTEGRATION TESTS ==========
+      - name: Run integration tests with coverage
+        env:
+          MKVDUP_TESTDATA: /tmp/mkvdup-testdata
+        run: |
+          gotestsum --junitfile integration-results.xml -- \
+            -tags=integration \
+            -coverprofile=integration-coverage.out \
+            -covermode=atomic \
+            -timeout=30m \
+            ./...
+
+      # ========== MERGE COVERAGE ==========
+      - name: Merge coverage profiles
+        run: gocovmerge unit-coverage.out integration-coverage.out > merged-coverage.out
 
       - name: Generate coverage reports
         id: coverage
         run: |
-          # Generate function coverage summary
           go tool cover -func=merged-coverage.out | tee coverage-summary.txt
-
-          # Extract total coverage percentage
           COVERAGE=$(go tool cover -func=merged-coverage.out | grep total | awk '{print $3}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
           echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
-
-          # Generate HTML report
           go tool cover -html=merged-coverage.out -o coverage.html
 
-          # Generate JSON for badge and tracking
           cat > coverage.json << EOF
           {
             "coverage": ${COVERAGE},
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "commit": "${{ github.event.workflow_run.head_sha }}",
-            "trigger_workflow": "${{ github.event.workflow_run.name }}",
-            "coverage_type": "${{ steps.merge.outputs.coverage_type }}"
+            "commit": "${GITHUB_SHA}"
           }
           EOF
 
-      - name: Find associated PR
-        id: find-pr
-        if: github.event.workflow_run.head_branch != 'main'
-        uses: actions/github-script@v8
-        env:
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        with:
-          script: |
-            const prs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${process.env.HEAD_BRANCH}`,
-              state: 'open'
-            });
-            if (prs.data.length > 0) {
-              core.setOutput('pr_number', prs.data[0].number);
-              return prs.data[0].number;
-            }
-            return '';
-
       - name: Comment coverage on PR
-        if: steps.find-pr.outputs.pr_number
+        if: github.event_name == 'pull_request'
         continue-on-error: true
         uses: actions/github-script@v8
         with:
@@ -137,21 +124,11 @@ jobs:
             const fs = require('fs');
             const summary = fs.readFileSync('coverage-summary.txt', 'utf8');
             const coverage = '${{ steps.coverage.outputs.coverage }}';
-            const coverageType = '${{ steps.merge.outputs.coverage_type }}';
-            const prNumber = ${{ steps.find-pr.outputs.pr_number }};
 
-            let typeNote = '';
-            if (coverageType === 'unit') {
-              typeNote = '\n\n*Note: Integration coverage not yet available for this commit.*';
-            } else if (coverageType === 'integration') {
-              typeNote = '\n\n*Note: Unit coverage not yet available for this commit.*';
-            }
-
-            // Find existing coverage comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: prNumber,
+              issue_number: context.issue.number,
             });
 
             const coverageComment = comments.find(c =>
@@ -161,7 +138,7 @@ jobs:
 
             const body = `## Test Coverage Report
 
-            **Total Coverage: ${coverage}%**${typeNote}
+            **Total Coverage: ${coverage}%** (unit + integration)
 
             <details>
             <summary>Coverage by function</summary>
@@ -183,52 +160,50 @@ jobs:
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: prNumber,
+                issue_number: context.issue.number,
                 body: body
               });
             }
 
-      - name: Upload coverage artifacts
+      - name: Upload test results
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: coverage-report
+          name: test-results
           path: |
+            unit-results.xml
+            integration-results.xml
             coverage.html
             coverage.json
             coverage-summary.txt
-            merged-coverage.out
 
-  publish:
-    name: Publish to gh-pages
-    runs-on: ubuntu-latest
-    needs: coverage
-    # Only publish on main branch
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
-    steps:
-      # Checkout gh-pages branch only (trusted code)
-      - uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          token: ${{ secrets.BENCHMARK_PAT }}
-
-      - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-          path: ./coverage-report
-
-      - name: Update coverage files
+      - name: Publish coverage to gh-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          BENCHMARK_PAT: ${{ secrets.BENCHMARK_PAT }}
         run: |
-          mkdir -p coverage
-          cp coverage-report/coverage.html coverage/index.html
-          cp coverage-report/coverage.json coverage/
-          cp coverage-report/coverage-summary.txt coverage/
-          cp coverage-report/merged-coverage.out coverage/coverage.out
+          if [ -z "$BENCHMARK_PAT" ]; then
+            echo "WARNING: BENCHMARK_PAT not configured. Skipping gh-pages publish."
+            exit 0
+          fi
 
-      - name: Commit and push
-        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${BENCHMARK_PAT}@github.com/${{ github.repository }}.git"
+
+          mkdir -p /tmp/coverage
+          cp coverage.html /tmp/coverage/
+          cp coverage.json /tmp/coverage/
+          cp coverage-summary.txt /tmp/coverage/
+
+          git fetch origin gh-pages
+          git checkout gh-pages
+
+          mkdir -p coverage
+          cp /tmp/coverage/coverage.html coverage/index.html
+          cp /tmp/coverage/coverage.json coverage/
+          cp /tmp/coverage/coverage-summary.txt coverage/
+
           git add coverage/
           git diff --staged --quiet || git commit -m "Update coverage report [skip ci]"
           git pull --rebase origin gh-pages
