@@ -614,10 +614,8 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 	node.mu.RLock()
 	defer node.mu.RUnlock()
 
-	// Add this directory (skip root which has empty path)
-	if node.path != "" {
-		dirs[node.path] = true
-	}
+	// Add this directory (including root with empty path)
+	dirs[node.path] = true
 
 	// Add files
 	for name := range node.files {

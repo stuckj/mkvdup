@@ -1534,7 +1534,9 @@ func TestMKVFSNode_Open_PermissionDenied(t *testing.T) {
 	// Set file owned by user 1000 with mode 0600 (owner read/write only)
 	uid := uint32(1000)
 	mode := uint32(0600)
-	_ = store.SetFilePerms("test.mkv", &uid, nil, &mode)
+	if err := store.SetFilePerms("test.mkv", &uid, nil, &mode); err != nil {
+		t.Fatalf("SetFilePerms failed: %v", err)
+	}
 
 	node := &MKVFSNode{
 		file:      &MKVFile{Name: "test.mkv", Size: 1000},

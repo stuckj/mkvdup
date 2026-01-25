@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   integration:
@@ -40,12 +41,19 @@ jobs:
           path: /tmp/mkvdup-testdata
           key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
 
+      - name: Delete existing cache (skip_cache only)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_cache && steps.cache-testdata.outputs.cache-hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08 --repo ${{ github.repository }} || true
+
       - name: Generate testdata
         if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
         run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
 
       - name: Save testdata cache
-        if: steps.cache-testdata.outputs.cache-hit != 'true'
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
         uses: actions/cache/save@v4
         with:
           path: /tmp/mkvdup-testdata
