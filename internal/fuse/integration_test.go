@@ -1045,7 +1045,7 @@ func TestFUSE_ChmodFile(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  currentUID,
 			FileGID:  currentGID,
 			FileMode: 0444,
@@ -1135,7 +1135,7 @@ func TestFUSE_ChmodDirectory(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  currentUID,
 			FileGID:  currentGID,
 			FileMode: 0444,
@@ -1295,7 +1295,7 @@ func TestFUSE_PermissionDenied(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  0,    // root
 			FileGID:  0,    // root
 			FileMode: 0600, // owner read/write only
@@ -1365,7 +1365,7 @@ func TestFUSE_PermissionAllowed_OwnerAccess(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  uid,
 			FileGID:  gid,
 			FileMode: 0400, // owner read only
@@ -1444,7 +1444,7 @@ func TestFUSE_PermissionAllowed_GroupAccess(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  0,    // different owner (root)
 			FileGID:  gid,  // current user's primary group
 			FileMode: 0040, // group read only (no owner, no other)
@@ -1541,7 +1541,7 @@ func TestFUSE_PermissionAllowed_SupplementaryGroupAccess(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  0,                        // different owner (root)
 			FileGID:  uint32(supplementaryGid), // supplementary group
 			FileMode: 0040,                     // group read only
@@ -1638,7 +1638,7 @@ func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  0,            // different owner (root)
 			FileGID:  nonMemberGid, // group we're not a member of
 			FileMode: 0040,         // group read only (no owner, no other)
@@ -1709,7 +1709,7 @@ func TestFUSE_RootBypassesPermissions(t *testing.T) {
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
-		Defaults: fusepkg.Defaults{
+		Defaults: &fusepkg.Defaults{
 			FileUID:  1000, // not root
 			FileGID:  1000, // not root
 			FileMode: 0000, // no permissions at all
