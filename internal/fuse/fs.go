@@ -125,16 +125,20 @@ func NewMKVFSWithPermissions(configPaths []string, verbose bool, permStore *Perm
 type MKVFSOptions struct {
 	Verbose         bool
 	PermissionsPath string
-	Defaults        Defaults
+	// Defaults holds the default permissions to use when a PermissionStore is configured.
+	// If HasDefaults is false and Defaults is the zero value, DefaultPerms() is used.
+	// Set HasDefaults to true to use the Defaults value as-is (even if it's all zeros).
+	Defaults    Defaults
+	HasDefaults bool
 }
 
 // NewMKVFSWithOptions creates a new MKVFS root with the given options.
 func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, error) {
 	var permStore *PermissionStore
 	if opts.PermissionsPath != "" {
-		// Use sensible defaults if Defaults is zero value
 		defaults := opts.Defaults
-		if defaults == (Defaults{}) {
+		// Use sensible defaults if Defaults is zero value and not explicitly set
+		if !opts.HasDefaults && defaults == (Defaults{}) {
 			defaults = DefaultPerms()
 		}
 		permStore = NewPermissionStore(opts.PermissionsPath, defaults, opts.Verbose)

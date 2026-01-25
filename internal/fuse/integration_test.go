@@ -633,6 +633,7 @@ func TestFUSEMountUnmount_Integration(t *testing.T) {
 			MountOptions: fuse.MountOptions{
 				AllowOther: false,
 				Debug:      false,
+				Options:    []string{"default_permissions"},
 			},
 		})
 		if err != nil {
