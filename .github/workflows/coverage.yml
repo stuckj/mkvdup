@@ -5,20 +5,27 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_cache:
+        description: 'Skip cache and regenerate testdata'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   coverage:
-    name: Test Coverage
+    name: Full Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.BENCHMARK_PAT }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -28,48 +35,87 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse-dev
+          sudo apt-get install -y libfuse-dev fuse3 wget ffmpeg
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.0
+      - name: Install tools
+        run: |
+          go install gotest.tools/gotestsum@v1.12.0
+          go install github.com/wadey/gocovmerge@latest
 
-      - name: Run tests with coverage
-        run: gotestsum --junitfile test-results.xml --jsonfile test-results.json -- -coverprofile=coverage.out -covermode=atomic ./...
+      # ========== UNIT TESTS (fail fast) ==========
+      - name: Run unit tests with coverage
+        run: |
+          gotestsum --junitfile unit-results.xml -- \
+            -coverprofile=unit-coverage.out \
+            -covermode=atomic \
+            ./...
+
+      # ========== INTEGRATION TEST SETUP ==========
+      - name: Restore testdata cache
+        id: cache-testdata
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Delete existing cache (skip_cache only)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_cache && steps.cache-testdata.outputs.cache-hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08 --repo ${{ github.repository }} || true
+
+      - name: Generate testdata
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
+        run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
+
+      - name: Save testdata cache
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Setup FUSE permissions
+        run: |
+          sudo modprobe fuse
+          sudo chmod 666 /dev/fuse
+
+      # ========== INTEGRATION TESTS ==========
+      # Note: This also runs unit tests because -tags=integration includes all test files.
+      # This is intentional - coverage merge will deduplicate, and re-running unit tests
+      # ensures they pass with the integration build tag. The extra time is minimal.
+      - name: Run integration tests with coverage
+        env:
+          MKVDUP_TESTDATA: /tmp/mkvdup-testdata
+        run: |
+          gotestsum --junitfile integration-results.xml -- \
+            -tags=integration \
+            -coverprofile=integration-coverage.out \
+            -covermode=atomic \
+            -timeout=30m \
+            ./...
+
+      # ========== MERGE COVERAGE ==========
+      - name: Merge coverage profiles
+        run: gocovmerge unit-coverage.out integration-coverage.out > merged-coverage.out
 
       - name: Generate coverage reports
         id: coverage
         run: |
-          # Generate function coverage summary
-          go tool cover -func=coverage.out | tee coverage-summary.txt
-
-          # Extract total coverage percentage
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          go tool cover -func=merged-coverage.out | tee coverage-summary.txt
+          COVERAGE=$(go tool cover -func=merged-coverage.out | grep total | awk '{print $3}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
           echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
+          go tool cover -html=merged-coverage.out -o coverage.html
 
-          # Generate HTML report
-          go tool cover -html=coverage.out -o coverage.html
-
-          # Extract test counts from gotestsum JSON output (only count test-level events, not package-level)
-          TESTS_PASSED=$(jq -s '[.[] | select(.Action=="pass" and .Test != null and .Test != "")] | length' test-results.json)
-          TESTS_FAILED=$(jq -s '[.[] | select(.Action=="fail" and .Test != null and .Test != "")] | length' test-results.json)
-          TESTS_SKIPPED=$(jq -s '[.[] | select(.Action=="skip" and .Test != null and .Test != "")] | length' test-results.json)
-
-          # Generate JSON for badge and tracking (includes test stats)
           cat > coverage.json << EOF
           {
             "coverage": ${COVERAGE},
-            "tests_passed": ${TESTS_PASSED},
-            "tests_failed": ${TESTS_FAILED},
-            "tests_skipped": ${TESTS_SKIPPED},
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "commit": "${GITHUB_SHA}"
           }
           EOF
-
-          echo "tests_passed=${TESTS_PASSED}" >> $GITHUB_OUTPUT
-          echo "tests_failed=${TESTS_FAILED}" >> $GITHUB_OUTPUT
-          echo "tests_skipped=${TESTS_SKIPPED}" >> $GITHUB_OUTPUT
 
       - name: Comment coverage on PR
         if: github.event_name == 'pull_request'
@@ -82,7 +128,6 @@ jobs:
             const summary = fs.readFileSync('coverage-summary.txt', 'utf8');
             const coverage = '${{ steps.coverage.outputs.coverage }}';
 
-            // Find existing coverage comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -96,7 +141,7 @@ jobs:
 
             const body = `## Test Coverage Report
 
-            **Total Coverage: ${coverage}%**
+            **Total Coverage: ${coverage}%** (unit + integration)
 
             <details>
             <summary>Coverage by function</summary>
@@ -123,42 +168,45 @@ jobs:
               });
             }
 
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results
+          path: |
+            unit-results.xml
+            integration-results.xml
+            coverage.html
+            coverage.json
+            coverage-summary.txt
+
       - name: Publish coverage to gh-pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          BENCHMARK_PAT: ${{ secrets.BENCHMARK_PAT }}
         run: |
-          # Validate that BENCHMARK_PAT was configured
-          if [ "${{ secrets.BENCHMARK_PAT }}" = "" ]; then
-            echo "WARNING: BENCHMARK_PAT secret not configured. Skipping gh-pages publish."
+          if [ -z "$BENCHMARK_PAT" ]; then
+            echo "WARNING: BENCHMARK_PAT not configured. Skipping gh-pages publish."
             exit 0
           fi
 
-          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${BENCHMARK_PAT}@github.com/${{ github.repository }}.git"
 
-          # Save coverage and test files
           mkdir -p /tmp/coverage
           cp coverage.html /tmp/coverage/
           cp coverage.json /tmp/coverage/
           cp coverage-summary.txt /tmp/coverage/
-          cp test-results.xml /tmp/coverage/
-          cp test-results.json /tmp/coverage/
 
-          # Switch to gh-pages branch
           git fetch origin gh-pages
           git checkout gh-pages
 
-          # Create coverage directory if it doesn't exist
           mkdir -p coverage
-
-          # Copy coverage files
           cp /tmp/coverage/coverage.html coverage/index.html
           cp /tmp/coverage/coverage.json coverage/
           cp /tmp/coverage/coverage-summary.txt coverage/
-          cp /tmp/coverage/test-results.xml coverage/
-          cp /tmp/coverage/test-results.json coverage/
 
-          # Commit and push
           git add coverage/
           git diff --staged --quiet || git commit -m "Update coverage report [skip ci]"
           git pull --rebase origin gh-pages

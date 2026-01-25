@@ -189,7 +189,8 @@ func TestMKVFSRoot_Readdir(t *testing.T) {
 		},
 	}
 
-	stream, errno := root.Readdir(context.Background())
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	stream, errno := root.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir returned errno %d", errno)
 	}
@@ -240,8 +241,9 @@ func TestMKVFSRoot_Lookup_NotFound(t *testing.T) {
 		files: map[string]*MKVFile{},
 	}
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.EntryOut
-	_, errno := root.Lookup(context.Background(), "nonexistent.mkv", &out)
+	_, errno := root.Lookup(ctx, "nonexistent.mkv", &out)
 	if errno != syscall.ENOENT {
 		t.Errorf("expected ENOENT, got %d", errno)
 	}
@@ -283,8 +285,9 @@ func TestMKVFSNode_Read(t *testing.T) {
 	node := &MKVFSNode{file: file}
 
 	// Read full content
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, len(testData))
-	result, errno := node.Read(context.Background(), nil, buf, 0)
+	result, errno := node.Read(ctx, nil, buf, 0)
 	if errno != 0 {
 		t.Fatalf("Read returned errno %d", errno)
 	}
@@ -310,8 +313,9 @@ func TestMKVFSNode_Read_Partial(t *testing.T) {
 	node := &MKVFSNode{file: file}
 
 	// Read from offset
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, 5)
-	result, errno := node.Read(context.Background(), nil, buf, 7)
+	result, errno := node.Read(ctx, nil, buf, 7)
 	if errno != 0 {
 		t.Fatalf("Read returned errno %d", errno)
 	}
@@ -337,8 +341,9 @@ func TestMKVFSNode_Read_BeyondEOF(t *testing.T) {
 	node := &MKVFSNode{file: file}
 
 	// Read at offset beyond file size
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, 10)
-	result, errno := node.Read(context.Background(), nil, buf, 100)
+	result, errno := node.Read(ctx, nil, buf, 100)
 	if errno != 0 {
 		t.Fatalf("Read returned errno %d", errno)
 	}
@@ -357,8 +362,9 @@ func TestMKVFSNode_Read_NoReader(t *testing.T) {
 	}
 	node := &MKVFSNode{file: file}
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, 10)
-	_, errno := node.Read(context.Background(), nil, buf, 0)
+	_, errno := node.Read(ctx, nil, buf, 0)
 	if errno != syscall.EIO {
 		t.Errorf("expected EIO, got %d", errno)
 	}
@@ -386,7 +392,8 @@ func TestMKVFSNode_Open(t *testing.T) {
 	}
 	node := &MKVFSNode{file: file}
 
-	_, _, errno := node.Open(context.Background(), 0)
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	_, _, errno := node.Open(ctx, 0)
 	if errno != 0 {
 		t.Fatalf("Open returned errno %d", errno)
 	}
@@ -418,7 +425,8 @@ func TestMKVFSNode_Open_InitError(t *testing.T) {
 	}
 	node := &MKVFSNode{file: file}
 
-	_, _, errno := node.Open(context.Background(), 0)
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	_, _, errno := node.Open(ctx, 0)
 	if errno != syscall.EIO {
 		t.Errorf("expected EIO, got %d", errno)
 	}
@@ -789,7 +797,8 @@ func TestMKVFSDirNode_Readdir(t *testing.T) {
 		},
 	}
 
-	stream, errno := dir.Readdir(context.Background())
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	stream, errno := dir.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir returned error: %v", errno)
 	}
@@ -1183,7 +1192,8 @@ func TestMKVFSDirNode_Readdir_Sorted(t *testing.T) {
 		},
 	}
 
-	stream, errno := dir.Readdir(context.Background())
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	stream, errno := dir.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir returned error: %v", errno)
 	}
@@ -1341,8 +1351,9 @@ func TestMKVFSNode_Setattr_NoPermStore(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0644
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := node.Setattr(context.Background(), nil, in, &out)
+	errno := node.Setattr(ctx, nil, in, &out)
 
 	// Should return EROFS when no permission store
 	if errno != syscall.EROFS {
@@ -1360,8 +1371,9 @@ func TestMKVFSNode_Setattr_Chmod(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0644
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := node.Setattr(context.Background(), nil, in, &out)
+	errno := node.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1390,8 +1402,9 @@ func TestMKVFSNode_Setattr_Chown(t *testing.T) {
 	in.Uid = 1000
 	in.Gid = 1001
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := node.Setattr(context.Background(), nil, in, &out)
+	errno := node.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1427,8 +1440,9 @@ func TestMKVFSDirNode_Setattr_NoPermStore(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0755
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := dir.Setattr(context.Background(), nil, in, &out)
+	errno := dir.Setattr(ctx, nil, in, &out)
 
 	// Should return EROFS when no permission store
 	if errno != syscall.EROFS {
@@ -1451,8 +1465,9 @@ func TestMKVFSDirNode_Setattr_Chmod(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0755
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := dir.Setattr(context.Background(), nil, in, &out)
+	errno := dir.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1486,8 +1501,9 @@ func TestMKVFSDirNode_Setattr_Chown(t *testing.T) {
 	in.Uid = 1000
 	in.Gid = 1001
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := dir.Setattr(context.Background(), nil, in, &out)
+	errno := dir.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1507,5 +1523,288 @@ func TestMKVFSDirNode_Setattr_Chown(t *testing.T) {
 	}
 	if gid != 1001 {
 		t.Errorf("expected stored GID 1001, got %d", gid)
+	}
+}
+
+// --- Permission Enforcement Tests ---
+// Note: Read/write/execute access checks are now handled by the kernel via the
+// default_permissions mount option. These tests cover ownership changes (chown/chmod)
+// which are still implemented in our code.
+
+func TestMKVFSNode_Setattr_ChownUIDDenied(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner (non-root) trying to chown to different user - should get EPERM
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_UID
+	in.Uid = 2000
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
+	}
+}
+
+func TestMKVFSNode_Setattr_RootCanChownUID(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Root can chown UID
+	ctx := ContextWithCaller(context.Background(), 0, 0)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_UID
+	in.Uid = 2000
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != 0 {
+		t.Errorf("Setattr() = %v, want 0", errno)
+	}
+
+	// Verify the change
+	gotUID, _, _ := store.GetFilePerms("test.mkv")
+	if gotUID != 2000 {
+		t.Errorf("UID = %d, want 2000", gotUID)
+	}
+}
+
+func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	gid := uint32(2000) // File starts with GID 2000
+	_ = store.SetFilePerms("test.mkv", &uid, &gid, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner can change GID to their own GID (Unix semantics)
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_GID
+	in.Gid = 1000 // Change to caller's own GID
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != 0 {
+		t.Errorf("Setattr() = %v, want 0", errno)
+	}
+
+	// Verify the change
+	_, gotGID, _ := store.GetFilePerms("test.mkv")
+	if gotGID != 1000 {
+		t.Errorf("GID = %d, want 1000", gotGID)
+	}
+}
+
+func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner cannot change GID to an arbitrary group they don't belong to
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_GID
+	in.Gid = 2000 // Arbitrary GID, not caller's GID
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
+	}
+}
+
+func TestMKVFSNode_Setattr_NonOwnerCannotChownGID(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Non-owner cannot change GID
+	ctx := ContextWithCaller(context.Background(), 2000, 2000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_GID
+	in.Gid = 3000
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
+	}
+}
+
+func TestMKVFSNode_Setattr_ChmodDenied(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Non-owner trying to chmod - should get EPERM
+	ctx := ContextWithCaller(context.Background(), 2000, 2000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0777
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
+	}
+}
+
+func TestMKVFSNode_Setattr_OwnerCanChmod(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner can chmod
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0640
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != 0 {
+		t.Errorf("Setattr() = %v, want 0", errno)
+	}
+
+	// Verify the change
+	_, _, gotMode := store.GetFilePerms("test.mkv")
+	if gotMode != 0640 {
+		t.Errorf("Mode = %o, want 0640", gotMode)
+	}
+}
+
+func TestMKVFSDirNode_Setattr_ChownDenied(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetDirPerms("Movies", &uid, nil, nil)
+
+	dir := &MKVFSDirNode{
+		path:      "Movies",
+		subdirs:   map[string]*MKVFSDirNode{},
+		permStore: store,
+	}
+
+	// Non-owner trying to chown - should get EPERM
+	ctx := ContextWithCaller(context.Background(), 2000, 2000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_UID
+	in.Uid = 3000
+	var out fuse.AttrOut
+
+	errno := dir.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
+	}
+}
+
+func TestMKVFSDirNode_Setattr_RootCanChown(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetDirPerms("Movies", &uid, nil, nil)
+
+	dir := &MKVFSDirNode{
+		path:      "Movies",
+		subdirs:   map[string]*MKVFSDirNode{},
+		permStore: store,
+	}
+
+	// Root can chown
+	ctx := ContextWithCaller(context.Background(), 0, 0)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_UID | fuse.FATTR_GID
+	in.Uid = 2000
+	in.Gid = 2000
+	var out fuse.AttrOut
+
+	errno := dir.Setattr(ctx, nil, in, &out)
+	if errno != 0 {
+		t.Errorf("Setattr() = %v, want 0", errno)
+	}
+
+	// Verify the change
+	gotUID, gotGID, _ := store.GetDirPerms("Movies")
+	if gotUID != 2000 {
+		t.Errorf("UID = %d, want 2000", gotUID)
+	}
+	if gotGID != 2000 {
+		t.Errorf("GID = %d, want 2000", gotGID)
+	}
+}
+
+func TestMKVFSDirNode_Setattr_ChmodDenied(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetDirPerms("Movies", &uid, nil, nil)
+
+	dir := &MKVFSDirNode{
+		path:      "Movies",
+		permStore: store,
+	}
+
+	// Non-owner trying to chmod - should get EPERM
+	ctx := ContextWithCaller(context.Background(), 2000, 2000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_MODE
+	in.Mode = 0777
+	var out fuse.AttrOut
+
+	errno := dir.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
 	}
 }

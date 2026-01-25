@@ -1,11 +1,33 @@
 package fuse
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 )
+
+// testCallerKey is used to inject caller credentials in tests.
+type testCallerKeyType struct{}
+
+var testCallerKey = testCallerKeyType{}
+
+func init() {
+	// Set up the test caller hook to allow ContextWithCaller to work
+	testCallerHook = func(ctx context.Context) (CallerInfo, bool) {
+		if caller, ok := ctx.Value(testCallerKey).(CallerInfo); ok {
+			return caller, true
+		}
+		return CallerInfo{}, false
+	}
+}
+
+// ContextWithCaller creates a context with injected caller credentials for testing.
+func ContextWithCaller(ctx context.Context, uid, gid uint32) context.Context {
+	return context.WithValue(ctx, testCallerKey, CallerInfo{Uid: uid, Gid: gid})
+}
 
 func TestNewPermissionStore(t *testing.T) {
 	defaults := DefaultPerms()
@@ -344,5 +366,150 @@ func TestPermissionStore_SaveCreatesDirectory(t *testing.T) {
 	// Verify file exists
 	if _, err := os.Stat(nestedPath); err != nil {
 		t.Errorf("Permissions file was not created: %v", err)
+	}
+}
+
+// --- Permission Checking Utility Tests ---
+
+func TestCallerInfo_IsRoot(t *testing.T) {
+	tests := []struct {
+		name   string
+		caller CallerInfo
+		want   bool
+	}{
+		{"root user", CallerInfo{Uid: 0, Gid: 0}, true},
+		{"root user with non-root group", CallerInfo{Uid: 0, Gid: 1000}, true},
+		{"non-root user", CallerInfo{Uid: 1000, Gid: 1000}, false},
+		{"user with gid 0", CallerInfo{Uid: 1000, Gid: 0}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.caller.IsRoot(); got != tt.want {
+				t.Errorf("CallerInfo.IsRoot() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetCaller(t *testing.T) {
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		wantUID uint32
+		wantGID uint32
+		wantOK  bool
+	}{
+		{"empty context fails closed", context.Background(), 0, 0, false},
+		{"injected caller", ContextWithCaller(context.Background(), 1000, 1000), 1000, 1000, true},
+		{"injected root", ContextWithCaller(context.Background(), 0, 0), 0, 0, true},
+		{"different uid and gid", ContextWithCaller(context.Background(), 1000, 2000), 1000, 2000, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := GetCaller(tt.ctx)
+			if ok != tt.wantOK {
+				t.Errorf("GetCaller() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && (got.Uid != tt.wantUID || got.Gid != tt.wantGID) {
+				t.Errorf("GetCaller() = {Uid: %d, Gid: %d}, want {Uid: %d, Gid: %d}",
+					got.Uid, got.Gid, tt.wantUID, tt.wantGID)
+			}
+		})
+	}
+}
+
+func TestContextWithCaller(t *testing.T) {
+	ctx := context.Background()
+	ctxWithCaller := ContextWithCaller(ctx, 1234, 5678)
+
+	caller, ok := GetCaller(ctxWithCaller)
+	if !ok {
+		t.Error("GetCaller returned ok=false for injected caller")
+	}
+	if caller.Uid != 1234 || caller.Gid != 5678 {
+		t.Errorf("ContextWithCaller created wrong caller: got {%d, %d}, want {1234, 5678}",
+			caller.Uid, caller.Gid)
+	}
+
+	// Original context should return ok=false (fail closed)
+	_, ok = GetCaller(ctx)
+	if ok {
+		t.Error("Original context should return ok=false, got ok=true")
+	}
+}
+
+func TestCheckChown(t *testing.T) {
+	uid := func(u uint32) *uint32 { return &u }
+	gid := func(g uint32) *uint32 { return &g }
+
+	tests := []struct {
+		name    string
+		caller  CallerInfo
+		fileUID uint32
+		fileGID uint32
+		newUID  *uint32
+		newGID  *uint32
+		want    syscall.Errno
+	}{
+		// Root can do anything
+		{"root can change UID", CallerInfo{0, 0}, 1000, 1000, uid(2000), nil, 0},
+		{"root can change GID", CallerInfo{0, 0}, 1000, 1000, nil, gid(2000), 0},
+		{"root can change both", CallerInfo{0, 0}, 1000, 1000, uid(2000), gid(2000), 0},
+
+		// Non-root UID changes
+		{"non-root cannot change UID to different user", CallerInfo{1000, 1000}, 1000, 1000, uid(2000), nil, syscall.EPERM},
+		{"non-root can set UID to same value", CallerInfo{1000, 1000}, 1000, 1000, uid(1000), nil, 0},
+		{"non-owner cannot change UID", CallerInfo{2000, 2000}, 1000, 1000, uid(2000), nil, syscall.EPERM},
+
+		// Non-root GID changes - owner can only change to their own GID
+		{"owner can change GID to own GID", CallerInfo{1000, 1000}, 1000, 2000, nil, gid(1000), 0},
+		{"owner cannot change GID to arbitrary GID", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
+		{"non-owner cannot change GID", CallerInfo{2000, 2000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
+
+		// No-op GID changes (setting to same value is always allowed)
+		{"non-owner can set GID to same value", CallerInfo{2000, 2000}, 1000, 1000, nil, gid(1000), 0},
+		{"anyone can set GID to same value", CallerInfo{3000, 3000}, 1000, 1000, nil, gid(1000), 0},
+
+		// Combined UID+GID changes
+		{"owner cannot change UID even with valid GID", CallerInfo{1000, 1000}, 1000, 1000, uid(2000), gid(1000), syscall.EPERM},
+
+		// Nil values (no change requested)
+		{"nil UID and GID always allowed", CallerInfo{2000, 2000}, 1000, 1000, nil, nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CheckChown(tt.caller, tt.fileUID, tt.fileGID, tt.newUID, tt.newGID)
+			if got != tt.want {
+				t.Errorf("CheckChown() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckChmod(t *testing.T) {
+	tests := []struct {
+		name    string
+		caller  CallerInfo
+		fileUID uint32
+		want    syscall.Errno
+	}{
+		// Root can chmod anything
+		{"root can chmod any file", CallerInfo{0, 0}, 1000, 0},
+		{"root can chmod root-owned file", CallerInfo{0, 0}, 0, 0},
+
+		// Owner can chmod
+		{"owner can chmod own file", CallerInfo{1000, 1000}, 1000, 0},
+
+		// Non-owner cannot chmod
+		{"non-owner cannot chmod", CallerInfo{2000, 2000}, 1000, syscall.EPERM},
+		{"same group but not owner cannot chmod", CallerInfo{2000, 1000}, 1000, syscall.EPERM},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CheckChmod(tt.caller, tt.fileUID)
+			if got != tt.want {
+				t.Errorf("CheckChmod() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

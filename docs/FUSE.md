@@ -156,6 +156,24 @@ kill -HUP $(pidof mkvdup)
 
 Virtual files and directories support `chmod` and `chown` operations. Permission metadata is stored in a separate YAML file, keeping `.mkvdup` files immutable while allowing customization.
 
+### Access Checking
+
+The filesystem uses the kernel's `default_permissions` mount option for access control. This means:
+
+- **Standard Unix semantics:** Permission checks match the behavior of real filesystems (ext4, XFS, btrfs, etc.)
+- **Supplementary groups:** The kernel properly checks all of a user's groups, not just their primary GID
+- **Root bypass:** UID 0 bypasses all permission checks (standard Unix behavior)
+
+Access is checked by the kernel based on the `uid`, `gid`, and `mode` reported for each file/directory. The filesystem reports these values from the permissions configuration.
+
+### Ownership Changes
+
+`chown` and `chmod` operations follow Unix semantics:
+
+- **chown UID:** Only root can change file ownership
+- **chown GID:** Root can change to any GID; file owner can only change to their own primary GID
+- **chmod:** Only root or the file owner can change permissions
+
 ### Permissions File Location
 
 **For root users - search order (first match wins):**

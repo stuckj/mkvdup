@@ -81,6 +81,7 @@ var _ fs.InodeEmbedder = (*MKVFSNode)(nil)
 var _ fs.InodeEmbedder = (*MKVFSDirNode)(nil)
 var _ fs.NodeReaddirer = (*MKVFSRoot)(nil)
 var _ fs.NodeLookuper = (*MKVFSRoot)(nil)
+var _ fs.NodeGetattrer = (*MKVFSRoot)(nil)
 var _ fs.NodeReaddirer = (*MKVFSDirNode)(nil)
 var _ fs.NodeLookuper = (*MKVFSDirNode)(nil)
 var _ fs.NodeGetattrer = (*MKVFSDirNode)(nil)
@@ -119,6 +120,33 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
 // NewMKVFSWithPermissions creates a new MKVFS root with a permission store.
 func NewMKVFSWithPermissions(configPaths []string, verbose bool, permStore *PermissionStore) (*MKVFSRoot, error) {
 	return NewMKVFSWithFactories(configPaths, verbose, &DefaultReaderFactory{}, &DefaultConfigReader{}, permStore)
+}
+
+// MKVFSOptions contains options for creating an MKVFS filesystem.
+type MKVFSOptions struct {
+	Verbose         bool
+	PermissionsPath string
+	// Defaults holds the default permissions to use when a PermissionStore is configured.
+	// If nil, DefaultPerms() is used. Set to a non-nil value to use specific defaults.
+	// Note: explicit-zero defaults only work when provided programmatically here;
+	// they are not persisted to or loaded from the permissions YAML file.
+	Defaults *Defaults
+}
+
+// NewMKVFSWithOptions creates a new MKVFS root with the given options.
+func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, error) {
+	var permStore *PermissionStore
+	if opts.PermissionsPath != "" {
+		defaults := DefaultPerms()
+		if opts.Defaults != nil {
+			defaults = *opts.Defaults
+		}
+		permStore = NewPermissionStore(opts.PermissionsPath, defaults, opts.Verbose)
+		if err := permStore.Load(); err != nil {
+			return nil, fmt.Errorf("load permissions: %w", err)
+		}
+	}
+	return NewMKVFSWithFactories(configPaths, opts.Verbose, &DefaultReaderFactory{}, &DefaultConfigReader{}, permStore)
 }
 
 // NewMKVFSWithFactories creates a new MKVFS root with custom factories.
@@ -220,11 +248,38 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 	return root, nil
 }
 
+// Getattr implements fs.NodeGetattrer - returns attributes for the root directory.
+// This ensures the root directory uses permissions from the permission store,
+// consistent with all subdirectories.
+func (r *MKVFSRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := time.Now()
+
+	uid, gid, mode := getDirPerms(r.permStore, "")
+
+	out.Mode = fuse.S_IFDIR | mode
+	out.Uid = uid
+	out.Gid = gid
+	out.Atime = uint64(now.Unix())
+	out.Mtime = uint64(now.Unix())
+	out.Ctime = uint64(now.Unix())
+	out.Nlink = 2
+	if r.rootDir != nil {
+		out.Nlink += uint32(len(r.rootDir.subdirs))
+	}
+	return 0
+}
+
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
 // Delegates to the directory tree for hierarchical listing.
 func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	// Permission checks are handled by the kernel via default_permissions mount option.
+	// This properly checks supplementary groups and matches real filesystem behavior.
+
 	if r.rootDir != nil {
-		return r.rootDir.Readdir(ctx)
+		return r.rootDir.readdirInternal(ctx)
 	}
 
 	// Fallback to flat listing if no directory tree (shouldn't happen)
@@ -251,6 +306,8 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 // Lookup implements fs.NodeLookuper - looks up a file or directory by name.
 // Uses the directory tree for hierarchical lookup.
 func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	// Permission checks are handled by the kernel via default_permissions mount option.
+
 	if r.rootDir != nil {
 		r.rootDir.mu.RLock()
 		defer r.rootDir.mu.RUnlock()
@@ -383,6 +440,20 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 		return syscall.EROFS
 	}
 
+	// Only UID, GID, and mode changes are supported. All other setattr operations
+	// (e.g. size truncation, atime/mtime updates) must fail on this read-only FS.
+	supportedMask := uint32(fuse.FATTR_UID | fuse.FATTR_GID | fuse.FATTR_MODE)
+	if in.Valid&^supportedMask != 0 {
+		return syscall.EROFS
+	}
+
+	// Get current permissions and caller
+	fileUID, fileGID, fileMode := getFilePerms(n.permStore, n.path)
+	caller, ok := GetCaller(ctx)
+	if !ok {
+		return syscall.EACCES
+	}
+
 	var newUID, newGID, newMode *uint32
 
 	// Check which fields are being changed
@@ -395,6 +466,37 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 	if in.Valid&fuse.FATTR_MODE != 0 {
 		mode := in.Mode & 0777 // Only permission bits
 		newMode = &mode
+	}
+
+	// Normalize no-op changes to nil to avoid unnecessary disk writes
+	if newUID != nil && *newUID == fileUID {
+		newUID = nil
+	}
+	if newGID != nil && *newGID == fileGID {
+		newGID = nil
+	}
+	if newMode != nil && *newMode == fileMode {
+		newMode = nil
+	}
+
+	// Permission checks for chown
+	if newUID != nil || newGID != nil {
+		if errno := CheckChown(caller, fileUID, fileGID, newUID, newGID); errno != 0 {
+			if n.verbose {
+				log.Printf("Setattr: chown permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+			}
+			return errno
+		}
+	}
+
+	// Permission checks for chmod
+	if newMode != nil {
+		if errno := CheckChmod(caller, fileUID); errno != 0 {
+			if n.verbose {
+				log.Printf("Setattr: chmod permission denied for %s (caller uid=%d)", n.path, caller.Uid)
+			}
+			return errno
+		}
 	}
 
 	// Update permission store
@@ -415,6 +517,16 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 
 // Open implements fs.NodeOpener - opens a file for reading.
 func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	// This is a read-only filesystem - reject any write access or operations
+	// that would modify the filesystem. Note: O_RDONLY|O_APPEND is a valid
+	// read-only open on Linux (positions at EOF), so we only check access mode.
+	accMode := flags & syscall.O_ACCMODE
+	if accMode != syscall.O_RDONLY || flags&(syscall.O_TRUNC|syscall.O_CREAT) != 0 {
+		return nil, 0, syscall.EROFS
+	}
+
+	// Permission checks are handled by the kernel via default_permissions mount option.
+
 	if n.verbose {
 		log.Printf("Open: %s", n.file.Name)
 	}
@@ -430,6 +542,8 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 
 // Read implements fs.NodeReader - reads data from the file.
 func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	// Permission checks are handled by the kernel via default_permissions mount option.
+
 	n.file.mu.RLock()
 	defer n.file.mu.RUnlock()
 
@@ -529,10 +643,8 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 	node.mu.RLock()
 	defer node.mu.RUnlock()
 
-	// Add this directory (skip root which has empty path)
-	if node.path != "" {
-		dirs[node.path] = true
-	}
+	// Add this directory (including root with empty path)
+	dirs[node.path] = true
 
 	// Add files
 	for name := range node.files {
@@ -555,6 +667,14 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 
 // Readdir implements fs.NodeReaddirer - lists files and subdirectories.
 func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	// Permission checks are handled by the kernel via default_permissions mount option.
+	return d.readdirInternal(ctx)
+}
+
+// readdirInternal performs the directory listing. It does not perform any permission
+// checks itself (those are handled by the kernel via default_permissions) and is
+// shared by both MKVFSRoot.Readdir and MKVFSDirNode.Readdir.
+func (d *MKVFSDirNode) readdirInternal(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -605,6 +725,8 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
 
 // Lookup implements fs.NodeLookuper - looks up a file or subdirectory by name.
 func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	// Permission checks are handled by the kernel via default_permissions mount option.
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -704,6 +826,20 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 		return syscall.EROFS
 	}
 
+	// Only UID, GID, and mode changes are supported. All other setattr operations
+	// (e.g. size truncation, atime/mtime updates) must fail on this read-only FS.
+	supportedMask := uint32(fuse.FATTR_UID | fuse.FATTR_GID | fuse.FATTR_MODE)
+	if in.Valid&^supportedMask != 0 {
+		return syscall.EROFS
+	}
+
+	// Get current permissions and caller
+	dirUID, dirGID, dirMode := getDirPerms(d.permStore, d.path)
+	caller, ok := GetCaller(ctx)
+	if !ok {
+		return syscall.EACCES
+	}
+
 	var newUID, newGID, newMode *uint32
 
 	// Check which fields are being changed
@@ -716,6 +852,37 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 	if in.Valid&fuse.FATTR_MODE != 0 {
 		mode := in.Mode & 0777 // Only permission bits
 		newMode = &mode
+	}
+
+	// Normalize no-op changes to nil to avoid unnecessary disk writes
+	if newUID != nil && *newUID == dirUID {
+		newUID = nil
+	}
+	if newGID != nil && *newGID == dirGID {
+		newGID = nil
+	}
+	if newMode != nil && *newMode == dirMode {
+		newMode = nil
+	}
+
+	// Permission checks for chown
+	if newUID != nil || newGID != nil {
+		if errno := CheckChown(caller, dirUID, dirGID, newUID, newGID); errno != 0 {
+			if d.verbose {
+				log.Printf("Setattr: chown permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+			}
+			return errno
+		}
+	}
+
+	// Permission checks for chmod
+	if newMode != nil {
+		if errno := CheckChmod(caller, dirUID); errno != 0 {
+			if d.verbose {
+				log.Printf("Setattr: chmod permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+			}
+			return errno
+		}
 	}
 
 	// Update permission store

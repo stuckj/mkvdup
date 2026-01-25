@@ -2,12 +2,15 @@
 package fuse
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"gopkg.in/yaml.v3"
 )
 
@@ -436,4 +439,74 @@ func ResolvePermissionsPath(explicitPath string) string {
 
 	// Fallback if no home directory (unusual for non-root)
 	return systemPath
+}
+
+// CallerInfo represents the calling process's credentials.
+type CallerInfo struct {
+	Uid uint32
+	Gid uint32
+}
+
+// testCallerHook is set by test code to allow injecting caller credentials.
+// This is nil in production, ensuring only real FUSE contexts are trusted.
+var testCallerHook func(context.Context) (CallerInfo, bool)
+
+// GetCaller extracts caller credentials from the FUSE context.
+// Returns (caller, true) if credentials are available, (zero, false) otherwise.
+// Callers should deny access when ok is false to fail closed.
+func GetCaller(ctx context.Context) (CallerInfo, bool) {
+	if caller, ok := fuse.FromContext(ctx); ok {
+		return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}, true
+	}
+	// Check for test-injected caller (only available in tests)
+	if testCallerHook != nil {
+		if caller, ok := testCallerHook(ctx); ok {
+			return caller, true
+		}
+	}
+	// Fail closed: return zero value and false to indicate no credentials
+	return CallerInfo{}, false
+}
+
+// IsRoot returns true if the caller is root (uid 0).
+func (c CallerInfo) IsRoot() bool {
+	return c.Uid == 0
+}
+
+// CheckChown verifies the caller can change file ownership.
+// Returns 0 if allowed, syscall.EPERM if denied.
+// Only root can change UID. Only root or file owner can change GID.
+// Non-root owners can only change GID to their own primary GID (not arbitrary groups).
+// No-op changes (newUID == fileUID or newGID == fileGID) are always allowed.
+func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint32) syscall.Errno {
+	// Only root can change UID to a different user
+	if newUID != nil && *newUID != fileUID && !caller.IsRoot() {
+		return syscall.EPERM
+	}
+
+	// GID changes:
+	// - No-op (nil or same as current) is always allowed
+	// - Root can change to any GID
+	// - Non-root owner can only change to their own primary GID
+	if newGID != nil && *newGID != fileGID {
+		if caller.IsRoot() {
+			return 0
+		}
+		// Non-root: must be owner AND target GID must be caller's GID
+		if caller.Uid != fileUID || *newGID != caller.Gid {
+			return syscall.EPERM
+		}
+	}
+
+	return 0
+}
+
+// CheckChmod verifies the caller can change file mode.
+// Returns 0 if allowed, syscall.EPERM if denied.
+// Only root or file owner can chmod.
+func CheckChmod(caller CallerInfo, fileUID uint32) syscall.Errno {
+	if caller.IsRoot() || caller.Uid == fileUID {
+		return 0
+	}
+	return syscall.EPERM
 }
