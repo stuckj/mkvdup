@@ -438,62 +438,6 @@ func TestContextWithCaller(t *testing.T) {
 	}
 }
 
-func TestCheckAccess(t *testing.T) {
-	tests := []struct {
-		name    string
-		caller  CallerInfo
-		fileUID uint32
-		fileGID uint32
-		mode    uint32
-		access  AccessMode
-		want    syscall.Errno
-	}{
-		// Root bypass tests
-		{"root bypasses mode 0000 read", CallerInfo{0, 0}, 1000, 1000, 0000, AccessRead, 0},
-		{"root bypasses mode 0000 write", CallerInfo{0, 0}, 1000, 1000, 0000, AccessWrite, 0},
-		{"root bypasses mode 0000 execute", CallerInfo{0, 0}, 1000, 1000, 0000, AccessExecute, 0},
-
-		// Owner permission tests
-		{"owner read allowed with 0400", CallerInfo{1000, 1000}, 1000, 1000, 0400, AccessRead, 0},
-		{"owner read denied with 0300", CallerInfo{1000, 1000}, 1000, 1000, 0300, AccessRead, syscall.EACCES},
-		{"owner write allowed with 0200", CallerInfo{1000, 1000}, 1000, 1000, 0200, AccessWrite, 0},
-		{"owner write denied with 0500", CallerInfo{1000, 1000}, 1000, 1000, 0500, AccessWrite, syscall.EACCES},
-		{"owner execute allowed with 0100", CallerInfo{1000, 1000}, 1000, 1000, 0100, AccessExecute, 0},
-		{"owner execute denied with 0600", CallerInfo{1000, 1000}, 1000, 1000, 0600, AccessExecute, syscall.EACCES},
-		{"owner full perms with 0700", CallerInfo{1000, 1000}, 1000, 1000, 0700, AccessRead, 0},
-
-		// Group permission tests (caller UID differs from file UID, GID matches)
-		{"group read allowed with 0040", CallerInfo{2000, 1000}, 1000, 1000, 0040, AccessRead, 0},
-		{"group read denied with 0030", CallerInfo{2000, 1000}, 1000, 1000, 0030, AccessRead, syscall.EACCES},
-		{"group write allowed with 0020", CallerInfo{2000, 1000}, 1000, 1000, 0020, AccessWrite, 0},
-		{"group write denied with 0050", CallerInfo{2000, 1000}, 1000, 1000, 0050, AccessWrite, syscall.EACCES},
-		{"group execute allowed with 0010", CallerInfo{2000, 1000}, 1000, 1000, 0010, AccessExecute, 0},
-		{"group execute denied with 0060", CallerInfo{2000, 1000}, 1000, 1000, 0060, AccessExecute, syscall.EACCES},
-		{"group inherits nothing from owner", CallerInfo{2000, 1000}, 1000, 1000, 0700, AccessRead, syscall.EACCES},
-
-		// Other permission tests (caller UID and GID both differ)
-		{"other read allowed with 0004", CallerInfo{3000, 3000}, 1000, 1000, 0004, AccessRead, 0},
-		{"other read denied with 0770", CallerInfo{3000, 3000}, 1000, 1000, 0770, AccessRead, syscall.EACCES},
-		{"other write allowed with 0002", CallerInfo{3000, 3000}, 1000, 1000, 0002, AccessWrite, 0},
-		{"other write denied with 0775", CallerInfo{3000, 3000}, 1000, 1000, 0775, AccessWrite, syscall.EACCES},
-		{"other execute allowed with 0001", CallerInfo{3000, 3000}, 1000, 1000, 0001, AccessExecute, 0},
-		{"other execute denied with 0776", CallerInfo{3000, 3000}, 1000, 1000, 0776, AccessExecute, syscall.EACCES},
-		{"other inherits nothing from group", CallerInfo{3000, 3000}, 1000, 1000, 0070, AccessRead, syscall.EACCES},
-
-		// Priority tests (owner bits take precedence over group/other)
-		{"owner checked before group", CallerInfo{1000, 1000}, 1000, 1000, 0470, AccessRead, 0},
-		{"owner denied even with group allowed", CallerInfo{1000, 1000}, 1000, 1000, 0070, AccessRead, syscall.EACCES},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := CheckAccess(tt.caller, tt.fileUID, tt.fileGID, tt.mode, tt.access)
-			if got != tt.want {
-				t.Errorf("CheckAccess() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestCheckChown(t *testing.T) {
 	uid := func(u uint32) *uint32 { return &u }
 	gid := func(g uint32) *uint32 { return &g }

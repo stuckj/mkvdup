@@ -828,6 +828,10 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 			AllowOther: opts.AllowOther,
 			Name:       "mkvdup",
 			FsName:     "mkvdup",
+			// Enable kernel permission checks for standard Unix semantics.
+			// This properly handles supplementary groups and matches behavior
+			// of real filesystems (ext4, XFS, btrfs, etc.).
+			Options: []string{"default_permissions"},
 		},
 	}
 

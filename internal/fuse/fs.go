@@ -223,18 +223,8 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
 // Delegates to the directory tree for hierarchical listing.
 func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	// Check directory read permission for root
-	dirUID, dirGID, mode := getDirPerms(r.permStore, "")
-	caller, ok := GetCaller(ctx)
-	if !ok {
-		return nil, syscall.EACCES
-	}
-	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessRead); errno != 0 {
-		if r.verbose {
-			log.Printf("Readdir: permission denied for root (caller uid=%d)", caller.Uid)
-		}
-		return nil, errno
-	}
+	// Permission checks are handled by the kernel via default_permissions mount option.
+	// This properly checks supplementary groups and matches real filesystem behavior.
 
 	if r.rootDir != nil {
 		return r.rootDir.readdirInternal(ctx)
@@ -264,18 +254,7 @@ func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 // Lookup implements fs.NodeLookuper - looks up a file or directory by name.
 // Uses the directory tree for hierarchical lookup.
 func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	// Check directory execute permission for root (required for traversal)
-	dirUID, dirGID, mode := getDirPerms(r.permStore, "")
-	caller, ok := GetCaller(ctx)
-	if !ok {
-		return nil, syscall.EACCES
-	}
-	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessExecute); errno != 0 {
-		if r.verbose {
-			log.Printf("Lookup: permission denied for root (caller uid=%d)", caller.Uid)
-		}
-		return nil, errno
-	}
+	// Permission checks are handled by the kernel via default_permissions mount option.
 
 	if r.rootDir != nil {
 		r.rootDir.mu.RLock()
@@ -474,19 +453,7 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 		return nil, 0, syscall.EROFS
 	}
 
-	// Check read permission
-	fileUID, fileGID, mode := getFilePerms(n.permStore, n.path)
-	caller, ok := GetCaller(ctx)
-	if !ok {
-		return nil, 0, syscall.EACCES
-	}
-
-	if errno := CheckAccess(caller, fileUID, fileGID, mode, AccessRead); errno != 0 {
-		if n.verbose {
-			log.Printf("Open: read permission denied for %s (caller uid=%d)", n.path, caller.Uid)
-		}
-		return nil, 0, errno
-	}
+	// Permission checks are handled by the kernel via default_permissions mount option.
 
 	if n.verbose {
 		log.Printf("Open: %s", n.file.Name)
@@ -503,18 +470,7 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 
 // Read implements fs.NodeReader - reads data from the file.
 func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	// Defense in depth: check read permission again
-	fileUID, fileGID, mode := getFilePerms(n.permStore, n.path)
-	caller, ok := GetCaller(ctx)
-	if !ok {
-		return nil, syscall.EACCES
-	}
-	if errno := CheckAccess(caller, fileUID, fileGID, mode, AccessRead); errno != 0 {
-		if n.verbose {
-			log.Printf("Read: permission denied for %s (caller uid=%d)", n.path, caller.Uid)
-		}
-		return nil, errno
-	}
+	// Permission checks are handled by the kernel via default_permissions mount option.
 
 	n.file.mu.RLock()
 	defer n.file.mu.RUnlock()
@@ -639,19 +595,7 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 
 // Readdir implements fs.NodeReaddirer - lists files and subdirectories.
 func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	// Check directory read permission
-	dirUID, dirGID, mode := getDirPerms(d.permStore, d.path)
-	caller, ok := GetCaller(ctx)
-	if !ok {
-		return nil, syscall.EACCES
-	}
-	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessRead); errno != 0 {
-		if d.verbose {
-			log.Printf("Readdir: permission denied for %s (caller uid=%d)", d.path, caller.Uid)
-		}
-		return nil, errno
-	}
-
+	// Permission checks are handled by the kernel via default_permissions mount option.
 	return d.readdirInternal(ctx)
 }
 
@@ -708,18 +652,7 @@ func (d *MKVFSDirNode) readdirInternal(ctx context.Context) (fs.DirStream, sysca
 
 // Lookup implements fs.NodeLookuper - looks up a file or subdirectory by name.
 func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	// Check directory execute permission (required for traversal)
-	dirUID, dirGID, mode := getDirPerms(d.permStore, d.path)
-	caller, ok := GetCaller(ctx)
-	if !ok {
-		return nil, syscall.EACCES
-	}
-	if errno := CheckAccess(caller, dirUID, dirGID, mode, AccessExecute); errno != 0 {
-		if d.verbose {
-			log.Printf("Lookup: permission denied for %s (caller uid=%d)", d.path, caller.Uid)
-		}
-		return nil, errno
-	}
+	// Permission checks are handled by the kernel via default_permissions mount option.
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()

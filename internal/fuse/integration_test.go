@@ -167,6 +167,7 @@ func TestFUSEMount_Integration(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {
@@ -229,6 +230,7 @@ func TestFUSERead_Integration(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {
@@ -320,6 +322,7 @@ func TestFUSEFileSize_Integration(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {
@@ -382,6 +385,7 @@ func TestFUSEChecksum_Integration(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {
@@ -829,6 +833,7 @@ func TestFUSEMount_DirectoryStructure(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {
@@ -924,6 +929,7 @@ func TestFUSE_ReadFileInSubdirectory(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {
@@ -994,6 +1000,7 @@ func TestFUSE_ReadOnlyOperations(t *testing.T) {
 		MountOptions: fuse.MountOptions{
 			AllowOther: false,
 			Debug:      false,
+			Options:    []string{"default_permissions"},
 		},
 	})
 	if err != nil {

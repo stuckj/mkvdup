@@ -473,46 +473,6 @@ func (c CallerInfo) IsRoot() bool {
 	return c.Uid == 0
 }
 
-// AccessMode represents the type of access being requested.
-type AccessMode uint32
-
-const (
-	AccessRead    AccessMode = 0004
-	AccessWrite   AccessMode = 0002
-	AccessExecute AccessMode = 0001
-)
-
-// CheckAccess verifies the caller has the requested access to a file or directory.
-// Returns 0 if access is granted, syscall.EACCES if denied.
-// Root (uid 0) bypasses all permission checks.
-//
-// Note: This implementation only checks the caller's primary GID, not supplementary
-// groups. Users who are members of a file's group via supplementary groups will be
-// treated as "other" for permission purposes. Full supplementary group checking would
-// require reading /proc/{pid}/status which adds complexity and may not be portable.
-func CheckAccess(caller CallerInfo, fileUID, fileGID, mode uint32, access AccessMode) syscall.Errno {
-	if caller.IsRoot() {
-		return 0
-	}
-
-	var permBits uint32
-	if caller.Uid == fileUID {
-		// Owner bits
-		permBits = (mode >> 6) & 0007
-	} else if caller.Gid == fileGID {
-		// Group bits
-		permBits = (mode >> 3) & 0007
-	} else {
-		// Other bits
-		permBits = mode & 0007
-	}
-
-	if permBits&uint32(access) != 0 {
-		return 0
-	}
-	return syscall.EACCES
-}
-
 // CheckChown verifies the caller can change file ownership.
 // Returns 0 if allowed, syscall.EPERM if denied.
 // Only root can change UID. Only root or file owner can change GID.
