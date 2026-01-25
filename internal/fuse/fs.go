@@ -246,6 +246,30 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 	return root, nil
 }
 
+// Getattr implements fs.NodeGetattrer - returns attributes for the root directory.
+// This ensures the root directory uses permissions from the permission store,
+// consistent with all subdirectories.
+func (r *MKVFSRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := time.Now()
+
+	uid, gid, mode := getDirPerms(r.permStore, "")
+
+	out.Mode = fuse.S_IFDIR | mode
+	out.Uid = uid
+	out.Gid = gid
+	out.Atime = uint64(now.Unix())
+	out.Mtime = uint64(now.Unix())
+	out.Ctime = uint64(now.Unix())
+	out.Nlink = 2
+	if r.rootDir != nil {
+		out.Nlink += uint32(len(r.rootDir.subdirs))
+	}
+	return 0
+}
+
 // Readdir implements fs.NodeReaddirer - lists files in the root directory.
 // Delegates to the directory tree for hierarchical listing.
 func (r *MKVFSRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
