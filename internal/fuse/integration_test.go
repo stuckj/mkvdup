@@ -5,6 +5,7 @@ package fuse_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -958,7 +959,7 @@ func TestFUSE_ReadFileInSubdirectory(t *testing.T) {
 	}
 }
 
-// TestFUSE_ReadOnlyOperations tests that write operations return EROFS.
+// TestFUSE_ReadOnlyOperations tests that write operations fail on the read-only filesystem.
 func TestFUSE_ReadOnlyOperations(t *testing.T) {
 	skipIfFUSEUnavailable(t)
 	getSharedFixture(t) // Verify fixture is available
@@ -1006,22 +1007,33 @@ func TestFUSE_ReadOnlyOperations(t *testing.T) {
 
 	moviesDir := filepath.Join(mountPoint, "Movies")
 
+	// Helper to check if error is permission-related (EACCES or EROFS)
+	isPermissionOrReadOnlyError := func(err error) bool {
+		return os.IsPermission(err) || errors.Is(err, syscall.EROFS)
+	}
+
 	// Test mkdir should fail (EACCES from kernel permission check or EROFS from FUSE)
 	err = os.Mkdir(filepath.Join(moviesDir, "NewDir"), 0755)
 	if err == nil {
 		t.Error("Expected mkdir to fail")
+	} else if !isPermissionOrReadOnlyError(err) {
+		t.Errorf("Expected permission or read-only error, got: %v", err)
 	}
 
 	// Test creating a file should fail (EACCES from kernel permission check or EROFS from FUSE)
 	_, err = os.Create(filepath.Join(moviesDir, "newfile.txt"))
 	if err == nil {
 		t.Error("Expected file creation to fail")
+	} else if !isPermissionOrReadOnlyError(err) {
+		t.Errorf("Expected permission or read-only error, got: %v", err)
 	}
 
 	// Test removing a file should fail (EACCES from kernel permission check or EROFS from FUSE)
 	err = os.Remove(filepath.Join(moviesDir, "test.mkv"))
 	if err == nil {
 		t.Error("Expected file removal to fail")
+	} else if !isPermissionOrReadOnlyError(err) {
+		t.Errorf("Expected permission or read-only error, got: %v", err)
 	}
 }
 

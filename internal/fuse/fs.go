@@ -127,8 +127,9 @@ type MKVFSOptions struct {
 	Verbose         bool
 	PermissionsPath string
 	// Defaults holds the default permissions to use when a PermissionStore is configured.
-	// If nil, DefaultPerms() is used. Set to a non-nil value to use specific defaults
-	// (including explicit zeros if that's desired).
+	// If nil, DefaultPerms() is used. Set to a non-nil value to use specific defaults.
+	// Note: explicit-zero defaults only work when provided programmatically here;
+	// they are not persisted to or loaded from the permissions YAML file.
 	Defaults *Defaults
 }
 
@@ -670,8 +671,9 @@ func (d *MKVFSDirNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno
 	return d.readdirInternal(ctx)
 }
 
-// readdirInternal performs the directory listing without permission checks.
-// Used by both MKVFSRoot.Readdir and MKVFSDirNode.Readdir after permission checks.
+// readdirInternal performs the directory listing. It does not perform any permission
+// checks itself (those are handled by the kernel via default_permissions) and is
+// shared by both MKVFSRoot.Readdir and MKVFSDirNode.Readdir.
 func (d *MKVFSDirNode) readdirInternal(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
