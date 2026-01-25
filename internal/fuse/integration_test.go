@@ -1036,10 +1036,22 @@ func TestFUSE_ChmodFile(t *testing.T) {
 	// Create permission store path
 	permPath := filepath.Join(tmpDir, "permissions.yaml")
 
-	// Create FUSE filesystem with permission store
+	// Get current user's UID/GID - files must be owned by current user to chmod
+	currentUID := uint32(os.Getuid())
+	currentGID := uint32(os.Getgid())
+
+	// Create FUSE filesystem with permission store, owned by current user
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
+		Defaults: fusepkg.Defaults{
+			FileUID:  currentUID,
+			FileGID:  currentGID,
+			FileMode: 0444,
+			DirUID:   currentUID,
+			DirGID:   currentGID,
+			DirMode:  0555,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create MKVFS: %v", err)
@@ -1115,9 +1127,21 @@ func TestFUSE_ChmodDirectory(t *testing.T) {
 
 	permPath := filepath.Join(tmpDir, "permissions.yaml")
 
+	// Get current user's UID/GID - directories must be owned by current user to chmod
+	currentUID := uint32(os.Getuid())
+	currentGID := uint32(os.Getgid())
+
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
+		Defaults: fusepkg.Defaults{
+			FileUID:  currentUID,
+			FileGID:  currentGID,
+			FileMode: 0444,
+			DirUID:   currentUID,
+			DirGID:   currentGID,
+			DirMode:  0555,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create MKVFS: %v", err)
