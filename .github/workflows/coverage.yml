@@ -17,20 +17,11 @@ jobs:
     # Only run on successful workflow completions
     if: github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
-
+      # No checkout of untrusted code - we only need Go and the coverage artifacts
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: '1.24'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse-dev
 
       - name: Download unit coverage artifact
         uses: dawidd6/action-download-artifact@v6
@@ -197,45 +188,47 @@ jobs:
               });
             }
 
-      - name: Publish coverage to gh-pages
-        if: github.event.workflow_run.head_branch == 'main'
-        env:
-          BENCHMARK_PAT: ${{ secrets.BENCHMARK_PAT }}
-        run: |
-          # Validate that BENCHMARK_PAT was configured
-          if [ "$BENCHMARK_PAT" = "" ]; then
-            echo "WARNING: BENCHMARK_PAT secret not configured. Skipping gh-pages publish."
-            exit 0
-          fi
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: |
+            coverage.html
+            coverage.json
+            coverage-summary.txt
+            merged-coverage.out
 
-          # Configure git
+  publish:
+    name: Publish to gh-pages
+    runs-on: ubuntu-latest
+    needs: coverage
+    # Only publish on main branch
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    steps:
+      # Checkout gh-pages branch only (trusted code)
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          token: ${{ secrets.BENCHMARK_PAT }}
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: ./coverage-report
+
+      - name: Update coverage files
+        run: |
+          mkdir -p coverage
+          cp coverage-report/coverage.html coverage/index.html
+          cp coverage-report/coverage.json coverage/
+          cp coverage-report/coverage-summary.txt coverage/
+          cp coverage-report/merged-coverage.out coverage/coverage.out
+
+      - name: Commit and push
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Configure remote with token for push access
-          git remote set-url origin "https://x-access-token:${BENCHMARK_PAT}@github.com/${{ github.repository }}.git"
-
-          # Save coverage files
-          mkdir -p /tmp/coverage
-          cp coverage.html /tmp/coverage/
-          cp coverage.json /tmp/coverage/
-          cp coverage-summary.txt /tmp/coverage/
-          cp merged-coverage.out /tmp/coverage/
-
-          # Switch to gh-pages branch
-          git fetch origin gh-pages
-          git checkout gh-pages
-
-          # Create coverage directory if it doesn't exist
-          mkdir -p coverage
-
-          # Copy coverage files
-          cp /tmp/coverage/coverage.html coverage/index.html
-          cp /tmp/coverage/coverage.json coverage/
-          cp /tmp/coverage/coverage-summary.txt coverage/
-          cp /tmp/coverage/merged-coverage.out coverage/coverage.out
-
-          # Commit and push
           git add coverage/
           git diff --staged --quiet || git commit -m "Update coverage report [skip ci]"
           git pull --rebase origin gh-pages
