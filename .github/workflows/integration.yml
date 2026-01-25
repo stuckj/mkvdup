@@ -65,6 +65,7 @@ jobs:
         run: |
           gotestsum --junitfile integration-results.xml -- \
             -tags=integration \
+            -timeout=30m \
             -v \
             ./...
 

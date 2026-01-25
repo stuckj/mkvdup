@@ -633,76 +633,91 @@ func TestNewMKVFS_Integration(t *testing.T) {
 	}
 }
 
-// createTestDedupFileWithName creates a dedup file with a custom name in the config.
-// This allows testing directory structures like "Movies/Action/test.mkv".
-func createTestDedupFileWithName(t *testing.T, paths testdata.Paths, tmpDir, name, dedupName string) string {
-	t.Helper()
+// testDedupData holds pre-computed data for creating multiple dedup files efficiently.
+// This avoids repeating expensive indexing/matching operations.
+type testDedupData struct {
+	paths        testdata.Paths
+	mkvSize      int64
+	mkvChecksum  uint64
+	sourceType   string
+	sourceFiles  []source.FileInfo
+	result       *matcher.MatchResult
+	esConverters []source.ESRangeConverter
+	index        *source.Index
+	matcher      *matcher.Matcher
+}
 
-	dedupPath := filepath.Join(tmpDir, dedupName)
-	configPath := filepath.Join(tmpDir, dedupName+".yaml")
+// prepareTestDedupData performs expensive indexing and matching once.
+// Caller must call cleanup() when done.
+func prepareTestDedupData(t *testing.T, paths testdata.Paths) (*testDedupData, func()) {
+	t.Helper()
 
 	// Parse MKV
 	parser, err := mkv.NewParser(paths.MKVFile)
 	if err != nil {
 		t.Fatalf("Failed to create MKV parser: %v", err)
 	}
-	defer parser.Close()
 
 	if err := parser.Parse(nil); err != nil {
+		parser.Close()
 		t.Fatalf("Failed to parse MKV: %v", err)
 	}
 
 	// Index source
 	srcIndexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
 	if err != nil {
+		parser.Close()
 		t.Fatalf("Failed to create indexer: %v", err)
 	}
 
 	if err := srcIndexer.Build(nil); err != nil {
+		parser.Close()
 		t.Fatalf("Failed to build index: %v", err)
 	}
 	index := srcIndexer.Index()
-	defer index.Close()
 
 	// Match packets
 	m, err := matcher.NewMatcher(index)
 	if err != nil {
+		index.Close()
+		parser.Close()
 		t.Fatalf("Failed to create matcher: %v", err)
 	}
-	defer m.Close()
 
 	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
 	if err != nil {
+		m.Close()
+		index.Close()
+		parser.Close()
 		t.Fatalf("Failed to match: %v", err)
 	}
 
 	// Get MKV file info and checksum
 	mkvInfo, err := os.Stat(paths.MKVFile)
 	if err != nil {
+		m.Close()
+		index.Close()
+		parser.Close()
 		t.Fatalf("Failed to stat MKV: %v", err)
 	}
 
 	mkvFile, err := os.Open(paths.MKVFile)
 	if err != nil {
+		m.Close()
+		index.Close()
+		parser.Close()
 		t.Fatalf("Failed to open MKV: %v", err)
 	}
 	h := xxhash.New()
 	if _, err := io.Copy(h, mkvFile); err != nil {
 		mkvFile.Close()
+		m.Close()
+		index.Close()
+		parser.Close()
 		t.Fatalf("Failed to checksum MKV: %v", err)
 	}
 	mkvChecksum := h.Sum64()
 	mkvFile.Close()
-
-	// Write dedup file
-	writer, err := dedup.NewWriter(dedupPath)
-	if err != nil {
-		t.Fatalf("Failed to create writer: %v", err)
-	}
-	defer writer.Close()
-
-	writer.SetHeader(mkvInfo.Size(), mkvChecksum, srcIndexer.SourceType())
-	writer.SetSourceFiles(index.Files)
 
 	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
 	var esConverters []source.ESRangeConverter
@@ -715,7 +730,44 @@ func createTestDedupFileWithName(t *testing.T, paths testdata.Paths, tmpDir, nam
 		}
 	}
 
-	if err := writer.SetMatchResult(result, esConverters); err != nil {
+	data := &testDedupData{
+		paths:        paths,
+		mkvSize:      mkvInfo.Size(),
+		mkvChecksum:  mkvChecksum,
+		sourceType:   srcIndexer.SourceType(),
+		sourceFiles:  index.Files,
+		result:       result,
+		esConverters: esConverters,
+		index:        index,
+		matcher:      m,
+	}
+
+	cleanup := func() {
+		m.Close()
+		index.Close()
+		parser.Close()
+	}
+
+	return data, cleanup
+}
+
+// writeTestDedupFile creates a dedup file using pre-computed data.
+func (d *testDedupData) writeTestDedupFile(t *testing.T, tmpDir, name, dedupName string) string {
+	t.Helper()
+
+	dedupPath := filepath.Join(tmpDir, dedupName)
+	configPath := filepath.Join(tmpDir, dedupName+".yaml")
+
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create writer: %v", err)
+	}
+	defer writer.Close()
+
+	writer.SetHeader(d.mkvSize, d.mkvChecksum, d.sourceType)
+	writer.SetSourceFiles(d.sourceFiles)
+
+	if err := writer.SetMatchResult(d.result, d.esConverters); err != nil {
 		t.Fatalf("Failed to set match result: %v", err)
 	}
 
@@ -723,8 +775,7 @@ func createTestDedupFileWithName(t *testing.T, paths testdata.Paths, tmpDir, nam
 		t.Fatalf("Failed to write dedup file: %v", err)
 	}
 
-	// Write config with custom name
-	if err := dedup.WriteConfig(configPath, name, dedupName, paths.ISODir); err != nil {
+	if err := dedup.WriteConfig(configPath, name, dedupName, d.paths.ISODir); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
@@ -743,10 +794,14 @@ func TestFUSEMount_DirectoryStructure(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create dedup files with directory paths in names
-	config1 := createTestDedupFileWithName(t, paths, tmpDir, "Movies/Action/test.mkv", "action.mkvdup")
-	config2 := createTestDedupFileWithName(t, paths, tmpDir, "Movies/Comedy/funny.mkv", "comedy.mkvdup")
-	config3 := createTestDedupFileWithName(t, paths, tmpDir, "root.mkv", "root.mkvdup")
+	// Prepare test data once (expensive indexing/matching)
+	data, cleanup := prepareTestDedupData(t, paths)
+	defer cleanup()
+
+	// Create dedup files with directory paths in names (fast - reuses prepared data)
+	config1 := data.writeTestDedupFile(t, tmpDir, "Movies/Action/test.mkv", "action.mkvdup")
+	config2 := data.writeTestDedupFile(t, tmpDir, "Movies/Comedy/funny.mkv", "comedy.mkvdup")
+	config3 := data.writeTestDedupFile(t, tmpDir, "root.mkv", "root.mkvdup")
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
