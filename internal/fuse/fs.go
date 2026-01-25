@@ -389,7 +389,7 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 	}
 
 	// Get current permissions and caller
-	fileUID, fileGID, _ := getFilePerms(n.permStore, n.path)
+	fileUID, fileGID, fileMode := getFilePerms(n.permStore, n.path)
 	caller, ok := GetCaller(ctx)
 	if !ok {
 		return syscall.EACCES
@@ -407,6 +407,17 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 	if in.Valid&fuse.FATTR_MODE != 0 {
 		mode := in.Mode & 0777 // Only permission bits
 		newMode = &mode
+	}
+
+	// Normalize no-op changes to nil to avoid unnecessary disk writes
+	if newUID != nil && *newUID == fileUID {
+		newUID = nil
+	}
+	if newGID != nil && *newGID == fileGID {
+		newGID = nil
+	}
+	if newMode != nil && *newMode == fileMode {
+		newMode = nil
 	}
 
 	// Permission checks for chown
@@ -754,7 +765,7 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 	}
 
 	// Get current permissions and caller
-	dirUID, dirGID, _ := getDirPerms(d.permStore, d.path)
+	dirUID, dirGID, dirMode := getDirPerms(d.permStore, d.path)
 	caller, ok := GetCaller(ctx)
 	if !ok {
 		return syscall.EACCES
@@ -772,6 +783,17 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 	if in.Valid&fuse.FATTR_MODE != 0 {
 		mode := in.Mode & 0777 // Only permission bits
 		newMode = &mode
+	}
+
+	// Normalize no-op changes to nil to avoid unnecessary disk writes
+	if newUID != nil && *newUID == dirUID {
+		newUID = nil
+	}
+	if newGID != nil && *newGID == dirGID {
+		newGID = nil
+	}
+	if newMode != nil && *newMode == dirMode {
+		newMode = nil
 	}
 
 	// Permission checks for chown
