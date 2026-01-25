@@ -183,6 +183,9 @@ func getSharedFixture(t *testing.T) (dedupPath, configPath string, paths testdat
 // This allows tests to mount the same dedup file with different paths (e.g., "Movies/test.mkv").
 func copyConfigWithName(t *testing.T, tmpDir, virtualName string) string {
 	t.Helper()
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
 	configPath := filepath.Join(tmpDir, "test.mkvdup.yaml")
 	if err := dedup.WriteConfig(configPath, virtualName, sharedDedupPath, sharedTestPaths.ISODir); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
@@ -207,6 +210,10 @@ func skipIfFUSEUnavailable(t *testing.T) {
 
 // createTestDedupFile creates a dedup file from the test data.
 // Returns the path to the dedup file and the config path.
+//
+// NOTE: Most tests should use getSharedFixture() instead to avoid expensive
+// repeated indexing/matching. This function is kept for tests that specifically
+// need to test dedup file creation itself.
 func createTestDedupFile(t *testing.T, paths testdata.Paths, tmpDir string) (string, string) {
 	t.Helper()
 
@@ -305,17 +312,14 @@ func createTestDedupFile(t *testing.T, paths testdata.Paths, tmpDir string) (str
 
 func TestFUSEMount_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
-	// Create temp directory
+	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -368,17 +372,14 @@ func TestFUSEMount_Integration(t *testing.T) {
 
 func TestFUSERead_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
-	// Create temp directory
+	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -460,17 +461,14 @@ func TestFUSERead_Integration(t *testing.T) {
 
 func TestFUSEFileSize_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
-	// Create temp directory
+	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -523,17 +521,14 @@ func TestFUSEFileSize_Integration(t *testing.T) {
 
 func TestFUSEChecksum_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
-	// Create temp directory
+	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -605,17 +600,14 @@ func TestFUSEChecksum_Integration(t *testing.T) {
 
 func TestFUSEMountUnmount_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
-	// Create temp directory
+	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -664,17 +656,7 @@ func TestFUSEMountUnmount_Integration(t *testing.T) {
 
 // TestAdapters_Integration tests the adapter implementations with real data.
 func TestAdapters_Integration(t *testing.T) {
-	paths := testdata.SkipIfNotAvailable(t)
-
-	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "mkvdup-adapter-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file
-	dedupPath, _ := createTestDedupFile(t, paths, tmpDir)
+	dedupPath, _, paths := getSharedFixture(t)
 
 	// Test DefaultReaderFactory
 	factory := &fusepkg.DefaultReaderFactory{}
@@ -765,17 +747,7 @@ func TestDefaultConfigReader_Integration(t *testing.T) {
 
 // TestNewMKVFS_Integration tests creating MKVFS with real data (without mount).
 func TestNewMKVFS_Integration(t *testing.T) {
-	paths := testdata.SkipIfNotAvailable(t)
-
-	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "mkvdup-mkvfs-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create dedup file and config
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
+	_, configPath, _ := getSharedFixture(t)
 
 	// Test NewMKVFS
 	root, err := fusepkg.NewMKVFS([]string{configPath}, true)
@@ -804,168 +776,10 @@ func TestNewMKVFS_Integration(t *testing.T) {
 	}
 }
 
-// testDedupData holds pre-computed data for creating multiple dedup files efficiently.
-// This avoids repeating expensive indexing/matching operations.
-type testDedupData struct {
-	paths        testdata.Paths
-	mkvSize      int64
-	mkvChecksum  uint64
-	sourceType   source.Type
-	sourceFiles  []source.File
-	result       *matcher.Result
-	esConverters []source.ESRangeConverter
-	index        *source.Index
-	matcher      *matcher.Matcher
-}
-
-// prepareTestDedupData performs expensive indexing and matching once.
-// Caller must call cleanup() when done.
-func prepareTestDedupData(t *testing.T, paths testdata.Paths) (*testDedupData, func()) {
-	t.Helper()
-
-	// Parse MKV
-	parser, err := mkv.NewParser(paths.MKVFile)
-	if err != nil {
-		t.Fatalf("Failed to create MKV parser: %v", err)
-	}
-
-	if err := parser.Parse(nil); err != nil {
-		parser.Close()
-		t.Fatalf("Failed to parse MKV: %v", err)
-	}
-
-	// Index source
-	srcIndexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
-	if err != nil {
-		parser.Close()
-		t.Fatalf("Failed to create indexer: %v", err)
-	}
-
-	if err := srcIndexer.Build(nil); err != nil {
-		parser.Close()
-		t.Fatalf("Failed to build index: %v", err)
-	}
-	index := srcIndexer.Index()
-
-	// Match packets
-	m, err := matcher.NewMatcher(index)
-	if err != nil {
-		index.Close()
-		parser.Close()
-		t.Fatalf("Failed to create matcher: %v", err)
-	}
-
-	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
-	if err != nil {
-		m.Close()
-		index.Close()
-		parser.Close()
-		t.Fatalf("Failed to match: %v", err)
-	}
-
-	// Get MKV file info and checksum
-	mkvInfo, err := os.Stat(paths.MKVFile)
-	if err != nil {
-		m.Close()
-		index.Close()
-		parser.Close()
-		t.Fatalf("Failed to stat MKV: %v", err)
-	}
-
-	mkvFile, err := os.Open(paths.MKVFile)
-	if err != nil {
-		m.Close()
-		index.Close()
-		parser.Close()
-		t.Fatalf("Failed to open MKV: %v", err)
-	}
-	h := xxhash.New()
-	if _, err := io.Copy(h, mkvFile); err != nil {
-		mkvFile.Close()
-		m.Close()
-		index.Close()
-		parser.Close()
-		t.Fatalf("Failed to checksum MKV: %v", err)
-	}
-	mkvChecksum := h.Sum64()
-	mkvFile.Close()
-
-	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
-	var esConverters []source.ESRangeConverter
-	if index.UsesESOffsets && len(index.ESReaders) > 0 {
-		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
-		for i, r := range index.ESReaders {
-			if converter, ok := r.(source.ESRangeConverter); ok {
-				esConverters[i] = converter
-			}
-		}
-	}
-
-	data := &testDedupData{
-		paths:        paths,
-		mkvSize:      mkvInfo.Size(),
-		mkvChecksum:  mkvChecksum,
-		sourceType:   srcIndexer.SourceType(),
-		sourceFiles:  index.Files,
-		result:       result,
-		esConverters: esConverters,
-		index:        index,
-		matcher:      m,
-	}
-
-	cleanup := func() {
-		m.Close()
-		index.Close()
-		parser.Close()
-	}
-
-	return data, cleanup
-}
-
-// writeTestDedupFile creates a dedup file using pre-computed data.
-func (d *testDedupData) writeTestDedupFile(t *testing.T, tmpDir, name, dedupName string) string {
-	t.Helper()
-
-	dedupPath := filepath.Join(tmpDir, dedupName)
-	configPath := filepath.Join(tmpDir, dedupName+".yaml")
-
-	writer, err := dedup.NewWriter(dedupPath)
-	if err != nil {
-		t.Fatalf("Failed to create writer: %v", err)
-	}
-	defer writer.Close()
-
-	writer.SetHeader(d.mkvSize, d.mkvChecksum, d.sourceType)
-	writer.SetSourceFiles(d.sourceFiles)
-
-	if err := writer.SetMatchResult(d.result, d.esConverters); err != nil {
-		t.Fatalf("Failed to set match result: %v", err)
-	}
-
-	if err := writer.Write(); err != nil {
-		t.Fatalf("Failed to write dedup file: %v", err)
-	}
-
-	if err := dedup.WriteConfig(configPath, name, dedupName, d.paths.ISODir); err != nil {
-		t.Fatalf("Failed to write config: %v", err)
-	}
-
-	return configPath
-}
-
-// createTestDedupFileWithName is a convenience wrapper for tests that only need one dedup file.
-// For tests creating multiple dedup files, use prepareTestDedupData + writeTestDedupFile instead.
-func createTestDedupFileWithName(t *testing.T, paths testdata.Paths, tmpDir, name, dedupName string) string {
-	t.Helper()
-	data, cleanup := prepareTestDedupData(t, paths)
-	defer cleanup()
-	return data.writeTestDedupFile(t, tmpDir, name, dedupName)
-}
-
 // TestFUSEMount_DirectoryStructure tests mounting with nested directory paths.
 func TestFUSEMount_DirectoryStructure(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	getSharedFixture(t) // Verify fixture is available
 
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-dir-test-*")
@@ -974,14 +788,10 @@ func TestFUSEMount_DirectoryStructure(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Prepare test data once (expensive indexing/matching)
-	data, cleanup := prepareTestDedupData(t, paths)
-	defer cleanup()
-
-	// Create dedup files with directory paths in names (fast - reuses prepared data)
-	config1 := data.writeTestDedupFile(t, tmpDir, "Movies/Action/test.mkv", "action.mkvdup")
-	config2 := data.writeTestDedupFile(t, tmpDir, "Movies/Comedy/funny.mkv", "comedy.mkvdup")
-	config3 := data.writeTestDedupFile(t, tmpDir, "root.mkv", "root.mkvdup")
+	// Create configs with different virtual paths (all point to same shared dedup file)
+	config1 := copyConfigWithName(t, filepath.Join(tmpDir, "action"), "Movies/Action/test.mkv")
+	config2 := copyConfigWithName(t, filepath.Join(tmpDir, "comedy"), "Movies/Comedy/funny.mkv")
+	config3 := copyConfigWithName(t, filepath.Join(tmpDir, "root"), "root.mkv")
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -1068,7 +878,7 @@ func TestFUSEMount_DirectoryStructure(t *testing.T) {
 // TestFUSE_ReadFileInSubdirectory tests reading a file through a directory path.
 func TestFUSE_ReadFileInSubdirectory(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	getSharedFixture(t) // Verify fixture is available
 
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-subdir-read-*")
@@ -1077,8 +887,8 @@ func TestFUSE_ReadFileInSubdirectory(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create dedup file with directory path
-	configPath := createTestDedupFileWithName(t, paths, tmpDir, "Movies/Action/test.mkv", "test.mkvdup")
+	// Create config with directory path (uses shared dedup file)
+	configPath := copyConfigWithName(t, tmpDir, "Movies/Action/test.mkv")
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
@@ -1139,7 +949,7 @@ func TestFUSE_ReadFileInSubdirectory(t *testing.T) {
 // TestFUSE_ReadOnlyOperations tests that write operations return EROFS.
 func TestFUSE_ReadOnlyOperations(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	getSharedFixture(t) // Verify fixture is available
 
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-readonly-*")
@@ -1148,8 +958,8 @@ func TestFUSE_ReadOnlyOperations(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create dedup file with directory structure
-	configPath := createTestDedupFileWithName(t, paths, tmpDir, "Movies/test.mkv", "test.mkvdup")
+	// Create config with directory structure (uses shared dedup file)
+	configPath := copyConfigWithName(t, tmpDir, "Movies/test.mkv")
 
 	// Create mount point
 	mountPoint := filepath.Join(tmpDir, "mount")
