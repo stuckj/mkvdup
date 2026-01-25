@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, initial-impl]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test
