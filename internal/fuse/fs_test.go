@@ -189,7 +189,8 @@ func TestMKVFSRoot_Readdir(t *testing.T) {
 		},
 	}
 
-	stream, errno := root.Readdir(context.Background())
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	stream, errno := root.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir returned errno %d", errno)
 	}
@@ -240,8 +241,9 @@ func TestMKVFSRoot_Lookup_NotFound(t *testing.T) {
 		files: map[string]*MKVFile{},
 	}
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.EntryOut
-	_, errno := root.Lookup(context.Background(), "nonexistent.mkv", &out)
+	_, errno := root.Lookup(ctx, "nonexistent.mkv", &out)
 	if errno != syscall.ENOENT {
 		t.Errorf("expected ENOENT, got %d", errno)
 	}
@@ -283,8 +285,9 @@ func TestMKVFSNode_Read(t *testing.T) {
 	node := &MKVFSNode{file: file}
 
 	// Read full content
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, len(testData))
-	result, errno := node.Read(context.Background(), nil, buf, 0)
+	result, errno := node.Read(ctx, nil, buf, 0)
 	if errno != 0 {
 		t.Fatalf("Read returned errno %d", errno)
 	}
@@ -310,8 +313,9 @@ func TestMKVFSNode_Read_Partial(t *testing.T) {
 	node := &MKVFSNode{file: file}
 
 	// Read from offset
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, 5)
-	result, errno := node.Read(context.Background(), nil, buf, 7)
+	result, errno := node.Read(ctx, nil, buf, 7)
 	if errno != 0 {
 		t.Fatalf("Read returned errno %d", errno)
 	}
@@ -337,8 +341,9 @@ func TestMKVFSNode_Read_BeyondEOF(t *testing.T) {
 	node := &MKVFSNode{file: file}
 
 	// Read at offset beyond file size
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, 10)
-	result, errno := node.Read(context.Background(), nil, buf, 100)
+	result, errno := node.Read(ctx, nil, buf, 100)
 	if errno != 0 {
 		t.Fatalf("Read returned errno %d", errno)
 	}
@@ -357,8 +362,9 @@ func TestMKVFSNode_Read_NoReader(t *testing.T) {
 	}
 	node := &MKVFSNode{file: file}
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	buf := make([]byte, 10)
-	_, errno := node.Read(context.Background(), nil, buf, 0)
+	_, errno := node.Read(ctx, nil, buf, 0)
 	if errno != syscall.EIO {
 		t.Errorf("expected EIO, got %d", errno)
 	}
@@ -386,7 +392,8 @@ func TestMKVFSNode_Open(t *testing.T) {
 	}
 	node := &MKVFSNode{file: file}
 
-	_, _, errno := node.Open(context.Background(), 0)
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	_, _, errno := node.Open(ctx, 0)
 	if errno != 0 {
 		t.Fatalf("Open returned errno %d", errno)
 	}
@@ -418,7 +425,8 @@ func TestMKVFSNode_Open_InitError(t *testing.T) {
 	}
 	node := &MKVFSNode{file: file}
 
-	_, _, errno := node.Open(context.Background(), 0)
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	_, _, errno := node.Open(ctx, 0)
 	if errno != syscall.EIO {
 		t.Errorf("expected EIO, got %d", errno)
 	}
@@ -789,7 +797,8 @@ func TestMKVFSDirNode_Readdir(t *testing.T) {
 		},
 	}
 
-	stream, errno := dir.Readdir(context.Background())
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	stream, errno := dir.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir returned error: %v", errno)
 	}
@@ -1183,7 +1192,8 @@ func TestMKVFSDirNode_Readdir_Sorted(t *testing.T) {
 		},
 	}
 
-	stream, errno := dir.Readdir(context.Background())
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
+	stream, errno := dir.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir returned error: %v", errno)
 	}
@@ -1341,8 +1351,9 @@ func TestMKVFSNode_Setattr_NoPermStore(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0644
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := node.Setattr(context.Background(), nil, in, &out)
+	errno := node.Setattr(ctx, nil, in, &out)
 
 	// Should return EROFS when no permission store
 	if errno != syscall.EROFS {
@@ -1360,8 +1371,9 @@ func TestMKVFSNode_Setattr_Chmod(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0644
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := node.Setattr(context.Background(), nil, in, &out)
+	errno := node.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1390,8 +1402,9 @@ func TestMKVFSNode_Setattr_Chown(t *testing.T) {
 	in.Uid = 1000
 	in.Gid = 1001
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := node.Setattr(context.Background(), nil, in, &out)
+	errno := node.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1427,8 +1440,9 @@ func TestMKVFSDirNode_Setattr_NoPermStore(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0755
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := dir.Setattr(context.Background(), nil, in, &out)
+	errno := dir.Setattr(ctx, nil, in, &out)
 
 	// Should return EROFS when no permission store
 	if errno != syscall.EROFS {
@@ -1451,8 +1465,9 @@ func TestMKVFSDirNode_Setattr_Chmod(t *testing.T) {
 	in.Valid = fuse.FATTR_MODE
 	in.Mode = 0755
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := dir.Setattr(context.Background(), nil, in, &out)
+	errno := dir.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}
@@ -1486,8 +1501,9 @@ func TestMKVFSDirNode_Setattr_Chown(t *testing.T) {
 	in.Uid = 1000
 	in.Gid = 1001
 
+	ctx := ContextWithCaller(context.Background(), 0, 0) // root
 	var out fuse.AttrOut
-	errno := dir.Setattr(context.Background(), nil, in, &out)
+	errno := dir.Setattr(ctx, nil, in, &out)
 	if errno != 0 {
 		t.Fatalf("Setattr returned errno %d", errno)
 	}

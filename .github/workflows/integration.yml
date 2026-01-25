@@ -13,6 +13,9 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: read
+
 jobs:
   integration:
     name: Integration Tests
@@ -30,16 +33,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev fuse3 wget ffmpeg
 
-      - name: Cache testdata
+      - name: Restore testdata cache
         id: cache-testdata
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/mkvdup-testdata
           key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
 
       - name: Generate testdata
-        if: steps.cache-testdata.outputs.cache-hit != 'true' || inputs.skip_cache == 'true'
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
         run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
+
+      - name: Save testdata cache
+        if: steps.cache-testdata.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
 
       - name: Setup FUSE permissions
         run: |

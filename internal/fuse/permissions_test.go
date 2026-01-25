@@ -377,16 +377,20 @@ func TestGetCaller(t *testing.T) {
 		ctx     context.Context
 		wantUID uint32
 		wantGID uint32
+		wantOK  bool
 	}{
-		{"empty context returns root", context.Background(), 0, 0},
-		{"injected caller", ContextWithCaller(context.Background(), 1000, 1000), 1000, 1000},
-		{"injected root", ContextWithCaller(context.Background(), 0, 0), 0, 0},
-		{"different uid and gid", ContextWithCaller(context.Background(), 1000, 2000), 1000, 2000},
+		{"empty context fails closed", context.Background(), 0, 0, false},
+		{"injected caller", ContextWithCaller(context.Background(), 1000, 1000), 1000, 1000, true},
+		{"injected root", ContextWithCaller(context.Background(), 0, 0), 0, 0, true},
+		{"different uid and gid", ContextWithCaller(context.Background(), 1000, 2000), 1000, 2000, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GetCaller(tt.ctx)
-			if got.Uid != tt.wantUID || got.Gid != tt.wantGID {
+			got, ok := GetCaller(tt.ctx)
+			if ok != tt.wantOK {
+				t.Errorf("GetCaller() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && (got.Uid != tt.wantUID || got.Gid != tt.wantGID) {
 				t.Errorf("GetCaller() = {Uid: %d, Gid: %d}, want {Uid: %d, Gid: %d}",
 					got.Uid, got.Gid, tt.wantUID, tt.wantGID)
 			}
@@ -398,17 +402,19 @@ func TestContextWithCaller(t *testing.T) {
 	ctx := context.Background()
 	ctxWithCaller := ContextWithCaller(ctx, 1234, 5678)
 
-	caller := GetCaller(ctxWithCaller)
+	caller, ok := GetCaller(ctxWithCaller)
+	if !ok {
+		t.Error("GetCaller returned ok=false for injected caller")
+	}
 	if caller.Uid != 1234 || caller.Gid != 5678 {
 		t.Errorf("ContextWithCaller created wrong caller: got {%d, %d}, want {1234, 5678}",
 			caller.Uid, caller.Gid)
 	}
 
-	// Original context should still return root
-	originalCaller := GetCaller(ctx)
-	if originalCaller.Uid != 0 || originalCaller.Gid != 0 {
-		t.Errorf("Original context modified: got {%d, %d}, want {0, 0}",
-			originalCaller.Uid, originalCaller.Gid)
+	// Original context should return ok=false (fail closed)
+	_, ok = GetCaller(ctx)
+	if ok {
+		t.Error("Original context should return ok=false, got ok=true")
 	}
 }
 
@@ -476,33 +482,38 @@ func TestCheckChown(t *testing.T) {
 		name    string
 		caller  CallerInfo
 		fileUID uint32
+		fileGID uint32
 		newUID  *uint32
 		newGID  *uint32
 		want    syscall.Errno
 	}{
 		// Root can do anything
-		{"root can change UID", CallerInfo{0, 0}, 1000, uid(2000), nil, 0},
-		{"root can change GID", CallerInfo{0, 0}, 1000, nil, gid(2000), 0},
-		{"root can change both", CallerInfo{0, 0}, 1000, uid(2000), gid(2000), 0},
+		{"root can change UID", CallerInfo{0, 0}, 1000, 1000, uid(2000), nil, 0},
+		{"root can change GID", CallerInfo{0, 0}, 1000, 1000, nil, gid(2000), 0},
+		{"root can change both", CallerInfo{0, 0}, 1000, 1000, uid(2000), gid(2000), 0},
 
 		// Non-root UID changes
-		{"non-root cannot change UID to different user", CallerInfo{1000, 1000}, 1000, uid(2000), nil, syscall.EPERM},
-		{"non-root can set UID to same value", CallerInfo{1000, 1000}, 1000, uid(1000), nil, 0},
-		{"non-owner cannot change UID", CallerInfo{2000, 2000}, 1000, uid(2000), nil, syscall.EPERM},
+		{"non-root cannot change UID to different user", CallerInfo{1000, 1000}, 1000, 1000, uid(2000), nil, syscall.EPERM},
+		{"non-root can set UID to same value", CallerInfo{1000, 1000}, 1000, 1000, uid(1000), nil, 0},
+		{"non-owner cannot change UID", CallerInfo{2000, 2000}, 1000, 1000, uid(2000), nil, syscall.EPERM},
 
 		// Non-root GID changes
-		{"owner can change GID", CallerInfo{1000, 1000}, 1000, nil, gid(2000), 0},
-		{"non-owner cannot change GID", CallerInfo{2000, 2000}, 1000, nil, gid(2000), syscall.EPERM},
+		{"owner can change GID", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(2000), 0},
+		{"non-owner cannot change GID", CallerInfo{2000, 2000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
+
+		// No-op GID changes (setting to same value is always allowed)
+		{"non-owner can set GID to same value", CallerInfo{2000, 2000}, 1000, 1000, nil, gid(1000), 0},
+		{"anyone can set GID to same value", CallerInfo{3000, 3000}, 1000, 1000, nil, gid(1000), 0},
 
 		// Combined UID+GID changes
-		{"owner cannot change UID but can change GID", CallerInfo{1000, 1000}, 1000, uid(2000), gid(2000), syscall.EPERM},
+		{"owner cannot change UID but can change GID", CallerInfo{1000, 1000}, 1000, 1000, uid(2000), gid(2000), syscall.EPERM},
 
 		// Nil values (no change requested)
-		{"nil UID and GID always allowed", CallerInfo{2000, 2000}, 1000, nil, nil, 0},
+		{"nil UID and GID always allowed", CallerInfo{2000, 2000}, 1000, 1000, nil, nil, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckChown(tt.caller, tt.fileUID, tt.newUID, tt.newGID)
+			got := CheckChown(tt.caller, tt.fileUID, tt.fileGID, tt.newUID, tt.newGID)
 			if got != tt.want {
 				t.Errorf("CheckChown() = %v, want %v", got, tt.want)
 			}

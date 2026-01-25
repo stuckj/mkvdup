@@ -454,17 +454,18 @@ var testCallerKey = testCallerKeyType{}
 
 // GetCaller extracts caller credentials from the FUSE context.
 // Falls back to test-injected caller if FUSE context unavailable.
-// Returns root (uid=0, gid=0) as default for backwards compatibility.
-func GetCaller(ctx context.Context) CallerInfo {
+// Returns (caller, true) if credentials are available, (zero, false) otherwise.
+// Callers should deny access when ok is false to fail closed.
+func GetCaller(ctx context.Context) (CallerInfo, bool) {
 	if caller, ok := fuse.FromContext(ctx); ok {
-		return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}
+		return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}, true
 	}
 	// Check for test-injected caller
 	if caller, ok := ctx.Value(testCallerKey).(CallerInfo); ok {
-		return caller
+		return caller, true
 	}
-	// Default to root (maintains backwards compatibility with existing tests)
-	return CallerInfo{Uid: 0, Gid: 0}
+	// Fail closed: return zero value and false to indicate no credentials
+	return CallerInfo{}, false
 }
 
 // ContextWithCaller creates a context with injected caller credentials for testing.
@@ -515,14 +516,15 @@ func CheckAccess(caller CallerInfo, fileUID, fileGID, mode uint32, access Access
 // CheckChown verifies the caller can change file ownership.
 // Returns 0 if allowed, syscall.EPERM if denied.
 // Only root can change UID. Root or file owner can change GID.
-func CheckChown(caller CallerInfo, fileUID uint32, newUID, newGID *uint32) syscall.Errno {
+// No-op changes (newUID == fileUID or newGID == fileGID) are always allowed.
+func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint32) syscall.Errno {
 	// Only root can change UID to a different user
 	if newUID != nil && *newUID != fileUID && !caller.IsRoot() {
 		return syscall.EPERM
 	}
 
-	// Only root or owner can change GID
-	if newGID != nil && !caller.IsRoot() && caller.Uid != fileUID {
+	// Only root or owner can change GID (but no-op is always allowed)
+	if newGID != nil && *newGID != fileGID && !caller.IsRoot() && caller.Uid != fileUID {
 		return syscall.EPERM
 	}
 
