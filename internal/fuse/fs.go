@@ -414,6 +414,13 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 		return syscall.EROFS
 	}
 
+	// Only UID, GID, and mode changes are supported. All other setattr operations
+	// (e.g. size truncation, atime/mtime updates) must fail on this read-only FS.
+	supportedMask := uint32(fuse.FATTR_UID | fuse.FATTR_GID | fuse.FATTR_MODE)
+	if in.Valid&^supportedMask != 0 {
+		return syscall.EROFS
+	}
+
 	// Get current permissions and caller
 	fileUID, fileGID, fileMode := getFilePerms(n.permStore, n.path)
 	caller, ok := GetCaller(ctx)
@@ -787,6 +794,13 @@ func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.
 func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
 	if d.permStore == nil {
 		// No permission store - can't change permissions
+		return syscall.EROFS
+	}
+
+	// Only UID, GID, and mode changes are supported. All other setattr operations
+	// (e.g. size truncation, atime/mtime updates) must fail on this read-only FS.
+	supportedMask := uint32(fuse.FATTR_UID | fuse.FATTR_GID | fuse.FATTR_MODE)
+	if in.Valid&^supportedMask != 0 {
 		return syscall.EROFS
 	}
 

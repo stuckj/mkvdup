@@ -82,6 +82,9 @@ jobs:
           sudo chmod 666 /dev/fuse
 
       # ========== INTEGRATION TESTS ==========
+      # Note: This also runs unit tests because -tags=integration includes all test files.
+      # This is intentional - coverage merge will deduplicate, and re-running unit tests
+      # ensures they pass with the integration build tag. The extra time is minimal.
       - name: Run integration tests with coverage
         env:
           MKVDUP_TESTDATA: /tmp/mkvdup-testdata
