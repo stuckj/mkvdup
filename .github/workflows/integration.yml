@@ -70,7 +70,7 @@ jobs:
             ./...
 
       - name: Upload test results
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
           name: integration-test-results
