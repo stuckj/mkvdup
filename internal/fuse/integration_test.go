@@ -147,17 +147,22 @@ func createSharedDedupFile(paths testdata.Paths, tmpDir string) (dedupPath, conf
 		}
 	}
 
-	// Create dedup file
-	opts := dedup.CreateOptions{
-		MKVPath:      paths.MKVFile,
-		MKVSize:      mkvInfo.Size(),
-		MKVChecksum:  mkvChecksum,
-		SourceDir:    paths.ISODir,
-		ESConverters: esConverters,
+	// Create dedup file using Writer API
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		return "", "", fmt.Errorf("create writer: %w", err)
+	}
+	defer writer.Close()
+
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, srcIndexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	if err := writer.SetMatchResult(result, esConverters); err != nil {
+		return "", "", fmt.Errorf("set match result: %w", err)
 	}
 
-	if err := dedup.CreateFile(dedupPath, result, opts); err != nil {
-		return "", "", fmt.Errorf("create dedup file: %w", err)
+	if err := writer.Write(); err != nil {
+		return "", "", fmt.Errorf("write dedup file: %w", err)
 	}
 
 	// Write config
@@ -372,7 +377,7 @@ func TestFUSEMount_Integration(t *testing.T) {
 
 func TestFUSERead_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	_, configPath, _ := getSharedFixture(t)
+	_, configPath, testPaths := getSharedFixture(t)
 
 	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
@@ -421,7 +426,7 @@ func TestFUSERead_Integration(t *testing.T) {
 	defer virtualFile.Close()
 
 	// Open the original MKV file
-	originalFile, err := os.Open(paths.MKVFile)
+	originalFile, err := os.Open(testPaths.MKVFile)
 	if err != nil {
 		t.Fatalf("Failed to open original file: %v", err)
 	}
@@ -461,7 +466,7 @@ func TestFUSERead_Integration(t *testing.T) {
 
 func TestFUSEFileSize_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	_, configPath, _ := getSharedFixture(t)
+	_, configPath, testPaths := getSharedFixture(t)
 
 	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
@@ -509,7 +514,7 @@ func TestFUSEFileSize_Integration(t *testing.T) {
 	}
 
 	// Get original file stats
-	originalInfo, err := os.Stat(paths.MKVFile)
+	originalInfo, err := os.Stat(testPaths.MKVFile)
 	if err != nil {
 		t.Fatalf("Failed to stat original file: %v", err)
 	}
@@ -521,7 +526,7 @@ func TestFUSEFileSize_Integration(t *testing.T) {
 
 func TestFUSEChecksum_Integration(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	_, configPath, _ := getSharedFixture(t)
+	_, configPath, testPaths := getSharedFixture(t)
 
 	// Create temp directory for mount point
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-test-*")
@@ -577,7 +582,7 @@ func TestFUSEChecksum_Integration(t *testing.T) {
 	virtualChecksum := h1.Sum64()
 
 	// Calculate checksum of original file
-	originalFile, err := os.Open(paths.MKVFile)
+	originalFile, err := os.Open(testPaths.MKVFile)
 	if err != nil {
 		t.Fatalf("Failed to open original file: %v", err)
 	}
