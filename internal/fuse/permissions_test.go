@@ -517,8 +517,9 @@ func TestCheckChown(t *testing.T) {
 		{"non-root can set UID to same value", CallerInfo{1000, 1000}, 1000, 1000, uid(1000), nil, 0},
 		{"non-owner cannot change UID", CallerInfo{2000, 2000}, 1000, 1000, uid(2000), nil, syscall.EPERM},
 
-		// Non-root GID changes
-		{"owner can change GID", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(2000), 0},
+		// Non-root GID changes - owner can only change to their own GID
+		{"owner can change GID to own GID", CallerInfo{1000, 1000}, 1000, 2000, nil, gid(1000), 0},
+		{"owner cannot change GID to arbitrary GID", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
 		{"non-owner cannot change GID", CallerInfo{2000, 2000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
 
 		// No-op GID changes (setting to same value is always allowed)
@@ -526,7 +527,7 @@ func TestCheckChown(t *testing.T) {
 		{"anyone can set GID to same value", CallerInfo{3000, 3000}, 1000, 1000, nil, gid(1000), 0},
 
 		// Combined UID+GID changes
-		{"owner cannot change UID but can change GID", CallerInfo{1000, 1000}, 1000, 1000, uid(2000), gid(2000), syscall.EPERM},
+		{"owner cannot change UID even with valid GID", CallerInfo{1000, 1000}, 1000, 1000, uid(2000), gid(1000), syscall.EPERM},
 
 		// Nil values (no change requested)
 		{"nil UID and GID always allowed", CallerInfo{2000, 2000}, 1000, 1000, nil, nil, 0},

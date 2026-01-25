@@ -485,6 +485,11 @@ const (
 // CheckAccess verifies the caller has the requested access to a file or directory.
 // Returns 0 if access is granted, syscall.EACCES if denied.
 // Root (uid 0) bypasses all permission checks.
+//
+// Note: This implementation only checks the caller's primary GID, not supplementary
+// groups. Users who are members of a file's group via supplementary groups will be
+// treated as "other" for permission purposes. Full supplementary group checking would
+// require reading /proc/{pid}/status which adds complexity and may not be portable.
 func CheckAccess(caller CallerInfo, fileUID, fileGID, mode uint32, access AccessMode) syscall.Errno {
 	if caller.IsRoot() {
 		return 0
@@ -510,7 +515,8 @@ func CheckAccess(caller CallerInfo, fileUID, fileGID, mode uint32, access Access
 
 // CheckChown verifies the caller can change file ownership.
 // Returns 0 if allowed, syscall.EPERM if denied.
-// Only root can change UID. Root or file owner can change GID.
+// Only root can change UID. Only root or file owner can change GID.
+// Non-root owners can only change GID to their own primary GID (not arbitrary groups).
 // No-op changes (newUID == fileUID or newGID == fileGID) are always allowed.
 func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint32) syscall.Errno {
 	// Only root can change UID to a different user
@@ -518,9 +524,18 @@ func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint
 		return syscall.EPERM
 	}
 
-	// Only root or owner can change GID (but no-op is always allowed)
-	if newGID != nil && *newGID != fileGID && !caller.IsRoot() && caller.Uid != fileUID {
-		return syscall.EPERM
+	// GID changes:
+	// - No-op (nil or same as current) is always allowed
+	// - Root can change to any GID
+	// - Non-root owner can only change to their own primary GID
+	if newGID != nil && *newGID != fileGID {
+		if caller.IsRoot() {
+			return 0
+		}
+		// Non-root: must be owner AND target GID must be caller's GID
+		if caller.Uid != fileUID || *newGID != caller.Gid {
+			return syscall.EPERM
+		}
 	}
 
 	return 0

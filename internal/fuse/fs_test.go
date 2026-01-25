@@ -1714,7 +1714,8 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)
-	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+	gid := uint32(2000) // File starts with GID 2000
+	_ = store.SetFilePerms("test.mkv", &uid, &gid, nil)
 
 	node := &MKVFSNode{
 		file:      &MKVFile{Name: "test.mkv", Size: 1000},
@@ -1722,11 +1723,11 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 		permStore: store,
 	}
 
-	// Owner can change GID
+	// Owner can change GID to their own GID (Unix semantics)
 	ctx := ContextWithCaller(context.Background(), 1000, 1000)
 	in := &fuse.SetAttrIn{}
 	in.Valid = fuse.FATTR_GID
-	in.Gid = 2000
+	in.Gid = 1000 // Change to caller's own GID
 	var out fuse.AttrOut
 
 	errno := node.Setattr(ctx, nil, in, &out)
@@ -1736,8 +1737,33 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 
 	// Verify the change
 	_, gotGID, _ := store.GetFilePerms("test.mkv")
-	if gotGID != 2000 {
-		t.Errorf("GID = %d, want 2000", gotGID)
+	if gotGID != 1000 {
+		t.Errorf("GID = %d, want 1000", gotGID)
+	}
+}
+
+func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner cannot change GID to an arbitrary group they don't belong to
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_GID
+	in.Gid = 2000 // Arbitrary GID, not caller's GID
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr() = %v, want EPERM", errno)
 	}
 }
 
