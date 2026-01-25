@@ -612,8 +612,8 @@ func TestNewMKVFS_Integration(t *testing.T) {
 		t.Fatalf("Failed to create MKVFS: %v", err)
 	}
 
-	// Test Readdir
-	ctx := context.Background()
+	// Test Readdir (use root credentials for permission checks)
+	ctx := fusepkg.ContextWithCaller(context.Background(), 0, 0)
 	stream, errno := root.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir failed with errno %d", errno)
