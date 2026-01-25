@@ -21,7 +21,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
-          token: ${{ secrets.BENCHMARK_PAT }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -121,12 +120,14 @@ jobs:
         id: find-pr
         if: github.event.workflow_run.head_branch != 'main'
         uses: actions/github-script@v8
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         with:
           script: |
             const prs = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              head: `${context.repo.owner}:${{ github.event.workflow_run.head_branch }}`,
+              head: `${context.repo.owner}:${process.env.HEAD_BRANCH}`,
               state: 'open'
             });
             if (prs.data.length > 0) {
@@ -198,9 +199,11 @@ jobs:
 
       - name: Publish coverage to gh-pages
         if: github.event.workflow_run.head_branch == 'main'
+        env:
+          BENCHMARK_PAT: ${{ secrets.BENCHMARK_PAT }}
         run: |
           # Validate that BENCHMARK_PAT was configured
-          if [ "${{ secrets.BENCHMARK_PAT }}" = "" ]; then
+          if [ "$BENCHMARK_PAT" = "" ]; then
             echo "WARNING: BENCHMARK_PAT secret not configured. Skipping gh-pages publish."
             exit 0
           fi
@@ -208,6 +211,9 @@ jobs:
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Configure remote with token for push access
+          git remote set-url origin "https://x-access-token:${BENCHMARK_PAT}@github.com/${{ github.repository }}.git"
 
           # Save coverage files
           mkdir -p /tmp/coverage
