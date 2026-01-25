@@ -81,6 +81,7 @@ var _ fs.InodeEmbedder = (*MKVFSNode)(nil)
 var _ fs.InodeEmbedder = (*MKVFSDirNode)(nil)
 var _ fs.NodeReaddirer = (*MKVFSRoot)(nil)
 var _ fs.NodeLookuper = (*MKVFSRoot)(nil)
+var _ fs.NodeGetattrer = (*MKVFSRoot)(nil)
 var _ fs.NodeReaddirer = (*MKVFSDirNode)(nil)
 var _ fs.NodeLookuper = (*MKVFSDirNode)(nil)
 var _ fs.NodeGetattrer = (*MKVFSDirNode)(nil)
@@ -515,9 +516,11 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 
 // Open implements fs.NodeOpener - opens a file for reading.
 func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	// This is a read-only filesystem - reject write and write-intent attempts.
-	// O_TRUNC, O_CREAT, O_APPEND imply write intent even with O_RDONLY.
-	if flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC|syscall.O_CREAT|syscall.O_APPEND) != 0 {
+	// This is a read-only filesystem - reject any write access or operations
+	// that would modify the filesystem. Note: O_RDONLY|O_APPEND is a valid
+	// read-only open on Linux (positions at EOF), so we only check access mode.
+	accMode := flags & syscall.O_ACCMODE
+	if accMode != syscall.O_RDONLY || flags&(syscall.O_TRUNC|syscall.O_CREAT) != 0 {
 		return nil, 0, syscall.EROFS
 	}
 
