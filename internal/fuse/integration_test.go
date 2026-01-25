@@ -1640,7 +1640,9 @@ func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 
 	permPath := filepath.Join(tmpDir, "permissions.yaml")
 
-	// Create FUSE filesystem with files owned by different user and a group we're not in
+	// Create FUSE filesystem with files owned by different user and a group we're not in.
+	// Directories must allow "other" traverse (0755) so we can reach the file to test its permissions.
+	// The file itself (mode 0040 = group read only) is what we're testing access denial on.
 	root, err := fusepkg.NewMKVFSWithOptions([]string{configPath}, fusepkg.MKVFSOptions{
 		Verbose:         false,
 		PermissionsPath: permPath,
@@ -1650,7 +1652,7 @@ func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 			FileMode: 0040,         // group read only (no owner, no other)
 			DirUID:   0,
 			DirGID:   nonMemberGid,
-			DirMode:  0750, // owner+group can access
+			DirMode:  0755, // allow traverse so we can test file permissions
 		},
 	})
 	if err != nil {
