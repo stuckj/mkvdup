@@ -70,7 +70,9 @@ jobs:
         run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
 
       - name: Save testdata cache
-        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
+        # Only save cache on main branch to avoid duplicate caches per PR branch (10GB limit).
+        # PRs can restore from main's cache but shouldn't create their own copies.
+        if: github.ref == 'refs/heads/main' && (steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache))
         uses: actions/cache/save@v4
         with:
           path: /tmp/mkvdup-testdata
