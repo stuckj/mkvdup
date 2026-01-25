@@ -5,7 +5,9 @@ package fuse_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +25,170 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 	"github.com/stuckj/mkvdup/testdata"
 )
+
+// Shared test fixture created once by TestMain.
+// Tests that need a dedup file should use these instead of creating their own.
+var (
+	sharedTestPaths      testdata.Paths
+	sharedDedupPath      string // Path to the shared .mkvdup file
+	sharedConfigPath     string // Path to the shared .mkvdup.yaml config
+	sharedTmpDir         string // Temp directory containing the shared files
+	sharedFixtureCreated bool   // True if fixture was successfully created
+)
+
+// TestMain sets up shared test fixtures before running tests.
+// This creates the dedup file ONCE, which is then reused by all tests.
+func TestMain(m *testing.M) {
+	// Find test data
+	sharedTestPaths = testdata.Find()
+	if !sharedTestPaths.Available {
+		log.Println("Test data not available. Skipping integration tests.")
+		os.Exit(0)
+	}
+
+	// Check FUSE availability
+	if _, err := os.Stat("/dev/fuse"); os.IsNotExist(err) {
+		log.Println("FUSE not available: /dev/fuse does not exist")
+		os.Exit(0)
+	}
+
+	// Create temp directory for shared test files
+	var err error
+	sharedTmpDir, err = os.MkdirTemp("", "mkvdup-integration-*")
+	if err != nil {
+		log.Fatalf("Failed to create temp dir: %v", err)
+	}
+
+	// Create the shared dedup file (this is the expensive operation done once)
+	sharedDedupPath, sharedConfigPath, err = createSharedDedupFile(sharedTestPaths, sharedTmpDir)
+	if err != nil {
+		log.Printf("Failed to create shared dedup file: %v", err)
+		os.RemoveAll(sharedTmpDir)
+		os.Exit(1)
+	}
+	sharedFixtureCreated = true
+
+	// Run tests
+	code := m.Run()
+
+	// Cleanup
+	os.RemoveAll(sharedTmpDir)
+
+	os.Exit(code)
+}
+
+// createSharedDedupFile creates a dedup file that can be reused by all tests.
+// This performs the expensive indexing/matching once.
+func createSharedDedupFile(paths testdata.Paths, tmpDir string) (dedupPath, configPath string, err error) {
+	dedupPath = filepath.Join(tmpDir, "shared.mkvdup")
+	configPath = filepath.Join(tmpDir, "shared.mkvdup.yaml")
+
+	// Parse MKV
+	parser, err := mkv.NewParser(paths.MKVFile)
+	if err != nil {
+		return "", "", fmt.Errorf("create MKV parser: %w", err)
+	}
+	defer parser.Close()
+
+	if err := parser.Parse(nil); err != nil {
+		return "", "", fmt.Errorf("parse MKV: %w", err)
+	}
+
+	// Index source
+	srcIndexer, err := source.NewIndexer(paths.ISODir, source.DefaultWindowSize)
+	if err != nil {
+		return "", "", fmt.Errorf("create indexer: %w", err)
+	}
+
+	if err := srcIndexer.Build(nil); err != nil {
+		return "", "", fmt.Errorf("build index: %w", err)
+	}
+	index := srcIndexer.Index()
+	defer index.Close()
+
+	// Match packets
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		return "", "", fmt.Errorf("create matcher: %w", err)
+	}
+	defer m.Close()
+
+	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
+	if err != nil {
+		return "", "", fmt.Errorf("match: %w", err)
+	}
+
+	// Get MKV file info and checksum
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		return "", "", fmt.Errorf("stat MKV: %w", err)
+	}
+
+	mkvFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		return "", "", fmt.Errorf("open MKV: %w", err)
+	}
+	h := xxhash.New()
+	if _, err := io.Copy(h, mkvFile); err != nil {
+		mkvFile.Close()
+		return "", "", fmt.Errorf("checksum MKV: %w", err)
+	}
+	mkvChecksum := h.Sum64()
+	mkvFile.Close()
+
+	// Convert ES offsets to raw offsets if needed
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	// Create dedup file
+	opts := dedup.CreateOptions{
+		MKVPath:      paths.MKVFile,
+		MKVSize:      mkvInfo.Size(),
+		MKVChecksum:  mkvChecksum,
+		SourceDir:    paths.ISODir,
+		ESConverters: esConverters,
+	}
+
+	if err := dedup.CreateFile(dedupPath, result, opts); err != nil {
+		return "", "", fmt.Errorf("create dedup file: %w", err)
+	}
+
+	// Write config
+	if err := dedup.WriteConfig(configPath, "test.mkv", filepath.Base(dedupPath), paths.ISODir); err != nil {
+		return "", "", fmt.Errorf("write config: %w", err)
+	}
+
+	log.Printf("Created shared dedup file: %s", dedupPath)
+	return dedupPath, configPath, nil
+}
+
+// getSharedFixture returns the shared test fixture paths.
+// Call this at the start of tests that need the dedup file.
+func getSharedFixture(t *testing.T) (dedupPath, configPath string, paths testdata.Paths) {
+	t.Helper()
+	if !sharedFixtureCreated {
+		t.Fatal("Shared test fixture not available")
+	}
+	return sharedDedupPath, sharedConfigPath, sharedTestPaths
+}
+
+// copyConfigWithName copies the shared config to a new location with a different virtual file name.
+// This allows tests to mount the same dedup file with different paths (e.g., "Movies/test.mkv").
+func copyConfigWithName(t *testing.T, tmpDir, virtualName string) string {
+	t.Helper()
+	configPath := filepath.Join(tmpDir, "test.mkvdup.yaml")
+	if err := dedup.WriteConfig(configPath, virtualName, sharedDedupPath, sharedTestPaths.ISODir); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+	return configPath
+}
 
 // skipIfFUSEUnavailable skips the test if FUSE is not available.
 func skipIfFUSEUnavailable(t *testing.T) {
@@ -1039,15 +1205,13 @@ func TestFUSE_ReadOnlyOperations(t *testing.T) {
 
 func TestFUSE_ChmodFile(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-perm-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1118,7 +1282,7 @@ func TestFUSE_ChmodFile(t *testing.T) {
 
 func TestFUSE_ChmodDirectory(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	getSharedFixture(t) // Verify fixture is available
 
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-perm-*")
 	if err != nil {
@@ -1126,12 +1290,8 @@ func TestFUSE_ChmodDirectory(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Prepare test data once (expensive indexing/matching)
-	data, cleanup := prepareTestDedupData(t, paths)
-	defer cleanup()
-
-	// Create dedup file with directory path in name
-	configPath := data.writeTestDedupFile(t, tmpDir, "Movies/test.mkv", "test.mkvdup")
+	// Create config with directory path in virtual name (reuses shared dedup file)
+	configPath := copyConfigWithName(t, tmpDir, "Movies/test.mkv")
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1194,7 +1354,7 @@ func TestFUSE_ChmodDirectory(t *testing.T) {
 
 func TestFUSE_ChownFile(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	// chown requires root
 	if os.Geteuid() != 0 {
@@ -1206,8 +1366,6 @@ func TestFUSE_ChownFile(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1272,7 +1430,7 @@ func TestFUSE_ChownFile(t *testing.T) {
 
 func TestFUSE_PermissionDenied(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	// This test requires running as non-root to test permission denial
 	if os.Geteuid() == 0 {
@@ -1284,8 +1442,6 @@ func TestFUSE_PermissionDenied(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1346,15 +1502,13 @@ func TestFUSE_PermissionDenied(t *testing.T) {
 
 func TestFUSE_PermissionAllowed_OwnerAccess(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	tmpDir, err := os.MkdirTemp("", "mkvdup-fuse-perm-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1422,7 +1576,7 @@ func TestFUSE_PermissionAllowed_OwnerAccess(t *testing.T) {
 
 func TestFUSE_PermissionAllowed_GroupAccess(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	// Skip if running as root (root bypasses all permission checks)
 	if os.Geteuid() == 0 {
@@ -1434,8 +1588,6 @@ func TestFUSE_PermissionAllowed_GroupAccess(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1503,7 +1655,7 @@ func TestFUSE_PermissionAllowed_GroupAccess(t *testing.T) {
 
 func TestFUSE_PermissionAllowed_SupplementaryGroupAccess(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	// Skip if running as root (root bypasses all permission checks)
 	if os.Geteuid() == 0 {
@@ -1537,8 +1689,6 @@ func TestFUSE_PermissionAllowed_SupplementaryGroupAccess(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1603,7 +1753,7 @@ func TestFUSE_PermissionAllowed_SupplementaryGroupAccess(t *testing.T) {
 
 func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	// Skip if running as root (root bypasses all permission checks)
 	if os.Geteuid() == 0 {
@@ -1636,8 +1786,6 @@ func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
@@ -1697,7 +1845,7 @@ func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 
 func TestFUSE_RootBypassesPermissions(t *testing.T) {
 	skipIfFUSEUnavailable(t)
-	paths := testdata.SkipIfNotAvailable(t)
+	_, configPath, _ := getSharedFixture(t)
 
 	// This test requires root
 	if os.Geteuid() != 0 {
@@ -1709,8 +1857,6 @@ func TestFUSE_RootBypassesPermissions(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	_, configPath := createTestDedupFile(t, paths, tmpDir)
 
 	mountPoint := filepath.Join(tmpDir, "mount")
 	if err := os.Mkdir(mountPoint, 0755); err != nil {
