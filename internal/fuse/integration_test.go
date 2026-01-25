@@ -1006,22 +1006,22 @@ func TestFUSE_ReadOnlyOperations(t *testing.T) {
 
 	moviesDir := filepath.Join(mountPoint, "Movies")
 
-	// Test mkdir should fail with EROFS
+	// Test mkdir should fail (EACCES from kernel permission check or EROFS from FUSE)
 	err = os.Mkdir(filepath.Join(moviesDir, "NewDir"), 0755)
 	if err == nil {
-		t.Error("Expected mkdir to fail with EROFS")
+		t.Error("Expected mkdir to fail")
 	}
 
-	// Test creating a file should fail with EROFS
+	// Test creating a file should fail (EACCES from kernel permission check or EROFS from FUSE)
 	_, err = os.Create(filepath.Join(moviesDir, "newfile.txt"))
 	if err == nil {
-		t.Error("Expected file creation to fail with EROFS")
+		t.Error("Expected file creation to fail")
 	}
 
-	// Test removing a file should fail with EROFS
+	// Test removing a file should fail (EACCES from kernel permission check or EROFS from FUSE)
 	err = os.Remove(filepath.Join(moviesDir, "test.mkv"))
 	if err == nil {
-		t.Error("Expected file removal to fail with EROFS")
+		t.Error("Expected file removal to fail")
 	}
 }
 
