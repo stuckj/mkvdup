@@ -34,6 +34,7 @@ var (
 	sharedConfigPath     string // Path to the shared .mkvdup.yaml config
 	sharedTmpDir         string // Temp directory containing the shared files
 	sharedFixtureCreated bool   // True if fixture was successfully created
+	skipReason           string // Non-empty if tests should be skipped
 )
 
 // TestMain sets up shared test fixtures before running tests.
@@ -42,14 +43,16 @@ func TestMain(m *testing.M) {
 	// Find test data
 	sharedTestPaths = testdata.Find()
 	if !sharedTestPaths.Available {
-		log.Println("Test data not available. Skipping integration tests.")
-		os.Exit(0)
+		skipReason = "Test data not available (set MKVDUP_TESTDATA)"
+		log.Printf("WARNING: %s - tests will be skipped", skipReason)
+		os.Exit(m.Run()) // Run tests so they show as skipped
 	}
 
 	// Check FUSE availability
 	if _, err := os.Stat("/dev/fuse"); os.IsNotExist(err) {
-		log.Println("FUSE not available: /dev/fuse does not exist")
-		os.Exit(0)
+		skipReason = "FUSE not available: /dev/fuse does not exist"
+		log.Printf("WARNING: %s - tests will be skipped", skipReason)
+		os.Exit(m.Run()) // Run tests so they show as skipped
 	}
 
 	// Create temp directory for shared test files
@@ -178,6 +181,9 @@ func createSharedDedupFile(paths testdata.Paths, tmpDir string) (dedupPath, conf
 // Call this at the start of tests that need the dedup file.
 func getSharedFixture(t *testing.T) (dedupPath, configPath string, paths testdata.Paths) {
 	t.Helper()
+	if skipReason != "" {
+		t.Skip(skipReason)
+	}
 	if !sharedFixtureCreated {
 		t.Fatal("Shared test fixture not available")
 	}
