@@ -755,8 +755,8 @@ func TestNewMKVFS_Integration(t *testing.T) {
 		t.Fatalf("Failed to create MKVFS: %v", err)
 	}
 
-	// Test Readdir (use root credentials for permission checks)
-	ctx := fusepkg.ContextWithCaller(context.Background(), 0, 0)
+	// Test Readdir (no caller context needed - kernel handles permissions via default_permissions)
+	ctx := context.Background()
 	stream, errno := root.Readdir(ctx)
 	if errno != 0 {
 		t.Fatalf("Readdir failed with errno %d", errno)
@@ -1512,12 +1512,12 @@ func TestFUSE_PermissionAllowed_SupplementaryGroupAccess(t *testing.T) {
 		Verbose:         false,
 		PermissionsPath: permPath,
 		Defaults: fusepkg.Defaults{
-			FileUID:  0,                          // different owner (root)
-			FileGID:  uint32(supplementaryGid),   // supplementary group
-			FileMode: 0040,                       // group read only
+			FileUID:  0,                        // different owner (root)
+			FileGID:  uint32(supplementaryGid), // supplementary group
+			FileMode: 0040,                     // group read only
 			DirUID:   0,
 			DirGID:   uint32(supplementaryGid),
-			DirMode:  0050,                       // group read+execute
+			DirMode:  0050, // group read+execute
 		},
 	})
 	if err != nil {
@@ -1614,7 +1614,7 @@ func TestFUSE_PermissionDenied_NotInGroup(t *testing.T) {
 			FileMode: 0040,         // group read only (no owner, no other)
 			DirUID:   0,
 			DirGID:   nonMemberGid,
-			DirMode:  0750,         // owner+group can access
+			DirMode:  0750, // owner+group can access
 		},
 	})
 	if err != nil {

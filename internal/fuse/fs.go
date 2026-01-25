@@ -132,7 +132,12 @@ type MKVFSOptions struct {
 func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, error) {
 	var permStore *PermissionStore
 	if opts.PermissionsPath != "" {
-		permStore = NewPermissionStore(opts.PermissionsPath, opts.Defaults, opts.Verbose)
+		// Use sensible defaults if Defaults is zero value
+		defaults := opts.Defaults
+		if defaults == (Defaults{}) {
+			defaults = DefaultPerms()
+		}
+		permStore = NewPermissionStore(opts.PermissionsPath, defaults, opts.Verbose)
 		if err := permStore.Load(); err != nil {
 			return nil, fmt.Errorf("load permissions: %w", err)
 		}
