@@ -121,6 +121,25 @@ func NewMKVFSWithPermissions(configPaths []string, verbose bool, permStore *Perm
 	return NewMKVFSWithFactories(configPaths, verbose, &DefaultReaderFactory{}, &DefaultConfigReader{}, permStore)
 }
 
+// MKVFSOptions contains options for creating an MKVFS filesystem.
+type MKVFSOptions struct {
+	Verbose         bool
+	PermissionsPath string
+	Defaults        Defaults
+}
+
+// NewMKVFSWithOptions creates a new MKVFS root with the given options.
+func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, error) {
+	var permStore *PermissionStore
+	if opts.PermissionsPath != "" {
+		permStore = NewPermissionStore(opts.PermissionsPath, opts.Defaults, opts.Verbose)
+		if err := permStore.Load(); err != nil {
+			return nil, fmt.Errorf("load permissions: %w", err)
+		}
+	}
+	return NewMKVFSWithFactories(configPaths, opts.Verbose, &DefaultReaderFactory{}, &DefaultConfigReader{}, permStore)
+}
+
 // NewMKVFSWithFactories creates a new MKVFS root with custom factories.
 // This allows injecting mock implementations for testing.
 func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader, permStore *PermissionStore) (*MKVFSRoot, error) {
