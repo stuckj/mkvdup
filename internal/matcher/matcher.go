@@ -125,8 +125,9 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		m.trackTypes[int(t.Number)] = t.Type
 	}
 
-	// Reset matched regions
-	m.matchedRegions = nil
+	// Reset matched regions with pre-allocated capacity
+	// Most packets will match, so estimate capacity as number of packets
+	m.matchedRegions = make([]matchedRegion, 0, len(packets))
 
 	// Initialize coverage bitmap
 	// Each uint64 holds 64 chunk bits, so we need (numChunks + 63) / 64 uint64s
@@ -583,7 +584,9 @@ func (m *Matcher) mergeRegions() {
 	})
 
 	// Merge overlapping regions
-	merged := []matchedRegion{m.matchedRegions[0]}
+	// Pre-allocate with capacity since merged will be at most len(matchedRegions)
+	merged := make([]matchedRegion, 1, len(m.matchedRegions))
+	merged[0] = m.matchedRegions[0]
 	for i := 1; i < len(m.matchedRegions); i++ {
 		curr := m.matchedRegions[i]
 		last := &merged[len(merged)-1]
@@ -611,8 +614,10 @@ func (m *Matcher) mergeRegions() {
 
 // buildEntries creates the final entry list and delta data.
 func (m *Matcher) buildEntries() ([]Entry, []byte) {
-	var entries []Entry
-	var deltaData []byte
+	// Pre-allocate entries: we'll have at most 2x matchedRegions (matched + gap entries)
+	entries := make([]Entry, 0, len(m.matchedRegions)*2+1)
+	// Pre-allocate deltaData with estimated unmatched size (typically small)
+	deltaData := make([]byte, 0, 16*1024*1024) // 16MB initial capacity
 	deltaOffset := int64(0)
 
 	// Start from beginning of file
