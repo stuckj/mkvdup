@@ -1,6 +1,7 @@
 package source
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -231,6 +232,7 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 
 // buildFilteredVideoRanges scans the video ES and creates ranges that exclude user_data sections.
 // User_data (00 00 01 B2) is used for closed captions etc. and is stripped by MKV tools.
+// Optimized to use bytes.IndexByte for fast scanning (uses SIMD on x86).
 func (p *MPEGPSParser) buildFilteredVideoRanges() error {
 	if len(p.videoRanges) == 0 {
 		return nil
@@ -251,31 +253,50 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error {
 		data := p.data[rawRange.FileOffset:endOffset]
 
 		// Scan for user_data sections within this PES payload
-		i := 0
+		// Use bytes.IndexByte to quickly find 0x01 bytes (SIMD optimized)
+		i := 2 // Start at position 2 since we need at least 00 00 before 01
 		rangeStart := 0
-		for i < len(data)-3 {
-			if data[i] == 0x00 && data[i+1] == 0x00 && data[i+2] == 0x01 && data[i+3] == UserDataStartCode {
+		for i < len(data)-1 {
+			// Find next 0x01 byte
+			idx := bytes.IndexByte(data[i:], 0x01)
+			if idx < 0 {
+				break
+			}
+			pos := i + idx
+
+			// Check if this is a user_data start code (00 00 01 B2)
+			if pos >= 2 && pos < len(data)-1 &&
+				data[pos-1] == 0x00 && data[pos-2] == 0x00 && data[pos+1] == UserDataStartCode {
 				// Found user_data - emit range before it
-				if i > rangeStart {
+				startCodePos := pos - 2
+				if startCodePos > rangeStart {
 					filteredRanges = append(filteredRanges, PESPayloadRange{
 						FileOffset: rawRange.FileOffset + int64(rangeStart),
-						Size:       i - rangeStart,
+						Size:       startCodePos - rangeStart,
 						ESOffset:   filteredESOffset,
 					})
-					filteredESOffset += int64(i - rangeStart)
+					filteredESOffset += int64(startCodePos - rangeStart)
 				}
 
-				// Skip user_data section to next start code
-				i += 4
-				for i < len(data)-3 {
-					if data[i] == 0x00 && data[i+1] == 0x00 && data[i+2] == 0x01 {
+				// Skip user_data section to next start code using fast scan
+				i = pos + 2
+				for i < len(data)-1 {
+					idx := bytes.IndexByte(data[i:], 0x01)
+					if idx < 0 {
+						i = len(data)
 						break
 					}
-					i++
+					nextPos := i + idx
+					if nextPos >= 2 && data[nextPos-1] == 0x00 && data[nextPos-2] == 0x00 {
+						// Found next start code
+						i = nextPos - 2
+						break
+					}
+					i = nextPos + 1
 				}
 				rangeStart = i
 			} else {
-				i++
+				i = pos + 1
 			}
 		}
 
