@@ -53,7 +53,7 @@ jobs:
       # ========== INTEGRATION TEST SETUP ==========
       - name: Restore testdata cache
         id: cache-testdata
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/mkvdup-testdata
           key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
@@ -73,7 +73,7 @@ jobs:
         # Only save cache on main branch to avoid duplicate caches per PR branch (10GB limit).
         # PRs can restore from main's cache but shouldn't create their own copies.
         if: github.ref == 'refs/heads/main' && (steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache))
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/mkvdup-testdata
           key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
