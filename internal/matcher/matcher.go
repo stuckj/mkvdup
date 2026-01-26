@@ -52,6 +52,10 @@ type matchedRegion struct {
 }
 
 // Matcher performs the deduplication matching.
+// coverageChunkSize is the granularity for coverage tracking.
+// Smaller values give more accurate coverage checks but use more memory.
+const coverageChunkSize = 4096 // 4KB chunks
+
 type Matcher struct {
 	sourceIndex    *source.Index
 	mkvMmap        *mmap.File
@@ -62,6 +66,10 @@ type Matcher struct {
 	regionsMu      sync.Mutex  // Protects matchedRegions for concurrent access
 	trackTypes     map[int]int // Map from track number to track type
 	numWorkers     int         // Number of worker goroutines for parallel matching
+	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
+	// A chunk is marked covered when a matched region fully contains it.
+	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
+	coverageMu    sync.Mutex
 }
 
 // NewMatcher creates a new Matcher with the given source index.
@@ -117,8 +125,14 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		m.trackTypes[int(t.Number)] = t.Type
 	}
 
-	// Reset matched regions
-	m.matchedRegions = nil
+	// Reset matched regions with pre-allocated capacity
+	// Most packets will match, so estimate capacity as number of packets
+	m.matchedRegions = make([]matchedRegion, 0, len(packets))
+
+	// Initialize coverage bitmap
+	// Each uint64 holds 64 chunk bits, so we need (numChunks + 63) / 64 uint64s
+	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
+	m.coveredChunks = make([]uint64, (numChunks+63)/64)
 
 	result := &Result{
 		TotalPackets: len(packets),
@@ -295,17 +309,55 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 	return false
 }
 
-// isRangeCoveredParallel is a thread-safe version of isRangeCovered.
+// isRangeCoveredParallel checks if a range is likely covered using a coverage bitmap.
+// This is an O(1) check using chunk-level granularity. It may have false positives
+// (multiple regions covering different chunks) but that's acceptable since we merge
+// overlapping regions at the end anyway.
 func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool {
-	end := offset + size
-	m.regionsMu.Lock()
-	defer m.regionsMu.Unlock()
-	for _, r := range m.matchedRegions {
-		if r.mkvStart <= offset && r.mkvEnd >= end {
-			return true
+	// Calculate chunk range
+	startChunk := offset / coverageChunkSize
+	endChunk := (offset + size - 1) / coverageChunkSize
+
+	m.coverageMu.Lock()
+	defer m.coverageMu.Unlock()
+
+	// Check if all chunks in the range are covered
+	for chunk := startChunk; chunk <= endChunk; chunk++ {
+		wordIdx := chunk / 64
+		bitIdx := uint(chunk % 64)
+		if wordIdx >= int64(len(m.coveredChunks)) {
+			return false
+		}
+		if m.coveredChunks[wordIdx]&(1<<bitIdx) == 0 {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+// markChunksCovered marks the chunks fully contained within a region as covered.
+func (m *Matcher) markChunksCovered(start, end int64) {
+	// Only mark chunks that are fully contained within the region
+	// First chunk that starts at or after 'start' and is fully contained
+	firstFullChunk := (start + coverageChunkSize - 1) / coverageChunkSize
+	// Last chunk that ends before 'end'
+	lastFullChunk := (end / coverageChunkSize) - 1
+
+	if firstFullChunk > lastFullChunk {
+		// Region doesn't fully contain any chunks
+		return
+	}
+
+	m.coverageMu.Lock()
+	defer m.coverageMu.Unlock()
+
+	for chunk := firstFullChunk; chunk <= lastFullChunk; chunk++ {
+		wordIdx := chunk / 64
+		bitIdx := uint(chunk % 64)
+		if wordIdx < int64(len(m.coveredChunks)) {
+			m.coveredChunks[wordIdx] |= 1 << bitIdx
+		}
+	}
 }
 
 // tryMatchFromOffsetParallel is a thread-safe version of tryMatchFromOffset.
@@ -349,6 +401,8 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 		m.regionsMu.Lock()
 		m.matchedRegions = append(m.matchedRegions, *bestMatch)
 		m.regionsMu.Unlock()
+		// Mark chunks as covered for fast coverage checks
+		m.markChunksCovered(bestMatch.mkvStart, bestMatch.mkvEnd)
 		return true
 	}
 
@@ -434,13 +488,15 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 	}
 
 	// Expand backward (zero-copy single-byte reads from mmap'd data)
+	// Track range hint across reads to avoid repeated binary searches
+	backwardHint := -1
 	backwardExpanded := int64(0)
 	for mkvStart > 0 && srcStart > 0 && backwardExpanded < MaxExpansionBytes {
 		// Zero-copy: direct byte access
 		mkvByte := m.mkvData[mkvStart-1]
 
-		var srcByte []byte
-		var err error
+		var srcByteVal byte
+		var ok bool
 		if m.sourceIndex.UsesESOffsets {
 			readLoc := source.Location{
 				FileIndex:        loc.FileIndex,
@@ -448,19 +504,20 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 				IsVideo:          loc.IsVideo,
 				AudioSubStreamID: loc.AudioSubStreamID,
 			}
-			srcByte, err = m.sourceIndex.ReadESDataAt(readLoc, 1)
-			if err != nil || len(srcByte) == 0 {
+			srcByteVal, backwardHint, ok = m.sourceIndex.ReadESByteWithHint(readLoc, backwardHint)
+			if !ok {
 				break
 			}
 		} else {
 			// Zero-copy for raw indexes
-			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
+			srcByte := m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
 			if len(srcByte) == 0 {
 				break
 			}
+			srcByteVal = srcByte[0]
 		}
 
-		if mkvByte != srcByte[0] {
+		if mkvByte != srcByteVal {
 			break
 		}
 
@@ -471,6 +528,8 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 	}
 
 	// Expand forward (zero-copy single-byte reads from mmap'd data)
+	// Track range hint across reads to avoid repeated binary searches
+	forwardHint := -1
 	mkvEnd := mkvOffset + initialLen
 	srcEnd := loc.Offset + initialLen
 	forwardExpanded := int64(0)
@@ -478,8 +537,8 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		// Zero-copy: direct byte access
 		mkvByte := m.mkvData[mkvEnd]
 
-		var srcByte []byte
-		var err error
+		var srcByteVal byte
+		var ok bool
 		if m.sourceIndex.UsesESOffsets {
 			readLoc := source.Location{
 				FileIndex:        loc.FileIndex,
@@ -487,19 +546,20 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 				IsVideo:          loc.IsVideo,
 				AudioSubStreamID: loc.AudioSubStreamID,
 			}
-			srcByte, err = m.sourceIndex.ReadESDataAt(readLoc, 1)
-			if err != nil || len(srcByte) == 0 {
+			srcByteVal, forwardHint, ok = m.sourceIndex.ReadESByteWithHint(readLoc, forwardHint)
+			if !ok {
 				break
 			}
 		} else {
 			// Zero-copy for raw indexes
-			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
+			srcByte := m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
 			if len(srcByte) == 0 {
 				break
 			}
+			srcByteVal = srcByte[0]
 		}
 
-		if mkvByte != srcByte[0] {
+		if mkvByte != srcByteVal {
 			break
 		}
 
@@ -524,7 +584,9 @@ func (m *Matcher) mergeRegions() {
 	})
 
 	// Merge overlapping regions
-	merged := []matchedRegion{m.matchedRegions[0]}
+	// Pre-allocate with capacity since merged will be at most len(matchedRegions)
+	merged := make([]matchedRegion, 1, len(m.matchedRegions))
+	merged[0] = m.matchedRegions[0]
 	for i := 1; i < len(m.matchedRegions); i++ {
 		curr := m.matchedRegions[i]
 		last := &merged[len(merged)-1]
@@ -552,8 +614,10 @@ func (m *Matcher) mergeRegions() {
 
 // buildEntries creates the final entry list and delta data.
 func (m *Matcher) buildEntries() ([]Entry, []byte) {
-	var entries []Entry
-	var deltaData []byte
+	// Pre-allocate entries: we'll have at most 2x matchedRegions (matched + gap entries)
+	entries := make([]Entry, 0, len(m.matchedRegions)*2+1)
+	// Pre-allocate deltaData with estimated unmatched size (typically small)
+	deltaData := make([]byte, 0, 16*1024*1024) // 16MB initial capacity
 	deltaOffset := int64(0)
 
 	// Start from beginning of file

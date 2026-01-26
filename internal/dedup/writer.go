@@ -1,6 +1,7 @@
 package dedup
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -85,7 +86,8 @@ func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ES
 // convertESToRawOffsets converts ES-offset entries to raw-offset entries.
 // Entries that span multiple PES payload ranges are split into multiple entries.
 func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ESRangeConverter) ([]Entry, error) {
-	var result []Entry
+	// Pre-allocate with ~2x capacity since entries typically expand to multiple raw ranges
+	result := make([]Entry, 0, len(entries)*2)
 
 	for _, entry := range entries {
 		if entry.Source == 0 {
@@ -292,44 +294,33 @@ func (w *Writer) writeSourceFiles() error {
 
 func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) {
 	hasher := xxhash.New()
-	writer := io.MultiWriter(w.file, hasher)
+	// Use buffered writer to batch syscalls (64KB buffer)
+	bufWriter := bufio.NewWriterSize(w.file, 64*1024)
+	writer := io.MultiWriter(bufWriter, hasher)
 
 	entryCount := len(w.entries)
 	lastProgress := 0
 
+	// Reusable buffer for entry serialization (allocation-free per entry)
+	var entryBuf [EntrySize]byte
+
 	for i, entry := range w.entries {
-		// MkvOffset (8)
-		if err := binary.Write(writer, binary.LittleEndian, entry.MkvOffset); err != nil {
-			return 0, err
-		}
+		// Serialize entry to buffer using allocation-free Put* functions
+		binary.LittleEndian.PutUint64(entryBuf[0:8], uint64(entry.MkvOffset))
+		binary.LittleEndian.PutUint64(entryBuf[8:16], uint64(entry.Length))
+		binary.LittleEndian.PutUint16(entryBuf[16:18], entry.Source)
+		binary.LittleEndian.PutUint64(entryBuf[18:26], uint64(entry.SourceOffset))
 
-		// Length (8)
-		if err := binary.Write(writer, binary.LittleEndian, entry.Length); err != nil {
-			return 0, err
-		}
-
-		// Source (2)
-		if err := binary.Write(writer, binary.LittleEndian, entry.Source); err != nil {
-			return 0, err
-		}
-
-		// SourceOffset (8)
-		if err := binary.Write(writer, binary.LittleEndian, entry.SourceOffset); err != nil {
-			return 0, err
-		}
-
-		// ES flags byte: bit 0 = IsVideo, bits 1-7 unused for video
-		// For audio: bit 0 = 0 (audio), bits 1-7 unused here
+		// ES flags byte: bit 0 = IsVideo
 		var esFlags uint8
 		if entry.IsVideo {
 			esFlags = 1
 		}
-		if err := binary.Write(writer, binary.LittleEndian, esFlags); err != nil {
-			return 0, err
-		}
+		entryBuf[26] = esFlags
+		entryBuf[27] = entry.AudioSubStreamID
 
-		// AudioSubStreamID (1)
-		if err := binary.Write(writer, binary.LittleEndian, entry.AudioSubStreamID); err != nil {
+		// Single write per entry
+		if _, err := writer.Write(entryBuf[:]); err != nil {
 			return 0, err
 		}
 
@@ -343,6 +334,11 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
 				lastProgress = pct
 			}
 		}
+	}
+
+	// Flush buffered writer
+	if err := bufWriter.Flush(); err != nil {
+		return 0, err
 	}
 
 	return hasher.Sum64(), nil

@@ -25,45 +25,96 @@ if [ ! -f "$INPUT_FILE" ]; then
     exit 1
 fi
 
-# Parse benchstat output for significant regressions
-# Look for lines with "+XX.XX%" that don't have "~" before "(p=" (which indicates no significant change)
-# Format: BenchmarkName  old  new  +XX.XX% (p=0.XXX n=XX)
+# Parse benchstat output for significant changes
+# Look for lines with percentage changes that are statistically significant
+# Format: BenchmarkName  old  new  +/-XX.XX% (p=0.XXX n=XX)
+#
+# benchstat groups results by metric type (sec/op, B/op, allocs/op)
+# We track the current metric type to provide clearer output
 
 REGRESSIONS=()
+IMPROVEMENTS=()
+CURRENT_METRIC=""
+
+# ANSI color codes (only if outputting to terminal)
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    NC='\033[0m' # No Color
+else
+    RED=''
+    GREEN=''
+    NC=''
+fi
 
 while IFS= read -r line; do
-    # Skip header lines and lines without percentage changes
-    if ! echo "$line" | grep -qE '\+[0-9]+\.[0-9]+%'; then
+    # Track which metric section we're in based on header
+    if echo "$line" | grep -qE 'sec/op.*vs base'; then
+        CURRENT_METRIC="time (sec/op)"
+        continue
+    elif echo "$line" | grep -qE 'B/op.*vs base'; then
+        CURRENT_METRIC="memory (B/op)"
+        continue
+    elif echo "$line" | grep -qE 'allocs/op.*vs base'; then
+        CURRENT_METRIC="allocations (allocs/op)"
         continue
     fi
 
-    # Skip lines with ~ (not statistically significant)
-    if echo "$line" | grep -qE '~\(p='; then
+    # Skip lines with ~ (not statistically significant) or no percentage
+    if echo "$line" | grep -qE '~\s*\(p='; then
         continue
     fi
 
-    # Extract the percentage change
-    pct=$(echo "$line" | grep -oE '\+[0-9]+\.[0-9]+%' | head -1 | tr -d '+%')
+    # Extract the benchmark name (first column)
+    benchmark_name=$(echo "$line" | awk '{print $1}')
 
-    if [ -n "$pct" ]; then
-        # Compare against threshold using awk for floating point
-        is_regression=$(awk "BEGIN {print ($pct > $THRESHOLD)}")
-        if [ "$is_regression" -eq 1 ]; then
-            REGRESSIONS+=("$line")
+    # Check for regression (positive percentage)
+    if echo "$line" | grep -qE '\+[0-9]+\.[0-9]+%'; then
+        pct=$(echo "$line" | grep -oE '\+[0-9]+\.[0-9]+%' | head -1 | tr -d '+%')
+        if [ -n "$pct" ]; then
+            # Check if it exceeds threshold
+            is_significant=$(awk "BEGIN {print ($pct > $THRESHOLD)}")
+            if [ "$is_significant" -eq 1 ]; then
+                REGRESSIONS+=("${benchmark_name}|+${pct}%|${CURRENT_METRIC}")
+            fi
+        fi
+    # Check for improvement (negative percentage)
+    elif echo "$line" | grep -qE '\-[0-9]+\.[0-9]+%'; then
+        pct=$(echo "$line" | grep -oE '\-[0-9]+\.[0-9]+%' | head -1)
+        if [ -n "$pct" ]; then
+            IMPROVEMENTS+=("${benchmark_name}|${pct}|${CURRENT_METRIC}")
         fi
     fi
 done < "$INPUT_FILE"
 
-if [ ${#REGRESSIONS[@]} -gt 0 ]; then
-    echo "❌ Significant performance regressions detected (>${THRESHOLD}%):"
-    echo ""
-    for regression in "${REGRESSIONS[@]}"; do
-        echo "  $regression"
+# Display results
+echo ""
+echo "=== Benchmark Comparison Summary ==="
+echo ""
+
+if [ ${#IMPROVEMENTS[@]} -gt 0 ]; then
+    echo -e "${GREEN}✅ Improvements:${NC}"
+    for item in "${IMPROVEMENTS[@]}"; do
+        IFS='|' read -r name pct metric <<< "$item"
+        echo -e "    ${GREEN}${name}: ${pct} ${metric}${NC}"
     done
     echo ""
-    echo "Review these changes to ensure the regression is acceptable."
+fi
+
+if [ ${#REGRESSIONS[@]} -gt 0 ]; then
+    echo -e "${RED}❌ Regressions (>${THRESHOLD}%):${NC}"
+    for item in "${REGRESSIONS[@]}"; do
+        IFS='|' read -r name pct metric <<< "$item"
+        echo -e "    ${RED}${name}: ${pct} ${metric}${NC}"
+    done
+    echo ""
+    echo "Review these changes to ensure the regressions are acceptable."
     exit 1
 else
-    echo "✅ No significant performance regressions detected (threshold: ${THRESHOLD}%)"
+    if [ ${#IMPROVEMENTS[@]} -eq 0 ]; then
+        echo "No significant changes detected."
+    fi
+    echo ""
+    echo -e "${GREEN}✅ No significant regressions detected (threshold: ${THRESHOLD}%)${NC}"
     exit 0
 fi

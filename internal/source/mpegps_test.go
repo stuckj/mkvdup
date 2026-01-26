@@ -222,3 +222,150 @@ func TestRawRangesForESRegion_EmptyRanges(t *testing.T) {
 		t.Error("expected error for empty ranges")
 	}
 }
+
+func TestReadESByteWithHint_VideoHintValid(t *testing.T) {
+	// Create mock data
+	data := make([]byte, 5000)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	p := &MPEGPSParser{
+		data:           data,
+		size:           int64(len(data)),
+		filterUserData: true,
+		filteredVideoRanges: []PESPayloadRange{
+			{FileOffset: 1000, Size: 500, ESOffset: 0},
+			{FileOffset: 2000, Size: 500, ESOffset: 500},
+			{FileOffset: 3000, Size: 500, ESOffset: 1000},
+		},
+	}
+
+	// Read with correct hint (range 0)
+	b, newHint, ok := p.ReadESByteWithHint(100, true, 0)
+	if !ok {
+		t.Fatal("ReadESByteWithHint failed")
+	}
+	if newHint != 0 {
+		t.Errorf("expected hint 0, got %d", newHint)
+	}
+	// ES offset 100 maps to file offset 1100
+	expected := data[1100]
+	if b != expected {
+		t.Errorf("got byte %d, want %d", b, expected)
+	}
+}
+
+func TestReadESByteWithHint_VideoHintCrossesBoundary(t *testing.T) {
+	data := make([]byte, 5000)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	p := &MPEGPSParser{
+		data:           data,
+		size:           int64(len(data)),
+		filterUserData: true,
+		filteredVideoRanges: []PESPayloadRange{
+			{FileOffset: 1000, Size: 500, ESOffset: 0},
+			{FileOffset: 2000, Size: 500, ESOffset: 500},
+			{FileOffset: 3000, Size: 500, ESOffset: 1000},
+		},
+	}
+
+	// Read at boundary with old hint - should find adjacent range
+	b, newHint, ok := p.ReadESByteWithHint(500, true, 0)
+	if !ok {
+		t.Fatal("ReadESByteWithHint failed")
+	}
+	if newHint != 1 {
+		t.Errorf("expected hint 1 (adjacent range), got %d", newHint)
+	}
+	// ES offset 500 maps to file offset 2000 (start of second range)
+	expected := data[2000]
+	if b != expected {
+		t.Errorf("got byte %d, want %d", b, expected)
+	}
+}
+
+func TestReadESByteWithHint_FallbackToBinarySearch(t *testing.T) {
+	data := make([]byte, 5000)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	p := &MPEGPSParser{
+		data:           data,
+		size:           int64(len(data)),
+		filterUserData: true,
+		filteredVideoRanges: []PESPayloadRange{
+			{FileOffset: 1000, Size: 500, ESOffset: 0},
+			{FileOffset: 2000, Size: 500, ESOffset: 500},
+			{FileOffset: 3000, Size: 500, ESOffset: 1000},
+		},
+	}
+
+	// Read with invalid hint (-1) - should fall back to binary search
+	b, newHint, ok := p.ReadESByteWithHint(1200, true, -1)
+	if !ok {
+		t.Fatal("ReadESByteWithHint failed")
+	}
+	if newHint != 2 {
+		t.Errorf("expected hint 2 (from binary search), got %d", newHint)
+	}
+	// ES offset 1200 is in range 2: 1000 + (1200-1000) = FileOffset 3200
+	expected := data[3200]
+	if b != expected {
+		t.Errorf("got byte %d, want %d", b, expected)
+	}
+}
+
+func TestReadAudioByteWithHint_Valid(t *testing.T) {
+	data := make([]byte, 10000)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	p := &MPEGPSParser{
+		data: data,
+		size: int64(len(data)),
+		filteredAudioBySubStream: map[byte][]PESPayloadRange{
+			0x80: {
+				{FileOffset: 5000, Size: 1000, ESOffset: 0},
+				{FileOffset: 7000, Size: 1000, ESOffset: 1000},
+			},
+		},
+	}
+
+	// Read with correct hint
+	b, newHint, ok := p.ReadAudioByteWithHint(0x80, 500, 0)
+	if !ok {
+		t.Fatal("ReadAudioByteWithHint failed")
+	}
+	if newHint != 0 {
+		t.Errorf("expected hint 0, got %d", newHint)
+	}
+	// ES offset 500 maps to file offset 5500
+	expected := data[5500]
+	if b != expected {
+		t.Errorf("got byte %d, want %d", b, expected)
+	}
+}
+
+func TestReadESByteWithHint_OutOfBounds(t *testing.T) {
+	data := make([]byte, 5000)
+	p := &MPEGPSParser{
+		data:           data,
+		size:           int64(len(data)),
+		filterUserData: true,
+		filteredVideoRanges: []PESPayloadRange{
+			{FileOffset: 1000, Size: 500, ESOffset: 0},
+		},
+	}
+
+	// Read beyond the range
+	_, _, ok := p.ReadESByteWithHint(1000, true, 0)
+	if ok {
+		t.Error("expected failure for out of bounds ES offset")
+	}
+}

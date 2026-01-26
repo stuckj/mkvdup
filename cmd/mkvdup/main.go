@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -223,20 +224,40 @@ func main() {
 	var filteredArgs []string
 	showHelp := false
 	showVersion := false
+	cpuprofile := ""
 
-	for _, arg := range args {
-		switch arg {
-		case "-v", "--verbose":
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-v" || arg == "--verbose":
 			verbose = true
-		case "-h", "--help":
+		case arg == "-h" || arg == "--help":
 			showHelp = true
-		case "--version":
+		case arg == "--version":
 			showVersion = true
+		case arg == "--cpuprofile" && i+1 < len(args):
+			i++
+			cpuprofile = args[i]
+		case strings.HasPrefix(arg, "--cpuprofile="):
+			cpuprofile = strings.TrimPrefix(arg, "--cpuprofile=")
 		default:
 			filteredArgs = append(filteredArgs, arg)
 		}
 	}
 	args = filteredArgs
+
+	// Start CPU profiling if requested
+	if cpuprofile != "" {
+		f, err := os.Create(cpuprofile)
+		if err != nil {
+			log.Fatalf("could not create CPU profile: %v", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatalf("could not start CPU profile: %v", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	// Handle --version (always top-level)
 	if showVersion {
