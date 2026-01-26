@@ -50,8 +50,8 @@ jobs:
           if [ -f benchmarks/baseline.txt ]; then
             echo "Comparing against baseline..."
             if benchstat benchmarks/baseline.txt benchmark-output.txt | tee benchstat-output.txt; then
-              # Check for significant regressions
-              if bash scripts/check-benchstat.sh benchstat-output.txt; then
+              # Check for significant regressions and capture the summary
+              if bash scripts/check-benchstat.sh benchstat-output.txt | tee regression-summary.txt; then
                 echo "regression=false" >> $GITHUB_OUTPUT
               else
                 echo "regression=true" >> $GITHUB_OUTPUT
@@ -71,12 +71,13 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('benchstat-output.txt', 'utf8');
+            const benchstatOutput = fs.readFileSync('benchstat-output.txt', 'utf8');
+            const regressionSummary = fs.readFileSync('regression-summary.txt', 'utf8');
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## ⚠️ Benchmark Regression Detected\n\nStatistically significant performance regression detected by benchstat:\n\n\`\`\`\n${output}\n\`\`\`\n\nPlease review the changes to ensure the regression is acceptable.`
+              body: `## ⚠️ Benchmark Regression Detected\n\n${regressionSummary}\n\n<details>\n<summary>Full benchstat output</summary>\n\n\`\`\`\n${benchstatOutput}\n\`\`\`\n</details>\n\nPlease review the changes to ensure the regression is acceptable.`
             });
 
       # Visualization using github-action-benchmark
