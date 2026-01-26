@@ -87,7 +87,7 @@ func createSyntheticMKV(numClusters, blocksPerCluster, blockDataSize int) ([]byt
 		0x83, 0x81, 0x01, // TrackType = 1 (video)
 	}
 	codecIDBytes := []byte("V_MPEG4/ISO/AVC")
-	trackEntryData = append(trackEntryData, 0x86)                              // CodecID element ID
+	trackEntryData = append(trackEntryData, 0x86)                                     // CodecID element ID
 	trackEntryData = append(trackEntryData, encodeVINT(uint64(len(codecIDBytes)))...) // size
 	trackEntryData = append(trackEntryData, codecIDBytes...)
 
@@ -159,9 +159,9 @@ func BenchmarkReadVINT(b *testing.B) {
 		name string
 		data []byte
 	}{
-		{"1-byte", []byte{0x81}},                             // 1
-		{"2-byte", []byte{0x40, 0x80}},                       // 128
-		{"4-byte", []byte{0x10, 0x00, 0x10, 0x00}},           // 4096
+		{"1-byte", []byte{0x81}},                                           // 1
+		{"2-byte", []byte{0x40, 0x80}},                                     // 128
+		{"4-byte", []byte{0x10, 0x00, 0x10, 0x00}},                         // 4096
 		{"8-byte", []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00}}, // Large value
 	}
 
@@ -183,8 +183,8 @@ func BenchmarkReadElementHeader(b *testing.B) {
 		name string
 		data []byte
 	}{
-		{"SimpleBlock", []byte{0xA3, 0x82, 0x10, 0x00}},                         // ID 0xA3, size 4096
-		{"Cluster", []byte{0x1F, 0x43, 0xB6, 0x75, 0x41, 0x00, 0x00}},            // 4-byte ID, 3-byte size
+		{"SimpleBlock", []byte{0xA3, 0x82, 0x10, 0x00}},                                             // ID 0xA3, size 4096
+		{"Cluster", []byte{0x1F, 0x43, 0xB6, 0x75, 0x41, 0x00, 0x00}},                               // 4-byte ID, 3-byte size
 		{"Segment", []byte{0x18, 0x53, 0x80, 0x67, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}}, // Unknown size
 	}
 
