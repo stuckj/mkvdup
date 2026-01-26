@@ -2054,7 +2054,7 @@ type RawEntry struct {
 }
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov9" title="549505">{
+func (r *RawEntry) ToEntry() Entry <span class="cov9" title="549502">{
         return Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -2271,12 +2271,12 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov10" title="5495
 
         // Check cache first (with lock)
         <span class="cov9" title="549512">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov3" title="21">{
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov3" title="24">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov9" title="549491">r.cacheMu.Unlock()
+        <span class="cov9" title="549488">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -2287,7 +2287,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov10" title="5495
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov9" title="549491">var raw RawEntry
+        <span class="cov9" title="549488">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -3199,7 +3199,7 @@ func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error <span 
         <span class="cov3" title="7">return nil</span>
 }
 
-func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) <span class="cov10" title="6273">{
+func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) <span class="cov10" title="6274">{
         return a.reader.ReadAt(p, off)
 }</span>
 
@@ -3789,7 +3789,7 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 }
 
 // Read implements fs.NodeReader - reads data from the file.
-func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov8" title="6280">{
+func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov8" title="6281">{
         // Permission checks are handled by the kernel via default_permissions mount option.
 
         n.file.mu.RLock()
@@ -3804,17 +3804,17 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
         }
 
         // Clamp read to file size
-        <span class="cov8" title="6278">if off &gt;= n.file.Size </span><span class="cov1" title="2">{
+        <span class="cov8" title="6279">if off &gt;= n.file.Size </span><span class="cov1" title="2">{
                 return fuse.ReadResultData(nil), 0
         }</span>
 
-        <span class="cov8" title="6276">endOff := off + int64(len(dest))
+        <span class="cov8" title="6277">endOff := off + int64(len(dest))
         if endOff &gt; n.file.Size </span><span class="cov1" title="1">{
                 dest = dest[:n.file.Size-off]
         }</span>
 
         // Read from dedup reader
-        <span class="cov8" title="6276">nRead, err := n.file.reader.ReadAt(dest, off)
+        <span class="cov8" title="6277">nRead, err := n.file.reader.ReadAt(dest, off)
         if err != nil &amp;&amp; nRead == 0 </span><span class="cov0" title="0">{
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Read error: %s at offset %d: %v", n.file.Name, off, err)
@@ -3822,11 +3822,11 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
                 <span class="cov0" title="0">return nil, syscall.EIO</span>
         }
 
-        <span class="cov8" title="6276">if n.verbose </span><span class="cov0" title="0">{
+        <span class="cov8" title="6277">if n.verbose </span><span class="cov0" title="0">{
                 log.Printf("Read: %s offset=%d len=%d read=%d", n.file.Name, off, len(dest), nRead)
         }</span>
 
-        <span class="cov8" title="6276">return fuse.ReadResultData(dest[:nRead]), 0</span>
+        <span class="cov8" title="6277">return fuse.ReadResultData(dest[:nRead]), 0</span>
 }
 
 // ensureReader ensures the dedup reader is initialized.
@@ -4388,14 +4388,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="250">{
-                if p.UID != nil </span><span class="cov9" title="241">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="251">{
+                if p.UID != nil </span><span class="cov9" title="242">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="250">if p.GID != nil </span><span class="cov5" title="14">{
+                <span class="cov9" title="251">if p.GID != nil </span><span class="cov5" title="14">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="250">if p.Mode != nil </span><span class="cov5" title="19">{
+                <span class="cov9" title="251">if p.Mode != nil </span><span class="cov5" title="19">{
                         mode = *p.Mode
                 }</span>
         }
