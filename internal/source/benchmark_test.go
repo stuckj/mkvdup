@@ -95,11 +95,11 @@ func BenchmarkFindAllSyncPoints_Large(b *testing.B) {
 	data := make([]byte, size)
 	rng := rand.New(rand.NewPCG(42, 0))
 	for i := range data {
-		b := byte(rng.IntN(256))
-		if b == 0x00 || b == 0x01 || b == 0x0B || b == 0x77 || b == 0xFF {
-			b = 0x42
+		randomByte := byte(rng.IntN(256))
+		if randomByte == 0x00 || randomByte == 0x01 || randomByte == 0x0B || randomByte == 0x77 || randomByte == 0xFF {
+			randomByte = 0x42
 		}
-		data[i] = b
+		data[i] = randomByte
 	}
 
 	// Insert alternating video and audio sync points

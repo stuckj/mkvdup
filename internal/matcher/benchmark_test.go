@@ -475,7 +475,7 @@ func BenchmarkHashLookup(b *testing.B) {
 	idx := &source.Index{
 		WindowSize:      64,
 		HashToLocations: make(map[uint64][]source.Location),
-		SourceDir:       "/test",
+		SourceDir:       "/benchmark",
 	}
 
 	// Populate with 10000 hashes
