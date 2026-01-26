@@ -434,13 +434,15 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 	}
 
 	// Expand backward (zero-copy single-byte reads from mmap'd data)
+	// Track range hint across reads to avoid repeated binary searches
+	backwardHint := -1
 	backwardExpanded := int64(0)
 	for mkvStart > 0 && srcStart > 0 && backwardExpanded < MaxExpansionBytes {
 		// Zero-copy: direct byte access
 		mkvByte := m.mkvData[mkvStart-1]
 
-		var srcByte []byte
-		var err error
+		var srcByteVal byte
+		var ok bool
 		if m.sourceIndex.UsesESOffsets {
 			readLoc := source.Location{
 				FileIndex:        loc.FileIndex,
@@ -448,19 +450,20 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 				IsVideo:          loc.IsVideo,
 				AudioSubStreamID: loc.AudioSubStreamID,
 			}
-			srcByte, err = m.sourceIndex.ReadESDataAt(readLoc, 1)
-			if err != nil || len(srcByte) == 0 {
+			srcByteVal, backwardHint, ok = m.sourceIndex.ReadESByteWithHint(readLoc, backwardHint)
+			if !ok {
 				break
 			}
 		} else {
 			// Zero-copy for raw indexes
-			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
+			srcByte := m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
 			if len(srcByte) == 0 {
 				break
 			}
+			srcByteVal = srcByte[0]
 		}
 
-		if mkvByte != srcByte[0] {
+		if mkvByte != srcByteVal {
 			break
 		}
 
@@ -471,6 +474,8 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 	}
 
 	// Expand forward (zero-copy single-byte reads from mmap'd data)
+	// Track range hint across reads to avoid repeated binary searches
+	forwardHint := -1
 	mkvEnd := mkvOffset + initialLen
 	srcEnd := loc.Offset + initialLen
 	forwardExpanded := int64(0)
@@ -478,8 +483,8 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 		// Zero-copy: direct byte access
 		mkvByte := m.mkvData[mkvEnd]
 
-		var srcByte []byte
-		var err error
+		var srcByteVal byte
+		var ok bool
 		if m.sourceIndex.UsesESOffsets {
 			readLoc := source.Location{
 				FileIndex:        loc.FileIndex,
@@ -487,19 +492,20 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 				IsVideo:          loc.IsVideo,
 				AudioSubStreamID: loc.AudioSubStreamID,
 			}
-			srcByte, err = m.sourceIndex.ReadESDataAt(readLoc, 1)
-			if err != nil || len(srcByte) == 0 {
+			srcByteVal, forwardHint, ok = m.sourceIndex.ReadESByteWithHint(readLoc, forwardHint)
+			if !ok {
 				break
 			}
 		} else {
 			// Zero-copy for raw indexes
-			srcByte = m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
+			srcByte := m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
 			if len(srcByte) == 0 {
 				break
 			}
+			srcByteVal = srcByte[0]
 		}
 
-		if mkvByte != srcByte[0] {
+		if mkvByte != srcByteVal {
 			break
 		}
 

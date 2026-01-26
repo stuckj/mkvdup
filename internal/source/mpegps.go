@@ -629,6 +629,113 @@ func (p *MPEGPSParser) binarySearchRanges(ranges []PESPayloadRange, esOffset int
 	return -1
 }
 
+// ReadESByteWithHint reads a single byte from the ES stream, using a range hint
+// to avoid binary search when reading sequentially. Returns the byte, the range
+// index where it was found (for use as hint on next call), and success status.
+// Pass rangeHint=-1 to force binary search.
+func (p *MPEGPSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHint int) (byte, int, bool) {
+	var ranges []PESPayloadRange
+	if isVideo {
+		if p.filterUserData && len(p.filteredVideoRanges) > 0 {
+			ranges = p.filteredVideoRanges
+		} else {
+			ranges = p.videoRanges
+		}
+	} else {
+		// Audio doesn't use this method - it goes through sub-stream reader
+		return 0, -1, false
+	}
+
+	if len(ranges) == 0 {
+		return 0, -1, false
+	}
+
+	// Fast path: check if hint is still valid (O(1) check)
+	if rangeHint >= 0 && rangeHint < len(ranges) {
+		r := ranges[rangeHint]
+		if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
+			// Hint was correct - read directly
+			offsetInPayload := esOffset - r.ESOffset
+			fileOffset := r.FileOffset + offsetInPayload
+			if fileOffset >= 0 && fileOffset < p.size {
+				return p.data[fileOffset], rangeHint, true
+			}
+		}
+		// Check adjacent range (common case when crossing boundaries)
+		if rangeHint+1 < len(ranges) {
+			r = ranges[rangeHint+1]
+			if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
+				offsetInPayload := esOffset - r.ESOffset
+				fileOffset := r.FileOffset + offsetInPayload
+				if fileOffset >= 0 && fileOffset < p.size {
+					return p.data[fileOffset], rangeHint + 1, true
+				}
+			}
+		}
+	}
+
+	// Slow path: binary search
+	rangeIdx := p.binarySearchRanges(ranges, esOffset)
+	if rangeIdx < 0 {
+		return 0, -1, false
+	}
+
+	r := ranges[rangeIdx]
+	offsetInPayload := esOffset - r.ESOffset
+	fileOffset := r.FileOffset + offsetInPayload
+	if fileOffset >= 0 && fileOffset < p.size {
+		return p.data[fileOffset], rangeIdx, true
+	}
+
+	return 0, -1, false
+}
+
+// ReadAudioByteWithHint reads a single byte from an audio sub-stream, using a range hint.
+func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
+	ranges := p.filteredAudioBySubStream[subStreamID]
+	if len(ranges) == 0 {
+		return 0, -1, false
+	}
+
+	// Fast path: check if hint is still valid
+	if rangeHint >= 0 && rangeHint < len(ranges) {
+		r := ranges[rangeHint]
+		if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
+			offsetInPayload := esOffset - r.ESOffset
+			fileOffset := r.FileOffset + offsetInPayload
+			if fileOffset >= 0 && fileOffset < p.size {
+				return p.data[fileOffset], rangeHint, true
+			}
+		}
+		// Check adjacent range
+		if rangeHint+1 < len(ranges) {
+			r = ranges[rangeHint+1]
+			if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
+				offsetInPayload := esOffset - r.ESOffset
+				fileOffset := r.FileOffset + offsetInPayload
+				if fileOffset >= 0 && fileOffset < p.size {
+					return p.data[fileOffset], rangeHint + 1, true
+				}
+			}
+		}
+	}
+
+	// Slow path: binary search
+	rangeIdx := p.binarySearchRanges(ranges, esOffset)
+	if rangeIdx < 0 {
+		return 0, -1, false
+	}
+
+	r := ranges[rangeIdx]
+	offsetInPayload := esOffset - r.ESOffset
+	fileOffset := r.FileOffset + offsetInPayload
+	if fileOffset >= 0 && fileOffset < p.size {
+		return p.data[fileOffset], rangeIdx, true
+	}
+
+	return 0, -1, false
+}
+
 // Video start codes that should be KEPT (not user_data)
 const (
 	UserDataStartCode = 0xB2 // This gets stripped by MKV tools
