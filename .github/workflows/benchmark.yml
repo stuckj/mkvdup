@@ -18,8 +18,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Use PAT for checkout so git credentials persist for later push
-          token: ${{ secrets.BENCHMARK_PAT }}
+          # Use PAT for checkout on main pushes (needed for baseline update push).
+          # Fall back to default GITHUB_TOKEN for PRs (including dependabot).
+          token: ${{ secrets.BENCHMARK_PAT || github.token }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -35,17 +36,24 @@ jobs:
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
       - name: Run benchmarks
-        run: go test -bench=. -benchmem -count=10 ./internal/dedup/... | tee benchmark-output.txt
+        run: |
+          go test -bench=. -benchmem -count=10 \
+            ./internal/dedup/... \
+            ./internal/mkv/... \
+            ./internal/source/... \
+            ./internal/matcher/... \
+            | tee benchmark-output.txt
 
       # Statistical regression detection using benchstat
       - name: Compare with baseline (benchstat)
         id: benchstat
         run: |
+          set -o pipefail  # Ensure pipe returns exit code of first failing command
           if [ -f benchmarks/baseline.txt ]; then
             echo "Comparing against baseline..."
             if benchstat benchmarks/baseline.txt benchmark-output.txt | tee benchstat-output.txt; then
-              # Check for significant regressions
-              if bash scripts/check-benchstat.sh benchstat-output.txt; then
+              # Check for significant regressions and capture the summary
+              if bash scripts/check-benchstat.sh benchstat-output.txt | tee regression-summary.txt; then
                 echo "regression=false" >> $GITHUB_OUTPUT
               else
                 echo "regression=true" >> $GITHUB_OUTPUT
@@ -65,12 +73,13 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('benchstat-output.txt', 'utf8');
+            const benchstatOutput = fs.readFileSync('benchstat-output.txt', 'utf8');
+            const regressionSummary = fs.readFileSync('regression-summary.txt', 'utf8');
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## ⚠️ Benchmark Regression Detected\n\nStatistically significant performance regression detected by benchstat:\n\n\`\`\`\n${output}\n\`\`\`\n\nPlease review the changes to ensure the regression is acceptable.`
+              body: `## ⚠️ Benchmark Regression Detected\n\n${regressionSummary}\n\n<details>\n<summary>Full benchstat output</summary>\n\n\`\`\`\n${benchstatOutput}\n\`\`\`\n</details>\n\nPlease review the changes to ensure the regression is acceptable.`
             });
 
       # Visualization using github-action-benchmark
@@ -79,8 +88,8 @@ jobs:
         with:
           tool: 'go'
           output-file-path: benchmark-output.txt
-          # Use PAT to bypass branch protection for gh-pages push
-          github-token: ${{ secrets.BENCHMARK_PAT }}
+          # Use PAT for gh-pages push on main, fall back to GITHUB_TOKEN for PRs
+          github-token: ${{ secrets.BENCHMARK_PAT || github.token }}
           # Only push to gh-pages on main branch pushes
           auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           # Disable alerts from this action (using benchstat instead)

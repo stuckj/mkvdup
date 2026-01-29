@@ -368,3 +368,166 @@ func BenchmarkNewReaderLazy(b *testing.B) {
 		r.Close()
 	}
 }
+
+// BenchmarkWriter_Write benchmarks the full dedup file serialization.
+func BenchmarkWriter_Write(b *testing.B) {
+	tmpDir := b.TempDir()
+	path := filepath.Join(tmpDir, "bench.mkvdup")
+
+	// Create synthetic match result
+	numEntries := 10000
+	entries := make([]Entry, numEntries)
+	for i := range numEntries {
+		entries[i] = Entry{
+			MkvOffset:    int64(i * 1000),
+			Length:       1000,
+			Source:       1,
+			SourceOffset: int64(i * 1000),
+			IsVideo:      i%3 != 0, // Mix of video and audio
+		}
+	}
+
+	// Delta data
+	deltaData := make([]byte, 100*1024) // 100KB delta
+	for i := range deltaData {
+		deltaData[i] = byte(i % 256)
+	}
+
+	sourceFiles := []SourceFile{
+		{RelativePath: "VIDEO_TS/VTS_01_1.VOB", Size: 10000000, Checksum: 0x12345678},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		writer, err := NewWriter(path)
+		if err != nil {
+			b.Fatalf("NewWriter failed: %v", err)
+		}
+
+		writer.header.OriginalSize = int64(numEntries * 1000)
+		writer.header.OriginalChecksum = 0xABCDEF
+		writer.header.SourceType = SourceTypeDVD
+		writer.header.SourceFileCount = 1
+		writer.header.EntryCount = uint64(numEntries)
+		writer.header.DeltaSize = int64(len(deltaData))
+		writer.sourceFiles = sourceFiles
+		writer.entries = entries
+		writer.deltaData = deltaData
+
+		if err := writer.Write(); err != nil {
+			writer.Close()
+			b.Fatalf("Write failed: %v", err)
+		}
+		writer.Close()
+	}
+}
+
+// BenchmarkWriter_Write_LargeIndex benchmarks writing with a large index.
+func BenchmarkWriter_Write_LargeIndex(b *testing.B) {
+	tmpDir := b.TempDir()
+	path := filepath.Join(tmpDir, "bench.mkvdup")
+
+	// Create large index
+	numEntries := 100000
+	entries := make([]Entry, numEntries)
+	for i := range numEntries {
+		entries[i] = Entry{
+			MkvOffset:    int64(i * 100),
+			Length:       100,
+			Source:       1,
+			SourceOffset: int64(i * 100),
+			IsVideo:      true,
+		}
+	}
+
+	// Small delta
+	deltaData := make([]byte, 1024)
+
+	sourceFiles := []SourceFile{
+		{RelativePath: "VIDEO_TS/VTS_01_1.VOB", Size: 10000000, Checksum: 0x12345678},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		writer, err := NewWriter(path)
+		if err != nil {
+			b.Fatalf("NewWriter failed: %v", err)
+		}
+
+		writer.header.OriginalSize = int64(numEntries * 100)
+		writer.header.OriginalChecksum = 0xABCDEF
+		writer.header.SourceType = SourceTypeDVD
+		writer.header.SourceFileCount = 1
+		writer.header.EntryCount = uint64(numEntries)
+		writer.header.DeltaSize = int64(len(deltaData))
+		writer.sourceFiles = sourceFiles
+		writer.entries = entries
+		writer.deltaData = deltaData
+
+		if err := writer.Write(); err != nil {
+			writer.Close()
+			b.Fatalf("Write failed: %v", err)
+		}
+		writer.Close()
+	}
+}
+
+// BenchmarkWriter_Write_LargeDelta benchmarks writing with a large delta.
+func BenchmarkWriter_Write_LargeDelta(b *testing.B) {
+	tmpDir := b.TempDir()
+	path := filepath.Join(tmpDir, "bench.mkvdup")
+
+	// Small index
+	numEntries := 100
+	entries := make([]Entry, numEntries)
+	for i := range numEntries {
+		entries[i] = Entry{
+			MkvOffset:    int64(i * 10000),
+			Length:       10000,
+			Source:       1,
+			SourceOffset: int64(i * 10000),
+			IsVideo:      true,
+		}
+	}
+
+	// Large delta (1MB)
+	deltaData := make([]byte, 1024*1024)
+	for i := range deltaData {
+		deltaData[i] = byte(i % 256)
+	}
+
+	sourceFiles := []SourceFile{
+		{RelativePath: "VIDEO_TS/VTS_01_1.VOB", Size: 10000000, Checksum: 0x12345678},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.SetBytes(int64(len(deltaData)))
+
+	for b.Loop() {
+		writer, err := NewWriter(path)
+		if err != nil {
+			b.Fatalf("NewWriter failed: %v", err)
+		}
+
+		writer.header.OriginalSize = int64(numEntries * 10000)
+		writer.header.OriginalChecksum = 0xABCDEF
+		writer.header.SourceType = SourceTypeDVD
+		writer.header.SourceFileCount = 1
+		writer.header.EntryCount = uint64(numEntries)
+		writer.header.DeltaSize = int64(len(deltaData))
+		writer.sourceFiles = sourceFiles
+		writer.entries = entries
+		writer.deltaData = deltaData
+
+		if err := writer.Write(); err != nil {
+			writer.Close()
+			b.Fatalf("Write failed: %v", err)
+		}
+		writer.Close()
+	}
+}
