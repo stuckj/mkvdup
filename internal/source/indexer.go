@@ -448,6 +448,39 @@ func (idx *Index) ReadESDataAt(loc Location, size int) ([]byte, error) {
 	return idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, size)
 }
 
+// ReadESByteWithHint reads a single byte from the ES stream, using a range hint
+// to avoid binary search when reading sequentially. Returns the byte, the new range
+// hint for the next call, and success status. Pass rangeHint=-1 to force binary search.
+// This is optimized for the expandMatch hot path where we read bytes sequentially.
+func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bool) {
+	if int(loc.FileIndex) >= len(idx.ESReaders) || idx.ESReaders[loc.FileIndex] == nil {
+		return 0, -1, false
+	}
+
+	// Type-assert to MPEGPSParser to access hint-based methods
+	parser, ok := idx.ESReaders[loc.FileIndex].(*MPEGPSParser)
+	if !ok {
+		// Fallback: use ReadESData (allocates, but works for any ESReader)
+		var data []byte
+		var err error
+		if loc.IsVideo {
+			data, err = idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, 1, true)
+		} else {
+			data, err = idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, 1)
+		}
+		if err != nil || len(data) == 0 {
+			return 0, -1, false
+		}
+		return data[0], -1, true
+	}
+
+	// Use hint-based reading for MPEGPSParser
+	if loc.IsVideo {
+		return parser.ReadESByteWithHint(loc.Offset, true, rangeHint)
+	}
+	return parser.ReadAudioByteWithHint(loc.AudioSubStreamID, loc.Offset, rangeHint)
+}
+
 // ComputeHash calculates the xxhash of the given data.
 func ComputeHash(data []byte) uint64 {
 	return xxhash.Sum64(data)
