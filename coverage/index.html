@@ -2083,7 +2083,7 @@ type RawEntry struct {
 }
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov9" title="549503">{
+func (r *RawEntry) ToEntry() Entry <span class="cov9" title="549505">{
         return Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -2300,12 +2300,12 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov10" title="5495
 
         // Check cache first (with lock)
         <span class="cov9" title="549512">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov3" title="23">{
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov3" title="21">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov9" title="549489">r.cacheMu.Unlock()
+        <span class="cov9" title="549491">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -2316,7 +2316,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov10" title="5495
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov9" title="549489">var raw RawEntry
+        <span class="cov9" title="549491">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -4413,14 +4413,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="251">{
-                if p.UID != nil </span><span class="cov9" title="242">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="250">{
+                if p.UID != nil </span><span class="cov9" title="241">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="251">if p.GID != nil </span><span class="cov5" title="14">{
+                <span class="cov9" title="250">if p.GID != nil </span><span class="cov5" title="14">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="251">if p.Mode != nil </span><span class="cov5" title="19">{
+                <span class="cov9" title="250">if p.Mode != nil </span><span class="cov5" title="19">{
                         mode = *p.Mode
                 }</span>
         }
