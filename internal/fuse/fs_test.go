@@ -1808,3 +1808,135 @@ func TestMKVFSDirNode_Setattr_ChmodDenied(t *testing.T) {
 		t.Errorf("Setattr() = %v, want EPERM", errno)
 	}
 }
+
+func TestBuildDirectoryTree_WithPermStore(t *testing.T) {
+	// All existing BuildDirectoryTree tests pass nil for permStore.
+	// This test verifies that a real PermissionStore is propagated to nodes.
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1000,
+		FileMode: 0644,
+		DirUID:   1000,
+		DirGID:   1000,
+		DirMode:  0755,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	files := []*MKVFile{
+		{Name: "Movies/Action/video.mkv", Size: 100},
+		{Name: "root.mkv", Size: 50},
+	}
+	tree := BuildDirectoryTree(files, false, nil, store)
+
+	// Verify permStore is set on root directory
+	if tree.permStore != store {
+		t.Error("root dir permStore not set")
+	}
+
+	// Verify permStore is propagated to subdirectories
+	movies, ok := tree.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory")
+	}
+	if movies.permStore != store {
+		t.Error("Movies dir permStore not set")
+	}
+	action, ok := movies.subdirs["Action"]
+	if !ok {
+		t.Fatal("expected Action subdirectory")
+	}
+	if action.permStore != store {
+		t.Error("Action dir permStore not set")
+	}
+
+	// Verify Getattr on directory returns UID/GID from store defaults
+	var out fuse.AttrOut
+	errno := movies.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Uid != 1000 {
+		t.Errorf("dir UID = %d, want 1000", out.Uid)
+	}
+	if out.Gid != 1000 {
+		t.Errorf("dir GID = %d, want 1000", out.Gid)
+	}
+	expectedMode := uint32(fuse.S_IFDIR | 0755)
+	if out.Mode != expectedMode {
+		t.Errorf("dir mode = %o, want %o", out.Mode, expectedMode)
+	}
+}
+
+func TestNewMKVFSWithFactories_WithPermStore(t *testing.T) {
+	testData := []byte("test MKV data content")
+
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1000,
+		FileMode: 0644,
+		DirUID:   1000,
+		DirGID:   1000,
+		DirMode:  0755,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	configReader := &mockConfigReader{
+		configs: map[string]*Config{
+			"/configs/movie.yaml": {
+				Name:      "Movies/movie.mkv",
+				DedupFile: "/data/movie.dedup",
+				SourceDir: "/data/source",
+			},
+		},
+	}
+
+	readerFactory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/movie.dedup": {
+				data:         testData,
+				originalSize: int64(len(testData)),
+			},
+		},
+	}
+
+	root, err := NewMKVFSWithFactories(
+		[]string{"/configs/movie.yaml"},
+		false,
+		readerFactory,
+		configReader,
+		store,
+	)
+	if err != nil {
+		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
+	}
+
+	// Verify rootDir has permStore set
+	if root.rootDir == nil {
+		t.Fatal("rootDir should not be nil")
+	}
+	if root.rootDir.permStore != store {
+		t.Error("rootDir permStore not set")
+	}
+
+	// Verify subdirectory has permStore
+	movies, ok := root.rootDir.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory")
+	}
+	if movies.permStore != store {
+		t.Error("Movies dir permStore not set")
+	}
+
+	// Verify directory Getattr returns UID/GID from store defaults
+	var out fuse.AttrOut
+	errno := movies.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Uid != 1000 {
+		t.Errorf("dir UID = %d, want 1000", out.Uid)
+	}
+	if out.Gid != 1000 {
+		t.Errorf("dir GID = %d, want 1000", out.Gid)
+	}
+}

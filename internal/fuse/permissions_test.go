@@ -29,6 +29,29 @@ func ContextWithCaller(ctx context.Context, uid, gid uint32) context.Context {
 	return context.WithValue(ctx, testCallerKey, CallerInfo{Uid: uid, Gid: gid})
 }
 
+func TestDefaultPerms_AllFields(t *testing.T) {
+	d := DefaultPerms()
+
+	if d.FileUID != 0 {
+		t.Errorf("FileUID = %d, want 0", d.FileUID)
+	}
+	if d.FileGID != 0 {
+		t.Errorf("FileGID = %d, want 0", d.FileGID)
+	}
+	if d.FileMode != 0444 {
+		t.Errorf("FileMode = %o, want %o", d.FileMode, 0444)
+	}
+	if d.DirUID != 0 {
+		t.Errorf("DirUID = %d, want 0", d.DirUID)
+	}
+	if d.DirGID != 0 {
+		t.Errorf("DirGID = %d, want 0", d.DirGID)
+	}
+	if d.DirMode != 0555 {
+		t.Errorf("DirMode = %o, want %o", d.DirMode, 0555)
+	}
+}
+
 func TestNewPermissionStore(t *testing.T) {
 	defaults := DefaultPerms()
 	store := NewPermissionStore("", defaults, false)
@@ -37,10 +60,22 @@ func TestNewPermissionStore(t *testing.T) {
 		t.Fatal("NewPermissionStore returned nil")
 	}
 
-	// Check defaults are set
+	// Check all defaults are set (including UID/GID)
 	d := store.Defaults()
+	if d.FileUID != 0 {
+		t.Errorf("Default file UID = %d, want 0", d.FileUID)
+	}
+	if d.FileGID != 0 {
+		t.Errorf("Default file GID = %d, want 0", d.FileGID)
+	}
 	if d.FileMode != 0444 {
 		t.Errorf("Default file mode = %o, want %o", d.FileMode, 0444)
+	}
+	if d.DirUID != 0 {
+		t.Errorf("Default dir UID = %d, want 0", d.DirUID)
+	}
+	if d.DirGID != 0 {
+		t.Errorf("Default dir GID = %d, want 0", d.DirGID)
 	}
 	if d.DirMode != 0555 {
 		t.Errorf("Default dir mode = %o, want %o", d.DirMode, 0555)
@@ -112,6 +147,55 @@ func TestPermissionStore_GetFilePerms_Default(t *testing.T) {
 	if uid != 1000 || gid != 1000 || mode != 0444 {
 		t.Errorf("GetFilePerms = (%d, %d, %o), want (1000, 1000, 0444)",
 			uid, gid, mode)
+	}
+}
+
+func TestPermissionStore_NonZeroDefaultUID(t *testing.T) {
+	// Simulates direct mount behavior: calling user's UID/GID as defaults
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1000,
+		FileMode: 0444,
+		DirUID:   1000,
+		DirGID:   1000,
+		DirMode:  0555,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	// Files without explicit perms should use non-zero defaults
+	uid, gid, mode := store.GetFilePerms("any.mkv")
+	if uid != 1000 {
+		t.Errorf("file UID = %d, want 1000", uid)
+	}
+	if gid != 1000 {
+		t.Errorf("file GID = %d, want 1000", gid)
+	}
+	if mode != 0444 {
+		t.Errorf("file mode = %o, want 0444", mode)
+	}
+
+	// Directories without explicit perms should use non-zero defaults
+	uid, gid, mode = store.GetDirPerms("AnyDir")
+	if uid != 1000 {
+		t.Errorf("dir UID = %d, want 1000", uid)
+	}
+	if gid != 1000 {
+		t.Errorf("dir GID = %d, want 1000", gid)
+	}
+	if mode != 0555 {
+		t.Errorf("dir mode = %o, want 0555", mode)
+	}
+
+	// Explicit override should take precedence over non-zero defaults
+	newUID := uint32(2000)
+	_ = store.SetFilePerms("specific.mkv", &newUID, nil, nil)
+	uid, gid, _ = store.GetFilePerms("specific.mkv")
+	if uid != 2000 {
+		t.Errorf("overridden file UID = %d, want 2000", uid)
+	}
+	// GID should fall back to non-zero default
+	if gid != 1000 {
+		t.Errorf("fallback file GID = %d, want 1000", gid)
 	}
 }
 

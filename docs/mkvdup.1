@@ -71,6 +71,25 @@ Write the daemon PID to the specified file. Useful for init scripts.
 .B \-\-daemon\-timeout DURATION
 Timeout for waiting for the daemon to start (default: 30s). Accepts Go duration
 format (e.g., 30s, 1m, 2m30s).
+.TP
+.B \-\-default\-uid UID
+Default UID for files and directories (default: calling user's UID). For fstab
+mounts (which run as root), this defaults to 0.
+.TP
+.B \-\-default\-gid GID
+Default GID for files and directories (default: calling user's GID). For fstab
+mounts (which run as root), this defaults to 0.
+.TP
+.B \-\-default\-file\-mode MODE
+Default mode for files in octal (default: 0444).
+.TP
+.B \-\-default\-dir\-mode MODE
+Default mode for directories in octal (default: 0555).
+.TP
+.B \-\-permissions\-file PATH
+Path to permissions file (overrides default locations). See
+.B FILES
+section for default search order.
 .RE
 .TP
 .B info \fIdedup-file\fR
@@ -170,7 +189,9 @@ source_dir: "/media/bluray/Video1"
 .RE
 .SH FSTAB AND SYSTEMD
 mkvdup can be mounted via /etc/fstab or systemd mount units using the
-mount.mkvdup helper script.
+mount.mkvdup helper script. The mount helper automatically enables
+.B allow_other
+so that root can access the filesystem for chown/chmod operations.
 .SS fstab examples
 Mount using a specific config file:
 .PP

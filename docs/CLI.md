@@ -29,35 +29,26 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 Create a dedup file from an MKV and its source directory.
 
 ```bash
-# Basic usage
-mkvdup create \
-    --mkv /path/to/video.mkv \
-    --source /path/to/source_dir \
-    --output /path/to/video.mkvdup \
-    --name "Videos/video.mkv"  # Virtual path in FUSE mount
+mkvdup create <mkv-file> <source-dir> [output] [name]
 
-# With automatic deletion of original after verification
-mkvdup create \
-    --mkv /path/to/video.mkv \
-    --source /path/to/source_dir \
-    --output /path/to/video.mkvdup \
-    --name "Videos/video.mkv" \
-    --delete-original
-
-# Custom warning threshold (default 75%)
-mkvdup create \
-    --mkv /path/to/video.mkv \
-    --source /path/to/source_dir \
-    --output /path/to/video.mkvdup \
-    --warn-threshold 80  # Warn if space savings < 80%
+# Examples:
+mkvdup create movie.mkv /media/dvd-backups
+mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
+mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv"
 ```
 
-**Outputs:**
-- `video.mkvdup` - The dedup data file (index + delta)
-- `video.mkvdup.yaml` - Config file for this mapping
+**Arguments:**
+- `<mkv-file>` — Path to the MKV file to deduplicate
+- `<source-dir>` — Directory containing source media (ISO files or BDMV folders)
+- `[output]` — Output `.mkvdup` file (default: `<mkv-file>.mkvdup`)
+- `[name]` — Display name in FUSE mount (default: basename of mkv-file)
 
-**Directory paths in `--name`:**
-The `--name` option supports directory paths (e.g., `"Movies/Action/Video1.mkv"`). Each `create` command produces one `.mkvdup` file with one name stored in its config. The directory structure becomes visible when mounting multiple configs together—directories are auto-created from path components across all mounted files. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
+**Outputs:**
+- `video.mkvdup` — The dedup data file (index + delta)
+- `video.mkvdup.yaml` — Config file for this mapping
+
+**Directory paths in `name`:**
+The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`). Each `create` command produces one `.mkvdup` file with one name stored in its config. The directory structure becomes visible when mounting multiple configs together—directories are auto-created from path components across all mounted files. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
 
 ### mount
 
@@ -94,8 +85,8 @@ mkvdup mount --foreground /mnt/videos config.yaml
 
 | Option | Description |
 |--------|-------------|
-| `--default-uid UID` | Default UID for files and directories (default: `0`) |
-| `--default-gid GID` | Default GID for files and directories (default: `0`) |
+| `--default-uid UID` | Default UID for files and directories (default: calling user's UID) |
+| `--default-gid GID` | Default GID for files and directories (default: calling user's GID) |
 | `--default-file-mode MODE` | Default mode for files, in octal (default: `0444`) |
 | `--default-dir-mode MODE` | Default mode for directories, in octal (default: `0555`) |
 | `--permissions-file PATH` | Explicit path to permissions file |
@@ -114,10 +105,10 @@ New permissions are written to:
 Verify an existing dedup file against the original MKV.
 
 ```bash
-mkvdup verify \
-    --dedup /path/to/video.mkvdup \
-    --source /path/to/source_dir \
-    --original /path/to/video.mkv
+mkvdup verify <dedup-file> <source-dir> <original-mkv>
+
+# Example:
+mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
 ```
 
 ### info
@@ -125,18 +116,19 @@ mkvdup verify \
 Show information about a dedup file.
 
 ```bash
-mkvdup info --dedup /path/to/video.mkvdup
+mkvdup info <dedup-file>
+
+# Example:
+mkvdup info movie.mkvdup
 ```
 
-### extract
+### extract *(planned — [#13](https://github.com/stuckj/mkvdup/issues/13))*
 
-Rebuild/extract original MKV from dedup + source.
+Rebuild/extract original MKV from dedup + source. **Not yet implemented.**
 
 ```bash
-mkvdup extract \
-    --dedup /path/to/video.mkvdup \
-    --source /path/to/source_dir \
-    --output /path/to/restored.mkv
+# Planned syntax:
+mkvdup extract <dedup-file> <source-dir> <output-mkv>
 ```
 
 ### probe
@@ -169,11 +161,12 @@ mkvdup probe /path/to/video.mkv /path/to/source1 /path/to/source2 ...
 - 40-80% match: Possible match (may be partial content or different encode settings)
 - <40% match: Unlikely to be the source
 
-### reload
+### reload *(planned — [#14](https://github.com/stuckj/mkvdup/issues/14))*
 
-Reload running daemon's config.
+Reload running daemon's config. **Not yet implemented.**
 
 ```bash
+# Planned syntax:
 mkvdup reload  # Sends SIGHUP to running daemon
 ```
 
@@ -187,60 +180,43 @@ mkvdup parse-mkv /path/to/video.mkv
 mkvdup index-source /path/to/source_dir
 
 # Match packets (debugging)
-mkvdup match --mkv video.mkv --source /path/to/source_dir
+mkvdup match video.mkv /path/to/source_dir
 ```
 
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success (includes success with low space savings warning) |
-| 1 | General error |
-| 2 | Verification failed |
-| 3 | Source directory not found or invalid |
-| 4 | MKV file not found or invalid |
+| 0 | Success |
+| 1 | General error (invalid arguments, file not found, verification failed, etc.) |
 
 ## Warning Threshold
 
-If space savings fall below threshold (default 75%), a warning is shown but the file is still created:
+If space savings fall below 75%, a warning is shown but the file is still created:
 
 ```
-Deduplication Results:
-  ┌─────────────────────────────────────────────────────────┐
-  │  Original MKV size:          3.42 GB                    │
-  │  Matched data (from source): 1.02 GB  (29.8%)           │
-  │  Unique data (delta):        2.40 GB  (70.2%)           │
-  │  Index overhead:             51.2 MB  (1.5%)            │
-  │  ─────────────────────────────────────────────────────  │
-  │  Dedup file size:            2.45 GB                    │
-  │  Space savings:              970 MB   (28.4%)           │
-  └─────────────────────────────────────────────────────────┘
-
-  WARNING: Space savings (28.4%) below threshold (75%)
-      This may indicate:
-      - Wrong source directory (MKV not from this disc)
-      - Source files modified after ripping
-      - Transcoded MKV (not lossless remux)
-
-      Use --warn-threshold to adjust the threshold, or
-      --quiet to suppress this warning.
+WARNING: Space savings (28.4%) below 75%
+  This may indicate wrong source or transcoded MKV.
 ```
+
+*Planned ([#82](https://github.com/stuckj/mkvdup/issues/82)): `--warn-threshold` to customize the percentage, and `--quiet` to suppress the warning.*
 
 ## Statistics Output
 
 The `create` command shows detailed statistics:
 
 ```
+=== Results ===
+MKV file size:      3,420,000,000 bytes (3261.19 MB)
 Matched bytes:      3,418,000,000 bytes (3259.28 MB, 99.9%)
-Unmatched bytes:    1,500,000 bytes (1.43 MB, 0.0%)
-Matched packets:    2,139,988 / 2,139,988  (100.0%)
+Delta (unmatched):  1,500,000 bytes (1.43 MB, 0.0%)
 
-Output files:
-  Dedup file:  /path/to/video.mkvdup (52.7 MB)
-  Config file: /path/to/video.mkvdup.yaml
+Dedup file size:    52,700,000 bytes (50.24 MB)
+Space savings:      98.5%
+
+Packets matched:    2,139,988 / 2,139,988 (100.0%)
+Index entries:      2,139,988
 ```
-
-*Note: The matcher tracks video vs audio internally but currently reports combined statistics.*
 
 ## Related Documentation
 

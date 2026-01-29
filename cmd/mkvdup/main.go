@@ -131,8 +131,8 @@ Options:
     --daemon-timeout DUR   Timeout waiting for daemon startup (default: 30s)
 
 Permission Options:
-    --default-uid UID          Default UID for files and directories (default: 0)
-    --default-gid GID          Default GID for files and directories (default: 0)
+    --default-uid UID          Default UID for files and directories (default: calling user's UID)
+    --default-gid GID          Default GID for files and directories (default: calling user's GID)
     --default-file-mode MODE   Default mode for files (octal, default: 0444)
     --default-dir-mode MODE    Default mode for directories (octal, default: 0555)
     --permissions-file PATH    Path to permissions file (overrides default locations)
@@ -304,8 +304,8 @@ func main() {
 		pidFile := ""
 		daemonTimeout := 30 * time.Second
 		permissionsFile := ""
-		defaultUID := uint32(0)
-		defaultGID := uint32(0)
+		defaultUID := uint32(os.Getuid())
+		defaultGID := uint32(os.Getgid())
 		defaultFileMode := uint32(0444)
 		defaultDirMode := uint32(0555)
 		var mountArgs []string
