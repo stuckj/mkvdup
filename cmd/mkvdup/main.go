@@ -78,8 +78,9 @@ Options:
   -v, --verbose   Enable verbose output
   -h, --help      Show help
   --version       Show version
-
-Run 'mkvdup <command> --help' for more information on a command.
+`)
+	fmt.Print(debugOptionsHelp())
+	fmt.Print(`Run 'mkvdup <command> --help' for more information on a command.
 See 'man mkvdup' for detailed documentation.
 `)
 }
@@ -224,13 +225,18 @@ func main() {
 	showHelp := false
 	showVersion := false
 
-	for _, arg := range args {
-		switch arg {
-		case "-v", "--verbose":
+	// Extract --cpuprofile flag (only available in debug builds)
+	args, cpuprofile := parseCPUProfileFlag(args)
+	defer startCPUProfile(cpuprofile)()
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-v" || arg == "--verbose":
 			verbose = true
-		case "-h", "--help":
+		case arg == "-h" || arg == "--help":
 			showHelp = true
-		case "--version":
+		case arg == "--version":
 			showVersion = true
 		default:
 			filteredArgs = append(filteredArgs, arg)
