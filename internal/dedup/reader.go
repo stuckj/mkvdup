@@ -33,10 +33,11 @@ type Reader struct {
 	indexStart int64 // Byte offset where entries begin in file
 	entryCount int   // Number of entries
 
-	// Block index for O(1) entry lookup on cache miss.
-	// Maps block_number (MKV offset / blockSize) → entry index.
+	// Block index for fast entry lookup on cache miss.
+	// Maps block_number (MKV offset / blockSize) → entry index for O(1)
+	// narrowing, followed by bounded binary search within the block range.
 	// Built once in initEntryAccess; immutable after that (no mutex needed).
-	blockIndex []int32
+	blockIndex []int
 
 	// Last-entry cache for O(1) sequential read lookup
 	// Protected by cacheMu for concurrent access safety
@@ -152,7 +153,7 @@ func (r *Reader) initEntryAccess() error {
 			return
 		}
 
-		// Build block index for O(1) random access lookup
+		// Build block index for fast random access lookup
 		r.buildBlockIndex()
 	})
 	return r.entriesErr
@@ -161,7 +162,8 @@ func (r *Reader) initEntryAccess() error {
 // buildBlockIndex creates a mapping from block numbers to entry indices.
 // Each block represents a fixed-size range of MKV offsets. The index maps
 // block_number → the entry index whose region covers or precedes that block's
-// start offset. This enables O(1) lookup for random access patterns.
+// start offset. This narrows binary search from O(log N) over all entries
+// to O(log B) within a single block's entries.
 //
 // Algorithm: single pass over all entries, filling block slots as we go.
 // Time: O(entryCount + blockCount), Space: O(blockCount).
@@ -172,12 +174,13 @@ func (r *Reader) buildBlockIndex() {
 	}
 
 	blockCount := int((originalSize + blockSize - 1) / blockSize)
-	r.blockIndex = make([]int32, blockCount)
+	r.blockIndex = make([]int, blockCount)
 
 	entryIdx := 0
 	for b := range blockCount {
 		blockStart := int64(b) * blockSize
-		// Advance entryIdx to the last entry whose MkvOffset <= blockStart
+		// Advance entryIdx to the last entry whose MkvOffset <= blockStart.
+		// For block 0 (blockStart=0), this stays at 0 since no entry precedes it.
 		for entryIdx+1 < r.entryCount {
 			nextOffset, ok := r.getMkvOffset(entryIdx + 1)
 			if !ok || nextOffset > blockStart {
@@ -185,7 +188,7 @@ func (r *Reader) buildBlockIndex() {
 			}
 			entryIdx++
 		}
-		r.blockIndex[b] = int32(entryIdx)
+		r.blockIndex[b] = entryIdx
 	}
 }
 
@@ -423,13 +426,13 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 		if blockNum >= len(r.blockIndex) {
 			blockNum = len(r.blockIndex) - 1
 		}
-		lo = int(r.blockIndex[blockNum])
+		lo = r.blockIndex[blockNum]
 
 		// Upper bound: start of next block's entries (or entryCount)
 		if blockNum+1 < len(r.blockIndex) {
 			// Search up to 1 past the next block's start entry to handle
 			// entries that span block boundaries
-			hi = int(r.blockIndex[blockNum+1]) + 1
+			hi = r.blockIndex[blockNum+1] + 1
 			if hi > r.entryCount {
 				hi = r.entryCount
 			}

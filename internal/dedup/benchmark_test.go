@@ -291,7 +291,8 @@ func BenchmarkReadAt_Small(b *testing.B) {
 }
 
 // BenchmarkFindEntriesForRange benchmarks entry range lookup using the block index.
-// This is the core lookup operation for ReadAt (O(1) via block index on cache miss).
+// On cache miss, the block index provides O(1) narrowing to a block-sized entry range,
+// followed by a bounded binary search within that range.
 func BenchmarkFindEntriesForRange(b *testing.B) {
 	tmpDir := b.TempDir()
 	numEntries := 100000
