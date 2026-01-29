@@ -12,6 +12,11 @@ import (
 	"github.com/stuckj/mkvdup/internal/mmap"
 )
 
+// blockSize is the block size for the block index.
+// Each block maps an MKV offset range to an entry index for O(1) lookup.
+// 64KB balances memory overhead vs scan distance.
+const blockSize = 64 * 1024
+
 // Reader reads .mkvdup files and provides data reconstruction.
 // Reader is safe for concurrent use from multiple goroutines.
 type Reader struct {
@@ -27,6 +32,11 @@ type Reader struct {
 	// Direct mmap access to entries (no []Entry allocation)
 	indexStart int64 // Byte offset where entries begin in file
 	entryCount int   // Number of entries
+
+	// Block index for O(1) entry lookup on cache miss.
+	// Maps block_number (MKV offset / blockSize) → entry index.
+	// Built once in initEntryAccess; immutable after that (no mutex needed).
+	blockIndex []int32
 
 	// Last-entry cache for O(1) sequential read lookup
 	// Protected by cacheMu for concurrent access safety
@@ -139,9 +149,44 @@ func (r *Reader) initEntryAccess() error {
 		if int64(r.dedupMmap.Size()) < requiredSize {
 			r.entriesErr = fmt.Errorf("mmap too small: need %d, have %d",
 				requiredSize, r.dedupMmap.Size())
+			return
 		}
+
+		// Build block index for O(1) random access lookup
+		r.buildBlockIndex()
 	})
 	return r.entriesErr
+}
+
+// buildBlockIndex creates a mapping from block numbers to entry indices.
+// Each block represents a fixed-size range of MKV offsets. The index maps
+// block_number → the entry index whose region covers or precedes that block's
+// start offset. This enables O(1) lookup for random access patterns.
+//
+// Algorithm: single pass over all entries, filling block slots as we go.
+// Time: O(entryCount + blockCount), Space: O(blockCount).
+func (r *Reader) buildBlockIndex() {
+	originalSize := r.file.Header.OriginalSize
+	if originalSize <= 0 || r.entryCount == 0 {
+		return
+	}
+
+	blockCount := int((originalSize + blockSize - 1) / blockSize)
+	r.blockIndex = make([]int32, blockCount)
+
+	entryIdx := 0
+	for b := range blockCount {
+		blockStart := int64(b) * blockSize
+		// Advance entryIdx to the last entry whose MkvOffset <= blockStart
+		for entryIdx+1 < r.entryCount {
+			nextOffset, ok := r.getMkvOffset(entryIdx + 1)
+			if !ok || nextOffset > blockStart {
+				break
+			}
+			entryIdx++
+		}
+		r.blockIndex[b] = int32(entryIdx)
+	}
 }
 
 // getEntry returns the entry at the given index by parsing from mmap.
@@ -371,14 +416,38 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	}
 	r.cacheMu.Unlock()
 
-	// Cache miss - binary search for first entry that could contain offset
-	// Use getMkvOffset + getEntryLength for efficiency (reads 16 bytes, not 28)
-	idx := sort.Search(r.entryCount, func(i int) bool {
-		mkvOffset, ok := r.getMkvOffset(i)
-		if !ok {
-			return true // Shouldn't happen, but treat as "found"
+	// Cache miss - use block index to narrow binary search range
+	var lo, hi int
+	if r.blockIndex != nil {
+		blockNum := int(offset / blockSize)
+		if blockNum >= len(r.blockIndex) {
+			blockNum = len(r.blockIndex) - 1
 		}
-		entryLen, ok := r.getEntryLength(i)
+		lo = int(r.blockIndex[blockNum])
+
+		// Upper bound: start of next block's entries (or entryCount)
+		if blockNum+1 < len(r.blockIndex) {
+			// Search up to 1 past the next block's start entry to handle
+			// entries that span block boundaries
+			hi = int(r.blockIndex[blockNum+1]) + 1
+			if hi > r.entryCount {
+				hi = r.entryCount
+			}
+		} else {
+			hi = r.entryCount
+		}
+	} else {
+		lo = 0
+		hi = r.entryCount
+	}
+
+	// Binary search within [lo, hi) for first entry whose range covers offset
+	idx := lo + sort.Search(hi-lo, func(i int) bool {
+		mkvOffset, ok := r.getMkvOffset(lo + i)
+		if !ok {
+			return true
+		}
+		entryLen, ok := r.getEntryLength(lo + i)
 		if !ok {
 			return true
 		}

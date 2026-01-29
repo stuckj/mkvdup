@@ -953,6 +953,109 @@ func TestClose_Idempotent(t *testing.T) {
 	}
 }
 
+func TestBlockIndex_Built(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 100)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Block index should be built
+	if reader.blockIndex == nil {
+		t.Fatal("blockIndex is nil after NewReader")
+	}
+
+	// All entries should point to valid indices
+	for i, idx := range reader.blockIndex {
+		if idx < 0 || int(idx) >= reader.entryCount {
+			t.Errorf("blockIndex[%d] = %d, out of range [0, %d)", i, idx, reader.entryCount)
+		}
+	}
+}
+
+func TestBlockIndex_LookupCorrectness(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Test entries: MkvOffset=i*100, Length=50+i (from createTestDedupFile)
+	dedupPath := createTestDedupFile(t, tmpDir, 100)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	tests := []struct {
+		name      string
+		offset    int64
+		length    int64
+		wantFirst int64 // Expected MkvOffset of first returned entry
+	}{
+		{name: "start of file", offset: 0, length: 10, wantFirst: 0},
+		{name: "exact entry start", offset: 500, length: 10, wantFirst: 500},
+		{name: "mid-entry", offset: 505, length: 10, wantFirst: 500},
+		// Entry 98: MkvOffset=9800, Length=148 covers [9800,9948), so offset 9900 is within it
+		{name: "near end", offset: 9900, length: 10, wantFirst: 9800},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear cache to force block index path
+			reader.cacheMu.Lock()
+			reader.lastEntryValid = false
+			reader.cacheMu.Unlock()
+
+			entries := reader.findEntriesForRange(tt.offset, tt.length)
+			if len(entries) == 0 {
+				t.Fatalf("findEntriesForRange(%d, %d) returned no entries", tt.offset, tt.length)
+			}
+			if entries[0].MkvOffset != tt.wantFirst {
+				t.Errorf("first entry MkvOffset = %d, want %d", entries[0].MkvOffset, tt.wantFirst)
+			}
+		})
+	}
+}
+
+func TestBlockIndex_ZeroEntries(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFileZeroEntries(t, tmpDir)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Block index should be nil for zero entries
+	if reader.blockIndex != nil {
+		t.Error("blockIndex should be nil for zero entries")
+	}
+}
+
+func TestBlockIndex_SingleEntry(t *testing.T) {
+	tmpDir := t.TempDir()
+	dedupPath := createTestDedupFile(t, tmpDir, 1)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	if reader.blockIndex == nil {
+		t.Fatal("blockIndex is nil for single-entry file")
+	}
+
+	// All block index entries should point to index 0
+	for i, idx := range reader.blockIndex {
+		if idx != 0 {
+			t.Errorf("blockIndex[%d] = %d, want 0", i, idx)
+		}
+	}
+}
+
 func TestSetESReader(t *testing.T) {
 	tmpDir := t.TempDir()
 	dedupPath := createTestDedupFile(t, tmpDir, 5)
