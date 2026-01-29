@@ -15,7 +15,7 @@ jobs:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # Use PAT for checkout on main pushes (needed for baseline update push).
