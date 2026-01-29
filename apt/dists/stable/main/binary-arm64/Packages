@@ -1,14 +1,14 @@
 Package: mkvdup
-Version: 0.7.0
+Version: 0.8.0
 Architecture: arm64
 Maintainer: stuckj <stuckj@users.noreply.github.com>
 Installed-Size: 3591
 Depends: fuse3
-Filename: pool/main/mkvdup_0.7.0_arm64.deb
-Size: 1484606
-MD5sum: 93fc10bd344c9d1abea0a1a6c1568b85
-SHA1: fc46341ae7f5c6072db89a4c23c1d3b6e610b4bd
-SHA256: 9c254b45564d3b665fd511bf51741c515f240d0b2409ee670b11af1e58de09bb
+Filename: pool/main/mkvdup_0.8.0_arm64.deb
+Size: 1488370
+MD5sum: 9223ea50361786f36610770c6e215d55
+SHA1: 04941aa7563351c2ac86403c2bacddb28dec328d
+SHA256: f7cdafd6e51bbadc3dd0d26eade755b3fe12f2afdb020446f1fb1635ece4ddc6
 Section: video
 Priority: optional
 Homepage: https://github.com/stuckj/mkvdup
