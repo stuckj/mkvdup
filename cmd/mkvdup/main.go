@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -79,8 +78,9 @@ Options:
   -v, --verbose   Enable verbose output
   -h, --help      Show help
   --version       Show version
-
-Run 'mkvdup <command> --help' for more information on a command.
+`)
+	fmt.Print(debugOptionsHelp())
+	fmt.Print(`Run 'mkvdup <command> --help' for more information on a command.
 See 'man mkvdup' for detailed documentation.
 `)
 }
@@ -224,7 +224,10 @@ func main() {
 	var filteredArgs []string
 	showHelp := false
 	showVersion := false
-	cpuprofile := ""
+
+	// Extract --cpuprofile flag (only available in debug builds)
+	args, cpuprofile := parseCPUProfileFlag(args)
+	defer startCPUProfile(cpuprofile)()
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -235,29 +238,11 @@ func main() {
 			showHelp = true
 		case arg == "--version":
 			showVersion = true
-		case arg == "--cpuprofile" && i+1 < len(args):
-			i++
-			cpuprofile = args[i]
-		case strings.HasPrefix(arg, "--cpuprofile="):
-			cpuprofile = strings.TrimPrefix(arg, "--cpuprofile=")
 		default:
 			filteredArgs = append(filteredArgs, arg)
 		}
 	}
 	args = filteredArgs
-
-	// Start CPU profiling if requested
-	if cpuprofile != "" {
-		f, err := os.Create(cpuprofile)
-		if err != nil {
-			log.Fatalf("could not create CPU profile: %v", err)
-		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatalf("could not start CPU profile: %v", err)
-		}
-		defer pprof.StopCPUProfile()
-	}
 
 	// Handle --version (always top-level)
 	if showVersion {
