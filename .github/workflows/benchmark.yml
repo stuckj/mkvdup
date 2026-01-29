@@ -18,8 +18,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Use PAT for checkout so git credentials persist for later push
-          token: ${{ secrets.BENCHMARK_PAT }}
+          # Use PAT for checkout on main pushes (needed for baseline update push).
+          # Fall back to default GITHUB_TOKEN for PRs (including dependabot).
+          token: ${{ secrets.BENCHMARK_PAT || github.token }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -87,8 +88,8 @@ jobs:
         with:
           tool: 'go'
           output-file-path: benchmark-output.txt
-          # Use PAT to bypass branch protection for gh-pages push
-          github-token: ${{ secrets.BENCHMARK_PAT }}
+          # Use PAT for gh-pages push on main, fall back to GITHUB_TOKEN for PRs
+          github-token: ${{ secrets.BENCHMARK_PAT || github.token }}
           # Only push to gh-pages on main branch pushes
           auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           # Disable alerts from this action (using benchstat instead)
