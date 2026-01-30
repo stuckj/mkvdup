@@ -1588,6 +1588,16 @@ func TestMKVFSNode_Setattr_RootCanChownUID(t *testing.T) {
 }
 
 func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
+	// Mock group membership: uid 1000 is member of groups 1000 (primary), 100
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		return uid == 1000 && targetGID == 100
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)
@@ -1600,11 +1610,11 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 		permStore: store,
 	}
 
-	// Owner can change GID to their own GID (Unix semantics)
+	// Owner can change GID to their primary GID (Unix semantics)
 	ctx := ContextWithCaller(context.Background(), 1000, 1000)
 	in := &fuse.SetAttrIn{}
 	in.Valid = fuse.FATTR_GID
-	in.Gid = 1000 // Change to caller's own GID
+	in.Gid = 1000 // Change to caller's primary GID
 	var out fuse.AttrOut
 
 	errno := node.Setattr(ctx, nil, in, &out)
@@ -1619,7 +1629,17 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 	}
 }
 
-func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
+func TestMKVFSNode_Setattr_OwnerCanChownGIDToSupplementary(t *testing.T) {
+	// Mock group membership: uid 1000 is member of groups 1000 (primary), 100
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		return uid == 1000 && targetGID == 100
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)
@@ -1631,11 +1651,52 @@ func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
 		permStore: store,
 	}
 
-	// Owner cannot change GID to an arbitrary group they don't belong to
+	// Owner can change GID to a supplementary group
 	ctx := ContextWithCaller(context.Background(), 1000, 1000)
 	in := &fuse.SetAttrIn{}
 	in.Valid = fuse.FATTR_GID
-	in.Gid = 2000 // Arbitrary GID, not caller's GID
+	in.Gid = 100 // Supplementary group
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != 0 {
+		t.Errorf("Setattr() = %v, want 0", errno)
+	}
+
+	// Verify the change
+	_, gotGID, _ := store.GetFilePerms("test.mkv")
+	if gotGID != 100 {
+		t.Errorf("GID = %d, want 100", gotGID)
+	}
+}
+
+func TestMKVFSNode_Setattr_OwnerCannotChownGIDToNonMemberGroup(t *testing.T) {
+	// Mock group membership: uid 1000 is member of groups 1000 (primary), 100
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		return uid == 1000 && targetGID == 100
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner cannot change GID to a group they don't belong to
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_GID
+	in.Gid = 2000 // Not a member of this group
 	var out fuse.AttrOut
 
 	errno := node.Setattr(ctx, nil, in, &out)
@@ -1645,6 +1706,13 @@ func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
 }
 
 func TestMKVFSNode_Setattr_NonOwnerCannotChownGID(t *testing.T) {
+	// Mock group membership: no supplementary groups for uid 2000
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		return targetGID == primaryGID
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)
@@ -1806,5 +1874,137 @@ func TestMKVFSDirNode_Setattr_ChmodDenied(t *testing.T) {
 	errno := dir.Setattr(ctx, nil, in, &out)
 	if errno != syscall.EPERM {
 		t.Errorf("Setattr() = %v, want EPERM", errno)
+	}
+}
+
+func TestBuildDirectoryTree_WithPermStore(t *testing.T) {
+	// All existing BuildDirectoryTree tests pass nil for permStore.
+	// This test verifies that a real PermissionStore is propagated to nodes.
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1000,
+		FileMode: 0644,
+		DirUID:   1000,
+		DirGID:   1000,
+		DirMode:  0755,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	files := []*MKVFile{
+		{Name: "Movies/Action/video.mkv", Size: 100},
+		{Name: "root.mkv", Size: 50},
+	}
+	tree := BuildDirectoryTree(files, false, nil, store)
+
+	// Verify permStore is set on root directory
+	if tree.permStore != store {
+		t.Error("root dir permStore not set")
+	}
+
+	// Verify permStore is propagated to subdirectories
+	movies, ok := tree.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory")
+	}
+	if movies.permStore != store {
+		t.Error("Movies dir permStore not set")
+	}
+	action, ok := movies.subdirs["Action"]
+	if !ok {
+		t.Fatal("expected Action subdirectory")
+	}
+	if action.permStore != store {
+		t.Error("Action dir permStore not set")
+	}
+
+	// Verify Getattr on directory returns UID/GID from store defaults
+	var out fuse.AttrOut
+	errno := movies.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Uid != 1000 {
+		t.Errorf("dir UID = %d, want 1000", out.Uid)
+	}
+	if out.Gid != 1000 {
+		t.Errorf("dir GID = %d, want 1000", out.Gid)
+	}
+	expectedMode := uint32(fuse.S_IFDIR | 0755)
+	if out.Mode != expectedMode {
+		t.Errorf("dir mode = %o, want %o", out.Mode, expectedMode)
+	}
+}
+
+func TestNewMKVFSWithFactories_WithPermStore(t *testing.T) {
+	testData := []byte("test MKV data content")
+
+	defaults := Defaults{
+		FileUID:  1000,
+		FileGID:  1000,
+		FileMode: 0644,
+		DirUID:   1000,
+		DirGID:   1000,
+		DirMode:  0755,
+	}
+	store := NewPermissionStore("", defaults, false)
+
+	configReader := &mockConfigReader{
+		configs: map[string]*Config{
+			"/configs/movie.yaml": {
+				Name:      "Movies/movie.mkv",
+				DedupFile: "/data/movie.dedup",
+				SourceDir: "/data/source",
+			},
+		},
+	}
+
+	readerFactory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/movie.dedup": {
+				data:         testData,
+				originalSize: int64(len(testData)),
+			},
+		},
+	}
+
+	root, err := NewMKVFSWithFactories(
+		[]string{"/configs/movie.yaml"},
+		false,
+		readerFactory,
+		configReader,
+		store,
+	)
+	if err != nil {
+		t.Fatalf("NewMKVFSWithFactories failed: %v", err)
+	}
+
+	// Verify rootDir has permStore set
+	if root.rootDir == nil {
+		t.Fatal("rootDir should not be nil")
+	}
+	if root.rootDir.permStore != store {
+		t.Error("rootDir permStore not set")
+	}
+
+	// Verify subdirectory has permStore
+	movies, ok := root.rootDir.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory")
+	}
+	if movies.permStore != store {
+		t.Error("Movies dir permStore not set")
+	}
+
+	// Verify directory Getattr returns UID/GID from store defaults
+	var out fuse.AttrOut
+	errno := movies.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Uid != 1000 {
+		t.Errorf("dir UID = %d, want 1000", out.Uid)
+	}
+	if out.Gid != 1000 {
+		t.Errorf("dir GID = %d, want 1000", out.Gid)
 	}
 }

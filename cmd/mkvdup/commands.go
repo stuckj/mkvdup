@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,6 +22,23 @@ import (
 	"github.com/stuckj/mkvdup/internal/mkv"
 	"github.com/stuckj/mkvdup/internal/source"
 )
+
+// formatInt formats an integer with thousands separators (e.g., 1234567 → "1,234,567").
+func formatInt(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	if len(s) <= 3 {
+		return s
+	}
+	// Insert commas from the right
+	var result []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, ',')
+		}
+		result = append(result, byte(c))
+	}
+	return string(result)
+}
 
 // createDedup creates a .mkvdup file from an MKV and source directory.
 func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
@@ -178,12 +196,12 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	fmt.Println()
 
 	mkvSize := parser.Size()
-	fmt.Printf("MKV file size:      %d bytes (%.2f MB)\n", mkvSize, float64(mkvSize)/(1024*1024))
-	fmt.Printf("Matched bytes:      %d bytes (%.2f MB, %.1f%%)\n",
-		result.MatchedBytes, float64(result.MatchedBytes)/(1024*1024),
+	fmt.Printf("MKV file size:      %s bytes (%.2f MB)\n", formatInt(mkvSize), float64(mkvSize)/(1024*1024))
+	fmt.Printf("Matched bytes:      %s bytes (%.2f MB, %.1f%%)\n",
+		formatInt(result.MatchedBytes), float64(result.MatchedBytes)/(1024*1024),
 		float64(result.MatchedBytes)/float64(mkvSize)*100)
-	fmt.Printf("Delta (unmatched):  %d bytes (%.2f MB, %.1f%%)\n",
-		result.UnmatchedBytes, float64(result.UnmatchedBytes)/(1024*1024),
+	fmt.Printf("Delta (unmatched):  %s bytes (%.2f MB, %.1f%%)\n",
+		formatInt(result.UnmatchedBytes), float64(result.UnmatchedBytes)/(1024*1024),
 		float64(result.UnmatchedBytes)/float64(mkvSize)*100)
 	fmt.Println()
 
@@ -192,14 +210,14 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	dedupSize := dedupInfo.Size()
 	savings := float64(mkvSize-dedupSize) / float64(mkvSize) * 100
 
-	fmt.Printf("Dedup file size:    %d bytes (%.2f MB)\n", dedupSize, float64(dedupSize)/(1024*1024))
+	fmt.Printf("Dedup file size:    %s bytes (%.2f MB)\n", formatInt(dedupSize), float64(dedupSize)/(1024*1024))
 	fmt.Printf("Space savings:      %.1f%%\n", savings)
 	fmt.Println()
 
-	fmt.Printf("Packets matched:    %d / %d (%.1f%%)\n",
-		result.MatchedPackets, result.TotalPackets,
+	fmt.Printf("Packets matched:    %s / %s (%.1f%%)\n",
+		formatInt(int64(result.MatchedPackets)), formatInt(int64(result.TotalPackets)),
 		float64(result.MatchedPackets)/float64(result.TotalPackets)*100)
-	fmt.Printf("Index entries:      %d\n", len(result.Entries))
+	fmt.Printf("Index entries:      %s\n", formatInt(int64(len(result.Entries))))
 
 	// Warning for low savings
 	if savings < 75 {
@@ -312,8 +330,8 @@ func showInfo(dedupPath string) error {
 	fmt.Printf("Dedup file: %s\n", dedupPath)
 	fmt.Println()
 	fmt.Printf("Format version:     %d\n", info["version"].(uint32))
-	fmt.Printf("Original MKV size:  %d bytes (%.2f MB)\n",
-		info["original_size"].(int64),
+	fmt.Printf("Original MKV size:  %s bytes (%.2f MB)\n",
+		formatInt(info["original_size"].(int64)),
 		float64(info["original_size"].(int64))/(1024*1024))
 	fmt.Printf("Original checksum:  %016x\n", info["original_checksum"].(uint64))
 	fmt.Println()
@@ -329,8 +347,8 @@ func showInfo(dedupPath string) error {
 	fmt.Printf("Uses ES offsets:    %v\n", info["uses_es_offsets"].(bool))
 	fmt.Printf("Source file count:  %d\n", info["source_file_count"].(int))
 	fmt.Printf("Index entry count:  %d\n", info["entry_count"].(int))
-	fmt.Printf("Delta size:         %d bytes (%.2f MB)\n",
-		info["delta_size"].(int64),
+	fmt.Printf("Delta size:         %s bytes (%.2f MB)\n",
+		formatInt(info["delta_size"].(int64)),
 		float64(info["delta_size"].(int64))/(1024*1024))
 	fmt.Println()
 

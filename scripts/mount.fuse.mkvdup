@@ -19,6 +19,10 @@ set -e
 
 # Parse arguments
 # mount calls us as: mount.mkvdup <what> <where> -o <options>
+#
+# NOTE: --allow-other is always passed to mkvdup for fstab/systemd mounts.
+# This is required so that root (via sudo) can access the filesystem to
+# perform chown/chmod operations, which is standard behavior for system mounts.
 WHAT=""
 WHERE=""
 OPTIONS=""
@@ -58,6 +62,9 @@ fi
 
 # Parse options
 MKVDUP_ARGS=()
+# Always enable allow_other for fstab/systemd mounts so that root (via sudo)
+# can access the filesystem for chown/chmod operations.
+MKVDUP_ARGS+=("--allow-other")
 CONFIG_DIR=false
 
 IFS=',' read -ra OPTS <<< "$OPTIONS"

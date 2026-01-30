@@ -131,9 +131,11 @@ mount -t overlay overlay \
 4. Delete original MKV from ZFS when ready
 5. Overlay automatically serves mkvdup virtual version
 
-## Hot Reload Support
+## Hot Reload Support *(planned — [#8](https://github.com/stuckj/mkvdup/issues/8), [#10](https://github.com/stuckj/mkvdup/issues/10))*
 
-The FUSE daemon supports live config reload without restart:
+> **Not yet implemented.** The following describes planned behavior.
+
+The FUSE daemon will support live config reload without restart:
 
 **Signal-based reload:**
 ```bash
@@ -171,7 +173,7 @@ Access is checked by the kernel based on the `uid`, `gid`, and `mode` reported f
 `chown` and `chmod` operations follow Unix semantics:
 
 - **chown UID:** Only root can change file ownership
-- **chown GID:** Root can change to any GID; file owner can only change to their own primary GID
+- **chown GID:** Root can change to any GID; file owner can change to any group they belong to (primary or supplementary)
 - **chmod:** Only root or the file owner can change permissions
 
 ### Permissions File Location
@@ -244,7 +246,10 @@ mkvdup mount --permissions-file /var/lib/mkvdup/permissions.yaml /mnt/videos con
 
 **Default behavior (when file/directory not in permissions.yaml):**
 1. Use defaults from command-line options if specified
-2. Otherwise use `root:root` (uid=0, gid=0) with mode `0444` for files, `0555` for directories
+2. For direct mounts (`mkvdup mount`): default to the calling user's UID/GID with mode `0444` for files, `0555` for directories
+3. For fstab/systemd mounts: default to `root:root` (uid=0, gid=0) since the mount helper runs as root
+
+**Note:** The fstab mount helper (`mount.fuse.mkvdup`) automatically enables `allow_other` so that root can access the filesystem for `chown`/`chmod` operations via `sudo`.
 
 **On chmod/chown:**
 1. Permission changes are saved immediately to the permissions file
@@ -286,16 +291,7 @@ Files are NOT memory-mapped at startup. Instead:
 
 ## Multi-threading
 
-go-fuse supports multi-threaded operation for concurrent request handling:
-
-```yaml
-# In mount config
-performance:
-  threads: 0              # 0 = auto (NumCPU), or specify count
-  read_ahead_kb: 128      # Kernel read-ahead buffer size
-  max_background: 12      # Max background FUSE requests
-  congestion_threshold: 9 # When to start throttling
-```
+go-fuse handles concurrent request processing automatically. Planned: configurable tuning via mount config.
 
 **Benefits of multi-threading:**
 
@@ -315,7 +311,9 @@ performance:
 | NAS with many users | NumCPU * 2 | I/O bound |
 | Low-power device | 1-2 | Reduce CPU usage |
 
-## Health Checks
+## Health Checks *(planned — [#12](https://github.com/stuckj/mkvdup/issues/12))*
+
+> **Not yet implemented.** The following describes planned behavior.
 
 Optional background health monitoring:
 
@@ -329,7 +327,9 @@ health_check:
   on_error: warn         # warn, disable_file, or unmount
 ```
 
-## Source File Watching
+## Source File Watching *(planned — [#11](https://github.com/stuckj/mkvdup/issues/11))*
+
+> **Not yet implemented.** The following describes planned behavior.
 
 Optional inotify-based monitoring of source files:
 
