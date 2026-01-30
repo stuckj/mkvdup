@@ -63,7 +63,7 @@
 				
 				<option value="file3">github.com/stuckj/mkvdup/internal/daemon/daemon.go (30.4%)</option>
 				
-				<option value="file4">github.com/stuckj/mkvdup/internal/dedup/config.go (100.0%)</option>
+				<option value="file4">github.com/stuckj/mkvdup/internal/dedup/config.go (95.2%)</option>
 				
 				<option value="file5">github.com/stuckj/mkvdup/internal/dedup/format.go (75.0%)</option>
 				
@@ -73,7 +73,7 @@
 				
 				<option value="file8">github.com/stuckj/mkvdup/internal/fuse/adapters.go (60.6%)</option>
 				
-				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/fs.go (82.3%)</option>
+				<option value="file9">github.com/stuckj/mkvdup/internal/fuse/fs.go (79.8%)</option>
 				
 				<option value="file10">github.com/stuckj/mkvdup/internal/fuse/permissions.go (78.3%)</option>
 				
@@ -283,7 +283,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error <span
         if err := writer.WriteWithProgress(func(written, total int64) </span><span class="cov0" title="0">{
                 if time.Since(lastProgress) &gt; 500*time.Millisecond </span><span class="cov0" title="0">{
                         pct := float64(written) / float64(total) * 100
-                        fmt.Printf("\r  Progress: %.1f%% (%d/%d bytes)", pct, written, total)
+                        fmt.Printf("\r  Progress: %.1f%% (%s/%s bytes)", pct, formatInt(written), formatInt(total))
                         lastProgress = time.Now()
                 }</span>
         }); err != nil <span class="cov0" title="0">{
@@ -477,7 +477,7 @@ func showInfo(dedupPath string) error <span class="cov0" title="0">{
         // Source files
         fmt.Println("Source files:")
         for _, sf := range reader.SourceFiles() </span><span class="cov0" title="0">{
-                fmt.Printf("  %s (%d bytes)\n", sf.RelativePath, sf.Size)
+                fmt.Printf("  %s (%s bytes)\n", sf.RelativePath, formatInt(sf.Size))
         }</span>
 
         <span class="cov0" title="0">return nil</span>
@@ -1514,7 +1514,7 @@ func parseMKV(path string) error <span class="cov0" title="0">{
         }</span>
         <span class="cov0" title="0">defer parser.Close()
 
-        fmt.Printf("File size: %d bytes (%.2f GB)\n", parser.Size(), float64(parser.Size())/(1024*1024*1024))
+        fmt.Printf("File size: %s bytes (%.2f GB)\n", formatInt(parser.Size()), float64(parser.Size())/(1024*1024*1024))
 
         start := time.Now()
         lastProgress := time.Now()
@@ -1522,7 +1522,7 @@ func parseMKV(path string) error <span class="cov0" title="0">{
         err = parser.Parse(func(processed, total int64) </span><span class="cov0" title="0">{
                 if time.Since(lastProgress) &gt; 500*time.Millisecond </span><span class="cov0" title="0">{
                         pct := float64(processed) / float64(total) * 100
-                        fmt.Printf("\rProgress: %.1f%% (%d / %d bytes)", pct, processed, total)
+                        fmt.Printf("\rProgress: %.1f%% (%s / %s bytes)", pct, formatInt(processed), formatInt(total))
                         lastProgress = time.Now()
                 }</span>
         })
@@ -1585,7 +1585,7 @@ func indexSource(dir string) error <span class="cov0" title="0">{
         err = indexer.Build(func(processed, total int64) </span><span class="cov0" title="0">{
                 if time.Since(lastProgress) &gt; 500*time.Millisecond </span><span class="cov0" title="0">{
                         pct := float64(processed) / float64(total) * 100
-                        fmt.Printf("\rProgress: %.1f%% (%d / %d bytes)", pct, processed, total)
+                        fmt.Printf("\rProgress: %.1f%% (%s / %s bytes)", pct, formatInt(processed), formatInt(total))
                         lastProgress = time.Now()
                 }</span>
         })
@@ -1602,7 +1602,7 @@ func indexSource(dir string) error <span class="cov0" title="0">{
         defer index.Close()
         fmt.Printf("Source files: %d\n", len(index.Files))
         for _, f := range index.Files </span><span class="cov0" title="0">{
-                fmt.Printf("  %s: %d bytes\n", f.RelativePath, f.Size)
+                fmt.Printf("  %s: %s bytes\n", f.RelativePath, formatInt(f.Size))
         }</span>
         <span class="cov0" title="0">fmt.Println()
 
@@ -1693,12 +1693,12 @@ func matchMKV(mkvPath, sourceDir string) error <span class="cov0" title="0">{
         fmt.Println()
 
         mkvSize := parser.Size()
-        fmt.Printf("MKV file size:      %d bytes (%.2f MB)\n", mkvSize, float64(mkvSize)/(1024*1024))
-        fmt.Printf("Matched bytes:      %d bytes (%.2f MB, %.1f%%)\n",
-                result.MatchedBytes, float64(result.MatchedBytes)/(1024*1024),
+        fmt.Printf("MKV file size:      %s bytes (%.2f MB)\n", formatInt(mkvSize), float64(mkvSize)/(1024*1024))
+        fmt.Printf("Matched bytes:      %s bytes (%.2f MB, %.1f%%)\n",
+                formatInt(result.MatchedBytes), float64(result.MatchedBytes)/(1024*1024),
                 float64(result.MatchedBytes)/float64(mkvSize)*100)
-        fmt.Printf("Delta (unmatched):  %d bytes (%.2f MB, %.1f%%)\n",
-                result.UnmatchedBytes, float64(result.UnmatchedBytes)/(1024*1024),
+        fmt.Printf("Delta (unmatched):  %s bytes (%.2f MB, %.1f%%)\n",
+                formatInt(result.UnmatchedBytes), float64(result.UnmatchedBytes)/(1024*1024),
                 float64(result.UnmatchedBytes)/float64(mkvSize)*100)
         fmt.Println()
 
@@ -1715,10 +1715,10 @@ func matchMKV(mkvPath, sourceDir string) error <span class="cov0" title="0">{
         savings := float64(mkvSize-totalDedupSize) / float64(mkvSize) * 100
 
         fmt.Printf("Estimated dedup file size:\n")
-        fmt.Printf("  Header:     %d bytes\n", headerSize)
-        fmt.Printf("  Index:      %d bytes (~%d entries × 25)\n", indexSize, len(result.Entries))
-        fmt.Printf("  Delta:      %d bytes\n", len(result.DeltaData))
-        fmt.Printf("  Total:      %d bytes (%.2f MB)\n", totalDedupSize, float64(totalDedupSize)/(1024*1024))
+        fmt.Printf("  Header:     %s bytes\n", formatInt(headerSize))
+        fmt.Printf("  Index:      %s bytes (~%s entries × 25)\n", formatInt(indexSize), formatInt(int64(len(result.Entries))))
+        fmt.Printf("  Delta:      %s bytes\n", formatInt(int64(len(result.DeltaData))))
+        fmt.Printf("  Total:      %s bytes (%.2f MB)\n", formatInt(totalDedupSize), float64(totalDedupSize)/(1024*1024))
         fmt.Printf("  Savings:    %.1f%% reduction\n", savings)
 
         return nil</span>
@@ -1984,8 +1984,12 @@ func RemovePidFile(path string) error <span class="cov5" title="4">{
 
 import (
         "fmt"
+        "log"
         "os"
+        "path/filepath"
+        "sort"
 
+        "github.com/bmatcuk/doublestar/v4"
         "gopkg.in/yaml.v3"
 )
 
@@ -1996,8 +2000,18 @@ type Config struct {
         SourceDir string `yaml:"source_dir"`
 }
 
+// configFile is the internal YAML representation that supports includes
+// and virtual_files in addition to the standard Config fields.
+type configFile struct {
+        Name         string   `yaml:"name"`
+        DedupFile    string   `yaml:"dedup_file"`
+        SourceDir    string   `yaml:"source_dir"`
+        Includes     []string `yaml:"includes"`
+        VirtualFiles []Config `yaml:"virtual_files"`
+}
+
 // WriteConfig writes the .mkvdup.yaml config file.
-func WriteConfig(configPath, name, dedupFile, sourceDir string) error <span class="cov7" title="16">{
+func WriteConfig(configPath, name, dedupFile, sourceDir string) error <span class="cov6" title="16">{
         content := fmt.Sprintf(`# Auto-generated by mkvdup create
 name: %q
 dedup_file: %q
@@ -2008,22 +2022,126 @@ source_dir: %q
 }</span>
 
 // ReadConfig reads a .mkvdup.yaml config file.
-func ReadConfig(configPath string) (*Config, error) <span class="cov10" title="47">{
+func ReadConfig(configPath string) (*Config, error) <span class="cov7" title="27">{
         data, err := os.ReadFile(configPath)
-        if err != nil </span><span class="cov4" title="4">{
+        if err != nil </span><span class="cov3" title="4">{
                 return nil, fmt.Errorf("read config file: %w", err)
         }</span>
 
-        <span class="cov9" title="43">var config Config
-        if err := yaml.Unmarshal(data, &amp;config); err != nil </span><span class="cov4" title="4">{
+        <span class="cov6" title="23">var config Config
+        if err := yaml.Unmarshal(data, &amp;config); err != nil </span><span class="cov3" title="4">{
                 return nil, fmt.Errorf("parse config %s: %w", configPath, err)
         }</span>
 
-        <span class="cov9" title="39">if config.Name == "" || config.DedupFile == "" || config.SourceDir == "" </span><span class="cov6" title="10">{
+        <span class="cov6" title="19">if config.Name == "" || config.DedupFile == "" || config.SourceDir == "" </span><span class="cov5" title="10">{
                 return nil, fmt.Errorf("invalid config: missing required fields")
         }</span>
 
-        <span class="cov8" title="29">return &amp;config, nil</span>
+        <span class="cov5" title="9">return &amp;config, nil</span>
+}
+
+// ResolveConfigs reads config files and recursively expands includes and
+// virtual_files into a flat list of Config entries. Cycle detection prevents
+// infinite recursion from circular includes.
+func ResolveConfigs(configPaths []string) ([]Config, error) <span class="cov8" title="50">{
+        seen := make(map[string]bool)
+        var all []Config
+        for _, p := range configPaths </span><span class="cov8" title="54">{
+                configs, err := resolveConfig(p, seen)
+                if err != nil </span><span class="cov4" title="8">{
+                        return nil, err
+                }</span>
+                <span class="cov8" title="46">all = append(all, configs...)</span>
+        }
+        <span class="cov8" title="42">return all, nil</span>
+}
+
+// resolveConfig recursively resolves a single config file.
+func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) <span class="cov8" title="70">{
+        absPath, err := filepath.Abs(configPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("resolve path %s: %w", configPath, err)
+        }</span>
+
+        // Resolve symlinks for reliable cycle detection.
+        <span class="cov8" title="70">realPath, err := filepath.EvalSymlinks(absPath)
+        if err != nil </span><span class="cov2" title="2">{
+                return nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+        }</span>
+
+        <span class="cov8" title="68">if seen[realPath] </span><span class="cov2" title="2">{
+                log.Printf("warning: skipping already-seen config %s (cycle detection)", realPath)
+                return nil, nil
+        }</span>
+        <span class="cov8" title="66">seen[realPath] = true
+
+        data, err := os.ReadFile(realPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("read config file %s: %w", realPath, err)
+        }</span>
+
+        <span class="cov8" title="66">var cf configFile
+        if err := yaml.Unmarshal(data, &amp;cf); err != nil </span><span class="cov2" title="2">{
+                return nil, fmt.Errorf("parse config %s: %w", realPath, err)
+        }</span>
+
+        <span class="cov8" title="64">configDir := filepath.Dir(realPath)
+        var configs []Config
+
+        // If top-level name/dedup_file/source_dir are set, add as a Config entry.
+        hasName := cf.Name != ""
+        hasDedup := cf.DedupFile != ""
+        hasSource := cf.SourceDir != ""
+        if hasName || hasDedup || hasSource </span><span class="cov8" title="46">{
+                if !hasName || !hasDedup || !hasSource </span><span class="cov2" title="2">{
+                        return nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+                }</span>
+                <span class="cov8" title="44">configs = append(configs, Config{
+                        Name:      cf.Name,
+                        DedupFile: resolveRelative(configDir, cf.DedupFile),
+                        SourceDir: resolveRelative(configDir, cf.SourceDir),
+                })</span>
+        }
+
+        // Process includes.
+        <span class="cov8" title="62">for _, pattern := range cf.Includes </span><span class="cov6" title="16">{
+                pattern = resolveRelative(configDir, pattern)
+                matches, err := doublestar.FilepathGlob(pattern)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
+                }</span>
+                <span class="cov6" title="16">sort.Strings(matches)
+                for _, match := range matches </span><span class="cov6" title="16">{
+                        sub, err := resolveConfig(match, seen)
+                        if err != nil </span><span class="cov2" title="2">{
+                                return nil, err
+                        }</span>
+                        <span class="cov5" title="14">configs = append(configs, sub...)</span>
+                }
+        }
+
+        // Process virtual_files.
+        <span class="cov8" title="60">for _, vf := range cf.VirtualFiles </span><span class="cov5" title="10">{
+                if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" </span><span class="cov2" title="2">{
+                        return nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
+                }</span>
+                <span class="cov4" title="8">configs = append(configs, Config{
+                        Name:      vf.Name,
+                        DedupFile: resolveRelative(configDir, vf.DedupFile),
+                        SourceDir: resolveRelative(configDir, vf.SourceDir),
+                })</span>
+        }
+
+        <span class="cov8" title="58">return configs, nil</span>
+}
+
+// resolveRelative resolves a path relative to baseDir. If the path is already
+// absolute, it is returned unchanged.
+func resolveRelative(baseDir, path string) string <span class="cov10" title="120">{
+        if filepath.IsAbs(path) </span><span class="cov9" title="96">{
+                return path
+        }</span>
+        <span class="cov6" title="24">return filepath.Join(baseDir, path)</span>
 }
 </pre>
 		
@@ -2103,7 +2221,7 @@ type RawEntry struct {
 }
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1229752">{
+func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1229761">{
         return Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -2361,19 +2479,19 @@ func (r *Reader) buildBlockIndex() <span class="cov3" title="93">{
 
 // getEntry returns the entry at the given index by parsing from mmap.
 // Uses cache for O(1) sequential access. Safe for concurrent use.
-func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1229771">{
+func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1229781">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov2" title="6">{
                 return Entry{}, false
         }</span>
 
         // Check cache first (with lock)
-        <span class="cov8" title="1229765">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov2" title="27">{
+        <span class="cov8" title="1229775">r.cacheMu.Lock()
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov2" title="28">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov8" title="1229738">r.cacheMu.Unlock()
+        <span class="cov8" title="1229747">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -2384,7 +2502,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12297
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov8" title="1229738">var raw RawEntry
+        <span class="cov8" title="1229747">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -2406,35 +2524,35 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12297
 
 // getMkvOffset returns just the MkvOffset for entry at idx (for binary search).
 // This avoids full entry parsing when only the offset is needed.
-func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7972969">{
+func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7971069">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7972965">offset := r.indexStart + int64(idx)*EntrySize
+        <span class="cov9" title="7971065">offset := r.indexStart + int64(idx)*EntrySize
         data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7972965">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov9" title="7971065">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // getEntryLength returns just the Length for entry at idx (for binary search).
 // This avoids full entry parsing when only offset and length are needed.
-func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov7" title="44743">{
+func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov7" title="42843">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
         // Length is at offset 8 within each entry (after MkvOffset)
-        <span class="cov7" title="44739">offset := r.indexStart + int64(idx)*EntrySize + 8
+        <span class="cov7" title="42839">offset := r.indexStart + int64(idx)*EntrySize + 8
         data := r.dedupMmap.Slice(offset, 8)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov7" title="44739">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov7" title="42839">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // OriginalSize returns the size of the original MKV file.
@@ -2494,57 +2612,57 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) <span class="cov6
         // Find entries that cover this range
         <span class="cov6" title="7884">entries := r.findEntriesForRange(offset, int64(remaining))
 
-        for _, entry := range entries </span><span class="cov8" title="1219623">{
+        for _, entry := range entries </span><span class="cov8" title="1219633">{
                 if remaining &lt;= 0 </span><span class="cov0" title="0">{
                         break</span>
                 }
 
                 // Calculate overlap
-                <span class="cov8" title="1219623">entryEnd := entry.MkvOffset + entry.Length
+                <span class="cov8" title="1219633">entryEnd := entry.MkvOffset + entry.Length
                 readStart := offset
                 if readStart &lt; entry.MkvOffset </span><span class="cov0" title="0">{
                         readStart = entry.MkvOffset
                 }</span>
-                <span class="cov8" title="1219623">readEnd := offset + int64(remaining)
-                if readEnd &gt; entryEnd </span><span class="cov8" title="1211741">{
+                <span class="cov8" title="1219633">readEnd := offset + int64(remaining)
+                if readEnd &gt; entryEnd </span><span class="cov8" title="1211751">{
                         readEnd = entryEnd
                 }</span>
 
-                <span class="cov8" title="1219623">readLen := int(readEnd - readStart)
+                <span class="cov8" title="1219633">readLen := int(readEnd - readStart)
                 if readLen &lt;= 0 </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
                 // Calculate offset within entry
-                <span class="cov8" title="1219623">offsetInEntry := readStart - entry.MkvOffset
+                <span class="cov8" title="1219633">offsetInEntry := readStart - entry.MkvOffset
                 sourceOffset := entry.SourceOffset + offsetInEntry
 
                 // Read data from appropriate source
                 var data []byte
                 var err error
 
-                if entry.Source == 0 </span><span class="cov7" title="208686">{
+                if entry.Source == 0 </span><span class="cov7" title="208697">{
                         // Read from delta section
                         data, err = r.readDelta(sourceOffset, readLen)
-                }</span> else<span class="cov8" title="1010937"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
+                }</span> else<span class="cov8" title="1010936"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
                         // Read from ES
                         if entry.IsVideo </span><span class="cov0" title="0">{
                                 data, err = r.esReader.ReadESData(sourceOffset, readLen, true)
                         }</span> else<span class="cov0" title="0"> {
                                 data, err = r.esReader.ReadAudioSubStreamData(entry.AudioSubStreamID, sourceOffset, readLen)
                         }</span>
-                } else<span class="cov8" title="1010937"> {
+                } else<span class="cov8" title="1010936"> {
                         // Read from raw source file
                         fileIndex := int(entry.Source - 1)
                         data, err = r.readSource(fileIndex, sourceOffset, readLen)
                 }</span>
 
-                <span class="cov8" title="1219623">if err != nil </span><span class="cov0" title="0">{
+                <span class="cov8" title="1219633">if err != nil </span><span class="cov0" title="0">{
                         return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
                 }</span>
 
                 // Copy to output buffer - use original offset to calculate buffer position
-                <span class="cov8" title="1219623">bufOffset := int(readStart - originalOffset)
+                <span class="cov8" title="1219633">bufOffset := int(readStart - originalOffset)
                 copy(buf[bufOffset:], data)
                 totalRead += len(data)
                 remaining -= len(data)
@@ -2568,35 +2686,35 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
         // Fast path: check if offset is within cached entry (with lock)
         r.cacheMu.Lock()
         if r.lastEntryValid &amp;&amp; r.lastEntryIdx &gt;= 0 &amp;&amp; r.lastEntryIdx &lt; r.entryCount </span><span class="cov6" title="7869">{
-                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov2" title="7">{
+                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov2" title="8">{
                         // Cache hit - start from cached entry
                         startIdx := r.lastEntryIdx
                         r.cacheMu.Unlock()
 
                         var result []Entry
-                        for i := startIdx; i &lt; r.entryCount; i++ </span><span class="cov4" title="349">{
+                        for i := startIdx; i &lt; r.entryCount; i++ </span><span class="cov4" title="423">{
                                 entry, ok := r.getEntry(i)
-                                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov1" title="4">{
+                                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov1" title="5">{
                                         break</span>
                                 }
-                                <span class="cov4" title="345">result = append(result, entry)</span>
+                                <span class="cov4" title="418">result = append(result, entry)</span>
                         }
-                        <span class="cov2" title="7">return result</span>
+                        <span class="cov2" title="8">return result</span>
                 }
         }
-        <span class="cov6" title="7885">r.cacheMu.Unlock()
+        <span class="cov6" title="7884">r.cacheMu.Unlock()
 
         // Cache miss - use block index to narrow binary search range
         var lo, hi int
-        if r.blockIndex != nil </span><span class="cov6" title="7885">{
+        if r.blockIndex != nil </span><span class="cov6" title="7884">{
                 blockNum := int(offset / blockSize)
                 if blockNum &gt;= len(r.blockIndex) </span><span class="cov0" title="0">{
                         blockNum = len(r.blockIndex) - 1
                 }</span>
-                <span class="cov6" title="7885">lo = r.blockIndex[blockNum]
+                <span class="cov6" title="7884">lo = r.blockIndex[blockNum]
 
                 // Upper bound: start of next block's entries (or entryCount)
-                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov6" title="7885">{
+                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov6" title="7884">{
                         // Search up to 1 past the next block's start entry to handle
                         // entries that span block boundaries
                         hi = r.blockIndex[blockNum+1] + 1
@@ -2612,54 +2730,54 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
         }</span>
 
         // Binary search within [lo, hi) for first entry whose range covers offset
-        <span class="cov6" title="7885">idx := lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov7" title="44733">{
+        <span class="cov6" title="7884">idx := lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov7" title="42833">{
                 mkvOffset, ok := r.getMkvOffset(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov7" title="44733">entryLen, ok := r.getEntryLength(lo + i)
+                <span class="cov7" title="42833">entryLen, ok := r.getEntryLength(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov7" title="44733">return mkvOffset+entryLen &gt; offset</span>
+                <span class="cov7" title="42833">return mkvOffset+entryLen &gt; offset</span>
         })
 
-        <span class="cov6" title="7885">var result []Entry
-        for i := idx; i &lt; r.entryCount; i++ </span><span class="cov8" title="1227168">{
+        <span class="cov6" title="7884">var result []Entry
+        for i := idx; i &lt; r.entryCount; i++ </span><span class="cov8" title="1227104">{
                 entry, ok := r.getEntry(i)
-                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov6" title="7880">{
+                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov6" title="7879">{
                         break</span>
                 }
-                <span class="cov8" title="1219288">result = append(result, entry)</span>
+                <span class="cov8" title="1219225">result = append(result, entry)</span>
         }
 
-        <span class="cov6" title="7885">return result</span>
+        <span class="cov6" title="7884">return result</span>
 }
 
-func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="208686">{
+func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="208697">{
         fileOffset := r.file.DeltaOffset + offset
         // Zero-copy slice from mmap'd data
         data := r.dedupMmap.Slice(fileOffset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("delta offset out of range")
         }</span>
-        <span class="cov7" title="208686">return data, nil</span>
+        <span class="cov7" title="208697">return data, nil</span>
 }
 
-func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) <span class="cov8" title="1010937">{
+func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) <span class="cov8" title="1010936">{
         if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceMmaps) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("invalid file index: %d", fileIndex)
         }</span>
-        <span class="cov8" title="1010937">if r.sourceMmaps[fileIndex] == nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="1010936">if r.sourceMmaps[fileIndex] == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("source file %d not loaded", fileIndex)
         }</span>
 
         // Zero-copy slice from mmap'd data
-        <span class="cov8" title="1010937">data := r.sourceMmaps[fileIndex].Slice(offset, size)
+        <span class="cov8" title="1010936">data := r.sourceMmaps[fileIndex].Slice(offset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("source offset out of range")
         }</span>
-        <span class="cov8" title="1010937">return data, nil</span>
+        <span class="cov8" title="1010936">return data, nil</span>
 }
 
 // parseHeaderOnly parses just the header and source files (not entries) for fast initialization.
@@ -3350,12 +3468,12 @@ func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (Reade
 // DefaultConfigReader is the default implementation of ConfigReader.
 type DefaultConfigReader struct{}
 
-func (r *DefaultConfigReader) ReadConfig(path string) (*Config, error) <span class="cov4" title="27">{
+func (r *DefaultConfigReader) ReadConfig(path string) (*Config, error) <span class="cov3" title="7">{
         config, err := dedup.ReadConfig(path)
         if err != nil </span><span class="cov2" title="4">{
                 return nil, err
         }</span>
-        <span class="cov4" title="23">return &amp;Config{
+        <span class="cov2" title="3">return &amp;Config{
                 Name:      config.Name,
                 DedupFile: config.DedupFile,
                 SourceDir: config.SourceDir,
@@ -3378,6 +3496,7 @@ import (
 
         "github.com/hanwen/go-fuse/v2/fs"
         "github.com/hanwen/go-fuse/v2/fuse"
+        "github.com/stuckj/mkvdup/internal/dedup"
 )
 
 // MKVFile represents a virtual MKV file backed by a dedup file.
@@ -3477,15 +3596,25 @@ func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) <s
 }
 
 // NewMKVFS creates a new MKVFS root from a list of config files.
+// Config files are resolved recursively (includes and virtual_files are expanded).
 // Set verbose=true to enable debug logging.
 func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) <span class="cov3" title="11">{
-        return NewMKVFSWithFactories(configPaths, verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{}, nil)
-}</span>
+        configs, err := dedup.ResolveConfigs(configPaths)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("resolve configs: %w", err)
+        }</span>
+        <span class="cov3" title="11">return NewMKVFSFromConfigs(configs, verbose, &amp;DefaultReaderFactory{}, nil)</span>
+}
 
 // NewMKVFSWithPermissions creates a new MKVFS root with a permission store.
+// Config files are resolved recursively (includes and virtual_files are expanded).
 func NewMKVFSWithPermissions(configPaths []string, verbose bool, permStore *PermissionStore) (*MKVFSRoot, error) <span class="cov0" title="0">{
-        return NewMKVFSWithFactories(configPaths, verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{}, permStore)
-}</span>
+        configs, err := dedup.ResolveConfigs(configPaths)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("resolve configs: %w", err)
+        }</span>
+        <span class="cov0" title="0">return NewMKVFSFromConfigs(configs, verbose, &amp;DefaultReaderFactory{}, permStore)</span>
+}
 
 // MKVFSOptions contains options for creating an MKVFS filesystem.
 type MKVFSOptions struct {
@@ -3499,6 +3628,7 @@ type MKVFSOptions struct {
 }
 
 // NewMKVFSWithOptions creates a new MKVFS root with the given options.
+// Config files are resolved recursively (includes and virtual_files are expanded).
 func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, error) <span class="cov2" title="7">{
         var permStore *PermissionStore
         if opts.PermissionsPath != "" </span><span class="cov2" title="7">{
@@ -3511,12 +3641,16 @@ func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, e
                         return nil, fmt.Errorf("load permissions: %w", err)
                 }</span>
         }
-        <span class="cov2" title="7">return NewMKVFSWithFactories(configPaths, opts.Verbose, &amp;DefaultReaderFactory{}, &amp;DefaultConfigReader{}, permStore)</span>
+        <span class="cov2" title="7">configs, err := dedup.ResolveConfigs(configPaths)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("resolve configs: %w", err)
+        }</span>
+        <span class="cov2" title="7">return NewMKVFSFromConfigs(configs, opts.Verbose, &amp;DefaultReaderFactory{}, permStore)</span>
 }
 
 // NewMKVFSWithFactories creates a new MKVFS root with custom factories.
 // This allows injecting mock implementations for testing.
-func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader, permStore *PermissionStore) (*MKVFSRoot, error) <span class="cov4" title="34">{
+func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory ReaderFactory, configReader ConfigReader, permStore *PermissionStore) (*MKVFSRoot, error) <span class="cov3" title="16">{
         root := &amp;MKVFSRoot{
                 files:         make(map[string]*MKVFile),
                 verbose:       verbose,
@@ -3525,38 +3659,38 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                 permStore:     permStore,
         }
 
-        if verbose </span><span class="cov1" title="1">{
+        if verbose </span><span class="cov0" title="0">{
                 log.Printf("Creating MKVFS with %d config files", len(configPaths))
         }</span>
 
-        <span class="cov4" title="34">for _, configPath := range configPaths </span><span class="cov4" title="42">{
-                if verbose </span><span class="cov1" title="1">{
+        <span class="cov3" title="16">for _, configPath := range configPaths </span><span class="cov3" title="22">{
+                if verbose </span><span class="cov0" title="0">{
                         log.Printf("Reading config: %s", configPath)
                 }</span>
-                <span class="cov4" title="42">config, err := root.configReader.ReadConfig(configPath)
+                <span class="cov3" title="22">config, err := root.configReader.ReadConfig(configPath)
                 if err != nil </span><span class="cov1" title="2">{
                         return nil, fmt.Errorf("read config %s: %w", configPath, err)
                 }</span>
-                <span class="cov4" title="40">if verbose </span><span class="cov1" title="1">{
+                <span class="cov3" title="20">if verbose </span><span class="cov0" title="0">{
                         log.Printf("Config: name=%s, dedup=%s, source=%s", config.Name, config.DedupFile, config.SourceDir)
                 }</span>
 
                 // Resolve relative paths
-                <span class="cov4" title="40">configDir := filepath.Dir(configPath)
+                <span class="cov3" title="20">configDir := filepath.Dir(configPath)
                 dedupPath := config.DedupFile
-                if !filepath.IsAbs(dedupPath) </span><span class="cov3" title="16">{
+                if !filepath.IsAbs(dedupPath) </span><span class="cov1" title="2">{
                         dedupPath = filepath.Join(configDir, dedupPath)
                 }</span>
-                <span class="cov4" title="40">sourceDir := config.SourceDir
+                <span class="cov3" title="20">sourceDir := config.SourceDir
                 if !filepath.IsAbs(sourceDir) </span><span class="cov1" title="2">{
                         sourceDir = filepath.Join(configDir, sourceDir)
                 }</span>
 
                 // Open dedup file to get size (lazy loading - only reads header)
-                <span class="cov4" title="40">if verbose </span><span class="cov1" title="1">{
+                <span class="cov3" title="20">if verbose </span><span class="cov0" title="0">{
                         log.Printf("Opening dedup file: %s", dedupPath)
                 }</span>
-                <span class="cov4" title="40">reader, err := root.readerFactory.NewReaderLazy(dedupPath, sourceDir)
+                <span class="cov3" title="20">reader, err := root.readerFactory.NewReaderLazy(dedupPath, sourceDir)
                 if err != nil </span><span class="cov1" title="2">{
                         if verbose </span><span class="cov0" title="0">{
                                 log.Printf("Failed to open dedup file: %v", err)
@@ -3564,10 +3698,90 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                         <span class="cov1" title="2">return nil, fmt.Errorf("open dedup file %s: %w", dedupPath, err)</span>
                 }
 
-                <span class="cov4" title="38">mkvFile := &amp;MKVFile{
+                <span class="cov3" title="18">mkvFile := &amp;MKVFile{
                         Name:          config.Name,
                         DedupPath:     dedupPath,
                         SourceDir:     sourceDir,
+                        Size:          reader.OriginalSize(),
+                        readerFactory: root.readerFactory,
+                }
+
+                // Don't keep reader open - we'll open it lazily
+                reader.Close()
+
+                root.files[config.Name] = mkvFile
+                if verbose </span><span class="cov0" title="0">{
+                        log.Printf("Added file: %s (size=%d)", config.Name, mkvFile.Size)
+                }</span>
+        }
+
+        <span class="cov3" title="12">if verbose </span><span class="cov0" title="0">{
+                log.Printf("Total files: %d", len(root.files))
+        }</span>
+
+        // Build directory tree from collected files
+        <span class="cov3" title="12">fileList := make([]*MKVFile, 0, len(root.files))
+        for _, f := range root.files </span><span class="cov3" title="18">{
+                fileList = append(fileList, f)
+        }</span>
+        <span class="cov3" title="12">root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory, permStore)
+
+        // Clean up stale permission entries if we have a permission store
+        if permStore != nil </span><span class="cov1" title="2">{
+                validFiles, validDirs := root.collectValidPaths()
+                removed := permStore.CleanupStale(validFiles, validDirs)
+                if removed &gt; 0 </span><span class="cov0" title="0">{
+                        if verbose </span><span class="cov0" title="0">{
+                                log.Printf("Cleaned up %d stale permission entries", removed)
+                        }</span>
+                        <span class="cov0" title="0">if err := permStore.Save(); err != nil </span><span class="cov0" title="0">{
+                                log.Printf("Warning: failed to save permissions after cleanup: %v", err)
+                        }</span>
+                }
+        }
+
+        <span class="cov3" title="12">if verbose </span><span class="cov0" title="0">{
+                log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))
+        }</span>
+
+        <span class="cov3" title="12">return root, nil</span>
+}
+
+// NewMKVFSFromConfigs creates a new MKVFS root from already-resolved configs.
+// Paths in configs must already be absolute (as returned by dedup.ResolveConfigs).
+func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) (*MKVFSRoot, error) <span class="cov3" title="18">{
+        root := &amp;MKVFSRoot{
+                files:         make(map[string]*MKVFile),
+                verbose:       verbose,
+                readerFactory: readerFactory,
+                permStore:     permStore,
+        }
+
+        if verbose </span><span class="cov1" title="1">{
+                log.Printf("Creating MKVFS with %d resolved configs", len(configs))
+        }</span>
+
+        <span class="cov3" title="18">for _, config := range configs </span><span class="cov3" title="20">{
+                if verbose </span><span class="cov1" title="1">{
+                        log.Printf("Config: name=%s, dedup=%s, source=%s", config.Name, config.DedupFile, config.SourceDir)
+                }</span>
+
+                // Open dedup file to get size (lazy loading - only reads header)
+                <span class="cov3" title="20">if verbose </span><span class="cov1" title="1">{
+                        log.Printf("Opening dedup file: %s", config.DedupFile)
+                }</span>
+                <span class="cov3" title="20">reader, err := root.readerFactory.NewReaderLazy(config.DedupFile, config.SourceDir)
+                if err != nil </span><span class="cov0" title="0">{
+                        if verbose </span><span class="cov0" title="0">{
+                                log.Printf("Failed to open dedup file: %v", err)
+                        }</span>
+                        <span class="cov0" title="0">return nil, fmt.Errorf("open dedup file %s: %w", config.DedupFile, err)</span>
+                }
+
+                <span class="cov3" title="20">mkvFile := &amp;MKVFile{
+                        Name:          config.Name,
+                        DedupPath:     config.DedupFile,
+                        SourceDir:     config.SourceDir,
                         Size:          reader.OriginalSize(),
                         readerFactory: root.readerFactory,
                 }
@@ -3581,19 +3795,19 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                 }</span>
         }
 
-        <span class="cov4" title="30">if verbose </span><span class="cov1" title="1">{
+        <span class="cov3" title="18">if verbose </span><span class="cov1" title="1">{
                 log.Printf("Total files: %d", len(root.files))
         }</span>
 
         // Build directory tree from collected files
-        <span class="cov4" title="30">fileList := make([]*MKVFile, 0, len(root.files))
-        for _, f := range root.files </span><span class="cov4" title="38">{
+        <span class="cov3" title="18">fileList := make([]*MKVFile, 0, len(root.files))
+        for _, f := range root.files </span><span class="cov3" title="20">{
                 fileList = append(fileList, f)
         }</span>
-        <span class="cov4" title="30">root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory, permStore)
+        <span class="cov3" title="18">root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory, permStore)
 
         // Clean up stale permission entries if we have a permission store
-        if permStore != nil </span><span class="cov2" title="9">{
+        if permStore != nil </span><span class="cov2" title="7">{
                 validFiles, validDirs := root.collectValidPaths()
                 removed := permStore.CleanupStale(validFiles, validDirs)
                 if removed &gt; 0 </span><span class="cov0" title="0">{
@@ -3606,11 +3820,11 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
                 }
         }
 
-        <span class="cov4" title="30">if verbose </span><span class="cov1" title="1">{
+        <span class="cov3" title="18">if verbose </span><span class="cov1" title="1">{
                 log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))
         }</span>
 
-        <span class="cov4" title="30">return root, nil</span>
+        <span class="cov3" title="18">return root, nil</span>
 }
 
 // Getattr implements fs.NodeGetattrer - returns attributes for the root directory.
@@ -4507,14 +4721,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="258">{
-                if p.UID != nil </span><span class="cov9" title="249">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="259">{
+                if p.UID != nil </span><span class="cov9" title="250">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="258">if p.GID != nil </span><span class="cov5" title="18">{
+                <span class="cov9" title="259">if p.GID != nil </span><span class="cov5" title="18">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="258">if p.Mode != nil </span><span class="cov5" title="19">{
+                <span class="cov9" title="259">if p.Mode != nil </span><span class="cov5" title="19">{
                         mode = *p.Mode
                 }</span>
         }
@@ -5564,7 +5778,7 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="26">{
         }</span>
 
         // Sort by start offset
-        <span class="cov2" title="24">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov7" title="7119229">{
+        <span class="cov2" title="24">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov7" title="7089719">{
                 return m.matchedRegions[i].mkvStart &lt; m.matchedRegions[j].mkvStart
         }</span>)
 
@@ -6545,15 +6759,15 @@ func (m *File) Len() int <span class="cov1" title="4">{
 
 // Slice returns a sub-slice of the mapped data without copying.
 // Returns nil if the range is out of bounds.
-func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="350912251">{
+func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="350908470">{
         if offset &lt; 0 || offset &gt;= m.size </span><span class="cov1" title="6">{
                 return nil
         }</span>
-        <span class="cov9" title="350912245">end := offset + int64(size)
+        <span class="cov9" title="350908464">end := offset + int64(size)
         if end &gt; m.size </span><span class="cov1" title="2">{
                 end = m.size
         }</span>
-        <span class="cov9" title="350912245">return m.data[offset:end]</span>
+        <span class="cov9" title="350908464">return m.data[offset:end]</span>
 }
 
 // Advise provides hints to the kernel about expected access patterns.
