@@ -222,6 +222,213 @@ func TestFullDedupCycle(t *testing.T) {
 	t.Logf("Match rate:   %.1f%%", matchRate)
 }
 
+// TestFullDedupCycle_Bluray tests the complete dedup -> reconstruct -> verify cycle
+// using Blu-ray (M2TS) source data created by remuxing the Big Buck Bunny MKV
+// via ffmpeg. This exercises the raw-indexing code path (indexRawFile),
+// LoadSourceFiles reconstruction, and the UsesESOffsets=false branch.
+func TestFullDedupCycle_Bluray(t *testing.T) {
+	paths := testdata.SkipIfNotAvailable(t)
+
+	t.Logf("Using MKV: %s", paths.MKVFile)
+
+	// Create temp directory for output
+	tmpDir, err := os.MkdirTemp("", "mkvdup-bluray-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Phase 1: Create Blu-ray source data via ffmpeg remux
+	t.Log("Phase 1: Creating Blu-ray source data (ffmpeg remux)...")
+	blurayDir := paths.CreateBlurayData(t, tmpDir)
+	t.Logf("  Blu-ray dir: %s", blurayDir)
+
+	dedupPath := filepath.Join(tmpDir, "bluray-test.mkvdup")
+
+	// Phase 2: Parse MKV
+	t.Log("Phase 2: Parsing MKV...")
+	parser, err := mkv.NewParser(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to create MKV parser: %v", err)
+	}
+	defer parser.Close()
+
+	if err := parser.Parse(nil); err != nil {
+		t.Fatalf("Failed to parse MKV: %v", err)
+	}
+	t.Logf("  Parsed %d packets", parser.PacketCount())
+
+	// Phase 3: Index source (should detect TypeBluray and use raw indexing)
+	t.Log("Phase 3: Indexing Blu-ray source...")
+	indexer, err := source.NewIndexer(blurayDir, source.DefaultWindowSize)
+	if err != nil {
+		t.Fatalf("Failed to create indexer: %v", err)
+	}
+
+	if indexer.SourceType() != source.TypeBluray {
+		t.Fatalf("Expected TypeBluray, got %v", indexer.SourceType())
+	}
+
+	if err := indexer.Build(nil); err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+	index := indexer.Index()
+	defer index.Close()
+	t.Logf("  Indexed %d hashes", len(index.HashToLocations))
+
+	if index.UsesESOffsets {
+		t.Fatal("Expected UsesESOffsets=false for Blu-ray source")
+	}
+
+	// Phase 4: Match packets
+	t.Log("Phase 4: Matching packets...")
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer m.Close()
+
+	result, err := m.Match(paths.MKVFile, parser.Packets(), parser.Tracks(), nil)
+	if err != nil {
+		t.Fatalf("Failed to match: %v", err)
+	}
+
+	matchRate := float64(result.MatchedBytes) / float64(result.MatchedBytes+int64(len(result.DeltaData))) * 100
+	t.Logf("  Matched %d bytes (%.1f%%)", result.MatchedBytes, matchRate)
+	t.Logf("  Delta: %d bytes", len(result.DeltaData))
+
+	// Phase 5: Write dedup file
+	t.Log("Phase 5: Writing dedup file...")
+	mkvInfo, err := os.Stat(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to stat MKV file: %v", err)
+	}
+
+	// Calculate MKV checksum
+	mkvFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open MKV for checksum: %v", err)
+	}
+	h := xxhash.New()
+	if _, err := io.Copy(h, mkvFile); err != nil {
+		mkvFile.Close()
+		t.Fatalf("Failed to checksum MKV: %v", err)
+	}
+	mkvChecksum := h.Sum64()
+	mkvFile.Close()
+
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to create writer: %v", err)
+	}
+	defer writer.Close()
+
+	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	// Blu-ray uses raw indexing — no ES converters needed
+	if err := writer.SetMatchResult(result, nil); err != nil {
+		t.Fatalf("Failed to set match result: %v", err)
+	}
+
+	if err := writer.Write(); err != nil {
+		t.Fatalf("Failed to write dedup file: %v", err)
+	}
+
+	dedupInfo, err := os.Stat(dedupPath)
+	if err != nil {
+		t.Fatalf("Failed to stat dedup file: %v", err)
+	}
+	t.Logf("  Dedup file: %d bytes (%.1f%% of original)",
+		dedupInfo.Size(), float64(dedupInfo.Size())/float64(mkvInfo.Size())*100)
+
+	// Phase 6: Read back and verify
+	t.Log("Phase 6: Verifying reconstruction...")
+	reader, err := dedup.NewReader(dedupPath, blurayDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Blu-ray path: UsesESOffsets should be false, use LoadSourceFiles
+	if reader.UsesESOffsets() {
+		t.Fatal("Reader reports UsesESOffsets=true, expected false for Blu-ray")
+	}
+
+	if err := reader.LoadSourceFiles(); err != nil {
+		t.Fatalf("Failed to load source files: %v", err)
+	}
+
+	// Verify size matches
+	if reader.OriginalSize() != mkvInfo.Size() {
+		t.Errorf("Size mismatch: reader reports %d, original is %d",
+			reader.OriginalSize(), mkvInfo.Size())
+	}
+
+	// Compare byte-by-byte (in chunks)
+	origFile, err := os.Open(paths.MKVFile)
+	if err != nil {
+		t.Fatalf("Failed to open original MKV: %v", err)
+	}
+	defer origFile.Close()
+
+	const chunkSize = 1024 * 1024 // 1MB chunks
+	origBuf := make([]byte, chunkSize)
+	reconBuf := make([]byte, chunkSize)
+	offset := int64(0)
+	mismatches := 0
+
+	for {
+		nOrig, errOrig := origFile.Read(origBuf)
+		if nOrig > 0 {
+			nRecon, errRecon := reader.ReadAt(reconBuf[:nOrig], offset)
+			if errRecon != nil && errRecon != io.EOF {
+				t.Fatalf("Read error at offset %d: %v", offset, errRecon)
+			}
+			if nRecon != nOrig {
+				t.Fatalf("Short read at offset %d: got %d, want %d", offset, nRecon, nOrig)
+			}
+			if !bytes.Equal(origBuf[:nOrig], reconBuf[:nOrig]) {
+				mismatches++
+				if mismatches <= 5 {
+					// Find first mismatch position
+					for i := 0; i < nOrig; i++ {
+						if origBuf[i] != reconBuf[i] {
+							t.Errorf("Mismatch at offset %d: orig=%02x, recon=%02x",
+								offset+int64(i), origBuf[i], reconBuf[i])
+							break
+						}
+					}
+				}
+			}
+			offset += int64(nOrig)
+		}
+		if errOrig == io.EOF {
+			break
+		}
+		if errOrig != nil {
+			t.Fatalf("Read error from original: %v", errOrig)
+		}
+	}
+
+	if mismatches > 0 {
+		if mismatches > 5 {
+			t.Logf("  ... and %d more mismatches not shown", mismatches-5)
+		}
+		t.Errorf("Verification failed: %d chunk mismatches", mismatches)
+	} else {
+		t.Log("  Verification passed: reconstructed MKV matches original")
+	}
+
+	// Summary
+	t.Log("")
+	t.Log("=== Blu-ray Summary ===")
+	t.Logf("Original MKV: %.2f MB", float64(mkvInfo.Size())/(1024*1024))
+	t.Logf("Dedup file:   %.2f MB", float64(dedupInfo.Size())/(1024*1024))
+	t.Logf("Space saved:  %.1f%%", (1-float64(dedupInfo.Size())/float64(mkvInfo.Size()))*100)
+	t.Logf("Match rate:   %.1f%%", matchRate)
+}
+
 // TestConcurrentReaders ensures multiple independent readers can access the same dedup file concurrently
 // without errors. Each goroutine uses its own dedup.Reader instance; this test does not validate
 // internal thread-safety of sharing a single Reader across goroutines.

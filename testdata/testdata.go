@@ -6,8 +6,10 @@ package testdata
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"testing"
 )
 
 // Paths contains the resolved paths to test data files.
@@ -114,6 +116,41 @@ func SkipIfNotAvailable(t interface{ Skip(...interface{}) }) Paths {
 		t.Skip("Test data not available. See testdata/README.md for setup instructions.")
 	}
 	return p
+}
+
+// CreateBlurayData creates a Blu-ray directory structure by remuxing the MKV
+// file to M2TS format using ffmpeg (copy codec, no re-encoding). The directory
+// is created under tmpDir and has the layout BDMV/STREAM/00001.m2ts that
+// DetectType recognises as TypeBluray.
+//
+// The test is skipped if ffmpeg is not available.
+func (p Paths) CreateBlurayData(t testing.TB, tmpDir string) string {
+	t.Helper()
+
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available, skipping Blu-ray test")
+	}
+
+	blurayRoot := filepath.Join(tmpDir, "bluray")
+	streamDir := filepath.Join(blurayRoot, "BDMV", "STREAM")
+	if err := os.MkdirAll(streamDir, 0755); err != nil {
+		t.Fatalf("CreateBlurayData: mkdir: %v", err)
+	}
+
+	m2tsPath := filepath.Join(streamDir, "00001.m2ts")
+	cmd := exec.Command("ffmpeg",
+		"-i", p.MKVFile,
+		"-c", "copy",
+		"-f", "mpegts",
+		"-y", // overwrite if exists
+		m2tsPath,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CreateBlurayData: ffmpeg remux failed: %v\n%s", err, output)
+	}
+
+	return blurayRoot
 }
 
 // findLocalTestdataDir returns the path to testdata/generated/ directory
