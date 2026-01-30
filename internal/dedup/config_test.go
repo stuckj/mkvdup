@@ -1,6 +1,7 @@
 package dedup
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,5 +181,394 @@ source_dir: /path/to/source
 	}
 	if config.SourceDir != "/path/to/source" {
 		t.Errorf("SourceDir mismatch: got %q, want %q", config.SourceDir, "/path/to/source")
+	}
+}
+
+// writeYAML is a test helper that writes content to a file.
+func writeYAML(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func TestResolveConfigs_BasicConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "movie.mkvdup.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
+`)
+
+	configs, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	if configs[0].Name != "movie.mkv" {
+		t.Errorf("Name = %q, want %q", configs[0].Name, "movie.mkv")
+	}
+	if configs[0].DedupFile != "/data/movie.mkvdup" {
+		t.Errorf("DedupFile = %q, want %q", configs[0].DedupFile, "/data/movie.mkvdup")
+	}
+	if configs[0].SourceDir != "/data/source" {
+		t.Errorf("SourceDir = %q, want %q", configs[0].SourceDir, "/data/source")
+	}
+}
+
+func TestResolveConfigs_IncludesSimpleGlob(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create two config files in a subdirectory.
+	subDir := filepath.Join(dir, "configs")
+	writeYAML(t, filepath.Join(subDir, "a.mkvdup.yaml"), `name: "a.mkv"
+dedup_file: "/data/a.mkvdup"
+source_dir: "/data/source"
+`)
+	writeYAML(t, filepath.Join(subDir, "b.mkvdup.yaml"), `name: "b.mkv"
+dedup_file: "/data/b.mkvdup"
+source_dir: "/data/source"
+`)
+
+	// Create a parent config that includes them.
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/*.mkvdup.yaml"
+`, subDir))
+
+	configs, err := ResolveConfigs([]string{mainPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 2 {
+		t.Fatalf("got %d configs, want 2", len(configs))
+	}
+
+	names := []string{configs[0].Name, configs[1].Name}
+	if names[0] != "a.mkv" || names[1] != "b.mkv" {
+		t.Errorf("names = %v, want [a.mkv b.mkv]", names)
+	}
+}
+
+func TestResolveConfigs_IncludesRecursiveGlob(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create config files in nested directories.
+	writeYAML(t, filepath.Join(dir, "sub", "deep", "movie.mkvdup.yaml"), `name: "deep.mkv"
+dedup_file: "/data/deep.mkvdup"
+source_dir: "/data/source"
+`)
+
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/**/*.mkvdup.yaml"
+`, dir))
+
+	configs, err := ResolveConfigs([]string{mainPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	if configs[0].Name != "deep.mkv" {
+		t.Errorf("Name = %q, want %q", configs[0].Name, "deep.mkv")
+	}
+}
+
+func TestResolveConfigs_VirtualFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "vf.yaml")
+	writeYAML(t, cfgPath, `virtual_files:
+  - name: "Movies/movie1.mkv"
+    dedup_file: "/data/movie1.mkvdup"
+    source_dir: "/data/source1"
+  - name: "Movies/movie2.mkv"
+    dedup_file: "/data/movie2.mkvdup"
+    source_dir: "/data/source2"
+`)
+
+	configs, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 2 {
+		t.Fatalf("got %d configs, want 2", len(configs))
+	}
+	if configs[0].Name != "Movies/movie1.mkv" {
+		t.Errorf("configs[0].Name = %q, want %q", configs[0].Name, "Movies/movie1.mkv")
+	}
+	if configs[1].Name != "Movies/movie2.mkv" {
+		t.Errorf("configs[1].Name = %q, want %q", configs[1].Name, "Movies/movie2.mkv")
+	}
+}
+
+func TestResolveConfigs_Combination(t *testing.T) {
+	dir := t.TempDir()
+
+	// An included config.
+	subDir := filepath.Join(dir, "configs")
+	writeYAML(t, filepath.Join(subDir, "included.mkvdup.yaml"), `name: "included.mkv"
+dedup_file: "/data/included.mkvdup"
+source_dir: "/data/source"
+`)
+
+	// A config with top-level fields, includes, and virtual_files.
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`name: "top.mkv"
+dedup_file: "/data/top.mkvdup"
+source_dir: "/data/source"
+includes:
+  - "%s/*.mkvdup.yaml"
+virtual_files:
+  - name: "vf.mkv"
+    dedup_file: "/data/vf.mkvdup"
+    source_dir: "/data/source"
+`, subDir))
+
+	configs, err := ResolveConfigs([]string{mainPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	// Should have: top-level (1) + included (1) + virtual_files (1) = 3
+	if len(configs) != 3 {
+		t.Fatalf("got %d configs, want 3", len(configs))
+	}
+	if configs[0].Name != "top.mkv" {
+		t.Errorf("configs[0].Name = %q, want %q", configs[0].Name, "top.mkv")
+	}
+	if configs[1].Name != "included.mkv" {
+		t.Errorf("configs[1].Name = %q, want %q", configs[1].Name, "included.mkv")
+	}
+	if configs[2].Name != "vf.mkv" {
+		t.Errorf("configs[2].Name = %q, want %q", configs[2].Name, "vf.mkv")
+	}
+}
+
+func TestResolveConfigs_CycleDetection(t *testing.T) {
+	dir := t.TempDir()
+
+	aPath := filepath.Join(dir, "a.yaml")
+	bPath := filepath.Join(dir, "b.yaml")
+
+	// A includes B, B includes A.
+	writeYAML(t, aPath, fmt.Sprintf(`name: "a.mkv"
+dedup_file: "/data/a.mkvdup"
+source_dir: "/data/source"
+includes:
+  - "%s"
+`, bPath))
+	writeYAML(t, bPath, fmt.Sprintf(`name: "b.mkv"
+dedup_file: "/data/b.mkvdup"
+source_dir: "/data/source"
+includes:
+  - "%s"
+`, aPath))
+
+	configs, err := ResolveConfigs([]string{aPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	// Should resolve without infinite loop; both A and B included once.
+	if len(configs) != 2 {
+		t.Fatalf("got %d configs, want 2", len(configs))
+	}
+}
+
+func TestResolveConfigs_RelativePaths(t *testing.T) {
+	dir := t.TempDir()
+
+	// Config with relative dedup_file and source_dir.
+	cfgPath := filepath.Join(dir, "configs", "rel.yaml")
+	writeYAML(t, cfgPath, `name: "rel.mkv"
+dedup_file: "../data/rel.mkvdup"
+source_dir: "../sources/dvd"
+`)
+
+	configs, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+
+	// Relative paths should be resolved against the config file's directory.
+	wantDedup := filepath.Join(dir, "data", "rel.mkvdup")
+	wantSource := filepath.Join(dir, "sources", "dvd")
+	if configs[0].DedupFile != wantDedup {
+		t.Errorf("DedupFile = %q, want %q", configs[0].DedupFile, wantDedup)
+	}
+	if configs[0].SourceDir != wantSource {
+		t.Errorf("SourceDir = %q, want %q", configs[0].SourceDir, wantSource)
+	}
+}
+
+func TestResolveConfigs_RelativeInclude(t *testing.T) {
+	dir := t.TempDir()
+
+	// Config in a subdirectory with a relative include pattern.
+	writeYAML(t, filepath.Join(dir, "sub", "child.mkvdup.yaml"), `name: "child.mkv"
+dedup_file: "/data/child.mkvdup"
+source_dir: "/data/source"
+`)
+	writeYAML(t, filepath.Join(dir, "parent.yaml"), `includes:
+  - "sub/*.mkvdup.yaml"
+`)
+
+	configs, err := ResolveConfigs([]string{filepath.Join(dir, "parent.yaml")})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	if configs[0].Name != "child.mkv" {
+		t.Errorf("Name = %q, want %q", configs[0].Name, "child.mkv")
+	}
+}
+
+func TestResolveConfigs_NoMatchesNotError(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "empty.yaml")
+	writeYAML(t, cfgPath, `includes:
+  - "/nonexistent/path/*.mkvdup.yaml"
+`)
+
+	configs, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 0 {
+		t.Errorf("got %d configs, want 0", len(configs))
+	}
+}
+
+func TestResolveConfigs_InvalidIncludedConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	// An included config with invalid YAML.
+	writeYAML(t, filepath.Join(dir, "bad.mkvdup.yaml"), "invalid: yaml: content: [")
+
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/*.mkvdup.yaml"
+`, dir))
+
+	_, err := ResolveConfigs([]string{mainPath})
+	if err == nil {
+		t.Fatal("expected error for invalid included config, got nil")
+	}
+}
+
+func TestResolveConfigs_PartialTopLevelFields(t *testing.T) {
+	dir := t.TempDir()
+
+	// Config with only some top-level fields (name but not dedup_file/source_dir).
+	cfgPath := filepath.Join(dir, "partial.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+`)
+
+	_, err := ResolveConfigs([]string{cfgPath})
+	if err == nil {
+		t.Fatal("expected error for partial top-level fields, got nil")
+	}
+	if !strings.Contains(err.Error(), "must all be set") {
+		t.Errorf("error = %q, want error about partial fields", err.Error())
+	}
+}
+
+func TestResolveConfigs_VirtualFilesMissingFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "bad_vf.yaml")
+	writeYAML(t, cfgPath, `virtual_files:
+  - name: "movie.mkv"
+`)
+
+	_, err := ResolveConfigs([]string{cfgPath})
+	if err == nil {
+		t.Fatal("expected error for virtual_files with missing fields, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing required fields") {
+		t.Errorf("error = %q, want error about missing required fields", err.Error())
+	}
+}
+
+func TestResolveConfigs_EmptyConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "empty.yaml")
+	writeYAML(t, cfgPath, "# just a comment\n")
+
+	configs, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 0 {
+		t.Errorf("got %d configs, want 0", len(configs))
+	}
+}
+
+func TestResolveConfigs_VirtualFilesRelativePaths(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "configs", "vf_rel.yaml")
+	writeYAML(t, cfgPath, `virtual_files:
+  - name: "movie.mkv"
+    dedup_file: "../data/movie.mkvdup"
+    source_dir: "../sources/dvd"
+`)
+
+	configs, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+
+	wantDedup := filepath.Join(dir, "data", "movie.mkvdup")
+	wantSource := filepath.Join(dir, "sources", "dvd")
+	if configs[0].DedupFile != wantDedup {
+		t.Errorf("DedupFile = %q, want %q", configs[0].DedupFile, wantDedup)
+	}
+	if configs[0].SourceDir != wantSource {
+		t.Errorf("SourceDir = %q, want %q", configs[0].SourceDir, wantSource)
+	}
+}
+
+func TestResolveConfigs_MultipleInputPaths(t *testing.T) {
+	dir := t.TempDir()
+
+	aPath := filepath.Join(dir, "a.yaml")
+	bPath := filepath.Join(dir, "b.yaml")
+	writeYAML(t, aPath, `name: "a.mkv"
+dedup_file: "/data/a.mkvdup"
+source_dir: "/data/source"
+`)
+	writeYAML(t, bPath, `name: "b.mkv"
+dedup_file: "/data/b.mkvdup"
+source_dir: "/data/source"
+`)
+
+	configs, err := ResolveConfigs([]string{aPath, bPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 2 {
+		t.Fatalf("got %d configs, want 2", len(configs))
+	}
+	if configs[0].Name != "a.mkv" || configs[1].Name != "b.mkv" {
+		t.Errorf("names = [%q, %q], want [a.mkv, b.mkv]", configs[0].Name, configs[1].Name)
+	}
+}
+
+func TestResolveConfigs_FileNotFound(t *testing.T) {
+	_, err := ResolveConfigs([]string{"/nonexistent/config.yaml"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent file, got nil")
 	}
 }

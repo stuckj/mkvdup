@@ -58,6 +58,9 @@ Mount virtual filesystem from config files.
 # Mount from config file(s)
 mkvdup mount /mnt/videos config1.mkvdup.yaml config2.mkvdup.yaml
 
+# Mount from a config with includes
+mkvdup mount /mnt/videos /etc/mkvdup/mount.yaml
+
 # Mount from config directory
 mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
 
@@ -70,6 +73,10 @@ mkvdup mount --allow-other /mnt/videos config.yaml
 # Run in foreground (for debugging or systemd)
 mkvdup mount --foreground /mnt/videos config.yaml
 ```
+
+Config files support `includes` (glob patterns referencing other configs, including
+`**` recursive globs) and `virtual_files` (inline file definitions). See
+[FUSE Configuration](FUSE.md#config-files-with-includes) for details.
 
 **Options:**
 

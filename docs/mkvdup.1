@@ -187,6 +187,35 @@ dedup_file: "video1.mkvdup"
 source_dir: "/media/bluray/Video1"
 .fi
 .RE
+.PP
+Relative paths in
+.B dedup_file
+and
+.B source_dir
+are resolved relative to the config file's directory.
+.SS Includes and Virtual Files
+Any config file can include other configs via glob patterns and define
+inline virtual files:
+.PP
+.RS
+.nf
+# Include other config files (glob patterns supported)
+includes:
+  \- "/data/dedup/*.mkvdup.yaml"
+  \- "/isos/**/*.mkvdup.yaml"    # ** matches nested dirs
+
+# Inline virtual file definitions
+virtual_files:
+  \- name: "Movies/Video1.mkv"
+    dedup_file: "/data/video1.mkvdup"
+    source_dir: "/data/sources/DVD"
+.fi
+.RE
+.PP
+Included configs can themselves contain
+.B includes
+(recursive). Circular includes are detected and skipped.
+Relative include patterns are resolved against the including config file's directory.
 .SH FSTAB AND SYSTEMD
 mkvdup can be mounted via /etc/fstab or systemd mount units using the
 mount.mkvdup helper script. The mount helper automatically enables
@@ -265,16 +294,21 @@ Dedup files containing the index and delta data
 .I *.mkvdup.yaml
 Config files for mounting dedup files
 .SH FILE FORMAT
-The .mkvdup file format is versioned. The current version is 2.
+The .mkvdup file format is versioned. The current version is 3.
 .PP
-.B Version 2 (current):
+.B Version 3 (current):
+Adds source type awareness (DVD/Blu-ray) and multi-source-file support.
+Stores raw file offsets for all source references.
+.PP
+.B Version 2 (deprecated):
 Stores raw file offsets for all source references. This provides faster
 FUSE read performance by eliminating offset translation overhead.
 .PP
 .B Version 1 (deprecated):
 Used elementary stream (ES) offsets for DVD sources, requiring translation
-during reads. Version 1 files are no longer supported and must be recreated
-using the
+during reads.
+.PP
+Deprecated version files must be recreated using the
 .B create
 command.
 .PP

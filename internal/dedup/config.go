@@ -2,8 +2,12 @@ package dedup
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
+	"sort"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
 
@@ -12,6 +16,16 @@ type Config struct {
 	Name      string `yaml:"name"`
 	DedupFile string `yaml:"dedup_file"`
 	SourceDir string `yaml:"source_dir"`
+}
+
+// configFile is the internal YAML representation that supports includes
+// and virtual_files in addition to the standard Config fields.
+type configFile struct {
+	Name         string   `yaml:"name"`
+	DedupFile    string   `yaml:"dedup_file"`
+	SourceDir    string   `yaml:"source_dir"`
+	Includes     []string `yaml:"includes"`
+	VirtualFiles []Config `yaml:"virtual_files"`
 }
 
 // WriteConfig writes the .mkvdup.yaml config file.
@@ -42,4 +56,108 @@ func ReadConfig(configPath string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// ResolveConfigs reads config files and recursively expands includes and
+// virtual_files into a flat list of Config entries. Cycle detection prevents
+// infinite recursion from circular includes.
+func ResolveConfigs(configPaths []string) ([]Config, error) {
+	seen := make(map[string]bool)
+	var all []Config
+	for _, p := range configPaths {
+		configs, err := resolveConfig(p, seen)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, configs...)
+	}
+	return all, nil
+}
+
+// resolveConfig recursively resolves a single config file.
+func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve path %s: %w", configPath, err)
+	}
+
+	// Resolve symlinks for reliable cycle detection.
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+	}
+
+	if seen[realPath] {
+		log.Printf("warning: skipping already-seen config %s (cycle detection)", realPath)
+		return nil, nil
+	}
+	seen[realPath] = true
+
+	data, err := os.ReadFile(realPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config file %s: %w", realPath, err)
+	}
+
+	var cf configFile
+	if err := yaml.Unmarshal(data, &cf); err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", realPath, err)
+	}
+
+	configDir := filepath.Dir(realPath)
+	var configs []Config
+
+	// If top-level name/dedup_file/source_dir are set, add as a Config entry.
+	hasName := cf.Name != ""
+	hasDedup := cf.DedupFile != ""
+	hasSource := cf.SourceDir != ""
+	if hasName || hasDedup || hasSource {
+		if !hasName || !hasDedup || !hasSource {
+			return nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+		}
+		configs = append(configs, Config{
+			Name:      cf.Name,
+			DedupFile: resolveRelative(configDir, cf.DedupFile),
+			SourceDir: resolveRelative(configDir, cf.SourceDir),
+		})
+	}
+
+	// Process includes.
+	for _, pattern := range cf.Includes {
+		pattern = resolveRelative(configDir, pattern)
+		matches, err := doublestar.FilepathGlob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
+		}
+		sort.Strings(matches)
+		for _, match := range matches {
+			sub, err := resolveConfig(match, seen)
+			if err != nil {
+				return nil, err
+			}
+			configs = append(configs, sub...)
+		}
+	}
+
+	// Process virtual_files.
+	for _, vf := range cf.VirtualFiles {
+		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
+			return nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
+		}
+		configs = append(configs, Config{
+			Name:      vf.Name,
+			DedupFile: resolveRelative(configDir, vf.DedupFile),
+			SourceDir: resolveRelative(configDir, vf.SourceDir),
+		})
+	}
+
+	return configs, nil
+}
+
+// resolveRelative resolves a path relative to baseDir. If the path is already
+// absolute, it is returned unchanged.
+func resolveRelative(baseDir, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(baseDir, path)
 }

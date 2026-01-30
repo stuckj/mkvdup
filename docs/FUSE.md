@@ -23,18 +23,21 @@ source_dir: "/data/sources/Video1_DVD"
 
 **Path resolution:** Relative paths in `dedup_file` and `source_dir` are resolved relative to the config file's directory, not the current working directory. Absolute paths (starting with `/`) are used as-is.
 
-### Master Config with Includes
+### Config Files with Includes
 
-**Main config (/etc/mkvdup/mount.yaml):**
+Any config file can include other configs using glob patterns. This is not
+limited to a special "master" config — any `.mkvdup.yaml` can use includes,
+and included configs can themselves include others (recursive).
+
+**Config with includes (/etc/mkvdup/mount.yaml):**
 
 ```yaml
-mountpoint: /mnt/media
-
 # Include individual mapping configs
 includes:
   - "/data/dedup/video1.mkvdup.yaml"
   - "/data/dedup/video2.mkvdup.yaml"
-  - "/data/dedup/*.mkvdup.yaml"  # Glob patterns supported
+  - "/data/dedup/*.mkvdup.yaml"       # Simple glob patterns
+  - "/isos/**/*.mkvdup.yaml"          # Recursive glob (** matches nested dirs)
 
 # Can also define inline (optional)
 virtual_files:
@@ -42,6 +45,18 @@ virtual_files:
     dedup_file: "/data/dedup/video3.mkvdup"
     source_dir: "/data/sources/Collection1_Bluray"
 ```
+
+A config file can have any combination of:
+- Top-level `name`/`dedup_file`/`source_dir` (single file definition, backward compatible)
+- `includes` (glob patterns referencing other config files)
+- `virtual_files` (inline list of file definitions)
+
+**Include behavior:**
+- **Relative patterns** are resolved against the including config file's directory
+- **Recursive globs** (`**`) are supported via the [doublestar](https://github.com/bmatcuk/doublestar) library
+- **Cycle detection** prevents infinite recursion — if config A includes B and B includes A, each is processed only once
+- **No matches** for a glob pattern is not an error (silently skipped)
+- **Invalid included configs** produce an error
 
 ## Directory Structure
 
