@@ -161,7 +161,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	if err := writer.WriteWithProgress(func(written, total int64) {
 		if time.Since(lastProgress) > 500*time.Millisecond {
 			pct := float64(written) / float64(total) * 100
-			fmt.Printf("\r  Progress: %.1f%% (%d/%d bytes)", pct, written, total)
+			fmt.Printf("\r  Progress: %.1f%% (%s/%s bytes)", pct, formatInt(written), formatInt(total))
 			lastProgress = time.Now()
 		}
 	}); err != nil {
@@ -355,7 +355,7 @@ func showInfo(dedupPath string) error {
 	// Source files
 	fmt.Println("Source files:")
 	for _, sf := range reader.SourceFiles() {
-		fmt.Printf("  %s (%d bytes)\n", sf.RelativePath, sf.Size)
+		fmt.Printf("  %s (%s bytes)\n", sf.RelativePath, formatInt(sf.Size))
 	}
 
 	return nil

@@ -481,7 +481,7 @@ func parseMKV(path string) error {
 	}
 	defer parser.Close()
 
-	fmt.Printf("File size: %d bytes (%.2f GB)\n", parser.Size(), float64(parser.Size())/(1024*1024*1024))
+	fmt.Printf("File size: %s bytes (%.2f GB)\n", formatInt(parser.Size()), float64(parser.Size())/(1024*1024*1024))
 
 	start := time.Now()
 	lastProgress := time.Now()
@@ -489,7 +489,7 @@ func parseMKV(path string) error {
 	err = parser.Parse(func(processed, total int64) {
 		if time.Since(lastProgress) > 500*time.Millisecond {
 			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\rProgress: %.1f%% (%d / %d bytes)", pct, processed, total)
+			fmt.Printf("\rProgress: %.1f%% (%s / %s bytes)", pct, formatInt(processed), formatInt(total))
 			lastProgress = time.Now()
 		}
 	})
@@ -552,7 +552,7 @@ func indexSource(dir string) error {
 	err = indexer.Build(func(processed, total int64) {
 		if time.Since(lastProgress) > 500*time.Millisecond {
 			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\rProgress: %.1f%% (%d / %d bytes)", pct, processed, total)
+			fmt.Printf("\rProgress: %.1f%% (%s / %s bytes)", pct, formatInt(processed), formatInt(total))
 			lastProgress = time.Now()
 		}
 	})
@@ -569,7 +569,7 @@ func indexSource(dir string) error {
 	defer index.Close()
 	fmt.Printf("Source files: %d\n", len(index.Files))
 	for _, f := range index.Files {
-		fmt.Printf("  %s: %d bytes\n", f.RelativePath, f.Size)
+		fmt.Printf("  %s: %s bytes\n", f.RelativePath, formatInt(f.Size))
 	}
 	fmt.Println()
 
@@ -660,12 +660,12 @@ func matchMKV(mkvPath, sourceDir string) error {
 	fmt.Println()
 
 	mkvSize := parser.Size()
-	fmt.Printf("MKV file size:      %d bytes (%.2f MB)\n", mkvSize, float64(mkvSize)/(1024*1024))
-	fmt.Printf("Matched bytes:      %d bytes (%.2f MB, %.1f%%)\n",
-		result.MatchedBytes, float64(result.MatchedBytes)/(1024*1024),
+	fmt.Printf("MKV file size:      %s bytes (%.2f MB)\n", formatInt(mkvSize), float64(mkvSize)/(1024*1024))
+	fmt.Printf("Matched bytes:      %s bytes (%.2f MB, %.1f%%)\n",
+		formatInt(result.MatchedBytes), float64(result.MatchedBytes)/(1024*1024),
 		float64(result.MatchedBytes)/float64(mkvSize)*100)
-	fmt.Printf("Delta (unmatched):  %d bytes (%.2f MB, %.1f%%)\n",
-		result.UnmatchedBytes, float64(result.UnmatchedBytes)/(1024*1024),
+	fmt.Printf("Delta (unmatched):  %s bytes (%.2f MB, %.1f%%)\n",
+		formatInt(result.UnmatchedBytes), float64(result.UnmatchedBytes)/(1024*1024),
 		float64(result.UnmatchedBytes)/float64(mkvSize)*100)
 	fmt.Println()
 
@@ -682,10 +682,10 @@ func matchMKV(mkvPath, sourceDir string) error {
 	savings := float64(mkvSize-totalDedupSize) / float64(mkvSize) * 100
 
 	fmt.Printf("Estimated dedup file size:\n")
-	fmt.Printf("  Header:     %d bytes\n", headerSize)
-	fmt.Printf("  Index:      %d bytes (~%d entries × 25)\n", indexSize, len(result.Entries))
-	fmt.Printf("  Delta:      %d bytes\n", len(result.DeltaData))
-	fmt.Printf("  Total:      %d bytes (%.2f MB)\n", totalDedupSize, float64(totalDedupSize)/(1024*1024))
+	fmt.Printf("  Header:     %s bytes\n", formatInt(headerSize))
+	fmt.Printf("  Index:      %s bytes (~%s entries × 25)\n", formatInt(indexSize), formatInt(int64(len(result.Entries))))
+	fmt.Printf("  Delta:      %s bytes\n", formatInt(int64(len(result.DeltaData))))
+	fmt.Printf("  Total:      %s bytes (%.2f MB)\n", formatInt(totalDedupSize), float64(totalDedupSize)/(1024*1024))
 	fmt.Printf("  Savings:    %.1f%% reduction\n", savings)
 
 	return nil
