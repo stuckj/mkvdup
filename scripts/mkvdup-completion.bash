@@ -15,6 +15,33 @@ _mkvdup() {
         _init_completion || return
     fi
 
+    # Minimal _filedir fallback when bash-completion is not available.
+    # Handles plain calls, "-d" for directories, and "@(ext|ext)" patterns.
+    if ! type _filedir &>/dev/null; then
+        _filedir() {
+            local IFS=$'\n'
+            if [[ "$1" == "-d" ]]; then
+                COMPREPLY=($(compgen -d -- "$cur"))
+            elif [[ "$1" == @\(*\) ]]; then
+                # Extract extensions from @(ext1|ext2) pattern
+                local exts="${1#@(}"
+                exts="${exts%)}"
+                local -a results=()
+                local ext
+                while IFS='|' read -ra parts; do
+                    for ext in "${parts[@]}"; do
+                        results+=($(compgen -f -X "!*.$ext" -- "$cur"))
+                    done
+                done <<< "$exts"
+                # Also include directories for navigation
+                results+=($(compgen -d -- "$cur"))
+                COMPREPLY=("${results[@]}")
+            else
+                COMPREPLY=($(compgen -f -- "$cur"))
+            fi
+        }
+    fi
+
     local commands="create probe mount info verify parse-mkv index-source match help"
     local global_opts="-v --verbose -h --help --version"
 
@@ -45,23 +72,21 @@ _mkvdup() {
         return
     fi
 
+    # Global options available for all commands when typing -<TAB>
+    if [[ "$cur" == -* && "$cmd" != "mount" ]]; then
+        COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
+        return
+    fi
+
     # Command-specific completions
     case "$cmd" in
         create)
             # create <mkv-file> <source-dir> [output] [name]
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir
             ;;
 
         probe)
             # probe <mkv-file> <source-dir>...
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir
             ;;
 
@@ -101,46 +126,26 @@ _mkvdup() {
 
         info)
             # info <dedup-file>
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir '@(mkvdup)'
             ;;
 
         verify)
             # verify <dedup-file> <source-dir> <original-mkv>
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir
             ;;
 
         parse-mkv)
             # parse-mkv <mkv-file>
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir '@(mkv|MKV)'
             ;;
 
         index-source)
             # index-source <source-dir>
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir -d
             ;;
 
         match)
             # match <mkv-file> <source-dir>
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
-                return
-            fi
             _filedir
             ;;
 
