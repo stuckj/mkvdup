@@ -68,6 +68,7 @@ Commands:
   mount        Mount dedup files as FUSE filesystem
   info         Show dedup file information
   verify       Verify dedup file against original MKV
+  validate     Validate configuration files
 
 Debug commands:
   parse-mkv    Parse MKV and show packet info
@@ -178,6 +179,40 @@ Arguments:
 
 Examples:
     mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+`)
+	case "validate":
+		fmt.Print(`Usage: mkvdup validate [options] [config.yaml...]
+
+Validate configuration files for correctness before mounting.
+
+Arguments:
+    [config.yaml]  YAML config files to validate (default: /etc/mkvdup.conf)
+
+Options:
+    --config-dir   Treat config argument as directory of .yaml files
+    --deep         Verify dedup file headers and internal checksums
+    --strict       Treat warnings as errors (exit 1 on warnings)
+
+Validations performed:
+    - YAML syntax and required fields (name, dedup_file, source_dir)
+    - Include cycle detection
+    - Dedup file existence and header validity
+    - Source directory existence
+    - Duplicate virtual file names (warning)
+    - File/directory path conflicts (warning)
+    - Invalid path names (empty, contains "..")
+    With --deep:
+    - Dedup file internal checksum verification
+
+Exit codes:
+    0  All configs valid (warnings may be present)
+    1  Errors found (or warnings with --strict)
+
+Examples:
+    mkvdup validate config.yaml
+    mkvdup validate *.yaml
+    mkvdup validate --config-dir /etc/mkvdup.d/
+    mkvdup validate --deep --strict /etc/mkvdup.conf
 `)
 	case "parse-mkv":
 		fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
@@ -429,6 +464,25 @@ func main() {
 		if err := verifyDedup(args[0], args[1], args[2]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
+
+	case "validate":
+		configDir := false
+		deep := false
+		strict := false
+		var valArgs []string
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--config-dir":
+				configDir = true
+			case "--deep":
+				deep = true
+			case "--strict":
+				strict = true
+			default:
+				valArgs = append(valArgs, args[i])
+			}
+		}
+		os.Exit(validateConfigs(valArgs, configDir, deep, strict))
 
 	case "parse-mkv":
 		if len(args) < 1 {

@@ -118,6 +118,58 @@ mkvdup verify <dedup-file> <source-dir> <original-mkv>
 mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
 ```
 
+### validate
+
+Validate configuration files for correctness before mounting.
+
+```bash
+mkvdup validate [config.yaml...]
+mkvdup validate --config-dir /etc/mkvdup.d/
+mkvdup validate --deep config.yaml
+mkvdup validate --strict config1.yaml config2.yaml
+```
+
+**Arguments:**
+- `[config.yaml...]` — YAML config files to validate (default: `/etc/mkvdup.conf`)
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--config-dir` | Treat config argument as directory of `.yaml` files |
+| `--deep` | Verify dedup file headers and internal checksums |
+| `--strict` | Treat warnings as errors (exit code 1 on warnings) |
+
+**Validations performed:**
+1. YAML syntax and required fields (`name`, `dedup_file`, `source_dir`)
+2. Include resolution (glob patterns, cycle detection)
+3. Path existence: dedup file exists, source directory exists and is a directory
+4. Dedup file header: magic number, version, source file metadata
+5. Name validation: rejects `..` components and empty names
+6. Duplicate detection: warns on duplicate virtual file names across configs
+7. Conflict detection: warns when a file name conflicts with a directory path
+8. Deep checksums (`--deep` only): verifies index and delta integrity checksums
+
+**Exit codes:**
+- `0` — All valid (warnings are OK unless `--strict`)
+- `1` — Errors found, or warnings with `--strict`
+
+**Examples:**
+
+```bash
+# Validate a single config
+mkvdup validate movie.mkvdup.yaml
+
+# Validate all configs in a directory
+mkvdup validate --config-dir /etc/mkvdup.d/
+
+# Full integrity check
+mkvdup validate --deep /etc/mkvdup.conf
+
+# CI/pre-mount check (warnings = failure)
+mkvdup validate --strict /etc/mkvdup.conf
+```
+
 ### info
 
 Show information about a dedup file.

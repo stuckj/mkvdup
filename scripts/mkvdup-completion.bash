@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create probe mount info verify parse-mkv index-source match help"
+    local commands="create probe mount info verify validate parse-mkv index-source match help"
     local global_opts="-v --verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -76,7 +76,7 @@ _mkvdup() {
     fi
 
     # Global options available for all commands when typing -<TAB>
-    if [[ "$cur" == -* && "$cmd" != "mount" ]]; then
+    if [[ "$cur" == -* && "$cmd" != "mount" && "$cmd" != "validate" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
@@ -135,6 +135,16 @@ _mkvdup() {
         verify)
             # verify <dedup-file> <source-dir> <original-mkv>
             _filedir
+            ;;
+
+        validate)
+            # validate [options] [config.yaml...]
+            local validate_opts="--config-dir --deep --strict"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$validate_opts $global_opts" -- "$cur"))
+                return
+            fi
+            _filedir '@(yaml|yml)'
             ;;
 
         parse-mkv)

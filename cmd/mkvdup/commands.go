@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -746,6 +747,24 @@ func samplePackets(packets []mkv.Packet, n int) []mkv.Packet {
 // defaultConfigPath is the default config file location.
 const defaultConfigPath = "/etc/mkvdup.conf"
 
+// expandConfigDir expands a directory path to a list of .yaml/.yml files it contains.
+func expandConfigDir(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read config directory %s: %w", dir, err)
+	}
+	var paths []string
+	for _, entry := range entries {
+		if !entry.IsDir() && (filepath.Ext(entry.Name()) == ".yaml" || filepath.Ext(entry.Name()) == ".yml") {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no .yaml files found in %s", dir)
+	}
+	return paths, nil
+}
+
 // mountFuse mounts a FUSE filesystem exposing dedup files as MKV files.
 func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error {
 	// Daemonize unless --foreground is set or we're already a daemon child
@@ -788,28 +807,14 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 			}
 			return err
 		}
-		dir := configPaths[0]
-		entries, err := os.ReadDir(dir)
+		expanded, err := expandConfigDir(configPaths[0])
 		if err != nil {
-			err = fmt.Errorf("read config directory %s: %w", dir, err)
 			if daemon.IsChild() {
 				daemon.NotifyError(err)
 			}
 			return err
 		}
-		configPaths = nil
-		for _, entry := range entries {
-			if !entry.IsDir() && (filepath.Ext(entry.Name()) == ".yaml" || filepath.Ext(entry.Name()) == ".yml") {
-				configPaths = append(configPaths, filepath.Join(dir, entry.Name()))
-			}
-		}
-		if len(configPaths) == 0 {
-			err = fmt.Errorf("no .yaml files found in %s", dir)
-			if daemon.IsChild() {
-				daemon.NotifyError(err)
-			}
-			return err
-		}
+		configPaths = expanded
 	}
 
 	// Set up permission store
@@ -906,4 +911,297 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	}
 
 	return nil
+}
+
+// validationEntry tracks the result of validating a single resolved config entry.
+type validationEntry struct {
+	name       string // virtual file name
+	status     string // "OK", "WARN", "ERR"
+	message    string // detail message (empty for OK)
+	configFile string // which input config file this came from
+}
+
+// validateConfigs validates configuration files and returns an exit code.
+// Returns 0 if all configs are valid (warnings OK without strict), 1 otherwise.
+func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
+	// Step 1: Resolve config file paths
+	if configDir {
+		if len(configPaths) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: --config-dir requires exactly one directory path, got %d\n", len(configPaths))
+			return 1
+		}
+		expanded, err := expandConfigDir(configPaths[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		configPaths = expanded
+	}
+
+	if len(configPaths) == 0 {
+		if _, err := os.Stat(defaultConfigPath); err == nil {
+			configPaths = []string{defaultConfigPath}
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: no config files specified and %s not found\n", defaultConfigPath)
+			return 1
+		}
+	}
+
+	// Step 2-4: Per-file YAML validation, path checks, and header validation
+	var allEntries []validationEntry
+	var allConfigs []dedup.Config
+	hasErrors := false
+
+	for _, configPath := range configPaths {
+		fmt.Printf("Validating %s...\n", filepath.Base(configPath))
+
+		configs, err := dedup.ResolveConfigs([]string{configPath})
+		if err != nil {
+			fmt.Printf("  ERR  %s\n", err)
+			allEntries = append(allEntries, validationEntry{
+				name:       filepath.Base(configPath),
+				status:     "ERR",
+				message:    err.Error(),
+				configFile: configPath,
+			})
+			hasErrors = true
+			continue
+		}
+
+		if len(configs) == 0 {
+			fmt.Printf("  (no entries)\n")
+			continue
+		}
+
+		for _, cfg := range configs {
+			entry := validationEntry{
+				name:       cfg.Name,
+				status:     "OK",
+				configFile: configPath,
+			}
+
+			// Check dedup file exists
+			dedupStat, err := os.Stat(cfg.DedupFile)
+			if err != nil {
+				entry.status = "ERR"
+				entry.message = fmt.Sprintf("dedup file not found: %s", cfg.DedupFile)
+				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
+				allEntries = append(allEntries, entry)
+				hasErrors = true
+				continue
+			}
+			if dedupStat.IsDir() {
+				entry.status = "ERR"
+				entry.message = fmt.Sprintf("dedup file is a directory: %s", cfg.DedupFile)
+				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
+				allEntries = append(allEntries, entry)
+				hasErrors = true
+				continue
+			}
+
+			// Check source dir exists and is a directory
+			sourceStat, err := os.Stat(cfg.SourceDir)
+			if err != nil {
+				entry.status = "ERR"
+				entry.message = fmt.Sprintf("source directory not found: %s", cfg.SourceDir)
+				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
+				allEntries = append(allEntries, entry)
+				hasErrors = true
+				continue
+			}
+			if !sourceStat.IsDir() {
+				entry.status = "ERR"
+				entry.message = fmt.Sprintf("source path is not a directory: %s", cfg.SourceDir)
+				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
+				allEntries = append(allEntries, entry)
+				hasErrors = true
+				continue
+			}
+
+			// Validate dedup file header
+			reader, err := dedup.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
+			if err != nil {
+				entry.status = "ERR"
+				entry.message = fmt.Sprintf("invalid dedup file: %v", err)
+				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
+				allEntries = append(allEntries, entry)
+				hasErrors = true
+				continue
+			}
+			reader.Close()
+
+			allEntries = append(allEntries, entry)
+			allConfigs = append(allConfigs, cfg)
+		}
+	}
+
+	// Step 5: Name validation and duplicate/conflict detection
+	hasWarnings := false
+	nameToConfig := make(map[string]string)  // clean path -> config file
+	dirComponents := make(map[string]string) // paths used as directories -> config file
+	fileComponents := make(map[string]string) // paths used as files -> config file
+
+	for i, entry := range allEntries {
+		if entry.status == "ERR" {
+			continue
+		}
+
+		name := entry.name
+
+		// Check for ".." in path
+		if strings.Contains(name, "..") {
+			allEntries[i].status = "ERR"
+			allEntries[i].message = "invalid path: contains '..'"
+			fmt.Printf("  ERR  %s: %s\n", name, allEntries[i].message)
+			hasErrors = true
+			continue
+		}
+
+		// Clean and validate the path (same logic as tree.go insertFile)
+		cleanPath := cleanVirtualPath(name)
+		if cleanPath == "" {
+			allEntries[i].status = "ERR"
+			allEntries[i].message = "invalid path: empty after cleaning"
+			fmt.Printf("  ERR  %s: %s\n", name, allEntries[i].message)
+			hasErrors = true
+			continue
+		}
+
+		// Check for duplicate names
+		if prevConfig, exists := nameToConfig[cleanPath]; exists {
+			allEntries[i].status = "WARN"
+			allEntries[i].message = fmt.Sprintf("duplicate name (also in %s)", filepath.Base(prevConfig))
+			fmt.Printf("  WARN %s: %s\n", name, allEntries[i].message)
+			hasWarnings = true
+			continue
+		}
+		nameToConfig[cleanPath] = entry.configFile
+
+		// Check for file/directory conflicts
+		parts := strings.Split(cleanPath, "/")
+		conflictFound := false
+
+		// Check if any prefix of this path is used as a file
+		for j := 0; j < len(parts)-1; j++ {
+			dirPath := strings.Join(parts[:j+1], "/")
+			if prevConfig, exists := fileComponents[dirPath]; exists {
+				allEntries[i].status = "WARN"
+				allEntries[i].message = fmt.Sprintf("path component %q conflicts with file in %s", dirPath, filepath.Base(prevConfig))
+				fmt.Printf("  WARN %s: %s\n", name, allEntries[i].message)
+				hasWarnings = true
+				conflictFound = true
+				break
+			}
+			// Record as directory component
+			if _, exists := dirComponents[dirPath]; !exists {
+				dirComponents[dirPath] = entry.configFile
+			}
+		}
+		if conflictFound {
+			continue
+		}
+
+		// Check if this file name conflicts with a directory
+		if prevConfig, exists := dirComponents[cleanPath]; exists {
+			allEntries[i].status = "WARN"
+			allEntries[i].message = fmt.Sprintf("conflicts with directory from %s", filepath.Base(prevConfig))
+			fmt.Printf("  WARN %s: %s\n", name, allEntries[i].message)
+			hasWarnings = true
+			continue
+		}
+
+		fileComponents[cleanPath] = entry.configFile
+
+		// Print OK for entries that passed all checks
+		if allEntries[i].status == "OK" {
+			fmt.Printf("  OK   %s\n", name)
+		}
+	}
+
+	// Step 6: Deep validation (if --deep)
+	if deep {
+		fmt.Println()
+		fmt.Println("Running deep validation...")
+		for _, cfg := range allConfigs {
+			// Only deep-validate entries that passed basic validation
+			entryOK := false
+			for _, e := range allEntries {
+				if e.name == cfg.Name && e.configFile == cfg.DedupFile {
+					entryOK = e.status == "OK"
+					break
+				}
+			}
+			// Fallback: match by name and status
+			if !entryOK {
+				for _, e := range allEntries {
+					if e.name == cfg.Name && e.status == "OK" {
+						entryOK = true
+						break
+					}
+				}
+			}
+			if !entryOK {
+				continue
+			}
+
+			reader, err := dedup.NewReader(cfg.DedupFile, cfg.SourceDir)
+			if err != nil {
+				fmt.Printf("  ERR  %s: failed to open: %v\n", cfg.Name, err)
+				hasErrors = true
+				continue
+			}
+			if err := reader.VerifyIntegrity(); err != nil {
+				fmt.Printf("  ERR  %s: integrity check failed: %v\n", cfg.Name, err)
+				reader.Close()
+				hasErrors = true
+				continue
+			}
+			reader.Close()
+			fmt.Printf("  OK   %s: checksums valid\n", cfg.Name)
+		}
+	}
+
+	// Print summary
+	var okCount, warnCount, errCount int
+	for _, e := range allEntries {
+		switch e.status {
+		case "OK":
+			okCount++
+		case "WARN":
+			warnCount++
+		case "ERR":
+			errCount++
+		}
+	}
+
+	fmt.Println()
+	fmt.Printf("Summary: %d entries, %d valid, %d warnings, %d errors\n",
+		len(allEntries), okCount, warnCount, errCount)
+
+	if hasErrors {
+		return 1
+	}
+	if strict && hasWarnings {
+		return 1
+	}
+	return 0
+}
+
+// cleanVirtualPath normalizes a virtual file path, matching the logic in
+// internal/fuse/tree.go insertFile(). Returns empty string if the path is invalid.
+func cleanVirtualPath(name string) string {
+	// Clean the path (normalizes slashes, removes dots)
+	cleaned := filepath.ToSlash(filepath.Clean(name))
+	// Split and filter
+	parts := strings.Split(cleaned, "/")
+	var valid []string
+	for _, p := range parts {
+		if p != "" && p != "." {
+			valid = append(valid, p)
+		}
+	}
+	if len(valid) == 0 {
+		return ""
+	}
+	return strings.Join(valid, "/")
 }

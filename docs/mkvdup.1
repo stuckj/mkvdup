@@ -114,6 +114,23 @@ Directory containing the source media
 Path to the original MKV for comparison
 .RE
 .TP
+.B validate \fR[\fIoptions\fR] [\fIconfig.yaml\fR...]
+Validate configuration files for correctness before mounting.
+.RS
+.TP
+.I config.yaml
+YAML config files to validate (default: /etc/mkvdup.conf)
+.TP
+.B \-\-config\-dir
+Treat config argument as directory of .yaml files
+.TP
+.B \-\-deep
+Verify dedup file headers and internal checksums
+.TP
+.B \-\-strict
+Treat warnings as errors (exit code 1 on warnings)
+.RE
+.TP
 .B parse-mkv \fImkv-file\fR
 Parse an MKV file and display packet information (debugging).
 .TP
@@ -162,6 +179,16 @@ Verify a dedup file:
 .RS
 .nf
 mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+.fi
+.RE
+.PP
+Validate config files before mounting:
+.PP
+.RS
+.nf
+mkvdup validate /etc/mkvdup.conf
+mkvdup validate --deep --strict /etc/mkvdup.conf
+mkvdup validate --config-dir /etc/mkvdup.d/
 .fi
 .RE
 .SH CONFIG FILE FORMAT
