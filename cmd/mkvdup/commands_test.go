@@ -340,3 +340,32 @@ func TestSamplePackets_RequestFour(t *testing.T) {
 	}
 	t.Logf("Got %d samples for n=4 request", len(result))
 }
+
+func TestFormatInt(t *testing.T) {
+	tests := []struct {
+		input    int64
+		expected string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{99, "99"},
+		{100, "100"},
+		{999, "999"},
+		{1000, "1,000"},
+		{1234, "1,234"},
+		{12345, "12,345"},
+		{123456, "123,456"},
+		{1234567, "1,234,567"},
+		{1000000000, "1,000,000,000"},
+		{3420000000, "3,420,000,000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			got := formatInt(tt.input)
+			if got != tt.expected {
+				t.Errorf("formatInt(%d) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/cespare/xxhash/v2"
@@ -468,5 +469,374 @@ func TestCoverageBitmap_PartialChunks(t *testing.T) {
 	// doesn't fully contain any chunk
 	if m.isRangeCoveredParallel(4096, 4096) {
 		t.Error("Partial coverage should not mark chunk as covered")
+	}
+}
+
+func newTestMatcherWithRegions(mkvSize int64, data []byte, regions []matchedRegion) *Matcher {
+	return &Matcher{
+		mkvSize:        mkvSize,
+		mkvData:        data,
+		matchedRegions: regions,
+	}
+}
+
+func TestMergeRegions(t *testing.T) {
+	tests := []struct {
+		name     string
+		regions  []matchedRegion
+		expected []matchedRegion
+	}{
+		{
+			name:     "empty",
+			regions:  nil,
+			expected: nil,
+		},
+		{
+			name: "single region",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "non-overlapping",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 200, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 200, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "adjacent touching",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "fully contained",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 50, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "overlap replace with longer",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 50, mkvEnd: 250, fileIndex: 1, srcOffset: 500},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 50, mkvEnd: 250, fileIndex: 1, srcOffset: 500},
+			},
+		},
+		{
+			name: "overlap extend shorter",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 250, fileIndex: 1, srcOffset: 500},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 250, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "unsorted input",
+			regions: []matchedRegion{
+				{mkvStart: 200, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 0, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 250, fileIndex: 0, srcOffset: 0},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "multiple non-overlapping",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 50, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 200, mkvEnd: 250, fileIndex: 0, srcOffset: 0},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 50, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 200, mkvEnd: 250, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "source fields preserved",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 1, srcOffset: 500, isVideo: true, audioSubStreamID: 0x00},
+				{mkvStart: 200, mkvEnd: 400, fileIndex: 3, srcOffset: 8000, isVideo: false, audioSubStreamID: 0x80},
+			},
+			expected: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 1, srcOffset: 500, isVideo: true, audioSubStreamID: 0x00},
+				{mkvStart: 200, mkvEnd: 400, fileIndex: 3, srcOffset: 8000, isVideo: false, audioSubStreamID: 0x80},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newTestMatcherWithRegions(1000, nil, tt.regions)
+			m.mergeRegions()
+
+			if len(m.matchedRegions) != len(tt.expected) {
+				t.Fatalf("got %d regions, want %d", len(m.matchedRegions), len(tt.expected))
+			}
+
+			for i, got := range m.matchedRegions {
+				want := tt.expected[i]
+				if got.mkvStart != want.mkvStart {
+					t.Errorf("region[%d].mkvStart = %d, want %d", i, got.mkvStart, want.mkvStart)
+				}
+				if got.mkvEnd != want.mkvEnd {
+					t.Errorf("region[%d].mkvEnd = %d, want %d", i, got.mkvEnd, want.mkvEnd)
+				}
+				if got.fileIndex != want.fileIndex {
+					t.Errorf("region[%d].fileIndex = %d, want %d", i, got.fileIndex, want.fileIndex)
+				}
+				if got.srcOffset != want.srcOffset {
+					t.Errorf("region[%d].srcOffset = %d, want %d", i, got.srcOffset, want.srcOffset)
+				}
+				if got.isVideo != want.isVideo {
+					t.Errorf("region[%d].isVideo = %v, want %v", i, got.isVideo, want.isVideo)
+				}
+				if got.audioSubStreamID != want.audioSubStreamID {
+					t.Errorf("region[%d].audioSubStreamID = 0x%02X, want 0x%02X", i, got.audioSubStreamID, want.audioSubStreamID)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildEntries(t *testing.T) {
+	tests := []struct {
+		name            string
+		mkvSize         int64
+		regions         []matchedRegion
+		wantEntryCount  int
+		wantEntries     []Entry
+		wantDeltaBytes  []byte // nil means skip delta content check
+	}{
+		{
+			name:           "all delta",
+			mkvSize:        100,
+			regions:        nil,
+			wantEntryCount: 1,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+			},
+		},
+		{
+			name:    "all matched",
+			mkvSize: 100,
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 2, srcOffset: 500},
+			},
+			wantEntryCount: 1,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 100, Source: 3, SourceOffset: 500},
+			},
+		},
+		{
+			name:    "gap match gap",
+			mkvSize: 300,
+			regions: []matchedRegion{
+				{mkvStart: 100, mkvEnd: 200, fileIndex: 0, srcOffset: 1000},
+			},
+			wantEntryCount: 3,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+				{MkvOffset: 100, Length: 100, Source: 1, SourceOffset: 1000},
+				{MkvOffset: 200, Length: 100, Source: 0, SourceOffset: 100},
+			},
+		},
+		{
+			name:    "match at start",
+			mkvSize: 200,
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 1, srcOffset: 0},
+			},
+			wantEntryCount: 2,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 100, Source: 2, SourceOffset: 0},
+				{MkvOffset: 100, Length: 100, Source: 0, SourceOffset: 0},
+			},
+		},
+		{
+			name:    "match at end",
+			mkvSize: 200,
+			regions: []matchedRegion{
+				{mkvStart: 100, mkvEnd: 200, fileIndex: 0, srcOffset: 500},
+			},
+			wantEntryCount: 2,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+				{MkvOffset: 100, Length: 100, Source: 1, SourceOffset: 500},
+			},
+		},
+		{
+			name:    "multiple regions",
+			mkvSize: 500,
+			regions: []matchedRegion{
+				{mkvStart: 50, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 250, mkvEnd: 350, fileIndex: 0, srcOffset: 0},
+			},
+			wantEntryCount: 5,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 50, Source: 0, SourceOffset: 0},
+				{MkvOffset: 50, Length: 100, Source: 1, SourceOffset: 0},
+				{MkvOffset: 150, Length: 100, Source: 0, SourceOffset: 50},
+				{MkvOffset: 250, Length: 100, Source: 1, SourceOffset: 0},
+				{MkvOffset: 350, Length: 150, Source: 0, SourceOffset: 150},
+			},
+		},
+		{
+			name:    "source field propagation",
+			mkvSize: 300,
+			regions: []matchedRegion{
+				{mkvStart: 100, mkvEnd: 200, fileIndex: 2, srcOffset: 5000, isVideo: true, audioSubStreamID: 0x80},
+			},
+			wantEntryCount: 3,
+			wantEntries: []Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+				{MkvOffset: 100, Length: 100, Source: 3, SourceOffset: 5000, IsVideo: true, AudioSubStreamID: 0x80},
+				{MkvOffset: 200, Length: 100, Source: 0, SourceOffset: 100},
+			},
+		},
+		{
+			name:    "zero length file",
+			mkvSize: 0,
+			regions: nil,
+			wantEntryCount: 0,
+			wantEntries:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mkvData := make([]byte, tt.mkvSize)
+			for i := range mkvData {
+				mkvData[i] = byte(i % 256)
+			}
+			m := newTestMatcherWithRegions(tt.mkvSize, mkvData, tt.regions)
+			entries, deltaData := m.buildEntries()
+
+			if len(entries) != tt.wantEntryCount {
+				t.Fatalf("got %d entries, want %d", len(entries), tt.wantEntryCount)
+			}
+
+			for i, got := range entries {
+				if i >= len(tt.wantEntries) {
+					break
+				}
+				want := tt.wantEntries[i]
+				if got.MkvOffset != want.MkvOffset {
+					t.Errorf("entry[%d].MkvOffset = %d, want %d", i, got.MkvOffset, want.MkvOffset)
+				}
+				if got.Length != want.Length {
+					t.Errorf("entry[%d].Length = %d, want %d", i, got.Length, want.Length)
+				}
+				if got.Source != want.Source {
+					t.Errorf("entry[%d].Source = %d, want %d", i, got.Source, want.Source)
+				}
+				if got.SourceOffset != want.SourceOffset {
+					t.Errorf("entry[%d].SourceOffset = %d, want %d", i, got.SourceOffset, want.SourceOffset)
+				}
+				if got.IsVideo != want.IsVideo {
+					t.Errorf("entry[%d].IsVideo = %v, want %v", i, got.IsVideo, want.IsVideo)
+				}
+				if got.AudioSubStreamID != want.AudioSubStreamID {
+					t.Errorf("entry[%d].AudioSubStreamID = 0x%02X, want 0x%02X", i, got.AudioSubStreamID, want.AudioSubStreamID)
+				}
+			}
+
+			// For "all matched", delta should be empty
+			if tt.name == "all matched" && len(deltaData) != 0 {
+				t.Errorf("expected empty delta data for all matched, got %d bytes", len(deltaData))
+			}
+		})
+	}
+}
+
+func TestBuildEntries_DeltaDataContent(t *testing.T) {
+	mkvSize := int64(50)
+	mkvData := make([]byte, mkvSize)
+	for i := range mkvData {
+		mkvData[i] = byte(i % 256)
+	}
+
+	regions := []matchedRegion{
+		{mkvStart: 20, mkvEnd: 30, fileIndex: 0, srcOffset: 0},
+	}
+	m := newTestMatcherWithRegions(mkvSize, mkvData, regions)
+	_, deltaData := m.buildEntries()
+
+	// Delta should be mkvData[0:20] + mkvData[30:50]
+	expectedDelta := make([]byte, 0, 40)
+	expectedDelta = append(expectedDelta, mkvData[0:20]...)
+	expectedDelta = append(expectedDelta, mkvData[30:50]...)
+
+	if !bytes.Equal(deltaData, expectedDelta) {
+		t.Errorf("delta data mismatch: got %d bytes, want %d bytes", len(deltaData), len(expectedDelta))
+		// Show first divergence
+		for i := 0; i < len(deltaData) && i < len(expectedDelta); i++ {
+			if deltaData[i] != expectedDelta[i] {
+				t.Errorf("first difference at byte %d: got 0x%02X, want 0x%02X", i, deltaData[i], expectedDelta[i])
+				break
+			}
+		}
+	}
+}
+
+func TestCoverageBitmap_MarkMultipleChunks(t *testing.T) {
+	idx := source.NewIndex("/test", source.TypeDVD, 64)
+	m, _ := NewMatcher(idx)
+
+	m.mkvSize = 100 * 1024
+	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
+	m.coveredChunks = make([]uint64, (numChunks+63)/64)
+
+	// Mark region {0, 40960} which is exactly 10 chunks (0 through 9)
+	m.markChunksCovered(0, 40960)
+
+	// Verify each individual chunk in the range is covered
+	for i := int64(0); i < 10; i++ {
+		offset := i * coverageChunkSize
+		if !m.isRangeCoveredParallel(offset, coverageChunkSize) {
+			t.Errorf("chunk %d at offset %d should be covered", i, offset)
+		}
+	}
+
+	// Chunk 10 should not be covered
+	if m.isRangeCoveredParallel(40960, coverageChunkSize) {
+		t.Error("chunk 10 at offset 40960 should NOT be covered")
+	}
+}
+
+func TestCoverageBitmap_EmptyBitmapUncovered(t *testing.T) {
+	idx := source.NewIndex("/test", source.TypeDVD, 64)
+	m, _ := NewMatcher(idx)
+
+	m.mkvSize = 100 * 1024
+	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
+	m.coveredChunks = make([]uint64, (numChunks+63)/64)
+
+	// Fresh bitmap with no marks - first chunk should not be covered
+	if m.isRangeCoveredParallel(0, coverageChunkSize) {
+		t.Error("fresh bitmap should report range as uncovered")
 	}
 }
