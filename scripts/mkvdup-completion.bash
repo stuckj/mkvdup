@@ -17,11 +17,12 @@ _mkvdup() {
 
     # Minimal _filedir fallback when bash-completion is not available.
     # Handles plain calls, "-d" for directories, and "@(ext|ext)" patterns.
+    # Uses mapfile to avoid pathname expansion on glob metacharacters in filenames.
     if ! type _filedir &>/dev/null; then
         _filedir() {
-            local IFS=$'\n'
+            local -a _tmp
             if [[ "$1" == "-d" ]]; then
-                COMPREPLY=($(compgen -d -- "$cur"))
+                mapfile -t COMPREPLY < <(compgen -d -- "$cur")
             elif [[ "$1" == @\(*\) ]]; then
                 # Extract extensions from @(ext1|ext2) pattern
                 local exts="${1#@(}"
@@ -30,14 +31,16 @@ _mkvdup() {
                 local ext
                 while IFS='|' read -ra parts; do
                     for ext in "${parts[@]}"; do
-                        results+=($(compgen -f -X "!*.$ext" -- "$cur"))
+                        mapfile -t _tmp < <(compgen -f -X "!*.$ext" -- "$cur")
+                        results+=("${_tmp[@]}")
                     done
                 done <<< "$exts"
                 # Also include directories for navigation
-                results+=($(compgen -d -- "$cur"))
+                mapfile -t _tmp < <(compgen -d -- "$cur")
+                results+=("${_tmp[@]}")
                 COMPREPLY=("${results[@]}")
             else
-                COMPREPLY=($(compgen -f -- "$cur"))
+                mapfile -t COMPREPLY < <(compgen -f -- "$cur")
             fi
         }
     fi
