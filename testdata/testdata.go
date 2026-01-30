@@ -139,6 +139,7 @@ func (p Paths) CreateBlurayData(t testing.TB, tmpDir string) string {
 
 	m2tsPath := filepath.Join(streamDir, "00001.m2ts")
 	cmd := exec.Command("ffmpeg",
+		"-loglevel", "error",
 		"-i", p.MKVFile,
 		"-c", "copy",
 		"-f", "mpegts",
