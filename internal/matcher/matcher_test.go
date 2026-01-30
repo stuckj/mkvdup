@@ -624,12 +624,12 @@ func TestMergeRegions(t *testing.T) {
 
 func TestBuildEntries(t *testing.T) {
 	tests := []struct {
-		name            string
-		mkvSize         int64
-		regions         []matchedRegion
-		wantEntryCount  int
-		wantEntries     []Entry
-		wantDeltaBytes  []byte // nil means skip delta content check
+		name           string
+		mkvSize        int64
+		regions        []matchedRegion
+		wantEntryCount int
+		wantEntries    []Entry
+		wantDeltaBytes []byte // nil means skip delta content check
 	}{
 		{
 			name:           "all delta",
@@ -718,9 +718,9 @@ func TestBuildEntries(t *testing.T) {
 			},
 		},
 		{
-			name:    "zero length file",
-			mkvSize: 0,
-			regions: nil,
+			name:           "zero length file",
+			mkvSize:        0,
+			regions:        nil,
 			wantEntryCount: 0,
 			wantEntries:    nil,
 		},
