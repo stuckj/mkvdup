@@ -173,7 +173,7 @@ Access is checked by the kernel based on the `uid`, `gid`, and `mode` reported f
 `chown` and `chmod` operations follow Unix semantics:
 
 - **chown UID:** Only root can change file ownership
-- **chown GID:** Root can change to any GID; file owner can only change to their own primary GID
+- **chown GID:** Root can change to any GID; file owner can change to any group they belong to (primary or supplementary)
 - **chmod:** Only root or the file owner can change permissions
 
 ### Permissions File Location

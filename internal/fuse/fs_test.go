@@ -1588,6 +1588,16 @@ func TestMKVFSNode_Setattr_RootCanChownUID(t *testing.T) {
 }
 
 func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
+	// Mock group membership: uid 1000 is member of groups 1000 (primary), 100
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		return uid == 1000 && targetGID == 100
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)
@@ -1600,11 +1610,11 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 		permStore: store,
 	}
 
-	// Owner can change GID to their own GID (Unix semantics)
+	// Owner can change GID to their primary GID (Unix semantics)
 	ctx := ContextWithCaller(context.Background(), 1000, 1000)
 	in := &fuse.SetAttrIn{}
 	in.Valid = fuse.FATTR_GID
-	in.Gid = 1000 // Change to caller's own GID
+	in.Gid = 1000 // Change to caller's primary GID
 	var out fuse.AttrOut
 
 	errno := node.Setattr(ctx, nil, in, &out)
@@ -1619,7 +1629,17 @@ func TestMKVFSNode_Setattr_OwnerCanChownGID(t *testing.T) {
 	}
 }
 
-func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
+func TestMKVFSNode_Setattr_OwnerCanChownGIDToSupplementary(t *testing.T) {
+	// Mock group membership: uid 1000 is member of groups 1000 (primary), 100
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		return uid == 1000 && targetGID == 100
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)
@@ -1631,11 +1651,52 @@ func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
 		permStore: store,
 	}
 
-	// Owner cannot change GID to an arbitrary group they don't belong to
+	// Owner can change GID to a supplementary group
 	ctx := ContextWithCaller(context.Background(), 1000, 1000)
 	in := &fuse.SetAttrIn{}
 	in.Valid = fuse.FATTR_GID
-	in.Gid = 2000 // Arbitrary GID, not caller's GID
+	in.Gid = 100 // Supplementary group
+	var out fuse.AttrOut
+
+	errno := node.Setattr(ctx, nil, in, &out)
+	if errno != 0 {
+		t.Errorf("Setattr() = %v, want 0", errno)
+	}
+
+	// Verify the change
+	_, gotGID, _ := store.GetFilePerms("test.mkv")
+	if gotGID != 100 {
+		t.Errorf("GID = %d, want 100", gotGID)
+	}
+}
+
+func TestMKVFSNode_Setattr_OwnerCannotChownGIDToNonMemberGroup(t *testing.T) {
+	// Mock group membership: uid 1000 is member of groups 1000 (primary), 100
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		return uid == 1000 && targetGID == 100
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	uid := uint32(1000)
+	_ = store.SetFilePerms("test.mkv", &uid, nil, nil)
+
+	node := &MKVFSNode{
+		file:      &MKVFile{Name: "test.mkv", Size: 1000},
+		path:      "test.mkv",
+		permStore: store,
+	}
+
+	// Owner cannot change GID to a group they don't belong to
+	ctx := ContextWithCaller(context.Background(), 1000, 1000)
+	in := &fuse.SetAttrIn{}
+	in.Valid = fuse.FATTR_GID
+	in.Gid = 2000 // Not a member of this group
 	var out fuse.AttrOut
 
 	errno := node.Setattr(ctx, nil, in, &out)
@@ -1645,6 +1706,13 @@ func TestMKVFSNode_Setattr_OwnerCannotChownGIDToArbitrary(t *testing.T) {
 }
 
 func TestMKVFSNode_Setattr_NonOwnerCannotChownGID(t *testing.T) {
+	// Mock group membership: no supplementary groups for uid 2000
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		return targetGID == primaryGID
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	store := NewPermissionStore("", DefaultPerms(), false)
 
 	uid := uint32(1000)

@@ -526,6 +526,19 @@ func TestCheckChown(t *testing.T) {
 	uid := func(u uint32) *uint32 { return &u }
 	gid := func(g uint32) *uint32 { return &g }
 
+	// Mock group membership: uid 1000 is a member of groups 1000 (primary), 100, 200
+	origFunc := groupMembershipFunc
+	groupMembershipFunc = func(uid, primaryGID, targetGID uint32) bool {
+		if targetGID == primaryGID {
+			return true
+		}
+		if uid == 1000 {
+			return targetGID == 100 || targetGID == 200
+		}
+		return false
+	}
+	t.Cleanup(func() { groupMembershipFunc = origFunc })
+
 	tests := []struct {
 		name    string
 		caller  CallerInfo
@@ -545,9 +558,11 @@ func TestCheckChown(t *testing.T) {
 		{"non-root can set UID to same value", CallerInfo{1000, 1000}, 1000, 1000, uid(1000), nil, 0},
 		{"non-owner cannot change UID", CallerInfo{2000, 2000}, 1000, 1000, uid(2000), nil, syscall.EPERM},
 
-		// Non-root GID changes - owner can only change to their own GID
-		{"owner can change GID to own GID", CallerInfo{1000, 1000}, 1000, 2000, nil, gid(1000), 0},
-		{"owner cannot change GID to arbitrary GID", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
+		// Non-root GID changes - owner can change to any group they belong to
+		{"owner can change GID to primary GID", CallerInfo{1000, 1000}, 1000, 2000, nil, gid(1000), 0},
+		{"owner can change GID to supplementary group", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(100), 0},
+		{"owner can change GID to another supplementary group", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(200), 0},
+		{"owner cannot change GID to non-member group", CallerInfo{1000, 1000}, 1000, 1000, nil, gid(9999), syscall.EPERM},
 		{"non-owner cannot change GID", CallerInfo{2000, 2000}, 1000, 1000, nil, gid(2000), syscall.EPERM},
 
 		// No-op GID changes (setting to same value is always allowed)

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 
@@ -476,8 +478,9 @@ func (c CallerInfo) IsRoot() bool {
 // CheckChown verifies the caller can change file ownership.
 // Returns 0 if allowed, syscall.EPERM if denied.
 // Only root can change UID. Only root or file owner can change GID.
-// Non-root owners can only change GID to their own primary GID (not arbitrary groups).
-// No-op changes (newUID == fileUID or newGID == fileGID) are always allowed.
+// Non-root owners can change GID to any group they are a member of
+// (primary or supplementary). No-op changes (newUID == fileUID or
+// newGID == fileGID) are always allowed.
 func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint32) syscall.Errno {
 	// Only root can change UID to a different user
 	if newUID != nil && *newUID != fileUID && !caller.IsRoot() {
@@ -487,18 +490,54 @@ func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint
 	// GID changes:
 	// - No-op (nil or same as current) is always allowed
 	// - Root can change to any GID
-	// - Non-root owner can only change to their own primary GID
+	// - Non-root owner can change to any group they belong to
 	if newGID != nil && *newGID != fileGID {
 		if caller.IsRoot() {
 			return 0
 		}
-		// Non-root: must be owner AND target GID must be caller's GID
-		if caller.Uid != fileUID || *newGID != caller.Gid {
+		// Non-root: must be owner AND must be a member of target group
+		if caller.Uid != fileUID || !isGroupMember(caller.Uid, caller.Gid, *newGID) {
 			return syscall.EPERM
 		}
 	}
 
 	return 0
+}
+
+// groupMembershipFunc is the function used to check group membership.
+// It can be overridden in tests to avoid OS-level lookups.
+var groupMembershipFunc = defaultGroupMembership
+
+// isGroupMember checks if a user is a member of the given group.
+// This checks the primary GID and supplementary groups.
+func isGroupMember(uid, primaryGID, targetGID uint32) bool {
+	return groupMembershipFunc(uid, primaryGID, targetGID)
+}
+
+// defaultGroupMembership checks group membership by looking up the user's
+// groups from the OS.
+func defaultGroupMembership(uid, primaryGID, targetGID uint32) bool {
+	// Primary GID is always a member
+	if targetGID == primaryGID {
+		return true
+	}
+
+	// Look up supplementary groups from the OS
+	u, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
+	if err != nil {
+		return false
+	}
+	groupIDs, err := u.GroupIds()
+	if err != nil {
+		return false
+	}
+	targetStr := strconv.FormatUint(uint64(targetGID), 10)
+	for _, gid := range groupIDs {
+		if gid == targetStr {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckChmod verifies the caller can change file mode.
