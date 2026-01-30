@@ -760,7 +760,7 @@ func expandConfigDir(dir string) ([]string, error) {
 		}
 	}
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("no .yaml files found in %s", dir)
+		return nil, fmt.Errorf("no YAML files (.yaml, .yml) found in %s", dir)
 	}
 	return paths, nil
 }
@@ -919,6 +919,7 @@ type validationEntry struct {
 	status     string // "OK", "WARN", "ERR"
 	message    string // detail message (empty for OK)
 	configFile string // which input config file this came from
+	dedupFile  string // resolved dedup file path
 }
 
 // validateConfigs validates configuration files and returns an exit code.
@@ -978,13 +979,14 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 				name:       cfg.Name,
 				status:     "OK",
 				configFile: configPath,
+				dedupFile:  cfg.DedupFile,
 			}
 
 			// Check dedup file exists
 			dedupStat, err := os.Stat(cfg.DedupFile)
 			if err != nil {
 				entry.status = "ERR"
-				entry.message = fmt.Sprintf("dedup file not found: %s", cfg.DedupFile)
+				entry.message = fmt.Sprintf("dedup file: %v", err)
 				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
 				allEntries = append(allEntries, entry)
 				hasErrors = true
@@ -1003,7 +1005,7 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 			sourceStat, err := os.Stat(cfg.SourceDir)
 			if err != nil {
 				entry.status = "ERR"
-				entry.message = fmt.Sprintf("source directory not found: %s", cfg.SourceDir)
+				entry.message = fmt.Sprintf("source directory: %v", err)
 				fmt.Printf("  ERR  %s: %s\n", cfg.Name, entry.message)
 				allEntries = append(allEntries, entry)
 				hasErrors = true
@@ -1048,10 +1050,17 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 
 		name := entry.name
 
-		// Check for ".." in path
-		if strings.Contains(name, "..") {
+		// Check for ".." path components
+		hasDotDot := false
+		for _, comp := range strings.Split(name, "/") {
+			if comp == ".." {
+				hasDotDot = true
+				break
+			}
+		}
+		if hasDotDot {
 			allEntries[i].status = "ERR"
-			allEntries[i].message = "invalid path: contains '..'"
+			allEntries[i].message = "invalid path: contains '..' component"
 			fmt.Printf("  ERR  %s: %s\n", name, allEntries[i].message)
 			hasErrors = true
 			continue
@@ -1126,18 +1135,9 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 			// Only deep-validate entries that passed basic validation
 			entryOK := false
 			for _, e := range allEntries {
-				if e.name == cfg.Name && e.configFile == cfg.DedupFile {
-					entryOK = e.status == "OK"
+				if e.name == cfg.Name && e.dedupFile == cfg.DedupFile && e.status == "OK" {
+					entryOK = true
 					break
-				}
-			}
-			// Fallback: match by name and status
-			if !entryOK {
-				for _, e := range allEntries {
-					if e.name == cfg.Name && e.status == "OK" {
-						entryOK = true
-						break
-					}
 				}
 			}
 			if !entryOK {

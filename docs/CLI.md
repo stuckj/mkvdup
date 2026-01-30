@@ -84,7 +84,7 @@ Config files support `includes` (glob patterns referencing other configs, includ
 |--------|-------------|
 | `--allow-other` | Allow other users to access the mount (requires `/etc/fuse.conf` setting) |
 | `--foreground`, `-f` | Run in foreground (don't daemonize) |
-| `--config-dir` | Treat config argument as directory of `.yaml` files |
+| `--config-dir` | Treat config argument as directory of YAML files (`.yaml`, `.yml`) |
 | `--pid-file PATH` | Write daemon PID to file |
 | `--daemon-timeout DUR` | Timeout waiting for daemon startup (default: `30s`) |
 
@@ -136,7 +136,7 @@ mkvdup validate --strict config1.yaml config2.yaml
 
 | Option | Description |
 |--------|-------------|
-| `--config-dir` | Treat config argument as directory of `.yaml` files |
+| `--config-dir` | Treat config argument as directory of YAML files (`.yaml`, `.yml`) |
 | `--deep` | Verify dedup file headers and internal checksums |
 | `--strict` | Treat warnings as errors (exit code 1 on warnings) |
 

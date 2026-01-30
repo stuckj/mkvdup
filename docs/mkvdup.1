@@ -63,7 +63,7 @@ Run in foreground (for debugging or systemd). By default, mkvdup daemonizes
 after the mount is ready and returns control to the caller.
 .TP
 .B \-\-config\-dir
-Treat config argument as directory of .yaml files
+Treat config argument as directory of YAML files (.yaml, .yml)
 .TP
 .B \-\-pid\-file PATH
 Write the daemon PID to the specified file. Useful for init scripts.
@@ -122,7 +122,7 @@ Validate configuration files for correctness before mounting.
 YAML config files to validate (default: /etc/mkvdup.conf)
 .TP
 .B \-\-config\-dir
-Treat config argument as directory of .yaml files
+Treat config argument as directory of YAML files (.yaml, .yml)
 .TP
 .B \-\-deep
 Verify dedup file headers and internal checksums

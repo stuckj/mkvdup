@@ -516,7 +516,9 @@ func TestValidateConfigs_SourceDirIsFile(t *testing.T) {
 	os.RemoveAll(sourceDir)
 	// Create a file where source dir should be
 	fakeSrcPath := filepath.Join(dir, "fake_source")
-	os.WriteFile(fakeSrcPath, []byte("not a dir"), 0644)
+	if err := os.WriteFile(fakeSrcPath, []byte("not a dir"), 0644); err != nil {
+		t.Fatalf("write fake source: %v", err)
+	}
 
 	writeTestYAML(t, filepath.Join(dir, "config.yaml"), fmt.Sprintf(`name: "movie.mkv"
 dedup_file: %q
@@ -766,7 +768,9 @@ func TestValidateConfigs_DeepCorrupt(t *testing.T) {
 			data[i] ^= 0xFF
 		}
 	}
-	os.WriteFile(dedupPath, data, 0644)
+	if err := os.WriteFile(dedupPath, data, 0644); err != nil {
+		t.Fatalf("write corrupt dedup: %v", err)
+	}
 
 	writeTestYAML(t, filepath.Join(dir, "config.yaml"), fmt.Sprintf(`name: "movie.mkv"
 dedup_file: %q
@@ -809,9 +813,15 @@ func TestExpandConfigDir(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create some yaml files
-	os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(""), 0644)
-	os.WriteFile(filepath.Join(dir, "b.yml"), []byte(""), 0644)
-	os.WriteFile(filepath.Join(dir, "c.txt"), []byte(""), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(""), 0644); err != nil {
+		t.Fatalf("write a.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.yml"), []byte(""), 0644); err != nil {
+		t.Fatalf("write b.yml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte(""), 0644); err != nil {
+		t.Fatalf("write c.txt: %v", err)
+	}
 
 	paths, err := expandConfigDir(dir)
 	if err != nil {

@@ -144,7 +144,12 @@ _mkvdup() {
                 COMPREPLY=($(compgen -W "$validate_opts $global_opts" -- "$cur"))
                 return
             fi
-            _filedir '@(yaml|yml)'
+            # Allow any file (default config is .conf, not just .yaml/.yml)
+            if [[ "$cur" == *.yaml || "$cur" == *.yml ]]; then
+                _filedir '@(yaml|yml)'
+            else
+                _filedir
+            fi
             ;;
 
         parse-mkv)

@@ -127,7 +127,7 @@ Arguments:
 Options:
     --allow-other          Allow other users to access the mount
     --foreground           Run in foreground (for debugging or systemd)
-    --config-dir           Treat config argument as directory of .yaml files
+    --config-dir           Treat config argument as directory of YAML files (.yaml, .yml)
     --pid-file PATH        Write daemon PID to file
     --daemon-timeout DUR   Timeout waiting for daemon startup (default: 30s)
 
@@ -189,7 +189,7 @@ Arguments:
     [config.yaml]  YAML config files to validate (default: /etc/mkvdup.conf)
 
 Options:
-    --config-dir   Treat config argument as directory of .yaml files
+    --config-dir   Treat config argument as directory of YAML files (.yaml, .yml)
     --deep         Verify dedup file headers and internal checksums
     --strict       Treat warnings as errors (exit 1 on warnings)
 
