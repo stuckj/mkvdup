@@ -48,6 +48,7 @@ jobs:
           gotestsum --junitfile unit-results.xml -- \
             -coverprofile=unit-coverage.out \
             -covermode=atomic \
+            -coverpkg=./... \
             ./...
 
       # ========== INTEGRATION TEST SETUP ==========
@@ -95,6 +96,7 @@ jobs:
             -tags=integration \
             -coverprofile=integration-coverage.out \
             -covermode=atomic \
+            -coverpkg=./... \
             -timeout=30m \
             ./...
 
