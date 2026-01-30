@@ -21,7 +21,7 @@ dedup_file: "/data/dedup/video1.mkvdup"
 source_dir: "/data/sources/Video1_DVD"
 ```
 
-**Path resolution:** Relative paths in `dedup_file` and `source_dir` are resolved relative to the config file's directory, not the current working directory. Absolute paths (starting with `/`) are used as-is.
+**Path resolution:** Relative paths in `dedup_file` and `source_dir` are always resolved relative to the directory of the config file that **contains** them, not the current working directory. This applies equally to included configs — if config A includes config B, relative paths in B are resolved relative to B's directory, not A's. Absolute paths (starting with `/`) are used as-is.
 
 ### Config Files with Includes
 
@@ -52,7 +52,8 @@ A config file can have any combination of:
 - `virtual_files` (inline list of file definitions)
 
 **Include behavior:**
-- **Relative patterns** are resolved against the including config file's directory
+- **Relative include patterns** are resolved against the including config file's directory
+- **Relative paths in included configs** (`dedup_file`, `source_dir`) are resolved against the included config's own directory — not the directory of the config that included it
 - **Recursive globs** (`**`) are supported via the [doublestar](https://github.com/bmatcuk/doublestar) library
 - **Cycle detection** prevents infinite recursion — if config A includes B and B includes A, each is processed only once
 - **No matches** for a glob pattern is not an error (silently skipped)

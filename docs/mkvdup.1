@@ -192,7 +192,9 @@ Relative paths in
 .B dedup_file
 and
 .B source_dir
-are resolved relative to the config file's directory.
+are resolved relative to the directory of the config file that contains them.
+When a config is included by another config, its relative paths are resolved
+against its own directory, not the directory of the including config.
 .SS Includes and Virtual Files
 Any config file can include other configs via glob patterns and define
 inline virtual files:
