@@ -76,11 +76,14 @@ func captureStdout(t *testing.T, f func()) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { os.Stdout = oldStdout }()
 	os.Stdout = w
 	f()
 	w.Close()
-	out, _ := io.ReadAll(r)
-	os.Stdout = oldStdout
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return string(out)
 }
 

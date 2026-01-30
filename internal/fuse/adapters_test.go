@@ -74,7 +74,7 @@ func TestDedupReaderAdapter_UsesESOffsets(t *testing.T) {
 	defer adapter.Close()
 
 	// v2/v3 dedup files do not use ES offsets by default.
-	if got := adapter.UsesESOffsets(); got != false {
+	if got := adapter.UsesESOffsets(); got {
 		t.Errorf("UsesESOffsets() = %v, want false", got)
 	}
 }
