@@ -1,6 +1,9 @@
 package main
 
 import (
+	"io"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +66,78 @@ func TestParseOctalMode(t *testing.T) {
 				t.Errorf("parseOctalMode(%q) = %d, want %d", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	f()
+	w.Close()
+	out, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	return string(out)
+}
+
+func TestPrintVersion(t *testing.T) {
+	output := captureStdout(t, func() {
+		printVersion()
+	})
+	if !strings.Contains(output, "mkvdup version") {
+		t.Errorf("printVersion() output = %q, want it to contain %q", output, "mkvdup version")
+	}
+}
+
+func TestPrintUsage(t *testing.T) {
+	output := captureStdout(t, func() {
+		printUsage()
+	})
+	for _, want := range []string{"mkvdup", "create", "probe", "mount", "info", "verify"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("printUsage() output missing %q", want)
+		}
+	}
+}
+
+func TestPrintCommandUsage(t *testing.T) {
+	tests := []struct {
+		cmd      string
+		contains []string
+	}{
+		{"create", []string{"mkv-file", "source-dir"}},
+		{"probe", []string{"mkv-file", "source-dir"}},
+		{"mount", []string{"mountpoint", "--allow-other"}},
+		{"info", []string{"dedup-file"}},
+		{"verify", []string{"dedup-file", "original-mkv"}},
+		{"parse-mkv", []string{"mkv-file"}},
+		{"index-source", []string{"source-dir"}},
+		{"match", []string{"mkv-file", "source-dir"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.cmd, func(t *testing.T) {
+			output := captureStdout(t, func() {
+				printCommandUsage(tt.cmd)
+			})
+			for _, want := range tt.contains {
+				if !strings.Contains(output, want) {
+					t.Errorf("printCommandUsage(%q) output missing %q", tt.cmd, want)
+				}
+			}
+		})
+	}
+}
+
+func TestPrintCommandUsage_Unknown(t *testing.T) {
+	output := captureStdout(t, func() {
+		printCommandUsage("nonexistent")
+	})
+	if !strings.Contains(output, "mkvdup") {
+		t.Errorf("printCommandUsage(%q) output = %q, want it to contain %q", "nonexistent", output, "mkvdup")
 	}
 }
