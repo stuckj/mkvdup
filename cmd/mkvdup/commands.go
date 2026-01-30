@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -1135,7 +1136,7 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 			// Only deep-validate entries that passed basic validation
 			entryOK := false
 			for _, e := range allEntries {
-				if e.name == cfg.Name && e.dedupFile == cfg.DedupFile && e.status == "OK" {
+				if e.name == cfg.Name && e.dedupFile == cfg.DedupFile && e.status != "ERR" {
 					entryOK = true
 					break
 				}
@@ -1190,8 +1191,9 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 // cleanVirtualPath normalizes a virtual file path, matching the logic in
 // internal/fuse/tree.go insertFile(). Returns empty string if the path is invalid.
 func cleanVirtualPath(name string) string {
-	// Clean the path (normalizes slashes, removes dots)
-	cleaned := filepath.ToSlash(filepath.Clean(name))
+	// Clean the path using path.Clean (not filepath.Clean) to match
+	// internal/fuse/tree.go insertFile() which uses forward-slash paths.
+	cleaned := path.Clean(name)
 	// Split and filter
 	parts := strings.Split(cleaned, "/")
 	var valid []string
