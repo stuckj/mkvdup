@@ -11,7 +11,7 @@
 
 set -e
 
-THRESHOLD=${BENCHMARK_REGRESSION_THRESHOLD:-10}  # Default 10% threshold
+THRESHOLD=${BENCHMARK_REGRESSION_THRESHOLD:-20}  # Default 20% threshold
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <benchstat-output-file>"

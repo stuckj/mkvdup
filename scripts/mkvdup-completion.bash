@@ -3,7 +3,47 @@
 
 _mkvdup() {
     local cur prev words cword
-    _init_completion || return
+
+    # Fallback when bash-completion package is not installed
+    if ! type _init_completion &>/dev/null; then
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        words=("${COMP_WORDS[@]}")
+        cword=$COMP_CWORD
+    else
+        _init_completion || return
+    fi
+
+    # Minimal _filedir fallback when bash-completion is not available.
+    # Handles plain calls, "-d" for directories, and "@(ext|ext)" patterns.
+    # Uses mapfile to avoid pathname expansion on glob metacharacters in filenames.
+    if ! type _filedir &>/dev/null; then
+        _filedir() {
+            local -a _tmp
+            if [[ "$1" == "-d" ]]; then
+                mapfile -t COMPREPLY < <(compgen -d -- "$cur")
+            elif [[ "$1" == @\(*\) ]]; then
+                # Extract extensions from @(ext1|ext2) pattern
+                local exts="${1#@(}"
+                exts="${exts%)}"
+                local -a results=()
+                local ext
+                while IFS='|' read -ra parts; do
+                    for ext in "${parts[@]}"; do
+                        mapfile -t _tmp < <(compgen -f -X "!*.$ext" -- "$cur")
+                        results+=("${_tmp[@]}")
+                    done
+                done <<< "$exts"
+                # Also include directories for navigation
+                mapfile -t _tmp < <(compgen -d -- "$cur")
+                results+=("${_tmp[@]}")
+                COMPREPLY=("${results[@]}")
+            else
+                mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+            fi
+        }
+    fi
 
     local commands="create probe mount info verify parse-mkv index-source match help"
     local global_opts="-v --verbose -h --help --version"
@@ -35,6 +75,12 @@ _mkvdup() {
         return
     fi
 
+    # Global options available for all commands when typing -<TAB>
+    if [[ "$cur" == -* && "$cmd" != "mount" ]]; then
+        COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
+        return
+    fi
+
     # Command-specific completions
     case "$cmd" in
         create)
@@ -49,15 +95,15 @@ _mkvdup() {
 
         mount)
             # mount [options] <mountpoint> [config.yaml...]
-            local mount_opts="--allow-other --foreground -f --config-dir --pid-file --daemon-timeout"
+            local mount_opts="--allow-other --foreground -f --config-dir --pid-file --daemon-timeout --default-uid --default-gid --default-file-mode --default-dir-mode --permissions-file"
 
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$mount_opts" -- "$cur"))
+                COMPREPLY=($(compgen -W "$mount_opts $global_opts" -- "$cur"))
                 return
             fi
 
             case "$prev" in
-                --pid-file)
+                --pid-file|--permissions-file)
                     # Complete any file path
                     _filedir
                     return
@@ -65,6 +111,10 @@ _mkvdup() {
                 --daemon-timeout)
                     # Suggest common timeout values
                     COMPREPLY=($(compgen -W "10s 30s 60s 2m 5m" -- "$cur"))
+                    return
+                    ;;
+                --default-uid|--default-gid|--default-file-mode|--default-dir-mode)
+                    # Numeric values; no useful completion to offer
                     return
                     ;;
             esac
