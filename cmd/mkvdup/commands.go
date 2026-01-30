@@ -1037,8 +1037,8 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 
 	// Step 5: Name validation and duplicate/conflict detection
 	hasWarnings := false
-	nameToConfig := make(map[string]string)  // clean path -> config file
-	dirComponents := make(map[string]string) // paths used as directories -> config file
+	nameToConfig := make(map[string]string)   // clean path -> config file
+	dirComponents := make(map[string]string)  // paths used as directories -> config file
 	fileComponents := make(map[string]string) // paths used as files -> config file
 
 	for i, entry := range allEntries {
