@@ -54,6 +54,7 @@ type createResult struct {
 	UnmatchedBytes int64
 	MatchedPackets int
 	TotalPackets   int
+	IndexEntries   int
 	Savings        float64
 	Duration       time.Duration
 	Err            error
@@ -214,6 +215,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	result.UnmatchedBytes = matchResult.UnmatchedBytes
 	result.MatchedPackets = matchResult.MatchedPackets
 	result.TotalPackets = matchResult.TotalPackets
+	result.IndexEntries = len(matchResult.Entries)
 
 	dedupInfo, _ := os.Stat(outputPath)
 	if dedupInfo != nil {
@@ -282,7 +284,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	fmt.Printf("Packets matched:    %s / %s (%.1f%%)\n",
 		formatInt(int64(result.MatchedPackets)), formatInt(int64(result.TotalPackets)),
 		float64(result.MatchedPackets)/float64(result.TotalPackets)*100)
-	fmt.Printf("Index entries:      %s\n", formatInt(int64(result.TotalPackets)))
+	fmt.Printf("Index entries:      %s\n", formatInt(int64(result.IndexEntries)))
 
 	// Warning for low savings
 	if result.Savings < 75 {
