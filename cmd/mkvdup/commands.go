@@ -489,21 +489,11 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 
 // calculateFileChecksum calculates xxhash checksum of a file.
 func calculateFileChecksum(path string) (uint64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	hasher := xxhash.New()
-	if _, err := io.Copy(hasher, f); err != nil {
-		return 0, err
-	}
-	return hasher.Sum64(), nil
+	return calculateFileChecksumWithProgress(path, 0, "")
 }
 
 // calculateFileChecksumWithProgress calculates xxhash checksum of a file,
-// showing inline progress for large files.
+// showing inline progress when expectedSize > 0.
 func calculateFileChecksumWithProgress(path string, expectedSize int64, displayName string) (uint64, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -512,6 +502,15 @@ func calculateFileChecksumWithProgress(path string, expectedSize int64, displayN
 	defer f.Close()
 
 	hasher := xxhash.New()
+	showProgress := expectedSize > 0
+
+	if !showProgress {
+		if _, err := io.Copy(hasher, f); err != nil {
+			return 0, err
+		}
+		return hasher.Sum64(), nil
+	}
+
 	buf := make([]byte, 4*1024*1024) // 4MB buffer
 	var processed int64
 	lastProgress := time.Time{}
