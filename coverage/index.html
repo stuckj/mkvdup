@@ -55,9 +55,9 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (30.9%)</option>
+				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (37.0%)</option>
 				
-				<option value="file1">github.com/stuckj/mkvdup/cmd/mkvdup/main.go (7.0%)</option>
+				<option value="file1">github.com/stuckj/mkvdup/cmd/mkvdup/main.go (6.7%)</option>
 				
 				<option value="file2">github.com/stuckj/mkvdup/cmd/mkvdup/profile.go (33.3%)</option>
 				
@@ -149,9 +149,9 @@ import (
 )
 
 // formatInt formats an integer with thousands separators (e.g., 1234567 → "1,234,567").
-func formatInt(n int64) string <span class="cov6" title="24">{
+func formatInt(n int64) string <span class="cov6" title="38">{
         s := strconv.FormatInt(n, 10)
-        if len(s) &lt;= 3 </span><span class="cov4" title="10">{
+        if len(s) &lt;= 3 </span><span class="cov6" title="24">{
                 return s
         }</span>
         // Insert commas from the right
@@ -611,17 +611,136 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error <span class="c
 
 // calculateFileChecksum calculates xxhash checksum of a file.
 func calculateFileChecksum(path string) (uint64, error) <span class="cov5" title="12">{
+        return calculateFileChecksumWithProgress(path, 0, "")
+}</span>
+
+// calculateFileChecksumWithProgress calculates xxhash checksum of a file,
+// showing inline progress when expectedSize &gt; 0.
+func calculateFileChecksumWithProgress(path string, expectedSize int64, displayName string) (uint64, error) <span class="cov5" title="16">{
         f, err := os.Open(path)
         if err != nil </span><span class="cov2" title="2">{
                 return 0, err
         }</span>
-        <span class="cov4" title="10">defer f.Close()
+        <span class="cov5" title="14">defer f.Close()
 
         hasher := xxhash.New()
-        if _, err := io.Copy(hasher, f); err != nil </span><span class="cov0" title="0">{
-                return 0, err
+        showProgress := expectedSize &gt; 0
+
+        if !showProgress </span><span class="cov4" title="10">{
+                if _, err := io.Copy(hasher, f); err != nil </span><span class="cov0" title="0">{
+                        return 0, err
+                }</span>
+                <span class="cov4" title="10">return hasher.Sum64(), nil</span>
+        }
+
+        <span class="cov3" title="4">buf := make([]byte, 4*1024*1024) // 4MB buffer
+        var processed int64
+        lastProgress := time.Time{}
+
+        for </span><span class="cov4" title="8">{
+                n, err := f.Read(buf)
+                if n &gt; 0 </span><span class="cov3" title="4">{
+                        if _, werr := hasher.Write(buf[:n]); werr != nil </span><span class="cov0" title="0">{
+                                return 0, werr
+                        }</span>
+                        <span class="cov3" title="4">processed += int64(n)
+
+                        if time.Since(lastProgress) &gt; 500*time.Millisecond </span><span class="cov3" title="4">{
+                                pct := float64(processed) / float64(expectedSize) * 100
+                                fmt.Printf("\r  Verifying %s... %.1f%%", displayName, pct)
+                                lastProgress = time.Now()
+                        }</span>
+                }
+                <span class="cov4" title="8">if err == io.EOF </span><span class="cov3" title="4">{
+                        break</span>
+                }
+                <span class="cov3" title="4">if err != nil </span><span class="cov0" title="0">{
+                        return 0, err
+                }</span>
+        }
+
+        // Clear progress line
+        <span class="cov3" title="4">progressText := fmt.Sprintf("  Verifying %s... 100.0%%", displayName)
+        fmt.Printf("\r%s\r", strings.Repeat(" ", len(progressText)))
+
+        return hasher.Sum64(), nil</span>
+}
+
+// checkDedup checks the integrity of a dedup file and its source files.
+func checkDedup(dedupPath, sourceDir string, sourceChecksums bool) error <span class="cov5" title="16">{
+        fmt.Printf("Checking dedup file: %s\n", dedupPath)
+        fmt.Printf("Source directory:    %s\n", sourceDir)
+        fmt.Println()
+
+        // Phase 1: Open and verify dedup file integrity
+        reader, err := dedup.NewReader(dedupPath, sourceDir)
+        if err != nil </span><span class="cov2" title="2">{
+                return fmt.Errorf("open dedup file: %w", err)
         }</span>
-        <span class="cov4" title="10">return hasher.Sum64(), nil</span>
+        <span class="cov5" title="14">defer reader.Close()
+
+        fmt.Print("Checking dedup file integrity...")
+        if err := reader.VerifyIntegrity(); err != nil </span><span class="cov2" title="2">{
+                fmt.Println(" FAILED")
+                return fmt.Errorf("integrity check: %w", err)
+        }</span>
+        <span class="cov5" title="12">fmt.Println(" OK")
+
+        // Phase 2: Check source files exist with correct sizes
+        sourceFiles := reader.SourceFiles()
+        fmt.Printf("\nChecking source files (%d files)...\n", len(sourceFiles))
+
+        errCount := 0
+        for _, sf := range sourceFiles </span><span class="cov5" title="12">{
+                sfPath := filepath.Join(sourceDir, sf.RelativePath)
+                stat, err := os.Stat(sfPath)
+                if err != nil </span><span class="cov2" title="2">{
+                        fmt.Printf("  FAILED  %s: %v\n", sf.RelativePath, err)
+                        errCount++
+                        continue</span>
+                }
+                <span class="cov4" title="10">if stat.Size() != sf.Size </span><span class="cov3" title="4">{
+                        fmt.Printf("  FAILED  %s: size mismatch (expected %s, got %s)\n",
+                                sf.RelativePath, formatInt(sf.Size), formatInt(stat.Size()))
+                        errCount++
+                        continue</span>
+                }
+                <span class="cov3" title="6">fmt.Printf("  OK      %s (%s bytes)\n", sf.RelativePath, formatInt(sf.Size))</span>
+        }
+
+        // Phase 3: Optionally verify source file checksums
+        <span class="cov5" title="12">if sourceChecksums </span><span class="cov3" title="6">{
+                if errCount &gt; 0 </span><span class="cov2" title="2">{
+                        fmt.Println("\nSkipping source checksum verification due to earlier errors")
+                }</span> else<span class="cov3" title="4"> {
+                        fmt.Printf("\nVerifying source file checksums...\n")
+                        for _, sf := range sourceFiles </span><span class="cov3" title="4">{
+                                sfPath := filepath.Join(sourceDir, sf.RelativePath)
+
+                                checksum, err := calculateFileChecksumWithProgress(sfPath, sf.Size, sf.RelativePath)
+                                if err != nil </span><span class="cov0" title="0">{
+                                        fmt.Printf("  FAILED  %s: %v\n", sf.RelativePath, err)
+                                        errCount++
+                                        continue</span>
+                                }
+                                <span class="cov3" title="4">if checksum != sf.Checksum </span><span class="cov2" title="2">{
+                                        fmt.Printf("  FAILED  %s: checksum mismatch (expected %016x, got %016x)\n",
+                                                sf.RelativePath, sf.Checksum, checksum)
+                                        errCount++
+                                        continue</span>
+                                }
+                                <span class="cov2" title="2">fmt.Printf("  OK      %s\n", sf.RelativePath)</span>
+                        }
+                }
+        }
+
+        // Final summary
+        <span class="cov5" title="12">fmt.Println()
+        if errCount &gt; 0 </span><span class="cov4" title="8">{
+                return fmt.Errorf("check FAILED: %d error(s) found", errCount)
+        }</span>
+        <span class="cov3" title="4">fmt.Println("Check PASSED")
+        return nil</span>
 }
 
 // ProbeResult represents the result of probing a source against an MKV.
@@ -1060,7 +1179,7 @@ func resolveConfigPaths(configPaths []string, configDir bool) ([]string, error) 
                 if _, err := os.Stat(defaultConfigPath); err == nil </span><span class="cov0" title="0">{
                         return []string{defaultConfigPath}, nil
                 }</span>
-                <span class="cov0" title="0">return nil, fmt.Errorf("no config files specified and %s not found", defaultConfigPath)</span>
+                <span class="cov0" title="0">return nil, fmt.Errorf("no config files specified and %s not found\nRun 'mkvdup validate --help' for usage", defaultConfigPath)</span>
         }
 
         <span class="cov6" title="30">return configPaths, nil</span>
@@ -1422,6 +1541,7 @@ Commands:
   mount        Mount dedup files as FUSE filesystem
   info         Show dedup file information
   verify       Verify dedup file against original MKV
+  check        Check dedup + source file integrity
   validate     Validate configuration files
 
 Debug commands:
@@ -1533,6 +1653,29 @@ Arguments:
 
 Examples:
     mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+`)</span>
+        case "check":<span class="cov0" title="0">
+                fmt.Print(`Usage: mkvdup check &lt;dedup-file&gt; &lt;source-dir&gt; [options]
+
+Check integrity of a dedup file and its source files.
+
+Arguments:
+    &lt;dedup-file&gt;  Path to the .mkvdup file
+    &lt;source-dir&gt;  Directory containing the source media
+
+Options:
+    --source-checksums  Verify source file checksums (slow, reads entire files)
+
+Checks performed:
+    - Dedup file header validity (magic, version, structure)
+    - Index and delta checksum verification
+    - Source file existence and size
+    With --source-checksums:
+    - Source file checksum verification (reads entire files)
+
+Examples:
+    mkvdup check movie.mkvdup /media/dvd-backups
+    mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
 `)</span>
         case "validate":<span class="cov0" title="0">
                 fmt.Print(`Usage: mkvdup validate [options] [config.yaml...]
@@ -1816,6 +1959,25 @@ func main() <span class="cov0" title="0">{
                         os.Exit(1)
                 }</span>
                 <span class="cov0" title="0">if err := verifyDedup(args[0], args[1], args[2]); err != nil </span><span class="cov0" title="0">{
+                        log.Fatalf("Error: %v", err)
+                }</span>
+
+        case "check":<span class="cov0" title="0">
+                sourceChecksums := false
+                var checkArgs []string
+                for i := 0; i &lt; len(args); i++ </span><span class="cov0" title="0">{
+                        switch args[i] </span>{
+                        case "--source-checksums":<span class="cov0" title="0">
+                                sourceChecksums = true</span>
+                        default:<span class="cov0" title="0">
+                                checkArgs = append(checkArgs, args[i])</span>
+                        }
+                }
+                <span class="cov0" title="0">if len(checkArgs) &lt; 2 </span><span class="cov0" title="0">{
+                        printCommandUsage("check")
+                        os.Exit(1)
+                }</span>
+                <span class="cov0" title="0">if err := checkDedup(checkArgs[0], checkArgs[1], sourceChecksums); err != nil </span><span class="cov0" title="0">{
                         log.Fatalf("Error: %v", err)
                 }</span>
 
@@ -2308,7 +2470,7 @@ func getReadyPipeFd() (uintptr, error) <span class="cov10" title="16">{
         if fdStr == "" </span><span class="cov6" title="6">{
                 return 0, fmt.Errorf("not running as daemon child")
         }</span>
-        <span class="cov8" title="10">fd, err := strconv.ParseUint(fdStr, 10, 64)
+        <span class="cov8" title="10">fd, err := strconv.ParseUint(fdStr, 10, strconv.IntSize)
         if err != nil </span><span class="cov3" title="2">{
                 return 0, fmt.Errorf("invalid pipe fd: %w", err)
         }</span>
@@ -2596,7 +2758,7 @@ type RawEntry struct {
 }
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1229746">{
+func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1229725">{
         return Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -2649,7 +2811,7 @@ func FromMatcherEntry(e matcher.Entry) Entry <span class="cov9" title="856960">{
 }</span>
 
 // ToSourceFile converts source.File to dedup SourceFile.
-func ToSourceFile(sf source.File) SourceFile <span class="cov3" title="56">{
+func ToSourceFile(sf source.File) SourceFile <span class="cov3" title="70">{
         return SourceFile{
                 RelativePath: sf.RelativePath,
                 Size:         sf.Size,
@@ -2715,29 +2877,29 @@ type ESReader interface {
 
 // NewReader opens a dedup file for reading with entry access initialized immediately.
 // Use NewReaderLazy for faster initialization when entries can be accessed on first read.
-func NewReader(dedupPath, sourceDir string) (*Reader, error) <span class="cov3" title="80">{
+func NewReader(dedupPath, sourceDir string) (*Reader, error) <span class="cov3" title="96">{
         r, err := NewReaderLazy(dedupPath, sourceDir)
-        if err != nil </span><span class="cov2" title="12">{
+        if err != nil </span><span class="cov2" title="14">{
                 return nil, err
         }</span>
 
         // Force immediate entry access initialization
-        <span class="cov3" title="68">if err := r.initEntryAccess(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="82">if err := r.initEntryAccess(); err != nil </span><span class="cov0" title="0">{
                 r.Close()
                 return nil, fmt.Errorf("init entry access: %w", err)
         }</span>
 
-        <span class="cov3" title="68">return r, nil</span>
+        <span class="cov3" title="82">return r, nil</span>
 }
 
 // NewReaderLazy opens a dedup file but only reads the header.
 // Entries are loaded lazily on first Read. Use this for fast mount times with many files.
-func NewReaderLazy(dedupPath, sourceDir string) (*Reader, error) <span class="cov3" title="175">{
+func NewReaderLazy(dedupPath, sourceDir string) (*Reader, error) <span class="cov3" title="191">{
         f, err := os.Open(dedupPath)
-        if err != nil </span><span class="cov2" title="6">{
+        if err != nil </span><span class="cov2" title="8">{
                 return nil, fmt.Errorf("open dedup file: %w", err)
         }</span>
-        <span class="cov3" title="169">defer f.Close()
+        <span class="cov3" title="183">defer f.Close()
 
         file, err := parseHeaderOnly(f)
         if err != nil </span><span class="cov2" title="10">{
@@ -2745,12 +2907,12 @@ func NewReaderLazy(dedupPath, sourceDir string) (*Reader, error) <span class="co
         }</span>
 
         // Memory-map the dedup file
-        <span class="cov3" title="159">dedupMmap, err := mmap.Open(dedupPath)
+        <span class="cov3" title="173">dedupMmap, err := mmap.Open(dedupPath)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("mmap dedup file: %w", err)
         }</span>
 
-        <span class="cov3" title="159">return &amp;Reader{
+        <span class="cov3" title="173">return &amp;Reader{
                 file:         file,
                 dedupMmap:    dedupMmap,
                 dedupPath:    dedupPath,
@@ -2785,22 +2947,22 @@ func (r *Reader) LoadSourceFiles() error <span class="cov2" title="15">{
 }
 
 // Close releases all resources.
-func (r *Reader) Close() error <span class="cov3" title="155">{
-        if r.dedupMmap != nil </span><span class="cov3" title="155">{
+func (r *Reader) Close() error <span class="cov3" title="169">{
+        if r.dedupMmap != nil </span><span class="cov3" title="169">{
                 r.dedupMmap.Close()
         }</span>
-        <span class="cov3" title="155">for _, m := range r.sourceMmaps </span><span class="cov2" title="9">{
+        <span class="cov3" title="169">for _, m := range r.sourceMmaps </span><span class="cov2" title="9">{
                 if m != nil </span><span class="cov2" title="7">{
                         m.Close()
                 }</span>
         }
-        <span class="cov3" title="155">return nil</span>
+        <span class="cov3" title="169">return nil</span>
 }
 
 // initEntryAccess initializes direct mmap access to entries (no parsing into []Entry).
 // This is called lazily on first entry access.
-func (r *Reader) initEntryAccess() error <span class="cov6" title="8001">{
-        r.entriesOnce.Do(func() </span><span class="cov3" title="97">{
+func (r *Reader) initEntryAccess() error <span class="cov6" title="8029">{
+        r.entriesOnce.Do(func() </span><span class="cov3" title="111">{
                 // Calculate index start offset
                 r.indexStart = int64(HeaderSize) + r.calculateSourceFilesSize()
                 r.entryCount = int(r.file.Header.EntryCount)
@@ -2814,9 +2976,9 @@ func (r *Reader) initEntryAccess() error <span class="cov6" title="8001">{
                 }</span>
 
                 // Build block index for fast random access lookup
-                <span class="cov3" title="97">r.buildBlockIndex()</span>
+                <span class="cov3" title="111">r.buildBlockIndex()</span>
         })
-        <span class="cov6" title="8001">return r.entriesErr</span>
+        <span class="cov6" title="8029">return r.entriesErr</span>
 }
 
 // buildBlockIndex creates a mapping from block numbers to entry indices.
@@ -2827,9 +2989,9 @@ func (r *Reader) initEntryAccess() error <span class="cov6" title="8001">{
 //
 // Algorithm: single pass over all entries, filling block slots as we go.
 // Time: O(entryCount + blockCount), Space: O(blockCount).
-func (r *Reader) buildBlockIndex() <span class="cov3" title="97">{
+func (r *Reader) buildBlockIndex() <span class="cov3" title="111">{
         originalSize := r.file.Header.OriginalSize
-        if originalSize &lt;= 0 || r.entryCount == 0 </span><span class="cov2" title="10">{
+        if originalSize &lt;= 0 || r.entryCount == 0 </span><span class="cov2" title="24">{
                 return
         }</span>
 
@@ -2854,19 +3016,19 @@ func (r *Reader) buildBlockIndex() <span class="cov3" title="97">{
 
 // getEntry returns the entry at the given index by parsing from mmap.
 // Uses cache for O(1) sequential access. Safe for concurrent use.
-func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1229766">{
+func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1229748">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov2" title="6">{
                 return Entry{}, false
         }</span>
 
         // Check cache first (with lock)
-        <span class="cov8" title="1229760">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov2" title="28">{
+        <span class="cov8" title="1229742">r.cacheMu.Lock()
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov2" title="31">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov8" title="1229732">r.cacheMu.Unlock()
+        <span class="cov8" title="1229711">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -2877,7 +3039,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12297
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov8" title="1229732">var raw RawEntry
+        <span class="cov8" title="1229711">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -2899,35 +3061,35 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12297
 
 // getMkvOffset returns just the MkvOffset for entry at idx (for binary search).
 // This avoids full entry parsing when only the offset is needed.
-func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7973529">{
+func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7971929">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7973525">offset := r.indexStart + int64(idx)*EntrySize
+        <span class="cov9" title="7971925">offset := r.indexStart + int64(idx)*EntrySize
         data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7973525">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov9" title="7971925">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // getEntryLength returns just the Length for entry at idx (for binary search).
 // This avoids full entry parsing when only offset and length are needed.
-func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov7" title="45303">{
+func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov7" title="43703">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
         // Length is at offset 8 within each entry (after MkvOffset)
-        <span class="cov7" title="45299">offset := r.indexStart + int64(idx)*EntrySize + 8
+        <span class="cov7" title="43699">offset := r.indexStart + int64(idx)*EntrySize + 8
         data := r.dedupMmap.Slice(offset, 8)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov7" title="45299">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov7" title="43699">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // OriginalSize returns the size of the original MKV file.
@@ -2941,7 +3103,7 @@ func (r *Reader) OriginalChecksum() uint64 <span class="cov1" title="2">{
 }</span>
 
 // SourceFiles returns the list of source files.
-func (r *Reader) SourceFiles() []SourceFile <span class="cov1" title="4">{
+func (r *Reader) SourceFiles() []SourceFile <span class="cov2" title="16">{
         return r.file.SourceFiles
 }</span>
 
@@ -2987,57 +3149,57 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) <span class="cov6
         // Find entries that cover this range
         <span class="cov6" title="7883">entries := r.findEntriesForRange(offset, int64(remaining))
 
-        for _, entry := range entries </span><span class="cov8" title="1219618">{
+        for _, entry := range entries </span><span class="cov8" title="1219600">{
                 if remaining &lt;= 0 </span><span class="cov0" title="0">{
                         break</span>
                 }
 
                 // Calculate overlap
-                <span class="cov8" title="1219618">entryEnd := entry.MkvOffset + entry.Length
+                <span class="cov8" title="1219600">entryEnd := entry.MkvOffset + entry.Length
                 readStart := offset
                 if readStart &lt; entry.MkvOffset </span><span class="cov0" title="0">{
                         readStart = entry.MkvOffset
                 }</span>
-                <span class="cov8" title="1219618">readEnd := offset + int64(remaining)
-                if readEnd &gt; entryEnd </span><span class="cov8" title="1211737">{
+                <span class="cov8" title="1219600">readEnd := offset + int64(remaining)
+                if readEnd &gt; entryEnd </span><span class="cov8" title="1211719">{
                         readEnd = entryEnd
                 }</span>
 
-                <span class="cov8" title="1219618">readLen := int(readEnd - readStart)
+                <span class="cov8" title="1219600">readLen := int(readEnd - readStart)
                 if readLen &lt;= 0 </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
                 // Calculate offset within entry
-                <span class="cov8" title="1219618">offsetInEntry := readStart - entry.MkvOffset
+                <span class="cov8" title="1219600">offsetInEntry := readStart - entry.MkvOffset
                 sourceOffset := entry.SourceOffset + offsetInEntry
 
                 // Read data from appropriate source
                 var data []byte
                 var err error
 
-                if entry.Source == 0 </span><span class="cov7" title="208691">{
+                if entry.Source == 0 </span><span class="cov7" title="208693">{
                         // Read from delta section
                         data, err = r.readDelta(sourceOffset, readLen)
-                }</span> else<span class="cov8" title="1010927"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
+                }</span> else<span class="cov8" title="1010907"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
                         // Read from ES
                         if entry.IsVideo </span><span class="cov0" title="0">{
                                 data, err = r.esReader.ReadESData(sourceOffset, readLen, true)
                         }</span> else<span class="cov0" title="0"> {
                                 data, err = r.esReader.ReadAudioSubStreamData(entry.AudioSubStreamID, sourceOffset, readLen)
                         }</span>
-                } else<span class="cov8" title="1010927"> {
+                } else<span class="cov8" title="1010907"> {
                         // Read from raw source file
                         fileIndex := int(entry.Source - 1)
                         data, err = r.readSource(fileIndex, sourceOffset, readLen)
                 }</span>
 
-                <span class="cov8" title="1219618">if err != nil </span><span class="cov0" title="0">{
+                <span class="cov8" title="1219600">if err != nil </span><span class="cov0" title="0">{
                         return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
                 }</span>
 
                 // Copy to output buffer - use original offset to calculate buffer position
-                <span class="cov8" title="1219618">bufOffset := int(readStart - originalOffset)
+                <span class="cov8" title="1219600">bufOffset := int(readStart - originalOffset)
                 copy(buf[bufOffset:], data)
                 totalRead += len(data)
                 remaining -= len(data)
@@ -3061,35 +3223,35 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
         // Fast path: check if offset is within cached entry (with lock)
         r.cacheMu.Lock()
         if r.lastEntryValid &amp;&amp; r.lastEntryIdx &gt;= 0 &amp;&amp; r.lastEntryIdx &lt; r.entryCount </span><span class="cov6" title="7868">{
-                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov1" title="5">{
+                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov2" title="7">{
                         // Cache hit - start from cached entry
                         startIdx := r.lastEntryIdx
                         r.cacheMu.Unlock()
 
                         var result []Entry
-                        for i := startIdx; i &lt; r.entryCount; i++ </span><span class="cov4" title="259">{
+                        for i := startIdx; i &lt; r.entryCount; i++ </span><span class="cov4" title="454">{
                                 entry, ok := r.getEntry(i)
-                                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov1" title="3">{
+                                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov1" title="5">{
                                         break</span>
                                 }
-                                <span class="cov4" title="256">result = append(result, entry)</span>
+                                <span class="cov4" title="449">result = append(result, entry)</span>
                         }
-                        <span class="cov1" title="5">return result</span>
+                        <span class="cov2" title="7">return result</span>
                 }
         }
-        <span class="cov6" title="7886">r.cacheMu.Unlock()
+        <span class="cov6" title="7884">r.cacheMu.Unlock()
 
         // Cache miss - use block index to narrow binary search range
         var lo, hi int
-        if r.blockIndex != nil </span><span class="cov6" title="7886">{
+        if r.blockIndex != nil </span><span class="cov6" title="7884">{
                 blockNum := int(offset / blockSize)
                 if blockNum &gt;= len(r.blockIndex) </span><span class="cov0" title="0">{
                         blockNum = len(r.blockIndex) - 1
                 }</span>
-                <span class="cov6" title="7886">lo = r.blockIndex[blockNum]
+                <span class="cov6" title="7884">lo = r.blockIndex[blockNum]
 
                 // Upper bound: start of next block's entries (or entryCount)
-                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov6" title="7886">{
+                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov6" title="7884">{
                         // Search up to 1 past the next block's start entry to handle
                         // entries that span block boundaries
                         hi = r.blockIndex[blockNum+1] + 1
@@ -3105,58 +3267,58 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
         }</span>
 
         // Binary search within [lo, hi) for first entry whose range covers offset
-        <span class="cov6" title="7886">idx := lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov7" title="45293">{
+        <span class="cov6" title="7884">idx := lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov7" title="43693">{
                 mkvOffset, ok := r.getMkvOffset(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov7" title="45293">entryLen, ok := r.getEntryLength(lo + i)
+                <span class="cov7" title="43693">entryLen, ok := r.getEntryLength(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov7" title="45293">return mkvOffset+entryLen &gt; offset</span>
+                <span class="cov7" title="43693">return mkvOffset+entryLen &gt; offset</span>
         })
 
-        <span class="cov6" title="7886">var result []Entry
-        for i := idx; i &lt; r.entryCount; i++ </span><span class="cov8" title="1227253">{
+        <span class="cov6" title="7884">var result []Entry
+        for i := idx; i &lt; r.entryCount; i++ </span><span class="cov8" title="1227040">{
                 entry, ok := r.getEntry(i)
-                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov6" title="7881">{
+                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov6" title="7879">{
                         break</span>
                 }
-                <span class="cov8" title="1219372">result = append(result, entry)</span>
+                <span class="cov8" title="1219161">result = append(result, entry)</span>
         }
 
-        <span class="cov6" title="7886">return result</span>
+        <span class="cov6" title="7884">return result</span>
 }
 
-func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="208691">{
+func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="208693">{
         fileOffset := r.file.DeltaOffset + offset
         // Zero-copy slice from mmap'd data
         data := r.dedupMmap.Slice(fileOffset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("delta offset out of range")
         }</span>
-        <span class="cov7" title="208691">return data, nil</span>
+        <span class="cov7" title="208693">return data, nil</span>
 }
 
-func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) <span class="cov8" title="1010927">{
+func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) <span class="cov8" title="1010907">{
         if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceMmaps) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("invalid file index: %d", fileIndex)
         }</span>
-        <span class="cov8" title="1010927">if r.sourceMmaps[fileIndex] == nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="1010907">if r.sourceMmaps[fileIndex] == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("source file %d not loaded", fileIndex)
         }</span>
 
         // Zero-copy slice from mmap'd data
-        <span class="cov8" title="1010927">data := r.sourceMmaps[fileIndex].Slice(offset, size)
+        <span class="cov8" title="1010907">data := r.sourceMmaps[fileIndex].Slice(offset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("source offset out of range")
         }</span>
-        <span class="cov8" title="1010927">return data, nil</span>
+        <span class="cov8" title="1010907">return data, nil</span>
 }
 
 // parseHeaderOnly parses just the header and source files (not entries) for fast initialization.
-func parseHeaderOnly(r io.Reader) (*File, error) <span class="cov3" title="169">{
+func parseHeaderOnly(r io.Reader) (*File, error) <span class="cov3" title="183">{
         file := &amp;File{}
 
         // Read and verify magic
@@ -3164,17 +3326,17 @@ func parseHeaderOnly(r io.Reader) (*File, error) <span class="cov3" title="169">
         if _, err := io.ReadFull(r, magic); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read magic: %w", err)
         }</span>
-        <span class="cov3" title="169">if string(magic) != Magic </span><span class="cov1" title="2">{
+        <span class="cov3" title="183">if string(magic) != Magic </span><span class="cov1" title="2">{
                 return nil, fmt.Errorf("invalid magic: %s", magic)
         }</span>
-        <span class="cov3" title="167">copy(file.Header.Magic[:], magic)
+        <span class="cov3" title="181">copy(file.Header.Magic[:], magic)
 
         // Read version
         if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.Version); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read version: %w", err)
         }</span>
         // Support current version (3) only. Older versions must be recreated.
-        <span class="cov3" title="167">if file.Header.Version != Version </span><span class="cov2" title="6">{
+        <span class="cov3" title="181">if file.Header.Version != Version </span><span class="cov2" title="6">{
                 if file.Header.Version == 1 </span><span class="cov1" title="2">{
                         return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
                 }</span>
@@ -3185,30 +3347,30 @@ func parseHeaderOnly(r io.Reader) (*File, error) <span class="cov3" title="169">
         }
 
         // Read flags
-        <span class="cov3" title="161">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.Flags); err != nil </span><span class="cov1" title="2">{
+        <span class="cov3" title="175">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.Flags); err != nil </span><span class="cov1" title="2">{
                 return nil, fmt.Errorf("read flags: %w", err)
         }</span>
 
         // Read original size
-        <span class="cov3" title="159">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.OriginalSize); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="173">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.OriginalSize); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read original size: %w", err)
         }</span>
 
         // Read original checksum
-        <span class="cov3" title="159">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.OriginalChecksum); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="173">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.OriginalChecksum); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read original checksum: %w", err)
         }</span>
 
         // Read source type
-        <span class="cov3" title="159">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.SourceType); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="173">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.SourceType); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read source type: %w", err)
         }</span>
 
         // Read uses ES offsets flag
-        <span class="cov3" title="159">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.UsesESOffsets); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="173">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.UsesESOffsets); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read uses ES offsets: %w", err)
         }</span>
-        <span class="cov3" title="159">file.UsesESOffsets = file.Header.UsesESOffsets == 1
+        <span class="cov3" title="173">file.UsesESOffsets = file.Header.UsesESOffsets == 1
 
         // Read source file count
         if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.SourceFileCount); err != nil </span><span class="cov0" title="0">{
@@ -3216,15 +3378,15 @@ func parseHeaderOnly(r io.Reader) (*File, error) <span class="cov3" title="169">
         }</span>
 
         // Read entry count
-        <span class="cov3" title="159">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.EntryCount); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="173">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.EntryCount); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read entry count: %w", err)
         }</span>
 
         // Read delta offset
-        <span class="cov3" title="159">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.DeltaOffset); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="173">if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.DeltaOffset); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("read delta offset: %w", err)
         }</span>
-        <span class="cov3" title="159">file.DeltaOffset = file.Header.DeltaOffset
+        <span class="cov3" title="173">file.DeltaOffset = file.Header.DeltaOffset
 
         // Read delta size
         if err := binary.Read(r, binary.LittleEndian, &amp;file.Header.DeltaSize); err != nil </span><span class="cov0" title="0">{
@@ -3232,44 +3394,44 @@ func parseHeaderOnly(r io.Reader) (*File, error) <span class="cov3" title="169">
         }</span>
 
         // Read source files
-        <span class="cov3" title="159">file.SourceFiles = make([]SourceFile, file.Header.SourceFileCount)
-        for i := range file.SourceFiles </span><span class="cov3" title="137">{
+        <span class="cov3" title="173">file.SourceFiles = make([]SourceFile, file.Header.SourceFileCount)
+        for i := range file.SourceFiles </span><span class="cov3" title="151">{
                 var pathLen uint16
                 if err := binary.Read(r, binary.LittleEndian, &amp;pathLen); err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("read path length: %w", err)
                 }</span>
 
-                <span class="cov3" title="137">path := make([]byte, pathLen)
+                <span class="cov3" title="151">path := make([]byte, pathLen)
                 if _, err := io.ReadFull(r, path); err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("read path: %w", err)
                 }</span>
-                <span class="cov3" title="137">file.SourceFiles[i].RelativePath = string(path)
+                <span class="cov3" title="151">file.SourceFiles[i].RelativePath = string(path)
 
                 if err := binary.Read(r, binary.LittleEndian, &amp;file.SourceFiles[i].Size); err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("read file size: %w", err)
                 }</span>
 
-                <span class="cov3" title="137">if err := binary.Read(r, binary.LittleEndian, &amp;file.SourceFiles[i].Checksum); err != nil </span><span class="cov0" title="0">{
+                <span class="cov3" title="151">if err := binary.Read(r, binary.LittleEndian, &amp;file.SourceFiles[i].Checksum); err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("read file checksum: %w", err)
                 }</span>
         }
 
         // Entries are accessed directly from mmap via Reader.getEntry()
-        <span class="cov3" title="159">return file, nil</span>
+        <span class="cov3" title="173">return file, nil</span>
 }
 
 // VerifyIntegrity verifies the dedup file checksums.
-func (r *Reader) VerifyIntegrity() error <span class="cov2" title="13">{
+func (r *Reader) VerifyIntegrity() error <span class="cov2" title="27">{
         // Initialize entry access to get entryCount
         if err := r.initEntryAccess(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("init entry access: %w", err)
         }</span>
 
-        <span class="cov2" title="13">f, err := os.Open(r.dedupPath)
+        <span class="cov2" title="27">f, err := os.Open(r.dedupPath)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("open dedup file: %w", err)
         }</span>
-        <span class="cov2" title="13">defer f.Close()
+        <span class="cov2" title="27">defer f.Close()
 
         // Get file size
         stat, err := f.Stat()
@@ -3278,54 +3440,54 @@ func (r *Reader) VerifyIntegrity() error <span class="cov2" title="13">{
         }</span>
 
         // Read footer
-        <span class="cov2" title="13">footerOffset := stat.Size() - FooterSize
+        <span class="cov2" title="27">footerOffset := stat.Size() - FooterSize
         if _, err := f.Seek(footerOffset, 0); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("seek to footer: %w", err)
         }</span>
 
-        <span class="cov2" title="13">var footer Footer
+        <span class="cov2" title="27">var footer Footer
         if err := binary.Read(f, binary.LittleEndian, &amp;footer.IndexChecksum); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read index checksum: %w", err)
         }</span>
-        <span class="cov2" title="13">if err := binary.Read(f, binary.LittleEndian, &amp;footer.DeltaChecksum); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="27">if err := binary.Read(f, binary.LittleEndian, &amp;footer.DeltaChecksum); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read delta checksum: %w", err)
         }</span>
-        <span class="cov2" title="13">footerMagic := make([]byte, MagicSize)
+        <span class="cov2" title="27">footerMagic := make([]byte, MagicSize)
         if _, err := io.ReadFull(f, footerMagic); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read footer magic: %w", err)
         }</span>
-        <span class="cov2" title="13">if string(footerMagic) != Magic </span><span class="cov1" title="2">{
+        <span class="cov2" title="27">if string(footerMagic) != Magic </span><span class="cov1" title="2">{
                 return fmt.Errorf("invalid footer magic")
         }</span>
 
         // Calculate and verify index checksum (zero-copy)
-        <span class="cov2" title="11">indexSize := int(int64(r.entryCount) * EntrySize)
+        <span class="cov2" title="25">indexSize := int(int64(r.entryCount) * EntrySize)
         indexData := r.dedupMmap.Slice(r.indexStart, indexSize)
         if indexData == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read index for checksum: slice out of range")
         }</span>
-        <span class="cov2" title="11">if xxhash.Sum64(indexData) != footer.IndexChecksum </span><span class="cov1" title="2">{
+        <span class="cov2" title="25">if xxhash.Sum64(indexData) != footer.IndexChecksum </span><span class="cov1" title="2">{
                 return fmt.Errorf("index checksum mismatch")
         }</span>
 
         // Calculate and verify delta checksum (zero-copy)
-        <span class="cov2" title="9">deltaData := r.dedupMmap.Slice(r.file.DeltaOffset, int(r.file.Header.DeltaSize))
+        <span class="cov2" title="23">deltaData := r.dedupMmap.Slice(r.file.DeltaOffset, int(r.file.Header.DeltaSize))
         if deltaData == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read delta for checksum: slice out of range")
         }</span>
-        <span class="cov2" title="9">if xxhash.Sum64(deltaData) != footer.DeltaChecksum </span><span class="cov1" title="2">{
+        <span class="cov2" title="23">if xxhash.Sum64(deltaData) != footer.DeltaChecksum </span><span class="cov1" title="4">{
                 return fmt.Errorf("delta checksum mismatch")
         }</span>
 
-        <span class="cov2" title="7">return nil</span>
+        <span class="cov2" title="19">return nil</span>
 }
 
-func (r *Reader) calculateSourceFilesSize() int64 <span class="cov3" title="97">{
+func (r *Reader) calculateSourceFilesSize() int64 <span class="cov3" title="111">{
         var size int64
-        for _, sf := range r.file.SourceFiles </span><span class="cov3" title="71">{
+        for _, sf := range r.file.SourceFiles </span><span class="cov3" title="85">{
                 size += 2 + int64(len(sf.RelativePath)) + 8 + 8
         }</span>
-        <span class="cov3" title="97">return size</span>
+        <span class="cov3" title="111">return size</span>
 }
 
 // Info returns a summary of the dedup file.
@@ -3374,17 +3536,17 @@ type Writer struct {
 }
 
 // NewWriter creates a new dedup file writer.
-func NewWriter(path string) (*Writer, error) <span class="cov3" title="82">{
+func NewWriter(path string) (*Writer, error) <span class="cov3" title="96">{
         f, err := os.Create(path)
         if err != nil </span><span class="cov1" title="2">{
                 return nil, fmt.Errorf("create file: %w", err)
         }</span>
-        <span class="cov3" title="80">return &amp;Writer{file: f}, nil</span>
+        <span class="cov3" title="94">return &amp;Writer{file: f}, nil</span>
 }
 
 // SetHeader sets the header information.
 // In v2, UsesESOffsets is always 0 (raw offsets are stored instead).
-func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceType source.Type) <span class="cov3" title="76">{
+func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceType source.Type) <span class="cov3" title="90">{
         copy(w.header.Magic[:], Magic)
         w.header.Version = Version
         w.header.Flags = 0
@@ -3393,7 +3555,7 @@ func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceTy
         w.header.UsesESOffsets = 0 // v2 always uses raw offsets
 
         switch sourceType </span>{
-        case source.TypeDVD:<span class="cov3" title="67">
+        case source.TypeDVD:<span class="cov3" title="81">
                 w.header.SourceType = SourceTypeDVD</span>
         case source.TypeBluray:<span class="cov2" title="9">
                 w.header.SourceType = SourceTypeBluray</span>
@@ -3401,18 +3563,18 @@ func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceTy
 }
 
 // SetSourceFiles sets the source file list.
-func (w *Writer) SetSourceFiles(files []source.File) <span class="cov3" title="52">{
+func (w *Writer) SetSourceFiles(files []source.File) <span class="cov3" title="66">{
         w.sourceFiles = make([]SourceFile, len(files))
-        for i, sf := range files </span><span class="cov3" title="56">{
+        for i, sf := range files </span><span class="cov3" title="70">{
                 w.sourceFiles[i] = ToSourceFile(sf)
         }</span>
-        <span class="cov3" title="52">w.header.SourceFileCount = uint16(len(files))</span>
+        <span class="cov3" title="66">w.header.SourceFileCount = uint16(len(files))</span>
 }
 
 // SetMatchResult sets the match result (entries and delta).
 // If esConverters is provided and non-empty, ES-offset entries will be converted
 // to raw-offset entries, potentially splitting entries that span multiple ranges.
-func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ESRangeConverter) error <span class="cov3" title="76">{
+func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ESRangeConverter) error <span class="cov3" title="90">{
         // Convert matcher entries to dedup entries
         entries := make([]Entry, len(result.Entries))
         for i, e := range result.Entries </span><span class="cov9" title="856960">{
@@ -3420,7 +3582,7 @@ func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ES
         }</span>
 
         // Convert ES offsets to raw offsets if we have converters
-        <span class="cov3" title="76">if len(esConverters) &gt; 0 </span><span class="cov2" title="11">{
+        <span class="cov3" title="90">if len(esConverters) &gt; 0 </span><span class="cov2" title="11">{
                 var err error
                 entries, err = w.convertESToRawOffsets(entries, esConverters)
                 if err != nil </span><span class="cov1" title="2">{
@@ -3428,7 +3590,7 @@ func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ES
                 }</span>
         }
 
-        <span class="cov3" title="74">w.entries = entries
+        <span class="cov3" title="88">w.entries = entries
         w.deltaData = result.DeltaData
         w.header.EntryCount = uint64(len(w.entries))
         w.header.DeltaSize = int64(len(result.DeltaData))
@@ -3491,12 +3653,12 @@ func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ES
 type WriteProgressFunc func(written, total int64)
 
 // Write writes the dedup file.
-func (w *Writer) Write() error <span class="cov3" title="72">{
+func (w *Writer) Write() error <span class="cov3" title="86">{
         return w.WriteWithProgress(nil)
 }</span>
 
 // WriteWithProgress writes the dedup file with progress reporting.
-func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error <span class="cov3" title="74">{
+func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error <span class="cov3" title="88">{
         // Calculate offsets and total size
         sourceFilesSize := w.calculateSourceFilesSize()
         indexSize := int64(len(w.entries)) * EntrySize
@@ -3510,13 +3672,13 @@ func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error <span class
         if err := w.writeHeader(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write header: %w", err)
         }</span>
-        <span class="cov3" title="74">written += HeaderSize
+        <span class="cov3" title="88">written += HeaderSize
 
         // Write source files section
         if err := w.writeSourceFiles(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write source files: %w", err)
         }</span>
-        <span class="cov3" title="74">written += sourceFilesSize
+        <span class="cov3" title="88">written += sourceFilesSize
 
         // Write index entries and calculate checksum
         indexChecksum, err := w.writeEntriesWithProgress(progress, &amp;written, totalSize)
@@ -3525,101 +3687,101 @@ func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error <span class
         }</span>
 
         // Write delta data and calculate checksum
-        <span class="cov3" title="74">deltaChecksum, err := w.writeDeltaWithProgress(progress, &amp;written, totalSize)
+        <span class="cov3" title="88">deltaChecksum, err := w.writeDeltaWithProgress(progress, &amp;written, totalSize)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write delta: %w", err)
         }</span>
 
         // Write footer
-        <span class="cov3" title="74">if err := w.writeFooter(indexChecksum, deltaChecksum); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := w.writeFooter(indexChecksum, deltaChecksum); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write footer: %w", err)
         }</span>
 
-        <span class="cov3" title="74">if progress != nil </span><span class="cov1" title="2">{
+        <span class="cov3" title="88">if progress != nil </span><span class="cov1" title="2">{
                 progress(totalSize, totalSize)
         }</span>
 
-        <span class="cov3" title="74">return nil</span>
+        <span class="cov3" title="88">return nil</span>
 }
 
 // Close closes the writer.
-func (w *Writer) Close() error <span class="cov3" title="82">{
-        if w.file != nil </span><span class="cov3" title="82">{
+func (w *Writer) Close() error <span class="cov3" title="96">{
+        if w.file != nil </span><span class="cov3" title="96">{
                 return w.file.Close()
         }</span>
         <span class="cov0" title="0">return nil</span>
 }
 
-func (w *Writer) calculateSourceFilesSize() int64 <span class="cov3" title="74">{
+func (w *Writer) calculateSourceFilesSize() int64 <span class="cov3" title="88">{
         var size int64
-        for _, sf := range w.sourceFiles </span><span class="cov3" title="56">{
+        for _, sf := range w.sourceFiles </span><span class="cov3" title="70">{
                 // PathLen (2) + Path (variable) + Size (8) + Checksum (8)
                 size += 2 + int64(len(sf.RelativePath)) + 8 + 8
         }</span>
-        <span class="cov3" title="74">return size</span>
+        <span class="cov3" title="88">return size</span>
 }
 
-func (w *Writer) writeHeader() error <span class="cov3" title="74">{
+func (w *Writer) writeHeader() error <span class="cov3" title="88">{
         // Write magic
         if _, err := w.file.Write([]byte(Magic)); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write version
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.Version); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.Version); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write flags
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.Flags); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.Flags); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write original size
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.OriginalSize); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.OriginalSize); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write original checksum
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.OriginalChecksum); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.OriginalChecksum); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write source type
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.SourceType); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.SourceType); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write uses ES offsets flag
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.UsesESOffsets); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.UsesESOffsets); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write source file count
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.SourceFileCount); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.SourceFileCount); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write entry count
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.EntryCount); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.EntryCount); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write delta offset
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.DeltaOffset); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.DeltaOffset); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write delta size
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, w.header.DeltaSize); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, w.header.DeltaSize); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="74">return nil</span>
+        <span class="cov3" title="88">return nil</span>
 }
 
-func (w *Writer) writeSourceFiles() error <span class="cov3" title="74">{
-        for _, sf := range w.sourceFiles </span><span class="cov3" title="56">{
+func (w *Writer) writeSourceFiles() error <span class="cov3" title="88">{
+        for _, sf := range w.sourceFiles </span><span class="cov3" title="70">{
                 // Write path length
                 pathLen := uint16(len(sf.RelativePath))
                 if err := binary.Write(w.file, binary.LittleEndian, pathLen); err != nil </span><span class="cov0" title="0">{
@@ -3627,24 +3789,24 @@ func (w *Writer) writeSourceFiles() error <span class="cov3" title="74">{
                 }</span>
 
                 // Write path
-                <span class="cov3" title="56">if _, err := w.file.Write([]byte(sf.RelativePath)); err != nil </span><span class="cov0" title="0">{
+                <span class="cov3" title="70">if _, err := w.file.Write([]byte(sf.RelativePath)); err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
 
                 // Write size
-                <span class="cov3" title="56">if err := binary.Write(w.file, binary.LittleEndian, sf.Size); err != nil </span><span class="cov0" title="0">{
+                <span class="cov3" title="70">if err := binary.Write(w.file, binary.LittleEndian, sf.Size); err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
 
                 // Write checksum
-                <span class="cov3" title="56">if err := binary.Write(w.file, binary.LittleEndian, sf.Checksum); err != nil </span><span class="cov0" title="0">{
+                <span class="cov3" title="70">if err := binary.Write(w.file, binary.LittleEndian, sf.Checksum); err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
         }
-        <span class="cov3" title="74">return nil</span>
+        <span class="cov3" title="88">return nil</span>
 }
 
-func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) <span class="cov3" title="74">{
+func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) <span class="cov3" title="88">{
         hasher := xxhash.New()
         // Use buffered writer to batch syscalls (64KB buffer)
         bufWriter := bufio.NewWriterSize(w.file, 64*1024)
@@ -3689,14 +3851,14 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
         }
 
         // Flush buffered writer
-        <span class="cov3" title="74">if err := bufWriter.Flush(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := bufWriter.Flush(); err != nil </span><span class="cov0" title="0">{
                 return 0, err
         }</span>
 
-        <span class="cov3" title="74">return hasher.Sum64(), nil</span>
+        <span class="cov3" title="88">return hasher.Sum64(), nil</span>
 }
 
-func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) <span class="cov3" title="74">{
+func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) <span class="cov3" title="88">{
         hasher := xxhash.New()
 
         // Write delta in chunks to report progress
@@ -3704,12 +3866,12 @@ func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int
         data := w.deltaData
         lastProgress := 0
 
-        for len(data) &gt; 0 </span><span class="cov6" title="13926">{
+        for len(data) &gt; 0 </span><span class="cov6" title="13940">{
                 chunk := data
                 if len(chunk) &gt; chunkSize </span><span class="cov6" title="13858">{
                         chunk = data[:chunkSize]
                 }</span>
-                <span class="cov6" title="13926">data = data[len(chunk):]
+                <span class="cov6" title="13940">data = data[len(chunk):]
 
                 // Write to file
                 if _, err := w.file.Write(chunk); err != nil </span><span class="cov0" title="0">{
@@ -3717,7 +3879,7 @@ func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int
                 }</span>
 
                 // Update hash
-                <span class="cov6" title="13926">hasher.Write(chunk)
+                <span class="cov6" title="13940">hasher.Write(chunk)
 
                 *written += int64(len(chunk))
 
@@ -3731,26 +3893,26 @@ func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int
                 }
         }
 
-        <span class="cov3" title="74">return hasher.Sum64(), nil</span>
+        <span class="cov3" title="88">return hasher.Sum64(), nil</span>
 }
 
-func (w *Writer) writeFooter(indexChecksum, deltaChecksum uint64) error <span class="cov3" title="74">{
+func (w *Writer) writeFooter(indexChecksum, deltaChecksum uint64) error <span class="cov3" title="88">{
         // Write index checksum
         if err := binary.Write(w.file, binary.LittleEndian, indexChecksum); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write delta checksum
-        <span class="cov3" title="74">if err := binary.Write(w.file, binary.LittleEndian, deltaChecksum); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if err := binary.Write(w.file, binary.LittleEndian, deltaChecksum); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // Write magic
-        <span class="cov3" title="74">if _, err := w.file.Write([]byte(Magic)); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="88">if _, err := w.file.Write([]byte(Magic)); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="74">return nil</span>
+        <span class="cov3" title="88">return nil</span>
 }
 </pre>
 		
@@ -5096,14 +5258,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="259">{
-                if p.UID != nil </span><span class="cov9" title="250">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="258">{
+                if p.UID != nil </span><span class="cov9" title="249">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="259">if p.GID != nil </span><span class="cov5" title="18">{
+                <span class="cov9" title="258">if p.GID != nil </span><span class="cov5" title="18">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="259">if p.Mode != nil </span><span class="cov5" title="19">{
+                <span class="cov9" title="258">if p.Mode != nil </span><span class="cov5" title="19">{
                         mode = *p.Mode
                 }</span>
         }
@@ -6153,7 +6315,7 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="26">{
         }</span>
 
         // Sort by start offset
-        <span class="cov2" title="24">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov7" title="7080113">{
+        <span class="cov2" title="24">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov7" title="7089457">{
                 return m.matchedRegions[i].mkvStart &lt; m.matchedRegions[j].mkvStart
         }</span>)
 
@@ -7091,29 +7253,29 @@ type File struct {
 
 // Open opens a file and memory-maps it for reading.
 // The returned File provides zero-copy access to the file contents.
-func Open(path string) (*File, error) <span class="cov3" title="222">{
+func Open(path string) (*File, error) <span class="cov3" title="236">{
         f, err := os.Open(path)
         if err != nil </span><span class="cov1" title="4">{
                 return nil, fmt.Errorf("open file: %w", err)
         }</span>
-        <span class="cov3" title="218">defer f.Close()
+        <span class="cov3" title="232">defer f.Close()
 
         info, err := f.Stat()
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("stat file: %w", err)
         }</span>
 
-        <span class="cov3" title="218">size := info.Size()
+        <span class="cov3" title="232">size := info.Size()
         if size == 0 </span><span class="cov1" title="8">{
                 return &amp;File{data: nil, size: 0}, nil
         }</span>
 
-        <span class="cov3" title="210">data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
+        <span class="cov3" title="224">data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("mmap: %w", err)
         }</span>
 
-        <span class="cov3" title="210">return &amp;File{data: data, size: size}, nil</span>
+        <span class="cov3" title="224">return &amp;File{data: data, size: size}, nil</span>
 }
 
 // Data returns the raw byte slice for direct zero-copy access.
@@ -7123,7 +7285,7 @@ func (m *File) Data() []byte <span class="cov2" title="39">{
 }</span>
 
 // Size returns the size of the mapped file in bytes.
-func (m *File) Size() int64 <span class="cov3" title="101">{
+func (m *File) Size() int64 <span class="cov3" title="115">{
         return m.size
 }</span>
 
@@ -7134,15 +7296,15 @@ func (m *File) Len() int <span class="cov1" title="4">{
 
 // Slice returns a sub-slice of the mapped data without copying.
 // Returns nil if the range is out of bounds.
-func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="350913368">{
+func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="350910157">{
         if offset &lt; 0 || offset &gt;= m.size </span><span class="cov1" title="6">{
                 return nil
         }</span>
-        <span class="cov9" title="350913362">end := offset + int64(size)
+        <span class="cov9" title="350910151">end := offset + int64(size)
         if end &gt; m.size </span><span class="cov1" title="2">{
                 end = m.size
         }</span>
-        <span class="cov9" title="350913362">return m.data[offset:end]</span>
+        <span class="cov9" title="350910151">return m.data[offset:end]</span>
 }
 
 // Advise provides hints to the kernel about expected access patterns.
@@ -7156,11 +7318,11 @@ func (m *File) Advise(advice int) error <span class="cov1" title="8">{
 }
 
 // Close unmaps the file from memory.
-func (m *File) Close() error <span class="cov3" title="212">{
+func (m *File) Close() error <span class="cov3" title="226">{
         if m.data == nil </span><span class="cov2" title="14">{
                 return nil
         }</span>
-        <span class="cov3" title="198">err := unix.Munmap(m.data)
+        <span class="cov3" title="212">err := unix.Munmap(m.data)
         m.data = nil
         return err</span>
 }
