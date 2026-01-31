@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create probe mount info verify check validate parse-mkv index-source match help"
+    local commands="create batch-create probe mount info verify check validate parse-mkv index-source match help"
     local global_opts="-v --verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -86,6 +86,11 @@ _mkvdup() {
         create)
             # create <mkv-file> <source-dir> [output] [name]
             _filedir
+            ;;
+
+        batch-create)
+            # batch-create <manifest.yaml>
+            _filedir '@(yaml|yml)'
             ;;
 
         probe)
