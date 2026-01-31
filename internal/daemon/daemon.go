@@ -185,7 +185,7 @@ func getReadyPipeFd() (uintptr, error) {
 	if fdStr == "" {
 		return 0, fmt.Errorf("not running as daemon child")
 	}
-	fd, err := strconv.ParseUint(fdStr, 10, 64)
+	fd, err := strconv.ParseUint(fdStr, 10, strconv.IntSize)
 	if err != nil {
 		return 0, fmt.Errorf("invalid pipe fd: %w", err)
 	}

@@ -114,6 +114,23 @@ Directory containing the source media
 Path to the original MKV for comparison
 .RE
 .TP
+.B check \fR[\fIoptions\fR] \fIdedup-file\fR \fIsource-dir\fR
+Check integrity of a dedup file and its source files without requiring
+the original MKV. Verifies the dedup file's internal checksums, then checks
+that all referenced source files exist with correct sizes. Optionally verifies
+source file checksums.
+.RS
+.TP
+.I dedup-file
+Path to the .mkvdup file
+.TP
+.I source-dir
+Directory containing the source media
+.TP
+.B \-\-source\-checksums
+Verify source file checksums (reads entire source files)
+.RE
+.TP
 .B validate \fR[\fIoptions\fR] [\fIconfig.yaml\fR...]
 Validate configuration files for correctness before mounting.
 .RS
@@ -179,6 +196,15 @@ Verify a dedup file:
 .RS
 .nf
 mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+.fi
+.RE
+.PP
+Check dedup file and source integrity:
+.PP
+.RS
+.nf
+mkvdup check movie.mkvdup /media/dvd-backups
+mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
 .fi
 .RE
 .PP

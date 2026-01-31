@@ -118,6 +118,43 @@ mkvdup verify <dedup-file> <source-dir> <original-mkv>
 mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
 ```
 
+### check
+
+Check integrity of a dedup file and its source files without requiring the original MKV.
+
+```bash
+mkvdup check <dedup-file> <source-dir>
+mkvdup check --source-checksums <dedup-file> <source-dir>
+```
+
+**Arguments:**
+- `<dedup-file>` — Path to the .mkvdup file
+- `<source-dir>` — Directory containing the source media
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--source-checksums` | Verify source file checksums (reads entire source files) |
+
+**Checks performed:**
+1. Dedup file integrity: index and delta internal checksums
+2. Source file existence: all referenced source files must be present
+3. Source file sizes: actual sizes must match expected sizes
+4. Source file checksums (`--source-checksums` only): xxhash verification of source file contents
+
+**Use case:** After archiving, verify that your dedup files and source media are intact without needing the original MKV files. This sits between `validate` (config-level checks) and `verify` (full byte-for-byte reconstruction requiring the original MKV).
+
+**Examples:**
+
+```bash
+# Quick check (dedup integrity + source existence/sizes)
+mkvdup check movie.mkvdup /media/dvd-backups
+
+# Full check including source file checksums
+mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
+```
+
 ### validate
 
 Validate configuration files for correctness before mounting.
