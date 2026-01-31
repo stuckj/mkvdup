@@ -118,6 +118,16 @@ jobs:
         run: |
           go build -ldflags="-s -w -X main.version=${{ needs.prepare.outputs.version }}" -o ${{ needs.prepare.outputs.package_name }} ./cmd/mkvdup
 
+      - name: Expand man page variables
+        env:
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+        run: |
+          UPPER=$(echo "$PACKAGE_NAME" | tr '[:lower:]' '[:upper:]')
+          sed -i \
+            -e "s/@PACKAGE_NAME_UPPER@/${UPPER}/g" \
+            -e "s/@PACKAGE_NAME@/${PACKAGE_NAME}/g" \
+            docs/mkvdup.1
+
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
