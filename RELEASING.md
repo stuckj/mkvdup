@@ -77,6 +77,66 @@ Follow semantic versioning (semver):
 - MINOR: New features, backwards compatible
 - PATCH: Bug fixes, backwards compatible
 
+## Canary Releases
+
+Canary releases provide early access to new features and are installed as a
+separate `mkvdup-canary` package that coexists with the stable `mkvdup`.
+
+### Canary Version Format
+
+Use the format `MAJOR.MINOR.PATCH-canary.N` where N is an incrementing number:
+- `1.2.0-canary.1`
+- `1.2.0-canary.2`
+
+### Creating a Canary Release
+
+Use the same workflow dispatch as stable releases, but with a canary version:
+
+1. Go to Actions > "Build and Release Packages"
+2. Click "Run workflow"
+3. Enter the version (e.g., `1.2.0-canary.1`)
+4. Click "Run workflow"
+
+The workflow automatically detects the `-canary.` suffix and:
+- Builds the binary as `mkvdup-canary`
+- Packages as `mkvdup-canary` (installs to `/usr/bin/mkvdup-canary`)
+- Creates a pre-release on GitHub
+- Publishes to the canary APT/YUM repositories (separate from stable)
+
+### Canary Package Repositories
+
+#### APT (Debian/Ubuntu) - Canary
+
+```bash
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt canary main" | sudo tee /etc/apt/sources.list.d/mkvdup-canary.list
+sudo apt update
+sudo apt install mkvdup-canary
+```
+
+#### YUM/DNF (RHEL/Fedora) - Canary
+
+```bash
+sudo tee /etc/yum.repos.d/mkvdup-canary.repo << 'EOF'
+[mkvdup-canary]
+name=mkvdup-canary
+baseurl=https://stuckj.github.io/mkvdup/yum-canary
+enabled=1
+gpgcheck=1
+gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
+EOF
+
+sudo dnf install mkvdup-canary
+```
+
+### Local Testing (Canary)
+
+```bash
+go build -o mkvdup-canary ./cmd/mkvdup
+PACKAGE_NAME=mkvdup-canary VERSION=1.0.0-canary.1 GOARCH=amd64 nfpm package --packager deb
+PACKAGE_NAME=mkvdup-canary VERSION=1.0.0-canary.1 GOARCH=amd64 nfpm package --packager rpm
+```
+
 ## What Gets Built
 
 Each release produces:
@@ -148,6 +208,6 @@ go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 go build -o mkvdup ./cmd/mkvdup
 
 # Build packages
-VERSION=1.0.0 GOARCH=amd64 nfpm package --packager deb
-VERSION=1.0.0 GOARCH=amd64 nfpm package --packager rpm
+PACKAGE_NAME=mkvdup VERSION=1.0.0 GOARCH=amd64 nfpm package --packager deb
+PACKAGE_NAME=mkvdup VERSION=1.0.0 GOARCH=amd64 nfpm package --packager rpm
 ```

@@ -1,7 +1,10 @@
 # nfpm configuration for building deb and rpm packages
 # See: https://nfpm.goreleaser.com/configuration/
+#
+# Set PACKAGE_NAME env var to control the package name:
+#   PACKAGE_NAME=mkvdup (stable) or PACKAGE_NAME=mkvdup-canary (canary)
 
-name: mkvdup
+name: "${PACKAGE_NAME}"
 arch: "${GOARCH}"
 platform: linux
 version: "${VERSION}"
@@ -23,47 +26,55 @@ depends:
 # Files to include in the package
 contents:
   # Binary
-  - src: mkvdup
-    dst: /usr/bin/mkvdup
+  - src: "${PACKAGE_NAME}"
+    dst: /usr/bin/${PACKAGE_NAME}
+    expand: true
     file_info:
       mode: 0755
 
   # Documentation
   - src: README.md
-    dst: /usr/share/doc/mkvdup/README.md
+    dst: /usr/share/doc/${PACKAGE_NAME}/README.md
+    expand: true
     file_info:
       mode: 0644
 
   - src: DESIGN.md
-    dst: /usr/share/doc/mkvdup/DESIGN.md
+    dst: /usr/share/doc/${PACKAGE_NAME}/DESIGN.md
+    expand: true
     file_info:
       mode: 0644
 
   - src: LICENSE
-    dst: /usr/share/doc/mkvdup/LICENSE
+    dst: /usr/share/doc/${PACKAGE_NAME}/LICENSE
+    expand: true
     file_info:
       mode: 0644
 
   - src: docs/
-    dst: /usr/share/doc/mkvdup/docs/
+    dst: /usr/share/doc/${PACKAGE_NAME}/docs/
+    expand: true
     file_info:
       mode: 0644
 
   # Man page
   - src: docs/mkvdup.1
-    dst: /usr/share/man/man1/mkvdup.1
+    dst: /usr/share/man/man1/${PACKAGE_NAME}.1
+    expand: true
     file_info:
       mode: 0644
 
-  # Mount helper for fstab/systemd integration (fuse.mkvdup type)
+  # Mount helper for fstab/systemd integration (fuse.${PACKAGE_NAME} type)
   - src: scripts/mount.fuse.mkvdup
-    dst: /usr/sbin/mount.fuse.mkvdup
+    dst: /usr/sbin/mount.fuse.${PACKAGE_NAME}
+    expand: true
     file_info:
       mode: 0755
 
   # Bash completion
   - src: scripts/mkvdup-completion.bash
-    dst: /usr/share/bash-completion/completions/mkvdup
+    dst: /usr/share/bash-completion/completions/${PACKAGE_NAME}
+    expand: true
     file_info:
       mode: 0644
 

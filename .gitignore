@@ -1,5 +1,6 @@
 # Binaries
 /mkvdup
+/mkvdup-canary
 *.exe
 *.exe~
 *.dll

@@ -1,13 +1,13 @@
-.TH MKVDUP 1 "January 2026" "mkvdup" "User Commands"
+.TH @PACKAGE_NAME_UPPER@ 1 "January 2026" "@PACKAGE_NAME@" "User Commands"
 .SH NAME
-mkvdup \- MKV deduplication tool using FUSE
+@PACKAGE_NAME@ \- MKV deduplication tool using FUSE
 .SH SYNOPSIS
-.B mkvdup
+.B @PACKAGE_NAME@
 .RI [ OPTIONS ]
 .I command
 .RI [ ARGS ]
 .SH DESCRIPTION
-.B mkvdup
+.B @PACKAGE_NAME@
 reduces storage requirements for MKV files by referencing their source media
 (DVD ISOs, Blu-ray backups). Since the underlying codec data is identical
 between an MKV and its source, we store only the unique MKV data plus an index
@@ -59,7 +59,7 @@ YAML config files (default: /etc/mkvdup.conf)
 Allow other users to access the mount
 .TP
 .B \-\-foreground
-Run in foreground (for debugging or systemd). By default, mkvdup daemonizes
+Run in foreground (for debugging or systemd). By default, @PACKAGE_NAME@ daemonizes
 after the mount is ready and returns control to the caller.
 .TP
 .B \-\-config\-dir
@@ -171,7 +171,7 @@ Create a dedup file:
 .PP
 .RS
 .nf
-mkvdup create movie.mkv /media/dvd-backups
+@PACKAGE_NAME@ create movie.mkv /media/dvd-backups
 .fi
 .RE
 .PP
@@ -179,7 +179,7 @@ Test if MKV matches a source (useful for multi-disc sets):
 .PP
 .RS
 .nf
-mkvdup probe movie.mkv /media/disc1 /media/disc2 /media/disc3
+@PACKAGE_NAME@ probe movie.mkv /media/disc1 /media/disc2 /media/disc3
 .fi
 .RE
 .PP
@@ -187,7 +187,7 @@ Mount dedup files as virtual MKVs:
 .PP
 .RS
 .nf
-mkvdup mount /mnt/videos movie.mkvdup.yaml
+@PACKAGE_NAME@ mount /mnt/videos movie.mkvdup.yaml
 .fi
 .RE
 .PP
@@ -195,7 +195,7 @@ Verify a dedup file:
 .PP
 .RS
 .nf
-mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+@PACKAGE_NAME@ verify movie.mkvdup /media/dvd-backups original.mkv
 .fi
 .RE
 .PP
@@ -203,8 +203,8 @@ Check dedup file and source integrity:
 .PP
 .RS
 .nf
-mkvdup check movie.mkvdup /media/dvd-backups
-mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
+@PACKAGE_NAME@ check movie.mkvdup /media/dvd-backups
+@PACKAGE_NAME@ check --source-checksums movie.mkvdup /media/dvd-backups
 .fi
 .RE
 .PP
@@ -212,9 +212,9 @@ Validate config files before mounting:
 .PP
 .RS
 .nf
-mkvdup validate /etc/mkvdup.conf
-mkvdup validate --deep --strict /etc/mkvdup.conf
-mkvdup validate --config-dir /etc/mkvdup.d/
+@PACKAGE_NAME@ validate /etc/mkvdup.conf
+@PACKAGE_NAME@ validate --deep --strict /etc/mkvdup.conf
+@PACKAGE_NAME@ validate --config-dir /etc/mkvdup.d/
 .fi
 .RE
 .SH CONFIG FILE FORMAT
@@ -272,8 +272,8 @@ Included configs can themselves contain
 (recursive). Circular includes are detected and skipped.
 Relative include patterns are resolved against the including config file's directory.
 .SH FSTAB AND SYSTEMD
-mkvdup can be mounted via /etc/fstab or systemd mount units using the
-mount.mkvdup helper script. The mount helper automatically enables
+@PACKAGE_NAME@ can be mounted via /etc/fstab or systemd mount units using the
+mount.@PACKAGE_NAME@ helper script. The mount helper automatically enables
 .B allow_other
 so that root can access the filesystem for chown/chmod operations.
 .SS fstab examples
@@ -281,7 +281,7 @@ Mount using a specific config file:
 .PP
 .RS
 .nf
-/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  defaults  0  0
+/etc/mkvdup.conf  /mnt/videos  fuse.@PACKAGE_NAME@  defaults  0  0
 .fi
 .RE
 .PP
@@ -289,7 +289,7 @@ Mount using the default config with allow_other:
 .PP
 .RS
 .nf
-none  /mnt/videos  fuse.mkvdup  defaults,allow_other  0  0
+none  /mnt/videos  fuse.@PACKAGE_NAME@  defaults,allow_other  0  0
 .fi
 .RE
 .PP
@@ -297,7 +297,7 @@ Mount using a directory of config files:
 .PP
 .RS
 .nf
-/etc/mkvdup.d  /mnt/videos  fuse.mkvdup  config_dir  0  0
+/etc/mkvdup.d  /mnt/videos  fuse.@PACKAGE_NAME@  config_dir  0  0
 .fi
 .RE
 .SS systemd mount unit
@@ -306,13 +306,13 @@ Create a file like /etc/systemd/system/mnt-videos.mount:
 .RS
 .nf
 [Unit]
-Description=mkvdup FUSE mount
+Description=@PACKAGE_NAME@ FUSE mount
 After=local-fs.target
 
 [Mount]
 What=/etc/mkvdup.conf
 Where=/mnt/videos
-Type=fuse.mkvdup
+Type=fuse.@PACKAGE_NAME@
 Options=allow_other
 
 [Install]
@@ -340,7 +340,7 @@ General error (invalid arguments, file not found, etc.)
 .I /etc/mkvdup.conf
 Default configuration file (used if no config specified)
 .TP
-.I /usr/sbin/mount.fuse.mkvdup
+.I /usr/sbin/mount.fuse.@PACKAGE_NAME@
 Mount helper script for fstab/systemd integration
 .TP
 .I *.mkvdup
@@ -368,7 +368,7 @@ Deprecated version files must be recreated using the
 command.
 .PP
 Use
-.B mkvdup info
+.B @PACKAGE_NAME@ info
 to check the format version of a dedup file.
 .SH SEE ALSO
 .BR fusermount (1),

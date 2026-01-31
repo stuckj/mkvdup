@@ -115,10 +115,15 @@ if [[ "$CONFIG_DIR" == "true" ]]; then
     MKVDUP_ARGS+=("--config-dir")
 fi
 
+# Derive binary name from script name (e.g., mount.fuse.mkvdup -> mkvdup,
+# mount.fuse.mkvdup-canary -> mkvdup-canary)
+SCRIPT_NAME="$(basename "$0")"
+MKVDUP_BIN="/usr/bin/${SCRIPT_NAME#mount.fuse.}"
+
 # Build the command
 # If WHAT is "none" or empty, use default config
 if [[ "$WHAT" == "none" || -z "$WHAT" ]]; then
-    exec /usr/bin/mkvdup mount "${MKVDUP_ARGS[@]}" "$WHERE"
+    exec "$MKVDUP_BIN" mount "${MKVDUP_ARGS[@]}" "$WHERE"
 else
-    exec /usr/bin/mkvdup mount "${MKVDUP_ARGS[@]}" "$WHERE" "$WHAT"
+    exec "$MKVDUP_BIN" mount "${MKVDUP_ARGS[@]}" "$WHERE" "$WHAT"
 fi
