@@ -153,6 +153,71 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) {
 	return configs, nil
 }
 
+// BatchManifest represents the batch create manifest file format.
+type BatchManifest struct {
+	SourceDir string              `yaml:"source_dir"`
+	Files     []BatchManifestFile `yaml:"files"`
+}
+
+// BatchManifestFile represents a single file entry in a batch manifest.
+type BatchManifestFile struct {
+	MKV    string `yaml:"mkv"`
+	Output string `yaml:"output"`
+	Name   string `yaml:"name"`
+}
+
+// ReadBatchManifest reads and validates a batch manifest file.
+// Relative paths are resolved against the manifest file's directory.
+// Default values are applied for optional fields.
+func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("read batch manifest: %w", err)
+	}
+
+	var manifest BatchManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("parse batch manifest %s: %w", manifestPath, err)
+	}
+
+	if manifest.SourceDir == "" {
+		return nil, fmt.Errorf("batch manifest %s: source_dir is required", manifestPath)
+	}
+	if len(manifest.Files) == 0 {
+		return nil, fmt.Errorf("batch manifest %s: files list is empty", manifestPath)
+	}
+
+	absPath, err := filepath.Abs(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve manifest path: %w", err)
+	}
+	manifestDir := filepath.Dir(absPath)
+
+	// Resolve source_dir relative to manifest
+	manifest.SourceDir = resolveRelative(manifestDir, manifest.SourceDir)
+
+	// Validate and resolve each file entry
+	for i := range manifest.Files {
+		f := &manifest.Files[i]
+		if f.MKV == "" {
+			return nil, fmt.Errorf("batch manifest %s: files[%d] missing required 'mkv' field", manifestPath, i)
+		}
+		f.MKV = resolveRelative(manifestDir, f.MKV)
+
+		// Apply defaults
+		if f.Output == "" {
+			f.Output = f.MKV + ".mkvdup"
+		} else {
+			f.Output = resolveRelative(manifestDir, f.Output)
+		}
+		if f.Name == "" {
+			f.Name = filepath.Base(f.MKV)
+		}
+	}
+
+	return &manifest, nil
+}
+
 // resolveRelative resolves a path relative to baseDir. If the path is already
 // absolute, it is returned unchanged.
 func resolveRelative(baseDir, path string) string {

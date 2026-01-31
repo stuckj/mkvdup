@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/dedup"
@@ -987,4 +988,62 @@ func TestCheckDedup_SkipsChecksumOnSizeError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for wrong source size")
 	}
+}
+
+// --- batch-create command tests ---
+
+func TestCreateBatch_InvalidManifest(t *testing.T) {
+	err := createBatch("/nonexistent/batch.yaml")
+	if err == nil {
+		t.Error("expected error for nonexistent manifest")
+	}
+}
+
+func TestCreateBatch_BadSourceDir(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	writeTestYAML(t, manifestPath, `source_dir: /nonexistent/source/dir
+files:
+  - mkv: /nonexistent/ep1.mkv
+`)
+
+	err := createBatch(manifestPath)
+	if err == nil {
+		t.Error("expected error for nonexistent source directory")
+	}
+}
+
+func TestCreateBatch_EmptyManifest(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	writeTestYAML(t, manifestPath, `source_dir: /tmp
+files: []
+`)
+
+	err := createBatch(manifestPath)
+	if err == nil {
+		t.Error("expected error for empty files list")
+	}
+}
+
+func TestPrintBatchSummary(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+		{
+			MkvPath: "/data/ep2.mkv",
+			Err:     fmt.Errorf("file not found"),
+		},
+		{
+			MkvPath:    "/data/ep3.mkv",
+			OutputPath: "/data/ep3.mkvdup",
+			Savings:    97.2,
+		},
+	}
+
+	// Just verify it doesn't panic
+	printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second))
 }
