@@ -68,6 +68,7 @@ Commands:
   mount        Mount dedup files as FUSE filesystem
   info         Show dedup file information
   verify       Verify dedup file against original MKV
+  check        Check dedup + source file integrity
   validate     Validate configuration files
 
 Debug commands:
@@ -179,6 +180,29 @@ Arguments:
 
 Examples:
     mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+`)
+	case "check":
+		fmt.Print(`Usage: mkvdup check <dedup-file> <source-dir> [options]
+
+Check integrity of a dedup file and its source files.
+
+Arguments:
+    <dedup-file>  Path to the .mkvdup file
+    <source-dir>  Directory containing the source media
+
+Options:
+    --source-checksums  Verify source file checksums (slow, reads entire files)
+
+Checks performed:
+    - Dedup file header validity (magic, version, structure)
+    - Index and delta checksum verification
+    - Source file existence and size
+    With --source-checksums:
+    - Source file checksum verification (reads entire files)
+
+Examples:
+    mkvdup check movie.mkvdup /media/dvd-backups
+    mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
 `)
 	case "validate":
 		fmt.Print(`Usage: mkvdup validate [options] [config.yaml...]
@@ -462,6 +486,25 @@ func main() {
 			os.Exit(1)
 		}
 		if err := verifyDedup(args[0], args[1], args[2]); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "check":
+		sourceChecksums := false
+		var checkArgs []string
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--source-checksums":
+				sourceChecksums = true
+			default:
+				checkArgs = append(checkArgs, args[i])
+			}
+		}
+		if len(checkArgs) < 2 {
+			printCommandUsage("check")
+			os.Exit(1)
+		}
+		if err := checkDedup(checkArgs[0], checkArgs[1], sourceChecksums); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

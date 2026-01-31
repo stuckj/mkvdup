@@ -502,6 +502,126 @@ func calculateFileChecksum(path string) (uint64, error) {
 	return hasher.Sum64(), nil
 }
 
+// calculateFileChecksumWithProgress calculates xxhash checksum of a file,
+// showing inline progress for large files.
+func calculateFileChecksumWithProgress(path string, expectedSize int64, displayName string) (uint64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	hasher := xxhash.New()
+	buf := make([]byte, 4*1024*1024) // 4MB buffer
+	var processed int64
+	lastProgress := time.Time{}
+
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			if _, werr := hasher.Write(buf[:n]); werr != nil {
+				return 0, werr
+			}
+			processed += int64(n)
+
+			if time.Since(lastProgress) > 500*time.Millisecond {
+				pct := float64(processed) / float64(expectedSize) * 100
+				fmt.Printf("\r  Verifying %s... %.1f%%", displayName, pct)
+				lastProgress = time.Now()
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// Clear progress line
+	progressText := fmt.Sprintf("  Verifying %s... 100.0%%", displayName)
+	fmt.Printf("\r%s\r", strings.Repeat(" ", len(progressText)))
+
+	return hasher.Sum64(), nil
+}
+
+// checkDedup checks the integrity of a dedup file and its source files.
+func checkDedup(dedupPath, sourceDir string, sourceChecksums bool) error {
+	fmt.Printf("Checking dedup file: %s\n", dedupPath)
+	fmt.Printf("Source directory:    %s\n", sourceDir)
+	fmt.Println()
+
+	// Phase 1: Open and verify dedup file integrity
+	reader, err := dedup.NewReader(dedupPath, sourceDir)
+	if err != nil {
+		return fmt.Errorf("open dedup file: %w", err)
+	}
+	defer reader.Close()
+
+	fmt.Print("Checking dedup file integrity...")
+	if err := reader.VerifyIntegrity(); err != nil {
+		fmt.Println(" FAILED")
+		return fmt.Errorf("integrity check: %w", err)
+	}
+	fmt.Println(" OK")
+
+	// Phase 2: Check source files exist with correct sizes
+	sourceFiles := reader.SourceFiles()
+	fmt.Printf("\nChecking source files (%d files)...\n", len(sourceFiles))
+
+	errCount := 0
+	for _, sf := range sourceFiles {
+		sfPath := filepath.Join(sourceDir, sf.RelativePath)
+		stat, err := os.Stat(sfPath)
+		if err != nil {
+			fmt.Printf("  FAILED  %s: %v\n", sf.RelativePath, err)
+			errCount++
+			continue
+		}
+		if stat.Size() != sf.Size {
+			fmt.Printf("  FAILED  %s: size mismatch (expected %s, got %s)\n",
+				sf.RelativePath, formatInt(sf.Size), formatInt(stat.Size()))
+			errCount++
+			continue
+		}
+		fmt.Printf("  OK      %s (%s bytes)\n", sf.RelativePath, formatInt(sf.Size))
+	}
+
+	// Phase 3: Optionally verify source file checksums
+	if sourceChecksums {
+		if errCount > 0 {
+			fmt.Println("\nSkipping source checksum verification due to earlier errors")
+		} else {
+			fmt.Printf("\nVerifying source file checksums...\n")
+			for _, sf := range sourceFiles {
+				sfPath := filepath.Join(sourceDir, sf.RelativePath)
+
+				checksum, err := calculateFileChecksumWithProgress(sfPath, sf.Size, sf.RelativePath)
+				if err != nil {
+					fmt.Printf("  FAILED  %s: %v\n", sf.RelativePath, err)
+					errCount++
+					continue
+				}
+				if checksum != sf.Checksum {
+					fmt.Printf("  FAILED  %s: checksum mismatch (expected %016x, got %016x)\n",
+						sf.RelativePath, sf.Checksum, checksum)
+					errCount++
+					continue
+				}
+				fmt.Printf("  OK      %s\n", sf.RelativePath)
+			}
+		}
+	}
+
+	// Final summary
+	fmt.Println()
+	if errCount > 0 {
+		return fmt.Errorf("check FAILED: %d error(s) found", errCount)
+	}
+	fmt.Println("Check PASSED")
+	return nil
+}
+
 // ProbeResult represents the result of probing a source against an MKV.
 type ProbeResult struct {
 	SourcePath   string
@@ -938,7 +1058,7 @@ func resolveConfigPaths(configPaths []string, configDir bool) ([]string, error) 
 		if _, err := os.Stat(defaultConfigPath); err == nil {
 			return []string{defaultConfigPath}, nil
 		}
-		return nil, fmt.Errorf("no config files specified and %s not found", defaultConfigPath)
+		return nil, fmt.Errorf("no config files specified and %s not found\nRun 'mkvdup validate --help' for usage", defaultConfigPath)
 	}
 
 	return configPaths, nil
