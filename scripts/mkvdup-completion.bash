@@ -190,4 +190,6 @@ _mkvdup() {
     esac
 }
 
-complete -F _mkvdup mkvdup
+# Register completion for the command matching this file's installed name.
+# Works for both 'mkvdup' and 'mkvdup-canary' using the same source file.
+complete -F _mkvdup "${BASH_SOURCE[0]##*/}"
