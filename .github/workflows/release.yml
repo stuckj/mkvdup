@@ -7,7 +7,7 @@ on:
         description: 'Version to build (without v prefix, e.g. 1.0.0)'
         required: true
       commit:
-        description: 'Commit SHA to tag (optional - defaults to latest non-benchmark commit on main)'
+        description: 'Commit SHA to tag (optional - defaults to latest non-benchmark commit on triggering branch)'
         required: false
         default: ''
 
@@ -54,9 +54,10 @@ jobs:
             COMMIT="${{ github.event.inputs.commit }}"
             echo "Using specified commit: ${COMMIT}"
           else
-            # Find the latest commit on main that isn't a benchmark commit
-            echo "Finding latest non-benchmark commit on main..."
-            COMMIT=$(git log origin/main --oneline -50 | grep -v -iE '\[(skip ci|ci skip|no ci|skip actions|actions skip|benchmark)\]' | head -1 | awk '{print $1}')
+            # Find the latest commit on the triggering branch that isn't a benchmark commit
+            BRANCH="${{ github.ref_name }}"
+            echo "Finding latest non-benchmark commit on ${BRANCH}..."
+            COMMIT=$(git log "origin/${BRANCH}" --oneline -50 | grep -v -iE '\[(skip ci|ci skip|no ci|skip actions|actions skip|benchmark)\]' | head -1 | awk '{print $1}')
             if [[ -z "${COMMIT}" ]]; then
               echo "::error::Could not find a non-benchmark commit in recent history"
               exit 1
