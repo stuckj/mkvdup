@@ -43,6 +43,190 @@ func formatInt(n int64) string {
 	return string(result)
 }
 
+// createResult holds per-file statistics from a create operation.
+type createResult struct {
+	MkvPath        string
+	OutputPath     string
+	VirtualName    string
+	MkvSize        int64
+	DedupSize      int64
+	MatchedBytes   int64
+	UnmatchedBytes int64
+	MatchedPackets int
+	TotalPackets   int
+	IndexEntries   int
+	Savings        float64
+	Duration       time.Duration
+	Err            error
+}
+
+// buildSourceIndex indexes a source directory and returns the indexer and index.
+// This is the expensive step that should only happen once in batch mode.
+func buildSourceIndex(sourceDir string) (*source.Indexer, *source.Index, error) {
+	indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create indexer: %w", err)
+	}
+
+	start := time.Now()
+	lastProgress := time.Now()
+	err = indexer.Build(func(processed, total int64) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(processed) / float64(total) * 100
+			fmt.Printf("\r  Progress: %.1f%%", pct)
+			lastProgress = time.Now()
+		}
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build index: %w", err)
+	}
+	index := indexer.Index()
+	fmt.Printf("\r  Indexed %d hashes in %v                    \n", len(index.HashToLocations), time.Since(start))
+
+	return indexer, index, nil
+}
+
+// createDedupWithIndex processes a single MKV using a pre-built source index.
+// It handles parsing, matching, writing, and verification.
+func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
+	indexer *source.Indexer, index *source.Index) *createResult {
+	start := time.Now()
+	result := &createResult{
+		MkvPath:     mkvPath,
+		OutputPath:  outputPath,
+		VirtualName: virtualName,
+	}
+
+	// Parse MKV
+	fmt.Println("  Parsing MKV file...")
+	parser, err := mkv.NewParser(mkvPath)
+	if err != nil {
+		result.Err = fmt.Errorf("create parser: %w", err)
+		return result
+	}
+	defer parser.Close()
+
+	parseStart := time.Now()
+	if err := parser.Parse(nil); err != nil {
+		result.Err = fmt.Errorf("parse MKV: %w", err)
+		return result
+	}
+	fmt.Printf("    Parsed %d packets in %v\n", parser.PacketCount(), time.Since(parseStart))
+
+	// Calculate MKV checksum
+	fmt.Print("    Calculating MKV checksum...")
+	mkvChecksum, err := calculateFileChecksum(mkvPath)
+	if err != nil {
+		result.Err = fmt.Errorf("calculate MKV checksum: %w", err)
+		return result
+	}
+	fmt.Printf(" done\n")
+
+	// Match packets
+	fmt.Println("  Matching packets...")
+	m, err := matcher.NewMatcher(index)
+	if err != nil {
+		result.Err = fmt.Errorf("create matcher: %w", err)
+		return result
+	}
+	defer m.Close()
+
+	matchStart := time.Now()
+	lastProgress := time.Now()
+	matchResult, err := m.Match(mkvPath, parser.Packets(), parser.Tracks(), func(processed, total int) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(processed) / float64(total) * 100
+			fmt.Printf("\r    Progress: %.1f%% (%d/%d packets)", pct, processed, total)
+			lastProgress = time.Now()
+		}
+	})
+	if err != nil {
+		result.Err = fmt.Errorf("match: %w", err)
+		return result
+	}
+	fmt.Printf("\r    Matched in %v                              \n", time.Since(matchStart))
+
+	// Write dedup file
+	fmt.Println("  Writing dedup file...")
+	writeStart := time.Now()
+
+	writer, err := dedup.NewWriter(outputPath)
+	if err != nil {
+		result.Err = fmt.Errorf("create dedup writer: %w", err)
+		return result
+	}
+	defer writer.Close()
+
+	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType())
+	writer.SetSourceFiles(index.Files)
+
+	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
+	var esConverters []source.ESRangeConverter
+	if index.UsesESOffsets && len(index.ESReaders) > 0 {
+		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+		for i, r := range index.ESReaders {
+			if converter, ok := r.(source.ESRangeConverter); ok {
+				esConverters[i] = converter
+			}
+		}
+	}
+
+	if err := writer.SetMatchResult(matchResult, esConverters); err != nil {
+		os.Remove(outputPath)
+		result.Err = fmt.Errorf("set match result: %w", err)
+		return result
+	}
+
+	lastProgress = time.Time{}
+	if err := writer.WriteWithProgress(func(written, total int64) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(written) / float64(total) * 100
+			fmt.Printf("\r    Progress: %.1f%% (%s/%s bytes)", pct, formatInt(written), formatInt(total))
+			lastProgress = time.Now()
+		}
+	}); err != nil {
+		os.Remove(outputPath)
+		result.Err = fmt.Errorf("write dedup file: %w", err)
+		return result
+	}
+	fmt.Printf("\r    Written in %v                              \n", time.Since(writeStart))
+
+	// Write config file
+	configPath := outputPath + ".yaml"
+	if err := dedup.WriteConfig(configPath, virtualName, outputPath, sourceDir); err != nil {
+		fmt.Printf("    Warning: failed to write config file: %v\n", err)
+	} else {
+		fmt.Printf("    Config: %s\n", configPath)
+	}
+
+	// Verify reconstruction
+	fmt.Println("  Verifying reconstruction...")
+	verifyStart := time.Now()
+	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verbose); err != nil {
+		fmt.Printf("    WARNING: Verification failed: %v\n", err)
+		fmt.Printf("    Keeping files for debugging\n")
+	} else {
+		fmt.Printf("    Verified in %v\n", time.Since(verifyStart))
+	}
+
+	// Populate result
+	result.MkvSize = parser.Size()
+	result.MatchedBytes = matchResult.MatchedBytes
+	result.UnmatchedBytes = matchResult.UnmatchedBytes
+	result.MatchedPackets = matchResult.MatchedPackets
+	result.TotalPackets = matchResult.TotalPackets
+	result.IndexEntries = len(matchResult.Entries)
+
+	dedupInfo, _ := os.Stat(outputPath)
+	if dedupInfo != nil {
+		result.DedupSize = dedupInfo.Size()
+		result.Savings = float64(result.MkvSize-result.DedupSize) / float64(result.MkvSize) * 100
+	}
+	result.Duration = time.Since(start)
+
+	return result
+}
+
 // createDedup creates a .mkvdup file from an MKV and source directory.
 func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	totalStart := time.Now()
@@ -63,133 +247,19 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	fmt.Printf("  Output:  %s\n", outputPath)
 	fmt.Println()
 
-	// Phase 1: Parse MKV
-	fmt.Println("Phase 1/5: Parsing MKV file...")
-	parser, err := mkv.NewParser(mkvPath)
+	// Phase 1: Index source
+	fmt.Println("Indexing source...")
+	indexer, index, err := buildSourceIndex(sourceDir)
 	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
+		return err
 	}
-	defer parser.Close()
-
-	start := time.Now()
-	if err := parser.Parse(nil); err != nil {
-		return fmt.Errorf("parse MKV: %w", err)
-	}
-	fmt.Printf("  Parsed %d packets in %v\n", parser.PacketCount(), time.Since(start))
-
-	// Calculate MKV checksum
-	fmt.Print("  Calculating MKV checksum...")
-	mkvChecksum, err := calculateFileChecksum(mkvPath)
-	if err != nil {
-		return fmt.Errorf("calculate MKV checksum: %w", err)
-	}
-	fmt.Printf(" done\n")
-
-	// Phase 2: Index source
-	fmt.Println("Phase 2/5: Indexing source...")
-	indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
-	if err != nil {
-		return fmt.Errorf("create indexer: %w", err)
-	}
-
-	start = time.Now()
-	lastProgress := time.Now()
-	err = indexer.Build(func(processed, total int64) {
-		if time.Since(lastProgress) > 500*time.Millisecond {
-			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\r  Progress: %.1f%%", pct)
-			lastProgress = time.Now()
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("build index: %w", err)
-	}
-	index := indexer.Index()
 	defer index.Close()
-	fmt.Printf("\r  Indexed %d hashes in %v                    \n", len(index.HashToLocations), time.Since(start))
 
-	// Phase 3: Match packets
-	fmt.Println("Phase 3/5: Matching packets...")
-	m, err := matcher.NewMatcher(index)
-	if err != nil {
-		return fmt.Errorf("create matcher: %w", err)
-	}
-	defer m.Close()
-
-	start = time.Now()
-	lastProgress = time.Now()
-	result, err := m.Match(mkvPath, parser.Packets(), parser.Tracks(), func(processed, total int) {
-		if time.Since(lastProgress) > 500*time.Millisecond {
-			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\r  Progress: %.1f%% (%d/%d packets)", pct, processed, total)
-			lastProgress = time.Now()
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("match: %w", err)
-	}
-	fmt.Printf("\r  Matched in %v                              \n", time.Since(start))
-
-	// Phase 4: Write dedup file
-	fmt.Println("Phase 4/5: Writing dedup file...")
-	start = time.Now()
-
-	writer, err := dedup.NewWriter(outputPath)
-	if err != nil {
-		return fmt.Errorf("create dedup writer: %w", err)
-	}
-	defer writer.Close()
-
-	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType())
-	writer.SetSourceFiles(index.Files)
-
-	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
-	var esConverters []source.ESRangeConverter
-	if index.UsesESOffsets && len(index.ESReaders) > 0 {
-		// ESReaders also implement ESRangeConverter (MPEGPSParser)
-		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
-		for i, r := range index.ESReaders {
-			if converter, ok := r.(source.ESRangeConverter); ok {
-				esConverters[i] = converter
-			}
-		}
-	}
-
-	if err := writer.SetMatchResult(result, esConverters); err != nil {
-		os.Remove(outputPath) // Clean up on error
-		return fmt.Errorf("set match result: %w", err)
-	}
-
-	lastProgress = time.Time{}
-	if err := writer.WriteWithProgress(func(written, total int64) {
-		if time.Since(lastProgress) > 500*time.Millisecond {
-			pct := float64(written) / float64(total) * 100
-			fmt.Printf("\r  Progress: %.1f%% (%s/%s bytes)", pct, formatInt(written), formatInt(total))
-			lastProgress = time.Now()
-		}
-	}); err != nil {
-		os.Remove(outputPath) // Clean up on error
-		return fmt.Errorf("write dedup file: %w", err)
-	}
-	fmt.Printf("\r  Written in %v                              \n", time.Since(start))
-
-	// Write config file
-	configPath := outputPath + ".yaml"
-	if err := dedup.WriteConfig(configPath, virtualName, outputPath, sourceDir); err != nil {
-		fmt.Printf("  Warning: failed to write config file: %v\n", err)
-	} else {
-		fmt.Printf("  Config:  %s\n", configPath)
-	}
-
-	// Phase 5: Verify
-	fmt.Println("Phase 5/5: Verifying reconstruction...")
-	start = time.Now()
-	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verbose); err != nil {
-		// Don't delete files so we can debug
-		fmt.Printf("  WARNING: Verification failed: %v\n", err)
-		fmt.Printf("  Keeping files for debugging\n")
-	} else {
-		fmt.Printf("  Verified in %v\n", time.Since(start))
+	// Phase 2-5: Process MKV
+	fmt.Println()
+	result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index)
+	if result.Err != nil {
+		return result.Err
 	}
 
 	// Summary
@@ -198,38 +268,96 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	fmt.Printf("Total time: %v\n", time.Since(totalStart))
 	fmt.Println()
 
-	mkvSize := parser.Size()
-	fmt.Printf("MKV file size:      %s bytes (%.2f MB)\n", formatInt(mkvSize), float64(mkvSize)/(1024*1024))
+	fmt.Printf("MKV file size:      %s bytes (%.2f MB)\n", formatInt(result.MkvSize), float64(result.MkvSize)/(1024*1024))
 	fmt.Printf("Matched bytes:      %s bytes (%.2f MB, %.1f%%)\n",
 		formatInt(result.MatchedBytes), float64(result.MatchedBytes)/(1024*1024),
-		float64(result.MatchedBytes)/float64(mkvSize)*100)
+		float64(result.MatchedBytes)/float64(result.MkvSize)*100)
 	fmt.Printf("Delta (unmatched):  %s bytes (%.2f MB, %.1f%%)\n",
 		formatInt(result.UnmatchedBytes), float64(result.UnmatchedBytes)/(1024*1024),
-		float64(result.UnmatchedBytes)/float64(mkvSize)*100)
+		float64(result.UnmatchedBytes)/float64(result.MkvSize)*100)
 	fmt.Println()
 
-	// Get dedup file size
-	dedupInfo, _ := os.Stat(outputPath)
-	dedupSize := dedupInfo.Size()
-	savings := float64(mkvSize-dedupSize) / float64(mkvSize) * 100
-
-	fmt.Printf("Dedup file size:    %s bytes (%.2f MB)\n", formatInt(dedupSize), float64(dedupSize)/(1024*1024))
-	fmt.Printf("Space savings:      %.1f%%\n", savings)
+	fmt.Printf("Dedup file size:    %s bytes (%.2f MB)\n", formatInt(result.DedupSize), float64(result.DedupSize)/(1024*1024))
+	fmt.Printf("Space savings:      %.1f%%\n", result.Savings)
 	fmt.Println()
 
 	fmt.Printf("Packets matched:    %s / %s (%.1f%%)\n",
 		formatInt(int64(result.MatchedPackets)), formatInt(int64(result.TotalPackets)),
 		float64(result.MatchedPackets)/float64(result.TotalPackets)*100)
-	fmt.Printf("Index entries:      %s\n", formatInt(int64(len(result.Entries))))
+	fmt.Printf("Index entries:      %s\n", formatInt(int64(result.IndexEntries)))
 
 	// Warning for low savings
-	if savings < 75 {
+	if result.Savings < 75 {
 		fmt.Println()
-		fmt.Printf("WARNING: Space savings (%.1f%%) below 75%%\n", savings)
+		fmt.Printf("WARNING: Space savings (%.1f%%) below 75%%\n", result.Savings)
 		fmt.Println("  This may indicate wrong source or transcoded MKV.")
 	}
 
 	return nil
+}
+
+// createBatch processes multiple MKVs from a batch manifest, indexing the source once.
+func createBatch(manifestPath string) error {
+	totalStart := time.Now()
+
+	manifest, err := dedup.ReadBatchManifest(manifestPath)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Batch create: %d files from %s\n\n", len(manifest.Files), manifest.SourceDir)
+
+	// Index source once
+	fmt.Println("Indexing source directory...")
+	indexer, index, err := buildSourceIndex(manifest.SourceDir)
+	if err != nil {
+		return err
+	}
+	defer index.Close()
+	indexDuration := time.Since(totalStart)
+
+	// Process each file
+	results := make([]*createResult, len(manifest.Files))
+	for i, f := range manifest.Files {
+		fmt.Printf("\n[%d/%d] %s\n", i+1, len(manifest.Files), filepath.Base(f.MKV))
+		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index)
+		if results[i].Err != nil {
+			fmt.Printf("  ERROR: %v\n", results[i].Err)
+			if i < len(manifest.Files)-1 {
+				fmt.Println("  Continuing with remaining files...")
+			}
+		}
+	}
+
+	// Print summary
+	printBatchSummary(results, indexDuration, totalStart)
+
+	// Return error if any file failed
+	for _, r := range results {
+		if r.Err != nil {
+			return fmt.Errorf("batch create completed with errors")
+		}
+	}
+	return nil
+}
+
+// printBatchSummary prints the aggregate results of a batch create operation.
+func printBatchSummary(results []*createResult, indexDuration time.Duration, totalStart time.Time) {
+	fmt.Println()
+	fmt.Println("=== Batch Results ===")
+	fmt.Printf("Total time: %v (indexing: %v)\n\n", time.Since(totalStart), indexDuration)
+
+	succeeded := 0
+	for _, r := range results {
+		base := filepath.Base(r.MkvPath)
+		if r.Err != nil {
+			fmt.Printf("  FAIL  %s: %v\n", base, r.Err)
+		} else {
+			fmt.Printf("  OK    %s -> %s (%.1f%% savings)\n", base, filepath.Base(r.OutputPath), r.Savings)
+			succeeded++
+		}
+	}
+	fmt.Printf("\nSucceeded: %d/%d\n", succeeded, len(results))
 }
 
 // verifyReconstruction verifies that the dedup file can reconstruct the original MKV.

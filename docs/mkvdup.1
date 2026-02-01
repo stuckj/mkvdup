@@ -33,6 +33,18 @@ Supports directory paths (e.g., "Movies/Action/Video1.mkv").
 Directories are auto-created when mounted via FUSE.
 .RE
 .TP
+.B batch-create \fImanifest.yaml\fR
+Create multiple dedup files from MKVs sharing the same source directory.
+The source is indexed once and reused for all files. The YAML manifest
+specifies the shared source directory and a list of MKV files to process.
+.RS
+.TP
+.I manifest.yaml
+YAML manifest file specifying source directory and MKV files. See
+.B BATCH MANIFEST FORMAT
+for details.
+.RE
+.TP
 .B probe \fImkv-file\fR \fIsource-dir\fR...
 Quick test to check if an MKV matches one or more source directories.
 Useful for identifying which disc an MKV came from in multi-disc sets.
@@ -175,6 +187,14 @@ Create a dedup file:
 .fi
 .RE
 .PP
+Batch create dedup files from a manifest:
+.PP
+.RS
+.nf
+mkvdup batch-create episodes.yaml
+.fi
+.RE
+.PP
 Test if MKV matches a source (useful for multi-disc sets):
 .PP
 .RS
@@ -217,6 +237,50 @@ Validate config files before mounting:
 @PACKAGE_NAME@ validate --config-dir /etc/mkvdup.d/
 .fi
 .RE
+.SH BATCH MANIFEST FORMAT
+The YAML manifest for
+.B batch-create
+specifies a shared source directory and a list of MKV files to process:
+.PP
+.RS
+.nf
+source_dir: /media/dvd-backups/disc1
+
+files:
+  \- mkv: episode1.mkv
+    output: episode1.mkvdup
+    name: "Show/S01/Episode 1.mkv"
+
+  \- mkv: episode2.mkv
+
+  \- mkv: /absolute/path/to/episode3.mkv
+    output: /absolute/path/to/episode3.mkvdup
+.fi
+.RE
+.PP
+.B Fields:
+.TP
+.B source_dir
+(Required) Shared source directory for all MKV files.
+.TP
+.B files
+(Required) List of MKV files to process. Each entry supports:
+.RS
+.TP
+.B mkv
+(Required) Path to the MKV file.
+.TP
+.B output
+(Optional) Output .mkvdup file. Default: \fImkv\fR.mkvdup.
+.TP
+.B name
+(Optional) Display name in FUSE mount. Default: basename of \fImkv\fR.
+.RE
+.PP
+Relative paths are resolved against the manifest file's directory.
+.PP
+If any file fails, processing continues for remaining files. The exit code
+is 1 if any file failed, 0 if all succeeded.
 .SH CONFIG FILE FORMAT
 The YAML config file for mounting specifies the dedup file, source directory,
 and virtual file name:

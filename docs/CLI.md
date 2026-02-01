@@ -50,6 +50,53 @@ mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv
 **Directory paths in `name`:**
 The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`). Each `create` command produces one `.mkvdup` file with one name stored in its config. The directory structure becomes visible when mounting multiple configs together—directories are auto-created from path components across all mounted files. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
 
+### batch-create
+
+Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file.
+
+```bash
+mkvdup batch-create <manifest.yaml>
+
+# Example:
+mkvdup batch-create episodes.yaml
+```
+
+**Arguments:**
+- `<manifest.yaml>` — YAML manifest specifying the shared source directory and MKV files
+
+**Manifest format:**
+
+```yaml
+source_dir: /media/dvd-backups/disc1
+
+files:
+  - mkv: episode1.mkv
+    output: episode1.mkvdup        # optional (default: <mkv>.mkvdup)
+    name: "Show/S01/Episode 1.mkv" # optional (default: basename of mkv)
+
+  - mkv: episode2.mkv
+
+  - mkv: /absolute/path/to/episode3.mkv
+    output: /absolute/path/to/episode3.mkvdup
+```
+
+**Manifest fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `source_dir` | Yes | Shared source directory for all MKV files |
+| `files` | Yes | List of MKV files to process (at least one) |
+| `files[].mkv` | Yes | Path to the MKV file |
+| `files[].output` | No | Output `.mkvdup` file (default: `<mkv>.mkvdup`) |
+| `files[].name` | No | Display name in FUSE mount (default: basename of mkv) |
+
+Relative paths are resolved against the manifest file's directory.
+
+**Partial failure handling:**
+- If one file fails, processing continues for the remaining files
+- A summary at the end shows OK/FAIL status for each file
+- Exit code is 1 if any file failed, 0 if all succeeded
+
 ### mount
 
 Mount virtual filesystem from config files.

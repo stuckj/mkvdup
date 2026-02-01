@@ -64,6 +64,7 @@ Usage: mkvdup [options] <command> [args...]
 
 Commands:
   create       Create dedup file from MKV + source directory
+  batch-create Create multiple dedup files from one source
   probe        Quick test if MKV matches source(s)
   mount        Mount dedup files as FUSE filesystem
   info         Show dedup file information
@@ -103,6 +104,35 @@ Arguments:
 Examples:
     mkvdup create movie.mkv /media/dvd-backups
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
+`)
+	case "batch-create":
+		fmt.Print(`Usage: mkvdup batch-create <manifest.yaml>
+
+Create multiple dedup files from MKVs sharing the same source directory.
+The source is indexed once and reused for all files.
+
+Arguments:
+    <manifest.yaml>  YAML manifest file specifying source and MKV files
+
+Manifest format:
+    source_dir: /media/dvd-backups/disc1
+    files:
+      - mkv: episode1.mkv
+        output: episode1.mkvdup        # optional
+        name: "Show/S01/Episode 1.mkv" # optional
+      - mkv: episode2.mkv
+
+Fields:
+    source_dir   Shared source directory (required)
+    files        List of MKV files to process (required, at least one)
+    mkv          Path to MKV file (required per entry)
+    output       Output .mkvdup file (default: <mkv>.mkvdup)
+    name         Display name in FUSE mount (default: basename of mkv)
+
+Relative paths are resolved against the manifest file's directory.
+
+Examples:
+    mkvdup batch-create episodes.yaml
 `)
 	case "probe":
 		fmt.Print(`Usage: mkvdup probe <mkv-file> <source-dir>...
@@ -343,6 +373,15 @@ func main() {
 			name = args[3]
 		}
 		if err := createDedup(args[0], args[1], output, name); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "batch-create":
+		if len(args) < 1 {
+			printCommandUsage("batch-create")
+			os.Exit(1)
+		}
+		if err := createBatch(args[0]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
