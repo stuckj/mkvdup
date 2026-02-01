@@ -41,6 +41,37 @@ REPO
 # Install
 sudo dnf install mkvdup</pre>
 
+  <h2>Canary Channel (Pre-release)</h2>
+  <p>The canary channel provides early access to new features. It installs as
+  <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
+
+  <h3>Debian/Ubuntu (APT) - Canary</h3>
+  <pre>
+# Add the GPG key (same key as stable)
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
+
+# Add the canary repository
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt canary main" | sudo tee /etc/apt/sources.list.d/mkvdup-canary.list
+
+# Install
+sudo apt update
+sudo apt install mkvdup-canary</pre>
+
+  <h3>RHEL/CentOS/Fedora (YUM/DNF) - Canary</h3>
+  <pre>
+# Add the canary repository
+sudo tee /etc/yum.repos.d/mkvdup-canary.repo &lt;&lt; 'REPO'
+[mkvdup-canary]
+name=mkvdup-canary
+baseurl=https://stuckj.github.io/mkvdup/yum-canary
+enabled=1
+gpgcheck=1
+gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
+REPO
+
+# Install
+sudo dnf install mkvdup-canary</pre>
+
   <h2>Links</h2>
   <ul>
     <li><a href="https://github.com/stuckj/mkvdup">GitHub Repository</a></li>
