@@ -228,6 +228,10 @@ func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 		}
 	}
 
+	if largestFile == "" {
+		return nil, fmt.Errorf("no valid M2TS files found")
+	}
+
 	fullPath := filepath.Join(index.SourceDir, largestFile)
 	return detectBlurayCodecsFromFile(fullPath)
 }
@@ -244,10 +248,15 @@ func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 	const scanSize = 2 * 1024 * 1024
 	buf := make([]byte, scanSize)
 	n, err := f.Read(buf)
-	if err != nil {
+	if err != nil && n == 0 {
 		return nil, fmt.Errorf("read M2TS file: %w", err)
 	}
 	buf = buf[:n]
+
+	// Need at least enough data for TS packet size detection (4 sync bytes at regular intervals)
+	if len(buf) < 192*4 {
+		return nil, fmt.Errorf("M2TS file too small to detect TS structure (%d bytes)", len(buf))
+	}
 
 	return parseTSCodecs(buf)
 }
@@ -290,10 +299,10 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		adaptationFieldControl := (pkt[3] >> 4) & 0x03
 		headerLen := 4
 		if adaptationFieldControl == 0x03 || adaptationFieldControl == 0x02 {
-			if headerLen >= 188 {
+			adaptLen := int(pkt[4])
+			if adaptLen > 183 {
 				continue
 			}
-			adaptLen := int(pkt[4])
 			headerLen = 5 + adaptLen
 		}
 		if headerLen >= 188 {
@@ -372,10 +381,10 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		adaptationFieldControl := (pkt[3] >> 4) & 0x03
 		headerLen := 4
 		if adaptationFieldControl == 0x03 || adaptationFieldControl == 0x02 {
-			if headerLen >= 188 {
+			adaptLen := int(pkt[4])
+			if adaptLen > 183 {
 				continue
 			}
-			adaptLen := int(pkt[4])
 			headerLen = 5 + adaptLen
 		}
 		if headerLen >= 188 {
@@ -429,7 +438,11 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 				}
 			}
 
-			j += 5 + esInfoLen
+			next := j + 5 + esInfoLen
+			if next < j || next > streamsEnd {
+				break
+			}
+			j = next
 		}
 
 		break // Found and parsed PMT
