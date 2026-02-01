@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1046,4 +1047,80 @@ func TestPrintBatchSummary(t *testing.T) {
 
 	// Just verify it doesn't panic
 	printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
+}
+
+func TestPrintBatchSummary_LowSavingsWarning(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+		{
+			MkvPath:    "/data/ep2.mkv",
+			OutputPath: "/data/ep2.mkvdup",
+			Savings:    40.0,
+		},
+	}
+
+	output := captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
+	})
+
+	if !strings.Contains(output, "WARNING") {
+		t.Error("expected WARNING in output for low savings file")
+	}
+	if !strings.Contains(output, "ep2.mkv") {
+		t.Error("expected ep2.mkv listed in low savings warning")
+	}
+	if !strings.Contains(output, "1 file(s)") {
+		t.Error("expected '1 file(s)' in warning count")
+	}
+}
+
+func TestPrintBatchSummary_QuietSuppressesWarning(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    40.0,
+		},
+	}
+
+	output := captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, true)
+	})
+
+	if strings.Contains(output, "WARNING") {
+		t.Error("expected no WARNING when quiet=true")
+	}
+}
+
+func TestPrintBatchSummary_CustomThreshold(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    80.0,
+		},
+	}
+
+	// With default threshold (75), no warning
+	output := captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
+	})
+	if strings.Contains(output, "WARNING") {
+		t.Error("expected no WARNING with 80% savings and 75% threshold")
+	}
+
+	// With higher threshold (90), warning should appear
+	output = captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 90.0, false)
+	})
+	if !strings.Contains(output, "WARNING") {
+		t.Error("expected WARNING with 80% savings and 90% threshold")
+	}
+	if !strings.Contains(output, "below 90%") {
+		t.Error("expected 'below 90%' in warning message")
+	}
 }

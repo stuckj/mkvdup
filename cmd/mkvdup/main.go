@@ -47,6 +47,35 @@ func parseOctalMode(s string) (uint32, error) {
 	return uint32(v), nil
 }
 
+// parseWarnFlags extracts --warn-threshold and --quiet from args, returning the
+// parsed values and the remaining positional arguments.
+func parseWarnFlags(args []string) (warnThreshold float64, quiet bool, remaining []string) {
+	warnThreshold = 75.0
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--warn-threshold":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				v, err := strconv.ParseFloat(args[i+1], 64)
+				if err != nil {
+					log.Fatalf("Error: --warn-threshold invalid: %v", err)
+				}
+				if v < 0 || v > 100 {
+					log.Fatalf("Error: --warn-threshold must be between 0 and 100")
+				}
+				warnThreshold = v
+				i++
+			} else {
+				log.Fatalf("Error: --warn-threshold requires a numeric argument")
+			}
+		case "--quiet":
+			quiet = true
+		default:
+			remaining = append(remaining, args[i])
+		}
+	}
+	return
+}
+
 // version is set at build time via -ldflags
 var version = "dev"
 
@@ -371,28 +400,7 @@ func main() {
 
 	switch cmd {
 	case "create":
-		warnThreshold := 75.0
-		quiet := false
-		var createArgs []string
-		for i := 0; i < len(args); i++ {
-			switch args[i] {
-			case "--warn-threshold":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-					v, err := strconv.ParseFloat(args[i+1], 64)
-					if err != nil {
-						log.Fatalf("Error: --warn-threshold invalid: %v", err)
-					}
-					warnThreshold = v
-					i++
-				} else {
-					log.Fatalf("Error: --warn-threshold requires a numeric argument")
-				}
-			case "--quiet":
-				quiet = true
-			default:
-				createArgs = append(createArgs, args[i])
-			}
-		}
+		warnThreshold, quiet, createArgs := parseWarnFlags(args)
 		if len(createArgs) < 2 {
 			printCommandUsage("create")
 			os.Exit(1)
@@ -410,28 +418,7 @@ func main() {
 		}
 
 	case "batch-create":
-		warnThreshold := 75.0
-		quiet := false
-		var batchArgs []string
-		for i := 0; i < len(args); i++ {
-			switch args[i] {
-			case "--warn-threshold":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-					v, err := strconv.ParseFloat(args[i+1], 64)
-					if err != nil {
-						log.Fatalf("Error: --warn-threshold invalid: %v", err)
-					}
-					warnThreshold = v
-					i++
-				} else {
-					log.Fatalf("Error: --warn-threshold requires a numeric argument")
-				}
-			case "--quiet":
-				quiet = true
-			default:
-				batchArgs = append(batchArgs, args[i])
-			}
-		}
+		warnThreshold, quiet, batchArgs := parseWarnFlags(args)
 		if len(batchArgs) < 1 {
 			printCommandUsage("batch-create")
 			os.Exit(1)
