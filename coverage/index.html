@@ -55,9 +55,9 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (37.7%)</option>
+				<option value="file0">github.com/stuckj/mkvdup/cmd/mkvdup/commands.go (36.0%)</option>
 				
-				<option value="file1">github.com/stuckj/mkvdup/cmd/mkvdup/main.go (9.7%)</option>
+				<option value="file1">github.com/stuckj/mkvdup/cmd/mkvdup/main.go (9.5%)</option>
 				
 				<option value="file2">github.com/stuckj/mkvdup/cmd/mkvdup/profile.go (33.3%)</option>
 				
@@ -89,15 +89,17 @@
 				
 				<option value="file16">github.com/stuckj/mkvdup/internal/source/audio.go (85.2%)</option>
 				
-				<option value="file17">github.com/stuckj/mkvdup/internal/source/indexer.go (81.0%)</option>
+				<option value="file17">github.com/stuckj/mkvdup/internal/source/codec.go (72.9%)</option>
 				
-				<option value="file18">github.com/stuckj/mkvdup/internal/source/mpegps.go (81.8%)</option>
+				<option value="file18">github.com/stuckj/mkvdup/internal/source/indexer.go (81.0%)</option>
 				
-				<option value="file19">github.com/stuckj/mkvdup/internal/source/source.go (77.5%)</option>
+				<option value="file19">github.com/stuckj/mkvdup/internal/source/mpegps.go (82.3%)</option>
 				
-				<option value="file20">github.com/stuckj/mkvdup/internal/source/video.go (96.2%)</option>
+				<option value="file20">github.com/stuckj/mkvdup/internal/source/source.go (77.5%)</option>
 				
-				<option value="file21">github.com/stuckj/mkvdup/testdata/testdata.go (45.0%)</option>
+				<option value="file21">github.com/stuckj/mkvdup/internal/source/video.go (96.2%)</option>
+				
+				<option value="file22">github.com/stuckj/mkvdup/testdata/testdata.go (45.0%)</option>
 				
 				</select>
 			</div>
@@ -208,10 +210,72 @@ func buildSourceIndex(sourceDir string) (*source.Indexer, *source.Index, error) 
         return indexer, index, nil</span>
 }
 
+// checkCodecCompatibility detects source codecs and compares them against MKV tracks.
+// If mismatches are found, it prints a warning and either prompts the user (interactive)
+// or continues automatically (non-interactive). Returns an error if the user declines.
+func checkCodecCompatibility(tracks []mkv.Track, index *source.Index, nonInteractive bool) error <span class="cov0" title="0">{
+        sourceCodecs, err := source.DetectSourceCodecs(index)
+        if err != nil </span><span class="cov0" title="0">{
+                // Detection failure is not fatal — just skip the check
+                if verbose </span><span class="cov0" title="0">{
+                        fmt.Printf("  Note: could not detect source codecs: %v\n", err)
+                }</span>
+                <span class="cov0" title="0">return nil</span>
+        }
+
+        <span class="cov0" title="0">mismatches := source.CheckCodecCompatibility(tracks, sourceCodecs)
+        if len(mismatches) == 0 </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        // Print warning
+        <span class="cov0" title="0">fmt.Println()
+        fmt.Println("  WARNING: Codec mismatch detected")
+        for _, m := range mismatches </span><span class="cov0" title="0">{
+                mkvName := source.CodecTypeName(m.MKVCodecType)
+                var sourceNames []string
+                for _, sc := range m.SourceCodecs </span><span class="cov0" title="0">{
+                        sourceNames = append(sourceNames, source.CodecTypeName(sc))
+                }</span>
+                <span class="cov0" title="0">fmt.Printf("    MKV %s:    %s (%s)\n", m.TrackType, mkvName, m.MKVCodecID)
+                fmt.Printf("    Source %s: %s\n", m.TrackType, strings.Join(sourceNames, ", "))</span>
+        }
+        <span class="cov0" title="0">fmt.Println()
+        fmt.Println("  Deduplication may produce poor results if the MKV was transcoded.")
+
+        // Determine if we should prompt
+        if nonInteractive || !isTerminal() </span><span class="cov0" title="0">{
+                fmt.Println("  Continuing (non-interactive mode)...")
+                fmt.Println()
+                return nil
+        }</span>
+
+        // Interactive prompt
+        <span class="cov0" title="0">fmt.Print("\n  Continue anyway? [y/N]: ")
+        var response string
+        fmt.Scanln(&amp;response)
+        response = strings.TrimSpace(strings.ToLower(response))
+        if response != "y" &amp;&amp; response != "yes" </span><span class="cov0" title="0">{
+                return fmt.Errorf("aborted due to codec mismatch")
+        }</span>
+        <span class="cov0" title="0">fmt.Println()
+        return nil</span>
+}
+
+// isTerminal returns true if stdin is a terminal (not piped).
+func isTerminal() bool <span class="cov0" title="0">{
+        fi, err := os.Stdin.Stat()
+        if err != nil </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov0" title="0">return fi.Mode()&amp;os.ModeCharDevice != 0</span>
+}
+
 // createDedupWithIndex processes a single MKV using a pre-built source index.
 // It handles parsing, matching, writing, and verification.
+// If nonInteractive is true, codec mismatch warnings do not prompt the user.
 func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
-        indexer *source.Indexer, index *source.Index) *createResult <span class="cov0" title="0">{
+        indexer *source.Indexer, index *source.Index, nonInteractive bool) *createResult <span class="cov0" title="0">{
         start := time.Now()
         result := &amp;createResult{
                 MkvPath:     mkvPath,
@@ -235,8 +299,14 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
         }</span>
         <span class="cov0" title="0">fmt.Printf("    Parsed %d packets in %v\n", parser.PacketCount(), time.Since(parseStart))
 
+        // Check codec compatibility
+        if err := checkCodecCompatibility(parser.Tracks(), index, nonInteractive); err != nil </span><span class="cov0" title="0">{
+                result.Err = err
+                return result
+        }</span>
+
         // Calculate MKV checksum
-        fmt.Print("    Calculating MKV checksum...")
+        <span class="cov0" title="0">fmt.Print("    Calculating MKV checksum...")
         mkvChecksum, err := calculateFileChecksum(mkvPath)
         if err != nil </span><span class="cov0" title="0">{
                 result.Err = fmt.Errorf("calculate MKV checksum: %w", err)
@@ -350,7 +420,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 }
 
 // createDedup creates a .mkvdup file from an MKV and source directory.
-func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThreshold float64, quiet bool) error <span class="cov0" title="0">{
+func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThreshold float64, quiet bool, nonInteractive bool) error <span class="cov0" title="0">{
         totalStart := time.Now()
 
         // Default output path
@@ -379,7 +449,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 
         // Phase 2-5: Process MKV
         fmt.Println()
-        result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index)
+        result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index, nonInteractive)
         if result.Err != nil </span><span class="cov0" title="0">{
                 return result.Err
         }</span>
@@ -442,7 +512,7 @@ func createBatch(manifestPath string, warnThreshold float64, quiet bool) error <
         results := make([]*createResult, len(manifest.Files))
         for i, f := range manifest.Files </span><span class="cov0" title="0">{
                 fmt.Printf("\n[%d/%d] %s\n", i+1, len(manifest.Files), filepath.Base(f.MKV))
-                results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index)
+                results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index, true)
                 if results[i].Err != nil </span><span class="cov0" title="0">{
                         fmt.Printf("  ERROR: %v\n", results[i].Err)
                         if i &lt; len(manifest.Files)-1 </span><span class="cov0" title="0">{
@@ -1746,18 +1816,27 @@ Arguments:
 Options:
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --quiet             Suppress the space savings warning
+    --non-interactive   Don't prompt on codec mismatch (show warning and continue)
+
+Before matching, codecs in the MKV are compared against the source media.
+If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
+will be prompted to continue. Use --non-interactive for scripted usage.
 
 Examples:
     mkvdup create movie.mkv /media/dvd-backups
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
     mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
     mkvdup create --quiet movie.mkv /media/dvd-backups
+    mkvdup create --non-interactive movie.mkv /media/dvd-backups
 `)</span>
         case "batch-create":<span class="cov0" title="0">
                 fmt.Print(`Usage: mkvdup batch-create [options] &lt;manifest.yaml&gt;
 
 Create multiple dedup files from MKVs sharing the same source directory.
 The source is indexed once and reused for all files.
+
+Codec compatibility is checked for each file. If a mismatch is detected,
+a warning is printed but processing continues (non-interactive mode).
 
 Arguments:
     &lt;manifest.yaml&gt;  YAML manifest file specifying source and MKV files
@@ -2013,8 +2092,18 @@ func main() <span class="cov0" title="0">{
 
         <span class="cov0" title="0">switch cmd </span>{
         case "create":<span class="cov0" title="0">
-                warnThreshold, quiet, createArgs := parseWarnFlags(args)
-                if len(createArgs) &lt; 2 </span><span class="cov0" title="0">{
+                warnThreshold, quiet, remaining := parseWarnFlags(args)
+                nonInteractive := false
+                var createArgs []string
+                for i := 0; i &lt; len(remaining); i++ </span><span class="cov0" title="0">{
+                        switch remaining[i] </span>{
+                        case "--non-interactive":<span class="cov0" title="0">
+                                nonInteractive = true</span>
+                        default:<span class="cov0" title="0">
+                                createArgs = append(createArgs, remaining[i])</span>
+                        }
+                }
+                <span class="cov0" title="0">if len(createArgs) &lt; 2 </span><span class="cov0" title="0">{
                         printCommandUsage("create")
                         os.Exit(1)
                 }</span>
@@ -2026,7 +2115,7 @@ func main() <span class="cov0" title="0">{
                 <span class="cov0" title="0">if len(createArgs) &gt;= 4 </span><span class="cov0" title="0">{
                         name = createArgs[3]
                 }</span>
-                <span class="cov0" title="0">if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, quiet); err != nil </span><span class="cov0" title="0">{
+                <span class="cov0" title="0">if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, quiet, nonInteractive); err != nil </span><span class="cov0" title="0">{
                         log.Fatalf("Error: %v", err)
                 }</span>
 
@@ -3044,7 +3133,7 @@ type RawEntry struct {
 }
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1229825">{
+func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1229747">{
         return Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -3302,19 +3391,19 @@ func (r *Reader) buildBlockIndex() <span class="cov3" title="111">{
 
 // getEntry returns the entry at the given index by parsing from mmap.
 // Uses cache for O(1) sequential access. Safe for concurrent use.
-func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1229845">{
+func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1229764">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov2" title="6">{
                 return Entry{}, false
         }</span>
 
         // Check cache first (with lock)
-        <span class="cov8" title="1229839">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov2" title="28">{
+        <span class="cov8" title="1229758">r.cacheMu.Lock()
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov2" title="25">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov8" title="1229811">r.cacheMu.Unlock()
+        <span class="cov8" title="1229733">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -3325,7 +3414,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12298
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov8" title="1229811">var raw RawEntry
+        <span class="cov8" title="1229733">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -3347,35 +3436,35 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12298
 
 // getMkvOffset returns just the MkvOffset for entry at idx (for binary search).
 // This avoids full entry parsing when only the offset is needed.
-func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7973525">{
+func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7971538">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7973521">offset := r.indexStart + int64(idx)*EntrySize
+        <span class="cov9" title="7971534">offset := r.indexStart + int64(idx)*EntrySize
         data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7973521">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov9" title="7971534">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // getEntryLength returns just the Length for entry at idx (for binary search).
 // This avoids full entry parsing when only offset and length are needed.
-func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov7" title="45299">{
+func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov7" title="43312">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
         // Length is at offset 8 within each entry (after MkvOffset)
-        <span class="cov7" title="45295">offset := r.indexStart + int64(idx)*EntrySize + 8
+        <span class="cov7" title="43308">offset := r.indexStart + int64(idx)*EntrySize + 8
         data := r.dedupMmap.Slice(offset, 8)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov7" title="45295">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov7" title="43308">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // OriginalSize returns the size of the original MKV file.
@@ -3435,57 +3524,57 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) <span class="cov6
         // Find entries that cover this range
         <span class="cov6" title="7883">entries := r.findEntriesForRange(offset, int64(remaining))
 
-        for _, entry := range entries </span><span class="cov8" title="1219697">{
+        for _, entry := range entries </span><span class="cov8" title="1219616">{
                 if remaining &lt;= 0 </span><span class="cov0" title="0">{
                         break</span>
                 }
 
                 // Calculate overlap
-                <span class="cov8" title="1219697">entryEnd := entry.MkvOffset + entry.Length
+                <span class="cov8" title="1219616">entryEnd := entry.MkvOffset + entry.Length
                 readStart := offset
                 if readStart &lt; entry.MkvOffset </span><span class="cov0" title="0">{
                         readStart = entry.MkvOffset
                 }</span>
-                <span class="cov8" title="1219697">readEnd := offset + int64(remaining)
-                if readEnd &gt; entryEnd </span><span class="cov8" title="1211816">{
+                <span class="cov8" title="1219616">readEnd := offset + int64(remaining)
+                if readEnd &gt; entryEnd </span><span class="cov8" title="1211735">{
                         readEnd = entryEnd
                 }</span>
 
-                <span class="cov8" title="1219697">readLen := int(readEnd - readStart)
+                <span class="cov8" title="1219616">readLen := int(readEnd - readStart)
                 if readLen &lt;= 0 </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
                 // Calculate offset within entry
-                <span class="cov8" title="1219697">offsetInEntry := readStart - entry.MkvOffset
+                <span class="cov8" title="1219616">offsetInEntry := readStart - entry.MkvOffset
                 sourceOffset := entry.SourceOffset + offsetInEntry
 
                 // Read data from appropriate source
                 var data []byte
                 var err error
 
-                if entry.Source == 0 </span><span class="cov7" title="208731">{
+                if entry.Source == 0 </span><span class="cov7" title="208700">{
                         // Read from delta section
                         data, err = r.readDelta(sourceOffset, readLen)
-                }</span> else<span class="cov8" title="1010966"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
+                }</span> else<span class="cov8" title="1010916"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
                         // Read from ES
                         if entry.IsVideo </span><span class="cov0" title="0">{
                                 data, err = r.esReader.ReadESData(sourceOffset, readLen, true)
                         }</span> else<span class="cov0" title="0"> {
                                 data, err = r.esReader.ReadAudioSubStreamData(entry.AudioSubStreamID, sourceOffset, readLen)
                         }</span>
-                } else<span class="cov8" title="1010966"> {
+                } else<span class="cov8" title="1010916"> {
                         // Read from raw source file
                         fileIndex := int(entry.Source - 1)
                         data, err = r.readSource(fileIndex, sourceOffset, readLen)
                 }</span>
 
-                <span class="cov8" title="1219697">if err != nil </span><span class="cov0" title="0">{
+                <span class="cov8" title="1219616">if err != nil </span><span class="cov0" title="0">{
                         return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
                 }</span>
 
                 // Copy to output buffer - use original offset to calculate buffer position
-                <span class="cov8" title="1219697">bufOffset := int(readStart - originalOffset)
+                <span class="cov8" title="1219616">bufOffset := int(readStart - originalOffset)
                 copy(buf[bufOffset:], data)
                 totalRead += len(data)
                 remaining -= len(data)
@@ -3509,35 +3598,35 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
         // Fast path: check if offset is within cached entry (with lock)
         r.cacheMu.Lock()
         if r.lastEntryValid &amp;&amp; r.lastEntryIdx &gt;= 0 &amp;&amp; r.lastEntryIdx &lt; r.entryCount </span><span class="cov6" title="7868">{
-                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov2" title="6">{
+                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov1" title="5">{
                         // Cache hit - start from cached entry
                         startIdx := r.lastEntryIdx
                         r.cacheMu.Unlock()
 
                         var result []Entry
-                        for i := startIdx; i &lt; r.entryCount; i++ </span><span class="cov4" title="347">{
+                        for i := startIdx; i &lt; r.entryCount; i++ </span><span class="cov4" title="272">{
                                 entry, ok := r.getEntry(i)
-                                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov1" title="4">{
+                                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov1" title="3">{
                                         break</span>
                                 }
-                                <span class="cov4" title="343">result = append(result, entry)</span>
+                                <span class="cov4" title="269">result = append(result, entry)</span>
                         }
-                        <span class="cov2" title="6">return result</span>
+                        <span class="cov1" title="5">return result</span>
                 }
         }
-        <span class="cov6" title="7885">r.cacheMu.Unlock()
+        <span class="cov6" title="7886">r.cacheMu.Unlock()
 
         // Cache miss - use block index to narrow binary search range
         var lo, hi int
-        if r.blockIndex != nil </span><span class="cov6" title="7885">{
+        if r.blockIndex != nil </span><span class="cov6" title="7886">{
                 blockNum := int(offset / blockSize)
                 if blockNum &gt;= len(r.blockIndex) </span><span class="cov0" title="0">{
                         blockNum = len(r.blockIndex) - 1
                 }</span>
-                <span class="cov6" title="7885">lo = r.blockIndex[blockNum]
+                <span class="cov6" title="7886">lo = r.blockIndex[blockNum]
 
                 // Upper bound: start of next block's entries (or entryCount)
-                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov6" title="7885">{
+                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov6" title="7886">{
                         // Search up to 1 past the next block's start entry to handle
                         // entries that span block boundaries
                         hi = r.blockIndex[blockNum+1] + 1
@@ -3553,54 +3642,54 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
         }</span>
 
         // Binary search within [lo, hi) for first entry whose range covers offset
-        <span class="cov6" title="7885">idx := lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov7" title="45289">{
+        <span class="cov6" title="7886">idx := lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov7" title="43302">{
                 mkvOffset, ok := r.getMkvOffset(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov7" title="45289">entryLen, ok := r.getEntryLength(lo + i)
+                <span class="cov7" title="43302">entryLen, ok := r.getEntryLength(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov7" title="45289">return mkvOffset+entryLen &gt; offset</span>
+                <span class="cov7" title="43302">return mkvOffset+entryLen &gt; offset</span>
         })
 
-        <span class="cov6" title="7885">var result []Entry
-        for i := idx; i &lt; r.entryCount; i++ </span><span class="cov8" title="1227244">{
+        <span class="cov6" title="7886">var result []Entry
+        for i := idx; i &lt; r.entryCount; i++ </span><span class="cov8" title="1227238">{
                 entry, ok := r.getEntry(i)
-                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov6" title="7880">{
+                if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov6" title="7881">{
                         break</span>
                 }
-                <span class="cov8" title="1219364">result = append(result, entry)</span>
+                <span class="cov8" title="1219357">result = append(result, entry)</span>
         }
 
-        <span class="cov6" title="7885">return result</span>
+        <span class="cov6" title="7886">return result</span>
 }
 
-func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="208731">{
+func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="208700">{
         fileOffset := r.file.DeltaOffset + offset
         // Zero-copy slice from mmap'd data
         data := r.dedupMmap.Slice(fileOffset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("delta offset out of range")
         }</span>
-        <span class="cov7" title="208731">return data, nil</span>
+        <span class="cov7" title="208700">return data, nil</span>
 }
 
-func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) <span class="cov8" title="1010966">{
+func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) <span class="cov8" title="1010916">{
         if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceMmaps) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("invalid file index: %d", fileIndex)
         }</span>
-        <span class="cov8" title="1010966">if r.sourceMmaps[fileIndex] == nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="1010916">if r.sourceMmaps[fileIndex] == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("source file %d not loaded", fileIndex)
         }</span>
 
         // Zero-copy slice from mmap'd data
-        <span class="cov8" title="1010966">data := r.sourceMmaps[fileIndex].Slice(offset, size)
+        <span class="cov8" title="1010916">data := r.sourceMmaps[fileIndex].Slice(offset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("source offset out of range")
         }</span>
-        <span class="cov8" title="1010966">return data, nil</span>
+        <span class="cov8" title="1010916">return data, nil</span>
 }
 
 // parseHeaderOnly parses just the header and source files (not entries) for fast initialization.
@@ -5544,14 +5633,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="258">{
-                if p.UID != nil </span><span class="cov9" title="249">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="259">{
+                if p.UID != nil </span><span class="cov9" title="250">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="258">if p.GID != nil </span><span class="cov5" title="18">{
+                <span class="cov9" title="259">if p.GID != nil </span><span class="cov5" title="18">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="258">if p.Mode != nil </span><span class="cov5" title="19">{
+                <span class="cov9" title="259">if p.Mode != nil </span><span class="cov5" title="19">{
                         mode = *p.Mode
                 }</span>
         }
@@ -6601,7 +6690,7 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="26">{
         }</span>
 
         // Sort by start offset
-        <span class="cov2" title="24">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov7" title="7089388">{
+        <span class="cov2" title="24">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov7" title="7090072">{
                 return m.matchedRegions[i].mkvStart &lt; m.matchedRegions[j].mkvStart
         }</span>)
 
@@ -7582,15 +7671,15 @@ func (m *File) Len() int <span class="cov1" title="4">{
 
 // Slice returns a sub-slice of the mapped data without copying.
 // Returns nil if the range is out of bounds.
-func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="350913546">{
+func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="350909413">{
         if offset &lt; 0 || offset &gt;= m.size </span><span class="cov1" title="6">{
                 return nil
         }</span>
-        <span class="cov9" title="350913540">end := offset + int64(size)
+        <span class="cov9" title="350909407">end := offset + int64(size)
         if end &gt; m.size </span><span class="cov1" title="2">{
                 end = m.size
         }</span>
-        <span class="cov9" title="350913540">return m.data[offset:end]</span>
+        <span class="cov9" title="350909407">return m.data[offset:end]</span>
 }
 
 // Advise provides hints to the kernel about expected access patterns.
@@ -7738,6 +7827,631 @@ func FindAllSyncPoints(data []byte) []int <span class="cov1" title="3">{
 </pre>
 		
 		<pre class="file" id="file17" style="display: none">package source
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/stuckj/mkvdup/internal/mkv"
+)
+
+// CodecType represents a broad codec family.
+type CodecType int
+
+// Codec type constants.
+const (
+        CodecUnknown CodecType = iota
+        CodecMPEG1Video
+        CodecMPEG2Video
+        CodecH264Video
+        CodecH265Video
+        CodecVC1Video
+        CodecAC3Audio
+        CodecEAC3Audio
+        CodecDTSAudio
+        CodecDTSHDAudio
+        CodecTrueHDAudio
+        CodecLPCMAudio
+        CodecMPEGAudio
+        CodecAACaudio
+        CodecFLACAudio
+        CodecOpusAudio
+)
+
+// CodecTypeName returns a human-readable name for a codec type.
+func CodecTypeName(ct CodecType) string <span class="cov6" title="32">{
+        switch ct </span>{
+        case CodecMPEG1Video:<span class="cov2" title="2">
+                return "MPEG-1"</span>
+        case CodecMPEG2Video:<span class="cov2" title="2">
+                return "MPEG-2"</span>
+        case CodecH264Video:<span class="cov2" title="2">
+                return "H.264"</span>
+        case CodecH265Video:<span class="cov2" title="2">
+                return "H.265"</span>
+        case CodecVC1Video:<span class="cov2" title="2">
+                return "VC-1"</span>
+        case CodecAC3Audio:<span class="cov2" title="2">
+                return "AC3"</span>
+        case CodecEAC3Audio:<span class="cov2" title="2">
+                return "E-AC3"</span>
+        case CodecDTSAudio:<span class="cov2" title="2">
+                return "DTS"</span>
+        case CodecDTSHDAudio:<span class="cov2" title="2">
+                return "DTS-HD"</span>
+        case CodecTrueHDAudio:<span class="cov2" title="2">
+                return "TrueHD"</span>
+        case CodecLPCMAudio:<span class="cov2" title="2">
+                return "LPCM"</span>
+        case CodecMPEGAudio:<span class="cov2" title="2">
+                return "MPEG Audio"</span>
+        case CodecAACaudio:<span class="cov2" title="2">
+                return "AAC"</span>
+        case CodecFLACAudio:<span class="cov2" title="2">
+                return "FLAC"</span>
+        case CodecOpusAudio:<span class="cov2" title="2">
+                return "Opus"</span>
+        default:<span class="cov2" title="2">
+                return "Unknown"</span>
+        }
+}
+
+// IsVideoCodec returns true if the codec type is a video codec.
+func IsVideoCodec(ct CodecType) bool <span class="cov6" title="36">{
+        switch ct </span>{
+        case CodecMPEG1Video, CodecMPEG2Video, CodecH264Video, CodecH265Video, CodecVC1Video:<span class="cov5" title="24">
+                return true</span>
+        }
+        <span class="cov4" title="12">return false</span>
+}
+
+// IsAudioCodec returns true if the codec type is an audio codec.
+func IsAudioCodec(ct CodecType) bool <span class="cov6" title="48">{
+        switch ct </span>{
+        case CodecAC3Audio, CodecEAC3Audio, CodecDTSAudio, CodecDTSHDAudio,
+                CodecTrueHDAudio, CodecLPCMAudio, CodecMPEGAudio, CodecAACaudio,
+                CodecFLACAudio, CodecOpusAudio:<span class="cov6" title="42">
+                return true</span>
+        }
+        <span class="cov3" title="6">return false</span>
+}
+
+// MKVCodecToType maps an MKV CodecID string to a CodecType.
+func MKVCodecToType(codecID string) CodecType <span class="cov7" title="76">{
+        switch </span>{
+        case codecID == "V_MPEG1":<span class="cov3" title="4">
+                return CodecMPEG1Video</span>
+        case codecID == "V_MPEG2":<span class="cov3" title="6">
+                return CodecMPEG2Video</span>
+        case codecID == "V_MPEG4/ISO/AVC":<span class="cov3" title="6">
+                return CodecH264Video</span>
+        case codecID == "V_MPEGH/ISO/HEVC":<span class="cov2" title="2">
+                return CodecH265Video</span>
+        case codecID == "V_MS/VFW/FOURCC":<span class="cov3" title="4">
+                // Could be VC-1 or other; can't determine without codec private data
+                return CodecUnknown</span>
+        case codecID == "A_AC3":<span class="cov4" title="12">
+                return CodecAC3Audio</span>
+        case codecID == "A_EAC3":<span class="cov2" title="2">
+                return CodecEAC3Audio</span>
+        case codecID == "A_DTS":<span class="cov3" title="4">
+                return CodecDTSAudio</span>
+        case strings.HasPrefix(codecID, "A_DTS/"):<span class="cov3" title="4">
+                // A_DTS/EXPRESS, A_DTS/LOSSLESS, etc.
+                return CodecDTSHDAudio</span>
+        case codecID == "A_TRUEHD":<span class="cov2" title="2">
+                return CodecTrueHDAudio</span>
+        case strings.HasPrefix(codecID, "A_PCM/"):<span class="cov3" title="6">
+                // A_PCM/INT/LIT, A_PCM/INT/BIG, A_PCM/FLOAT/IEEE
+                return CodecLPCMAudio</span>
+        case strings.HasPrefix(codecID, "A_MPEG/"):<span class="cov3" title="4">
+                // A_MPEG/L2, A_MPEG/L3
+                return CodecMPEGAudio</span>
+        case strings.HasPrefix(codecID, "A_AAC"):<span class="cov3" title="4">
+                // A_AAC, A_AAC/MPEG2/MAIN, etc.
+                return CodecAACaudio</span>
+        case codecID == "A_FLAC":<span class="cov3" title="6">
+                return CodecFLACAudio</span>
+        case codecID == "A_OPUS":<span class="cov2" title="2">
+                return CodecOpusAudio</span>
+        default:<span class="cov4" title="8">
+                return CodecUnknown</span>
+        }
+}
+
+// SourceCodecs describes the codecs found in a source media.
+type SourceCodecs struct {
+        VideoCodecs []CodecType
+        AudioCodecs []CodecType
+}
+
+// CodecMismatch describes a detected codec mismatch between MKV and source.
+type CodecMismatch struct {
+        TrackType    string      // "video" or "audio"
+        MKVCodecID   string      // e.g. "V_MPEG4/ISO/AVC"
+        MKVCodecType CodecType   // resolved codec type
+        SourceCodecs []CodecType // codecs found in source for this track type
+}
+
+// DetectSourceCodecs determines what codecs are present in the source media.
+// For DVD sources, it extracts codec info from the already-parsed MPEG-PS data.
+// For Blu-ray sources, it performs a lightweight PMT scan of the first M2TS file.
+func DetectSourceCodecs(index *Index) (*SourceCodecs, error) <span class="cov0" title="0">{
+        switch index.SourceType </span>{
+        case TypeDVD:<span class="cov0" title="0">
+                return detectDVDCodecs(index)</span>
+        case TypeBluray:<span class="cov0" title="0">
+                return detectBlurayCodecs(index)</span>
+        default:<span class="cov0" title="0">
+                return nil, fmt.Errorf("unknown source type")</span>
+        }
+}
+
+// detectDVDCodecs extracts codec information from an already-indexed DVD source.
+// The MPEG-PS parser has already identified video and audio streams during indexing.
+func detectDVDCodecs(index *Index) (*SourceCodecs, error) <span class="cov3" title="4">{
+        codecs := &amp;SourceCodecs{}
+
+        for _, esReader := range index.ESReaders </span><span class="cov3" title="4">{
+                parser, ok := esReader.(*MPEGPSParser)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Video: DVD is MPEG-2 if video ranges exist
+                <span class="cov3" title="4">if parser.TotalESSize(true) &gt; 0 </span><span class="cov3" title="4">{
+                        if !containsCodec(codecs.VideoCodecs, CodecMPEG2Video) </span><span class="cov3" title="4">{
+                                codecs.VideoCodecs = append(codecs.VideoCodecs, CodecMPEG2Video)
+                        }</span>
+                }
+
+                // Audio from Private Stream 1 sub-streams
+                <span class="cov3" title="4">for _, subStreamID := range parser.AudioSubStreams() </span><span class="cov3" title="4">{
+                        var ct CodecType
+                        switch </span>{
+                        case subStreamID &gt;= 0x80 &amp;&amp; subStreamID &lt;= 0x87:<span class="cov2" title="2">
+                                ct = CodecAC3Audio</span>
+                        case subStreamID &gt;= 0x88 &amp;&amp; subStreamID &lt;= 0x8F:<span class="cov2" title="2">
+                                ct = CodecDTSAudio</span>
+                        case subStreamID &gt;= 0xA0 &amp;&amp; subStreamID &lt;= 0xA7:<span class="cov0" title="0">
+                                ct = CodecLPCMAudio</span>
+                        default:<span class="cov0" title="0">
+                                continue</span>
+                        }
+                        <span class="cov3" title="4">if !containsCodec(codecs.AudioCodecs, ct) </span><span class="cov3" title="4">{
+                                codecs.AudioCodecs = append(codecs.AudioCodecs, ct)
+                        }</span>
+                }
+
+                // MPEG audio streams (stream IDs 0xC0-0xDF)
+                <span class="cov3" title="4">for _, pkt := range parser.Packets() </span><span class="cov2" title="2">{
+                        if pkt.StreamID &gt;= 0xC0 &amp;&amp; pkt.StreamID &lt;= 0xDF </span><span class="cov2" title="2">{
+                                if !containsCodec(codecs.AudioCodecs, CodecMPEGAudio) </span><span class="cov2" title="2">{
+                                        codecs.AudioCodecs = append(codecs.AudioCodecs, CodecMPEGAudio)
+                                }</span>
+                                <span class="cov2" title="2">break</span> // Only need to find one
+                        }
+                }
+        }
+
+        <span class="cov3" title="4">return codecs, nil</span>
+}
+
+// detectBlurayCodecs performs a lightweight scan of the first M2TS file
+// to detect codecs via the MPEG-TS Program Map Table (PMT).
+func detectBlurayCodecs(index *Index) (*SourceCodecs, error) <span class="cov0" title="0">{
+        if len(index.Files) == 0 </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("no source files in index")
+        }</span>
+
+        // Find the largest M2TS file (most likely the main feature)
+        <span class="cov0" title="0">var largestFile string
+        var largestSize int64
+        for _, f := range index.Files </span><span class="cov0" title="0">{
+                if f.Size &gt; largestSize </span><span class="cov0" title="0">{
+                        largestSize = f.Size
+                        largestFile = f.RelativePath
+                }</span>
+        }
+
+        <span class="cov0" title="0">if largestFile == "" </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("no valid M2TS files found")
+        }</span>
+
+        <span class="cov0" title="0">fullPath := filepath.Join(index.SourceDir, largestFile)
+        return detectBlurayCodecsFromFile(fullPath)</span>
+}
+
+// detectBlurayCodecsFromFile parses the PMT from an M2TS file to detect codecs.
+func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) <span class="cov0" title="0">{
+        f, err := os.Open(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("open M2TS file: %w", err)
+        }</span>
+        <span class="cov0" title="0">defer f.Close()
+
+        // Read first 2MB — enough to find PAT + PMT
+        const scanSize = 2 * 1024 * 1024
+        buf := make([]byte, scanSize)
+        n, err := f.Read(buf)
+        if err != nil &amp;&amp; n == 0 </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("read M2TS file: %w", err)
+        }</span>
+        <span class="cov0" title="0">buf = buf[:n]
+
+        // Need at least enough data for TS packet size detection (4 sync bytes at regular intervals)
+        if len(buf) &lt; 192*4 </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("M2TS file too small to detect TS structure (%d bytes)", len(buf))
+        }</span>
+
+        <span class="cov0" title="0">return parseTSCodecs(buf)</span>
+}
+
+// parseTSCodecs scans MPEG-TS data to find the PAT and PMT and extract stream types.
+func parseTSCodecs(data []byte) (*SourceCodecs, error) <span class="cov3" title="4">{
+        // Detect TS packet size: 188 (standard) or 192 (M2TS with 4-byte timestamp)
+        packetSize, offset := detectTSPacketSize(data)
+        if packetSize == 0 </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("cannot detect TS packet size")
+        }</span>
+
+        // Step 1: Find PAT (PID 0x0000) to get PMT PID
+        <span class="cov3" title="4">pmtPID := uint16(0)
+        for i := offset; i+packetSize &lt;= len(data); i += packetSize </span><span class="cov3" title="4">{
+                tsOffset := i
+                if packetSize == 192 </span><span class="cov3" title="4">{
+                        tsOffset += 4 // Skip 4-byte M2TS timestamp
+                }</span>
+                <span class="cov3" title="4">if tsOffset+188 &gt; len(data) </span><span class="cov0" title="0">{
+                        break</span>
+                }
+                <span class="cov3" title="4">pkt := data[tsOffset : tsOffset+188]
+                if pkt[0] != 0x47 </span><span class="cov0" title="0">{
+                        continue</span> // Not a valid TS sync byte
+                }
+
+                <span class="cov3" title="4">pid := uint16(pkt[1]&amp;0x1F)&lt;&lt;8 | uint16(pkt[2])
+                if pid != 0x0000 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // PAT found — parse it
+                <span class="cov3" title="4">payloadStart := pkt[1]&amp;0x40 != 0
+                if !payloadStart </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Skip adaptation field if present
+                <span class="cov3" title="4">adaptationFieldControl := (pkt[3] &gt;&gt; 4) &amp; 0x03
+                headerLen := 4
+                switch adaptationFieldControl </span>{
+                case 0x02, 0x03:<span class="cov0" title="0"> // Adaptation field present
+                        adaptLen := int(pkt[4])
+                        if adaptLen &gt; 183 </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov0" title="0">headerLen = 5 + adaptLen</span>
+                case 0x01:<span class="cov3" title="4"></span> // Payload only, no adaptation field
+                default:<span class="cov0" title="0"> // 0x00 is reserved/invalid
+                        continue</span>
+                }
+                <span class="cov3" title="4">if headerLen &gt;= 188 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Skip pointer field
+                <span class="cov3" title="4">pointerField := int(pkt[headerLen])
+                headerLen += 1 + pointerField
+                if headerLen+8 &gt; 188 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov3" title="4">payload := pkt[headerLen:]
+                // PAT: table_id(1) + flags+length(2) + tsid(2) + version(1) + section(1) + last_section(1)
+                // then 4 bytes per program: program_number(2) + PMT_PID(2)
+                if len(payload) &lt; 12 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov3" title="4">if payload[0] != 0x00 </span><span class="cov0" title="0">{ // table_id for PAT
+                        continue</span>
+                }
+
+                <span class="cov3" title="4">sectionLength := int(payload[1]&amp;0x0F)&lt;&lt;8 | int(payload[2])
+                if sectionLength &lt; 9 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Programs start at offset 8, each is 4 bytes
+                <span class="cov3" title="4">programsEnd := 8 + sectionLength - 4 // -4 for CRC
+                if programsEnd &gt; len(payload) </span><span class="cov0" title="0">{
+                        programsEnd = len(payload) - 4
+                }</span>
+
+                <span class="cov3" title="4">for j := 8; j+4 &lt;= programsEnd; j += 4 </span><span class="cov3" title="4">{
+                        progNum := uint16(payload[j])&lt;&lt;8 | uint16(payload[j+1])
+                        if progNum == 0 </span><span class="cov0" title="0">{
+                                continue</span> // Network PID, skip
+                        }
+                        <span class="cov3" title="4">pmtPID = uint16(payload[j+2]&amp;0x1F)&lt;&lt;8 | uint16(payload[j+3])
+                        break</span> // Use the first program
+                }
+                <span class="cov3" title="4">break</span>
+        }
+
+        <span class="cov3" title="4">if pmtPID == 0 </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("PMT PID not found in PAT")
+        }</span>
+
+        // Step 2: Find PMT and extract stream types
+        <span class="cov3" title="4">codecs := &amp;SourceCodecs{}
+        for i := offset; i+packetSize &lt;= len(data); i += packetSize </span><span class="cov4" title="8">{
+                tsOffset := i
+                if packetSize == 192 </span><span class="cov4" title="8">{
+                        tsOffset += 4
+                }</span>
+                <span class="cov4" title="8">if tsOffset+188 &gt; len(data) </span><span class="cov0" title="0">{
+                        break</span>
+                }
+                <span class="cov4" title="8">pkt := data[tsOffset : tsOffset+188]
+                if pkt[0] != 0x47 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov4" title="8">pid := uint16(pkt[1]&amp;0x1F)&lt;&lt;8 | uint16(pkt[2])
+                if pid != pmtPID </span><span class="cov3" title="4">{
+                        continue</span>
+                }
+
+                <span class="cov3" title="4">payloadStart := pkt[1]&amp;0x40 != 0
+                if !payloadStart </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Skip adaptation field
+                <span class="cov3" title="4">adaptationFieldControl := (pkt[3] &gt;&gt; 4) &amp; 0x03
+                headerLen := 4
+                switch adaptationFieldControl </span>{
+                case 0x02, 0x03:<span class="cov0" title="0"> // Adaptation field present
+                        adaptLen := int(pkt[4])
+                        if adaptLen &gt; 183 </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov0" title="0">headerLen = 5 + adaptLen</span>
+                case 0x01:<span class="cov3" title="4"></span> // Payload only, no adaptation field
+                default:<span class="cov0" title="0"> // 0x00 is reserved/invalid
+                        continue</span>
+                }
+                <span class="cov3" title="4">if headerLen &gt;= 188 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Skip pointer field
+                <span class="cov3" title="4">pointerField := int(pkt[headerLen])
+                headerLen += 1 + pointerField
+                if headerLen+12 &gt; 188 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov3" title="4">payload := pkt[headerLen:]
+                if len(payload) &lt; 12 || payload[0] != 0x02 </span><span class="cov0" title="0">{ // table_id for PMT
+                        continue</span>
+                }
+
+                <span class="cov3" title="4">sectionLength := int(payload[1]&amp;0x0F)&lt;&lt;8 | int(payload[2])
+                if sectionLength &lt; 13 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Program info length at offset 10
+                <span class="cov3" title="4">progInfoLen := int(payload[10]&amp;0x0F)&lt;&lt;8 | int(payload[11])
+
+                // Stream descriptors start after program info
+                streamsStart := 12 + progInfoLen
+                streamsEnd := 3 + sectionLength - 4 // section starts at byte 3, -4 for CRC
+                if streamsEnd &gt; len(payload) </span><span class="cov0" title="0">{
+                        streamsEnd = len(payload) - 4
+                }</span>
+                <span class="cov3" title="4">if streamsStart &gt; streamsEnd </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov3" title="4">for j := streamsStart; j+5 &lt;= streamsEnd; </span><span class="cov4" title="10">{
+                        streamType := payload[j]
+                        esInfoLen := int(payload[j+3]&amp;0x0F)&lt;&lt;8 | int(payload[j+4])
+
+                        ct := tsStreamTypeToCodecType(streamType)
+                        if ct != CodecUnknown </span><span class="cov4" title="10">{
+                                if IsVideoCodec(ct) </span><span class="cov3" title="4">{
+                                        if !containsCodec(codecs.VideoCodecs, ct) </span><span class="cov3" title="4">{
+                                                codecs.VideoCodecs = append(codecs.VideoCodecs, ct)
+                                        }</span>
+                                } else<span class="cov3" title="6"> if IsAudioCodec(ct) </span><span class="cov3" title="6">{
+                                        if !containsCodec(codecs.AudioCodecs, ct) </span><span class="cov3" title="6">{
+                                                codecs.AudioCodecs = append(codecs.AudioCodecs, ct)
+                                        }</span>
+                                }
+                        }
+
+                        <span class="cov4" title="10">next := j + 5 + esInfoLen
+                        if next &lt; j || next &gt; streamsEnd </span><span class="cov0" title="0">{
+                                break</span>
+                        }
+                        <span class="cov4" title="10">j = next</span>
+                }
+
+                <span class="cov3" title="4">break</span> // Found and parsed PMT
+        }
+
+        <span class="cov3" title="4">return codecs, nil</span>
+}
+
+// tsStreamTypeToCodecType maps MPEG-TS stream type values to CodecType.
+func tsStreamTypeToCodecType(streamType byte) CodecType <span class="cov6" title="42">{
+        switch streamType </span>{
+        case 0x01:<span class="cov2" title="2">
+                return CodecMPEG1Video</span>
+        case 0x02:<span class="cov3" title="4">
+                return CodecMPEG2Video</span>
+        case 0x1B:<span class="cov3" title="4">
+                return CodecH264Video</span>
+        case 0x24:<span class="cov2" title="2">
+                return CodecH265Video</span>
+        case 0xEA:<span class="cov2" title="2">
+                return CodecVC1Video</span>
+        case 0x03, 0x04:<span class="cov3" title="4">
+                return CodecMPEGAudio</span>
+        case 0x0F:<span class="cov2" title="2">
+                return CodecAACaudio</span>
+        case 0x80:<span class="cov2" title="2">
+                return CodecLPCMAudio</span>
+        case 0x81:<span class="cov3" title="4">
+                return CodecAC3Audio</span>
+        case 0x82:<span class="cov2" title="2">
+                return CodecDTSAudio</span>
+        case 0x83:<span class="cov3" title="4">
+                return CodecTrueHDAudio</span>
+        case 0x84:<span class="cov2" title="2">
+                return CodecEAC3Audio</span>
+        case 0x85, 0x86:<span class="cov3" title="6">
+                return CodecDTSHDAudio</span>
+        default:<span class="cov2" title="2">
+                return CodecUnknown</span>
+        }
+}
+
+// detectTSPacketSize determines TS packet size (188 or 192) and the offset to
+// the first sync byte. Returns (0, 0) if no valid TS structure is found.
+func detectTSPacketSize(data []byte) (int, int) <span class="cov4" title="8">{
+        // Try both M2TS (192-byte packets) and standard TS (188-byte packets)
+        for _, size := range []int{192, 188} </span><span class="cov4" title="10">{
+                for startOffset := 0; startOffset &lt; size &amp;&amp; startOffset+size*3 &lt; len(data); startOffset++ </span><span class="cov10" title="392">{
+                        syncOffset := startOffset
+                        if size == 192 </span><span class="cov9" title="390">{
+                                syncOffset += 4 // M2TS timestamp prefix
+                        }</span>
+                        <span class="cov10" title="392">if syncOffset &gt;= len(data) || data[syncOffset] != 0x47 </span><span class="cov9" title="382">{
+                                continue</span>
+                        }
+                        // Verify 3 consecutive sync bytes
+                        <span class="cov4" title="10">valid := true
+                        for k := 1; k &lt;= 3; k++ </span><span class="cov5" title="26">{
+                                nextSync := startOffset + k*size
+                                if size == 192 </span><span class="cov5" title="20">{
+                                        nextSync += 4
+                                }</span>
+                                <span class="cov5" title="26">if nextSync &gt;= len(data) || data[nextSync] != 0x47 </span><span class="cov2" title="2">{
+                                        valid = false
+                                        break</span>
+                                }
+                        }
+                        <span class="cov4" title="10">if valid </span><span class="cov4" title="8">{
+                                return size, startOffset
+                        }</span>
+                }
+        }
+        <span class="cov0" title="0">return 0, 0</span>
+}
+
+// CheckCodecCompatibility compares MKV track codecs against source codecs.
+// Returns nil if all codecs are compatible, or a list of mismatches.
+func CheckCodecCompatibility(tracks []mkv.Track, sourceCodecs *SourceCodecs) []CodecMismatch <span class="cov5" title="20">{
+        var mismatches []CodecMismatch
+
+        for _, track := range tracks </span><span class="cov6" title="32">{
+                ct := MKVCodecToType(track.CodecID)
+                if ct == CodecUnknown </span><span class="cov3" title="6">{
+                        continue</span> // Skip unknown codecs — no false alarms
+                }
+
+                <span class="cov5" title="26">if track.Type == mkv.TrackTypeVideo &amp;&amp; IsVideoCodec(ct) </span><span class="cov4" title="10">{
+                        if len(sourceCodecs.VideoCodecs) == 0 </span><span class="cov2" title="2">{
+                                continue</span> // No source video info available
+                        }
+                        <span class="cov4" title="8">if !codecFamilyMatch(ct, sourceCodecs.VideoCodecs) </span><span class="cov2" title="2">{
+                                mismatches = append(mismatches, CodecMismatch{
+                                        TrackType:    "video",
+                                        MKVCodecID:   track.CodecID,
+                                        MKVCodecType: ct,
+                                        SourceCodecs: sourceCodecs.VideoCodecs,
+                                })
+                        }</span>
+                } else<span class="cov5" title="16"> if track.Type == mkv.TrackTypeAudio &amp;&amp; IsAudioCodec(ct) </span><span class="cov5" title="16">{
+                        if len(sourceCodecs.AudioCodecs) == 0 </span><span class="cov2" title="2">{
+                                continue</span> // No source audio info available
+                        }
+                        <span class="cov4" title="14">if !codecFamilyMatch(ct, sourceCodecs.AudioCodecs) </span><span class="cov3" title="4">{
+                                mismatches = append(mismatches, CodecMismatch{
+                                        TrackType:    "audio",
+                                        MKVCodecID:   track.CodecID,
+                                        MKVCodecType: ct,
+                                        SourceCodecs: sourceCodecs.AudioCodecs,
+                                })
+                        }</span>
+                }
+        }
+
+        <span class="cov5" title="20">return mismatches</span>
+}
+
+// codecFamilyMatch checks if a codec type is compatible with any codec in the list.
+// Uses family-based matching (e.g., DTS is compatible with DTS-HD).
+func codecFamilyMatch(ct CodecType, sourceCodecs []CodecType) bool <span class="cov5" title="22">{
+        family := codecFamily(ct)
+        for _, sc := range sourceCodecs </span><span class="cov5" title="24">{
+                if codecFamily(sc) == family </span><span class="cov5" title="16">{
+                        return true
+                }</span>
+        }
+        <span class="cov3" title="6">return false</span>
+}
+
+// codecFamily returns the codec family for family-based matching.
+// Related codecs map to the same family value.
+func codecFamily(ct CodecType) int <span class="cov6" title="46">{
+        switch ct </span>{
+        case CodecMPEG1Video, CodecMPEG2Video:<span class="cov4" title="14">
+                return 1</span>
+        case CodecH264Video:<span class="cov2" title="2">
+                return 2</span>
+        case CodecH265Video:<span class="cov0" title="0">
+                return 3</span>
+        case CodecVC1Video:<span class="cov0" title="0">
+                return 4</span>
+        case CodecAC3Audio, CodecEAC3Audio:<span class="cov5" title="20">
+                return 10</span>
+        case CodecDTSAudio, CodecDTSHDAudio:<span class="cov3" title="6">
+                return 11</span>
+        case CodecTrueHDAudio:<span class="cov0" title="0">
+                return 12</span>
+        case CodecLPCMAudio:<span class="cov0" title="0">
+                return 13</span>
+        case CodecMPEGAudio:<span class="cov0" title="0">
+                return 14</span>
+        case CodecAACaudio:<span class="cov0" title="0">
+                return 15</span>
+        case CodecFLACAudio:<span class="cov3" title="4">
+                return 16</span>
+        case CodecOpusAudio:<span class="cov0" title="0">
+                return 17</span>
+        default:<span class="cov0" title="0">
+                return 0</span>
+        }
+}
+
+// containsCodec checks if a codec type is already in the list.
+func containsCodec(codecs []CodecType, ct CodecType) bool <span class="cov5" title="20">{
+        for _, c := range codecs </span><span class="cov3" title="4">{
+                if c == ct </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+        }
+        <span class="cov5" title="20">return false</span>
+}
+</pre>
+		
+		<pre class="file" id="file18" style="display: none">package source
 
 import (
         "fmt"
@@ -8243,7 +8957,7 @@ func (idx *Index) Close() error <span class="cov2" title="12">{
 }
 </pre>
 		
-		<pre class="file" id="file18" style="display: none">package source
+		<pre class="file" id="file19" style="display: none">package source
 
 import (
         "bytes"
@@ -8774,7 +9488,7 @@ func (p *MPEGPSParser) AudioRanges() []PESPayloadRange <span class="cov0" title=
 }</span>
 
 // Packets returns all parsed PES packets.
-func (p *MPEGPSParser) Packets() []PESPacket <span class="cov0" title="0">{
+func (p *MPEGPSParser) Packets() []PESPacket <span class="cov1" title="4">{
         return p.packets
 }</span>
 
@@ -8815,26 +9529,26 @@ func (p *MPEGPSParser) ESOffsetToFileOffset(esOffset int64, isVideo bool) (fileO
 // TotalESSize returns the total size of the elementary stream.
 // For video, returns filtered ES size when filtering is enabled.
 // For audio, this returns 0 - use AudioSubStreamESSize instead.
-func (p *MPEGPSParser) TotalESSize(isVideo bool) int64 <span class="cov8" title="53233455">{
+func (p *MPEGPSParser) TotalESSize(isVideo bool) int64 <span class="cov8" title="53233459">{
         if !isVideo </span><span class="cov0" title="0">{
                 // Audio now uses per-sub-stream ranges - return 0 to indicate callers should use AudioSubStreamESSize
                 return 0
         }</span>
-        <span class="cov8" title="53233455">var ranges []PESPayloadRange
+        <span class="cov8" title="53233459">var ranges []PESPayloadRange
         if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov8" title="53233455">{
                 ranges = p.filteredVideoRanges
-        }</span> else<span class="cov0" title="0"> {
+        }</span> else<span class="cov1" title="4"> {
                 ranges = p.videoRanges
         }</span>
-        <span class="cov8" title="53233455">if len(ranges) == 0 </span><span class="cov0" title="0">{
+        <span class="cov8" title="53233459">if len(ranges) == 0 </span><span class="cov0" title="0">{
                 return 0
         }</span>
-        <span class="cov8" title="53233455">last := ranges[len(ranges)-1]
+        <span class="cov8" title="53233459">last := ranges[len(ranges)-1]
         return last.ESOffset + int64(last.Size)</span>
 }
 
 // AudioSubStreams returns the list of audio sub-stream IDs in order of appearance.
-func (p *MPEGPSParser) AudioSubStreams() []byte <span class="cov1" title="5">{
+func (p *MPEGPSParser) AudioSubStreams() []byte <span class="cov1" title="9">{
         return p.audioSubStreams
 }</span>
 
@@ -9218,7 +9932,7 @@ func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, 
 }
 </pre>
 		
-		<pre class="file" id="file19" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
+		<pre class="file" id="file20" style="display: none">// Package source provides functionality for indexing source media files (DVD ISOs, Blu-ray directories).
 package source
 
 import (
@@ -9578,7 +10292,7 @@ func (idx *Index) RawSlice(loc Location, size int) []byte <span class="cov10" ti
 }
 </pre>
 		
-		<pre class="file" id="file20" style="display: none">package source
+		<pre class="file" id="file21" style="display: none">package source
 
 import "bytes"
 
@@ -9645,7 +10359,7 @@ func FindVideoStartCodesInRange(data []byte, startOffset int) []int <span class=
 }
 </pre>
 		
-		<pre class="file" id="file21" style="display: none">// Package testdata provides helpers for locating integration test data.
+		<pre class="file" id="file22" style="display: none">// Package testdata provides helpers for locating integration test data.
 //
 // Test data (Big Buck Bunny DVD ISO and MKV) is not stored in the repository.
 // See README.md in this directory for setup instructions.
