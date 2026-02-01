@@ -284,12 +284,12 @@ Examples:
     mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
 `)
 	case "validate":
-		fmt.Print(`Usage: mkvdup validate [options] [config.yaml...]
+		fmt.Print(`Usage: mkvdup validate [options] <config.yaml...>
 
 Validate configuration files for correctness before mounting.
 
 Arguments:
-    [config.yaml]  YAML config files to validate (default: /etc/mkvdup.conf)
+    <config.yaml>  YAML config files to validate
 
 Options:
     --config-dir   Treat config argument as directory of YAML files (.yaml, .yml)
@@ -624,6 +624,10 @@ func main() {
 			default:
 				valArgs = append(valArgs, args[i])
 			}
+		}
+		if len(valArgs) < 1 {
+			printCommandUsage("validate")
+			os.Exit(1)
 		}
 		os.Exit(validateConfigs(valArgs, configDir, deep, strict))
 

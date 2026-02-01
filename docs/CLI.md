@@ -236,7 +236,7 @@ mkvdup validate --strict config1.yaml config2.yaml
 ```
 
 **Arguments:**
-- `[config.yaml...]` — YAML config files to validate (default: `/etc/mkvdup.conf`)
+- `<config.yaml...>` — YAML config files to validate
 
 **Options:**
 

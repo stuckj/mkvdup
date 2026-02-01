@@ -1262,10 +1262,7 @@ func resolveConfigPaths(configPaths []string, configDir bool) ([]string, error) 
 	}
 
 	if len(configPaths) == 0 {
-		if _, err := os.Stat(defaultConfigPath); err == nil {
-			return []string{defaultConfigPath}, nil
-		}
-		return nil, fmt.Errorf("no config files specified and %s not found\nRun 'mkvdup validate --help' for usage", defaultConfigPath)
+		return nil, fmt.Errorf("no config files specified\nRun 'mkvdup validate --help' for usage")
 	}
 
 	return configPaths, nil
