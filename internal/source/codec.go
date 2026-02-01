@@ -298,12 +298,16 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		// Skip adaptation field if present
 		adaptationFieldControl := (pkt[3] >> 4) & 0x03
 		headerLen := 4
-		if adaptationFieldControl == 0x03 || adaptationFieldControl == 0x02 {
+		switch adaptationFieldControl {
+		case 0x02, 0x03: // Adaptation field present
 			adaptLen := int(pkt[4])
 			if adaptLen > 183 {
 				continue
 			}
 			headerLen = 5 + adaptLen
+		case 0x01: // Payload only, no adaptation field
+		default: // 0x00 is reserved/invalid
+			continue
 		}
 		if headerLen >= 188 {
 			continue
@@ -380,12 +384,16 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		// Skip adaptation field
 		adaptationFieldControl := (pkt[3] >> 4) & 0x03
 		headerLen := 4
-		if adaptationFieldControl == 0x03 || adaptationFieldControl == 0x02 {
+		switch adaptationFieldControl {
+		case 0x02, 0x03: // Adaptation field present
 			adaptLen := int(pkt[4])
 			if adaptLen > 183 {
 				continue
 			}
 			headerLen = 5 + adaptLen
+		case 0x01: // Payload only, no adaptation field
+		default: // 0x00 is reserved/invalid
+			continue
 		}
 		if headerLen >= 188 {
 			continue
@@ -409,9 +417,6 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		}
 
 		// Program info length at offset 10
-		if len(payload) < 12 {
-			continue
-		}
 		progInfoLen := int(payload[10]&0x0F)<<8 | int(payload[11])
 
 		// Stream descriptors start after program info
@@ -419,6 +424,9 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		streamsEnd := 3 + sectionLength - 4 // section starts at byte 3, -4 for CRC
 		if streamsEnd > len(payload) {
 			streamsEnd = len(payload) - 4
+		}
+		if streamsStart > streamsEnd {
+			continue
 		}
 
 		for j := streamsStart; j+5 <= streamsEnd; {
