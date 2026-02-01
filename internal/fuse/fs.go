@@ -344,6 +344,74 @@ func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory Rea
 	return root, nil
 }
 
+// Reload updates the filesystem with new configs. It merges the new file tree
+// into the existing directory tree in-place (required because go-fuse caches
+// persistent inode objects by inode number).
+//
+// Semantics:
+//   - New files become immediately visible
+//   - Removed files disappear from listings (active readers continue via held refs)
+//   - Modified mappings: existing readers use old mapping until close
+//   - Permissions are reloaded from disk and stale entries cleaned up
+func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interface{})) error {
+	if logFn == nil {
+		logFn = func(string, ...interface{}) {}
+	}
+
+	// Build new file set from configs
+	newFiles := make(map[string]*MKVFile)
+	for _, config := range configs {
+		reader, err := r.readerFactory.NewReaderLazy(config.DedupFile, config.SourceDir)
+		if err != nil {
+			logFn("warning: skipping %s: %v", config.Name, err)
+			continue
+		}
+
+		mkvFile := &MKVFile{
+			Name:          config.Name,
+			DedupPath:     config.DedupFile,
+			SourceDir:     config.SourceDir,
+			Size:          reader.OriginalSize(),
+			readerFactory: r.readerFactory,
+		}
+		reader.Close()
+		newFiles[config.Name] = mkvFile
+	}
+
+	// Build new directory tree
+	fileList := make([]*MKVFile, 0, len(newFiles))
+	for _, f := range newFiles {
+		fileList = append(fileList, f)
+	}
+	newTree := BuildDirectoryTree(fileList, r.verbose, r.readerFactory, r.permStore)
+
+	// Update flat files map
+	r.mu.Lock()
+	r.files = newFiles
+	r.mu.Unlock()
+
+	// Merge new tree into existing tree in place
+	mergeDirectoryTree(r.rootDir, newTree)
+
+	// Reload permissions and clean up stale entries
+	if r.permStore != nil {
+		if err := r.permStore.Load(); err != nil {
+			logFn("warning: failed to reload permissions: %v", err)
+		}
+		validFiles, validDirs := r.collectValidPaths()
+		removed := r.permStore.CleanupStale(validFiles, validDirs)
+		if removed > 0 {
+			logFn("cleaned up %d stale permission entries", removed)
+			if err := r.permStore.Save(); err != nil {
+				logFn("warning: failed to save permissions after cleanup: %v", err)
+			}
+		}
+	}
+
+	logFn("reload complete: %d files", len(newFiles))
+	return nil
+}
+
 // Getattr implements fs.NodeGetattrer - returns attributes for the root directory.
 // This ensures the root directory uses permissions from the permission store,
 // consistent with all subdirectories.

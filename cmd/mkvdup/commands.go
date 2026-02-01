@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
+	"log/syslog"
 	"os"
 	"os/signal"
 	"path"
@@ -1127,6 +1129,12 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		}
 	}
 
+	// Store the config-dir path for SIGHUP re-expansion
+	var configDirPath string
+	if opts.ConfigDir {
+		configDirPath = configPaths[0]
+	}
+
 	// If configDir is set, expand directory to list of .yaml files
 	if opts.ConfigDir {
 		if len(configPaths) != 1 {
@@ -1220,16 +1228,65 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		fmt.Println("Press Ctrl+C to unmount")
 	}
 
-	// Handle signals for graceful shutdown
+	// Set up logging function. In daemon mode, use syslog since
+	// stderr is redirected to /dev/null after Detach().
+	logFn := func(format string, args ...interface{}) {
+		log.Printf(format, args...)
+	}
+	if daemon.IsChild() {
+		if syslogWriter, err := syslog.New(syslog.LOG_INFO|syslog.LOG_DAEMON, "mkvdup"); err == nil {
+			logFn = func(format string, args ...interface{}) {
+				syslogWriter.Info(fmt.Sprintf(format, args...))
+			}
+		}
+	}
+
+	// Handle signals for graceful shutdown and config reload
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 	go func() {
-		<-sigChan
-		if !daemon.IsChild() {
-			fmt.Println("\nUnmounting...")
+		for sig := range sigChan {
+			switch sig {
+			case syscall.SIGHUP:
+				logFn("received SIGHUP, reloading config...")
+
+				// Re-expand config-dir if applicable
+				var reloadPaths []string
+				if configDirPath != "" {
+					expanded, err := expandConfigDir(configDirPath)
+					if err != nil {
+						logFn("reload failed: expand config dir: %v", err)
+						continue
+					}
+					reloadPaths = expanded
+				} else {
+					reloadPaths = configPaths
+				}
+
+				// Resolve configs (expands includes, globs, virtual_files)
+				configs, err := dedup.ResolveConfigs(reloadPaths)
+				if err != nil {
+					logFn("reload failed: resolve configs: %v", err)
+					continue
+				}
+
+				// Reload the filesystem
+				if err := root.Reload(configs, logFn); err != nil {
+					logFn("reload failed: %v", err)
+					continue
+				}
+
+				logFn("config reloaded successfully")
+
+			case syscall.SIGINT, syscall.SIGTERM:
+				if !daemon.IsChild() {
+					fmt.Println("\nUnmounting...")
+				}
+				server.Unmount()
+				return
+			}
 		}
-		server.Unmount()
 	}()
 
 	// Serve until unmounted
@@ -1239,6 +1296,51 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		fmt.Println("Unmounted")
 	}
 
+	return nil
+}
+
+// reloadDaemon validates config files and sends SIGHUP to the running daemon.
+func reloadDaemon(pidFile string, configPaths []string, configDir bool) error {
+	// Read PID from file
+	pid, err := daemon.ReadPidFile(pidFile)
+	if err != nil {
+		return err
+	}
+
+	// Verify the process exists (on Unix, FindProcess always succeeds;
+	// send signal 0 to check if process is actually running)
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("find process %d: %w", pid, err)
+	}
+	if err := process.Signal(syscall.Signal(0)); err != nil {
+		return fmt.Errorf("daemon process %d is not running: %w", pid, err)
+	}
+
+	// Validate config if paths provided
+	if len(configPaths) > 0 {
+		resolved, err := resolveConfigPaths(configPaths, configDir)
+		if err != nil {
+			return fmt.Errorf("resolve config paths: %w", err)
+		}
+
+		fmt.Println("Validating configuration...")
+		allEntries, _, hasErrors := validateConfigEntries(resolved)
+		nameErrors, _ := checkNameConflicts(allEntries)
+		if hasErrors || nameErrors {
+			return fmt.Errorf("config validation failed, not sending reload signal")
+		}
+		fmt.Println("Configuration valid.")
+		fmt.Println()
+	}
+
+	// Send SIGHUP to the daemon
+	fmt.Printf("Sending SIGHUP to daemon (pid %d)...\n", pid)
+	if err := process.Signal(syscall.SIGHUP); err != nil {
+		return fmt.Errorf("send SIGHUP to process %d: %w", pid, err)
+	}
+
+	fmt.Println("Reload signal sent successfully.")
 	return nil
 }
 

@@ -3,12 +3,15 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/stuckj/mkvdup/internal/daemon"
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
 	"github.com/stuckj/mkvdup/internal/mkv"
@@ -1123,4 +1126,48 @@ func TestPrintBatchSummary_CustomThreshold(t *testing.T) {
 	if !strings.Contains(output, "below 90%") {
 		t.Error("expected 'below 90%' in warning message")
 	}
+}
+
+func TestReloadDaemon_MissingPidFile(t *testing.T) {
+	err := reloadDaemon("/nonexistent/path.pid", nil, false)
+	if err == nil {
+		t.Error("expected error for missing PID file")
+	}
+}
+
+func TestReloadDaemon_DeadProcess(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "test.pid")
+	// Use a very high PID that almost certainly doesn't exist
+	os.WriteFile(pidFile, []byte("4194304\n"), 0644)
+
+	err := reloadDaemon(pidFile, nil, false)
+	if err == nil {
+		t.Error("expected error for non-running process")
+	}
+	if !strings.Contains(err.Error(), "not running") {
+		t.Errorf("expected 'not running' error, got: %v", err)
+	}
+}
+
+func TestReloadDaemon_SendsSignal(t *testing.T) {
+	// Create a PID file with our own PID
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "test.pid")
+	if err := daemon.WritePidFile(pidFile, os.Getpid()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ignore SIGHUP so we don't die when the function sends it to us.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGHUP)
+	defer signal.Stop(sigCh)
+
+	err := reloadDaemon(pidFile, nil, false)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Drain the signal we sent to ourselves
+	<-sigCh
 }

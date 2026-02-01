@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create batch-create probe mount info verify check validate parse-mkv index-source match help"
+    local commands="create batch-create probe mount info verify check validate reload parse-mkv index-source match help"
     local global_opts="-v --verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -76,7 +76,7 @@ _mkvdup() {
     fi
 
     # Global options available for all commands when typing -<TAB>
-    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" ]]; then
+    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" && "$cmd" != "reload" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
@@ -193,6 +193,22 @@ _mkvdup() {
             else
                 _filedir
             fi
+            ;;
+
+        reload)
+            # reload --pid-file PATH [options] [config.yaml...]
+            local reload_opts="--pid-file --config-dir"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$reload_opts $global_opts" -- "$cur"))
+                return
+            fi
+            case "$prev" in
+                --pid-file)
+                    _filedir
+                    return
+                    ;;
+            esac
+            _filedir '@(yaml|yml)'
             ;;
 
         parse-mkv)

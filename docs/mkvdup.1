@@ -184,6 +184,23 @@ Verify dedup file headers and internal checksums
 Treat warnings as errors (exit code 1 on warnings)
 .RE
 .TP
+.B reload \fR[\fIoptions\fR] \fB\-\-pid\-file\fR \fIPATH\fR [\fIconfig.yaml\fR...]
+Reload a running daemon's configuration. Validates the config files
+before sending SIGHUP to the daemon. If validation fails, the signal
+is not sent and errors are reported. If no config files are specified,
+the signal is sent without pre-validation.
+.RS
+.TP
+.I config.yaml
+Config files to validate (same as mount's config args)
+.TP
+.B \-\-pid\-file PATH
+(Required) PID file of the running daemon
+.TP
+.B \-\-config\-dir
+Treat config argument as directory of YAML files (.yaml, .yml)
+.RE
+.TP
 .B parse-mkv \fImkv-file\fR
 Parse an MKV file and display packet information (debugging).
 .TP
@@ -259,6 +276,15 @@ Validate config files before mounting:
 @PACKAGE_NAME@ validate /etc/mkvdup.conf
 @PACKAGE_NAME@ validate --deep --strict /etc/mkvdup.conf
 @PACKAGE_NAME@ validate --config-dir /etc/mkvdup.d/
+.fi
+.RE
+.PP
+Reload a running daemon's configuration:
+.PP
+.RS
+.nf
+@PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
+@PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
 .fi
 .RE
 .SH BATCH MANIFEST FORMAT

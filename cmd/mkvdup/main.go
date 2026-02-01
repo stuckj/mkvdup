@@ -100,6 +100,7 @@ Commands:
   verify       Verify dedup file against original MKV
   check        Check dedup + source file integrity
   validate     Validate configuration files
+  reload       Reload running daemon's configuration
 
 Debug commands:
   parse-mkv    Parse MKV and show packet info
@@ -316,6 +317,32 @@ Examples:
     mkvdup validate *.yaml
     mkvdup validate --config-dir /etc/mkvdup.d/
     mkvdup validate --deep --strict /etc/mkvdup.conf
+`)
+	case "reload":
+		fmt.Print(`Usage: mkvdup reload --pid-file PATH [options] [config.yaml...]
+
+Reload a running daemon's configuration by validating the config
+and sending SIGHUP to the daemon process.
+
+The config is validated BEFORE sending the signal. If validation
+fails, the signal is not sent and the error is reported.
+
+If no config files are specified, the signal is sent without
+pre-validation (the daemon validates internally on SIGHUP).
+
+Arguments:
+    [config.yaml]  Config files to validate (same as mount's config args)
+
+Required Options:
+    --pid-file PATH    PID file of running daemon (must match mount's --pid-file)
+
+Options:
+    --config-dir       Treat config argument as directory of YAML files
+
+Examples:
+    mkvdup reload --pid-file /run/mkvdup.pid config.yaml
+    mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+    mkvdup reload --pid-file /run/mkvdup.pid
 `)
 	case "parse-mkv":
 		fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
@@ -630,6 +657,32 @@ func main() {
 			os.Exit(1)
 		}
 		os.Exit(validateConfigs(valArgs, configDir, deep, strict))
+
+	case "reload":
+		pidFile := ""
+		configDir := false
+		var reloadArgs []string
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--pid-file":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					pidFile = args[i+1]
+					i++
+				} else {
+					log.Fatalf("Error: --pid-file requires a path argument")
+				}
+			case "--config-dir":
+				configDir = true
+			default:
+				reloadArgs = append(reloadArgs, args[i])
+			}
+		}
+		if pidFile == "" {
+			log.Fatalf("Error: --pid-file is required for reload")
+		}
+		if err := reloadDaemon(pidFile, reloadArgs, configDir); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
 
 	case "parse-mkv":
 		if len(args) < 1 {

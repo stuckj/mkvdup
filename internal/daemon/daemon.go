@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -229,4 +230,21 @@ func WritePidFile(path string, pid int) error {
 // RemovePidFile removes the PID file at the given path.
 func RemovePidFile(path string) error {
 	return os.Remove(path)
+}
+
+// ReadPidFile reads a PID from the given file path.
+func ReadPidFile(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("read pid file: %w", err)
+	}
+	pidStr := strings.TrimSpace(string(data))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid pid in %s: %w", path, err)
+	}
+	if pid <= 0 {
+		return 0, fmt.Errorf("invalid pid %d in %s", pid, path)
+	}
+	return pid, nil
 }

@@ -147,28 +147,45 @@ mount -t overlay overlay \
 4. Delete original MKV from ZFS when ready
 5. Overlay automatically serves mkvdup virtual version
 
-## Hot Reload Support *(planned — [#8](https://github.com/stuckj/mkvdup/issues/8), [#10](https://github.com/stuckj/mkvdup/issues/10))*
+## Hot Reload via SIGHUP
 
-> **Not yet implemented.** The following describes planned behavior.
+The FUSE daemon supports live config reload without restart via SIGHUP:
 
-The FUSE daemon will support live config reload without restart:
-
-**Signal-based reload:**
+**Using the reload command (recommended):**
 ```bash
-# Send SIGHUP to reload config
+# Validates config before sending signal
+mkvdup reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
+mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+```
+
+**Using kill directly:**
+```bash
+# Send SIGHUP directly (daemon validates internally)
 kill -HUP $(pidof mkvdup)
 ```
 
-**File-watch reload:**
-- Daemon watches config file and include directories
-- Automatically reloads when changes detected
-- Uses inotify for efficient monitoring
-
 **On reload:**
+- Config files are re-read from disk (includes and globs are re-expanded)
+- If `--config-dir` was used at mount, the directory is re-scanned for new YAML files
 - New virtual files become immediately available
 - Removed virtual files become unavailable (active readers continue until close)
 - Modified mappings: existing readers use old mapping until close
+- Permissions file is reloaded from disk
 - Stale permissions entries are cleaned up
+
+**Validation and warnings:**
+- If config resolution fails, the old config is kept and the error is logged
+- Duplicate file paths, file/directory conflicts, and invalid paths are logged as warnings
+- In daemon mode, warnings are logged to syslog (visible via `journalctl -t mkvdup`)
+
+See [CLI reload command](CLI.md#reload) for more details.
+
+### File-watch reload *(planned — [#10](https://github.com/stuckj/mkvdup/issues/10))*
+
+> **Not yet implemented.** The following describes planned behavior.
+
+- Daemon watches config file and include directories via inotify
+- Automatically reloads when changes detected
 
 ## Permissions and Ownership
 
@@ -276,7 +293,7 @@ mkvdup mount --permissions-file /var/lib/mkvdup/permissions.yaml /mnt/videos con
 1. Permissions file is loaded (or created with defaults)
 2. Stale entries (for files/directories that no longer exist) are automatically removed
 
-**On SIGHUP reload (future work):**
+**On SIGHUP reload:**
 1. Permissions file is reloaded from disk
 2. Stale entries are cleaned up
 

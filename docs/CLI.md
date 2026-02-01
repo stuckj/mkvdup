@@ -326,13 +326,37 @@ mkvdup probe /path/to/video.mkv /path/to/source1 /path/to/source2 ...
 - 40-80% match: Possible match (may be partial content or different encode settings)
 - <40% match: Unlikely to be the source
 
-### reload *(planned — [#14](https://github.com/stuckj/mkvdup/issues/14))*
+### reload
 
-Reload running daemon's config. **Not yet implemented.**
+Reload a running daemon's configuration by validating the config and sending SIGHUP.
 
 ```bash
-# Planned syntax:
-mkvdup reload  # Sends SIGHUP to running daemon
+mkvdup reload --pid-file /run/mkvdup.pid config.yaml
+mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+mkvdup reload --pid-file /run/mkvdup.pid
+```
+
+**Required Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--pid-file PATH` | PID file of the running daemon (must match mount's `--pid-file`) |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--config-dir` | Treat config argument as directory of YAML files (`.yaml`, `.yml`) |
+
+If config files are provided, they are validated before sending the signal. If validation fails, the signal is not sent and errors are reported. If no config files are specified, the signal is sent without pre-validation (the daemon validates internally on SIGHUP).
+
+The daemon re-reads its original config paths on SIGHUP, expanding include globs and `--config-dir` directories to pick up new files. See [Hot Reload](FUSE.md#hot-reload-via-sighup) for daemon-side behavior.
+
+**systemd integration:**
+```ini
+[Service]
+ExecStart=/usr/bin/mkvdup mount --foreground --pid-file /run/mkvdup.pid /mnt/videos /etc/mkvdup.conf
+ExecReload=/usr/bin/mkvdup reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 ```
 
 ### Debug Commands
