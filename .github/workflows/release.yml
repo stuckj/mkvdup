@@ -22,6 +22,8 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       commit: ${{ steps.resolve.outputs.commit }}
       tag: ${{ steps.resolve.outputs.tag }}
+      is_canary: ${{ steps.resolve.outputs.is_canary }}
+      package_name: ${{ steps.resolve.outputs.package_name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -42,6 +44,16 @@ jobs:
           TAG="v${VERSION}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+          # Detect canary release
+          IS_CANARY=false
+          PACKAGE_NAME="mkvdup"
+          if [[ "$VERSION" == *-canary.* ]]; then
+            IS_CANARY=true
+            PACKAGE_NAME="mkvdup-canary"
+          fi
+          echo "is_canary=${IS_CANARY}" >> $GITHUB_OUTPUT
+          echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
 
           # Check if tag already exists
           if git rev-parse "${TAG}" >/dev/null 2>&1; then
@@ -104,7 +116,17 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w -X main.version=${{ needs.prepare.outputs.version }}" -o mkvdup ./cmd/mkvdup
+          go build -ldflags="-s -w -X main.version=${{ needs.prepare.outputs.version }}" -o ${{ needs.prepare.outputs.package_name }} ./cmd/mkvdup
+
+      - name: Expand man page variables
+        env:
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+        run: |
+          UPPER=$(echo "$PACKAGE_NAME" | tr '[:lower:]' '[:upper:]')
+          sed -i \
+            -e "s/@PACKAGE_NAME_UPPER@/${UPPER}/g" \
+            -e "s/@PACKAGE_NAME@/${PACKAGE_NAME}/g" \
+            docs/mkvdup.1
 
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
@@ -113,6 +135,7 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           GOARCH: ${{ matrix.goarch }}
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
         run: |
           nfpm package --packager deb --target .
 
@@ -120,6 +143,7 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           GOARCH: ${{ matrix.goarch }}
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
         run: |
           nfpm package --packager rpm --target .
 
@@ -157,6 +181,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           files: packages/*
           generate_release_notes: true
+          prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -214,34 +239,51 @@ jobs:
           merge-multiple: true
 
       - name: Setup APT repository structure
+        env:
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
         run: |
           cd gh-pages
 
+          # Set paths based on release channel
+          if [[ "$IS_CANARY" == "true" ]]; then
+            POOL="pool/canary"
+            DIST="dists/canary"
+            SUITE="canary"
+            LABEL="mkvdup-canary"
+            DESC="mkvdup canary packages"
+          else
+            POOL="pool/main"
+            DIST="dists/stable"
+            SUITE="stable"
+            LABEL="mkvdup"
+            DESC="mkvdup packages"
+          fi
+
           # Create directory structure
-          mkdir -p apt/pool/main
-          mkdir -p apt/dists/stable/main/binary-amd64
-          mkdir -p apt/dists/stable/main/binary-arm64
+          mkdir -p "apt/${POOL}"
+          mkdir -p "apt/${DIST}/main/binary-amd64"
+          mkdir -p "apt/${DIST}/main/binary-arm64"
 
           # Copy deb packages to pool
-          cp ../packages/*.deb apt/pool/main/
+          cp ../packages/*.deb "apt/${POOL}/"
 
           # Generate Packages files for each architecture
           cd apt
-          dpkg-scanpackages --arch amd64 pool/ > dists/stable/main/binary-amd64/Packages
-          gzip -k -f dists/stable/main/binary-amd64/Packages
-          dpkg-scanpackages --arch arm64 pool/ > dists/stable/main/binary-arm64/Packages
-          gzip -k -f dists/stable/main/binary-arm64/Packages
+          dpkg-scanpackages --arch amd64 "${POOL}/" > "${DIST}/main/binary-amd64/Packages"
+          gzip -k -f "${DIST}/main/binary-amd64/Packages"
+          dpkg-scanpackages --arch arm64 "${POOL}/" > "${DIST}/main/binary-arm64/Packages"
+          gzip -k -f "${DIST}/main/binary-arm64/Packages"
 
           # Create Release file
-          cd dists/stable
+          cd "${DIST}"
           cat > Release << EOF
-          Origin: mkvdup
-          Label: mkvdup
-          Suite: stable
-          Codename: stable
+          Origin: ${LABEL}
+          Label: ${LABEL}
+          Suite: ${SUITE}
+          Codename: ${SUITE}
           Architectures: amd64 arm64
           Components: main
-          Description: mkvdup packages
+          Description: ${DESC}
           Date: $(date -Ru)
           EOF
 
@@ -261,17 +303,26 @@ jobs:
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --clearsign -o InRelease Release
 
       - name: Setup YUM repository structure
+        env:
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
         run: |
           cd gh-pages
 
+          # Set YUM directory based on release channel
+          if [[ "$IS_CANARY" == "true" ]]; then
+            YUM_DIR="yum-canary"
+          else
+            YUM_DIR="yum"
+          fi
+
           # Create directory structure
-          mkdir -p yum/packages
+          mkdir -p "${YUM_DIR}/packages"
 
           # Copy rpm packages
-          cp ../packages/*.rpm yum/packages/
+          cp ../packages/*.rpm "${YUM_DIR}/packages/"
 
           # Generate repository metadata
-          cd yum
+          cd "${YUM_DIR}"
           createrepo_c .
 
           # Sign the repository metadata
@@ -281,8 +332,10 @@ jobs:
         run: |
           cd gh-pages
           gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
-          cp gpg-key.asc apt/
-          cp gpg-key.asc yum/
+          # Copy to all repo directories that exist
+          for dir in apt yum yum-canary; do
+            [[ -d "$dir" ]] && cp gpg-key.asc "$dir/"
+          done
 
       - name: Create index page
         run: |
@@ -329,6 +382,37 @@ jobs:
 
           # Install
           sudo dnf install mkvdup</pre>
+
+            <h2>Canary Channel (Pre-release)</h2>
+            <p>The canary channel provides early access to new features. It installs as
+            <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
+
+            <h3>Debian/Ubuntu (APT) - Canary</h3>
+            <pre>
+          # Add the GPG key (same key as stable)
+          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
+
+          # Add the canary repository
+          echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt canary main" | sudo tee /etc/apt/sources.list.d/mkvdup-canary.list
+
+          # Install
+          sudo apt update
+          sudo apt install mkvdup-canary</pre>
+
+            <h3>RHEL/CentOS/Fedora (YUM/DNF) - Canary</h3>
+            <pre>
+          # Add the canary repository
+          sudo tee /etc/yum.repos.d/mkvdup-canary.repo &lt;&lt; 'REPO'
+          [mkvdup-canary]
+          name=mkvdup-canary
+          baseurl=https://stuckj.github.io/mkvdup/yum-canary
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
+          REPO
+
+          # Install
+          sudo dnf install mkvdup-canary</pre>
 
             <h2>Links</h2>
             <ul>
