@@ -144,3 +144,84 @@ func TestPrintCommandUsage_Unknown(t *testing.T) {
 		t.Errorf("printCommandUsage(%q) output = %q, want it to contain %q", "nonexistent", output, "mkvdup")
 	}
 }
+
+func TestParseWarnFlags(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		wantThreshold float64
+		wantQuiet     bool
+		wantRemaining []string
+	}{
+		{
+			name:          "defaults",
+			args:          []string{"file.mkv", "/source"},
+			wantThreshold: 75.0,
+			wantQuiet:     false,
+			wantRemaining: []string{"file.mkv", "/source"},
+		},
+		{
+			name:          "custom threshold",
+			args:          []string{"--warn-threshold", "50", "file.mkv", "/source"},
+			wantThreshold: 50.0,
+			wantQuiet:     false,
+			wantRemaining: []string{"file.mkv", "/source"},
+		},
+		{
+			name:          "quiet flag",
+			args:          []string{"--quiet", "file.mkv", "/source"},
+			wantThreshold: 75.0,
+			wantQuiet:     true,
+			wantRemaining: []string{"file.mkv", "/source"},
+		},
+		{
+			name:          "both flags",
+			args:          []string{"--warn-threshold", "90", "--quiet", "file.mkv"},
+			wantThreshold: 90.0,
+			wantQuiet:     true,
+			wantRemaining: []string{"file.mkv"},
+		},
+		{
+			name:          "flags after positional args",
+			args:          []string{"file.mkv", "--quiet", "/source", "--warn-threshold", "60"},
+			wantThreshold: 60.0,
+			wantQuiet:     true,
+			wantRemaining: []string{"file.mkv", "/source"},
+		},
+		{
+			name:          "threshold zero",
+			args:          []string{"--warn-threshold", "0", "file.mkv"},
+			wantThreshold: 0.0,
+			wantQuiet:     false,
+			wantRemaining: []string{"file.mkv"},
+		},
+		{
+			name:          "threshold 100",
+			args:          []string{"--warn-threshold", "100", "file.mkv"},
+			wantThreshold: 100.0,
+			wantQuiet:     false,
+			wantRemaining: []string{"file.mkv"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			threshold, quiet, remaining := parseWarnFlags(tt.args)
+			if threshold != tt.wantThreshold {
+				t.Errorf("threshold = %f, want %f", threshold, tt.wantThreshold)
+			}
+			if quiet != tt.wantQuiet {
+				t.Errorf("quiet = %v, want %v", quiet, tt.wantQuiet)
+			}
+			if len(remaining) != len(tt.wantRemaining) {
+				t.Errorf("remaining = %v, want %v", remaining, tt.wantRemaining)
+				return
+			}
+			for i := range remaining {
+				if remaining[i] != tt.wantRemaining[i] {
+					t.Errorf("remaining[%d] = %q, want %q", i, remaining[i], tt.wantRemaining[i])
+				}
+			}
+		})
+	}
+}

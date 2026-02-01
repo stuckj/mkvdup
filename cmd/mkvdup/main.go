@@ -47,6 +47,35 @@ func parseOctalMode(s string) (uint32, error) {
 	return uint32(v), nil
 }
 
+// parseWarnFlags extracts --warn-threshold and --quiet from args, returning the
+// parsed values and the remaining positional arguments.
+func parseWarnFlags(args []string) (warnThreshold float64, quiet bool, remaining []string) {
+	warnThreshold = 75.0
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--warn-threshold":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				v, err := strconv.ParseFloat(args[i+1], 64)
+				if err != nil {
+					log.Fatalf("Error: --warn-threshold invalid: %v", err)
+				}
+				if v < 0 || v > 100 {
+					log.Fatalf("Error: --warn-threshold must be between 0 and 100")
+				}
+				warnThreshold = v
+				i++
+			} else {
+				log.Fatalf("Error: --warn-threshold requires a numeric argument")
+			}
+		case "--quiet":
+			quiet = true
+		default:
+			remaining = append(remaining, args[i])
+		}
+	}
+	return
+}
+
 // version is set at build time via -ldflags
 var version = "dev"
 
@@ -91,7 +120,7 @@ See 'man mkvdup' for detailed documentation.
 func printCommandUsage(cmd string) {
 	switch cmd {
 	case "create":
-		fmt.Print(`Usage: mkvdup create <mkv-file> <source-dir> [output] [name]
+		fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> [output] [name]
 
 Create a dedup file from an MKV and its source media.
 
@@ -101,18 +130,28 @@ Arguments:
     [output]      Output .mkvdup file (default: <mkv-file>.mkvdup)
     [name]        Display name in FUSE mount (default: basename of mkv-file)
 
+Options:
+    --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
+    --quiet             Suppress the space savings warning
+
 Examples:
     mkvdup create movie.mkv /media/dvd-backups
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
+    mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
+    mkvdup create --quiet movie.mkv /media/dvd-backups
 `)
 	case "batch-create":
-		fmt.Print(`Usage: mkvdup batch-create <manifest.yaml>
+		fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
 
 Create multiple dedup files from MKVs sharing the same source directory.
 The source is indexed once and reused for all files.
 
 Arguments:
     <manifest.yaml>  YAML manifest file specifying source and MKV files
+
+Options:
+    --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
+    --quiet             Suppress the space savings warning
 
 Manifest format:
     source_dir: /media/dvd-backups/disc1
@@ -133,6 +172,7 @@ Relative paths are resolved against the manifest file's directory.
 
 Examples:
     mkvdup batch-create episodes.yaml
+    mkvdup batch-create --quiet episodes.yaml
 `)
 	case "probe":
 		fmt.Print(`Usage: mkvdup probe <mkv-file> <source-dir>...
@@ -360,28 +400,30 @@ func main() {
 
 	switch cmd {
 	case "create":
-		if len(args) < 2 {
+		warnThreshold, quiet, createArgs := parseWarnFlags(args)
+		if len(createArgs) < 2 {
 			printCommandUsage("create")
 			os.Exit(1)
 		}
 		output := ""
 		name := ""
-		if len(args) >= 3 {
-			output = args[2]
+		if len(createArgs) >= 3 {
+			output = createArgs[2]
 		}
-		if len(args) >= 4 {
-			name = args[3]
+		if len(createArgs) >= 4 {
+			name = createArgs[3]
 		}
-		if err := createDedup(args[0], args[1], output, name); err != nil {
+		if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, quiet); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
 	case "batch-create":
-		if len(args) < 1 {
+		warnThreshold, quiet, batchArgs := parseWarnFlags(args)
+		if len(batchArgs) < 1 {
 			printCommandUsage("batch-create")
 			os.Exit(1)
 		}
-		if err := createBatch(args[0]); err != nil {
+		if err := createBatch(batchArgs[0], warnThreshold, quiet); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

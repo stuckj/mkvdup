@@ -76,7 +76,7 @@ _mkvdup() {
     fi
 
     # Global options available for all commands when typing -<TAB>
-    if [[ "$cur" == -* && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" ]]; then
+    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
@@ -84,12 +84,34 @@ _mkvdup() {
     # Command-specific completions
     case "$cmd" in
         create)
-            # create <mkv-file> <source-dir> [output] [name]
+            # create [options] <mkv-file> <source-dir> [output] [name]
+            local create_opts="--warn-threshold --quiet"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$create_opts $global_opts" -- "$cur"))
+                return
+            fi
+            case "$prev" in
+                --warn-threshold)
+                    # Numeric value; no useful completion to offer
+                    return
+                    ;;
+            esac
             _filedir
             ;;
 
         batch-create)
-            # batch-create <manifest.yaml>
+            # batch-create [options] <manifest.yaml>
+            local batch_create_opts="--warn-threshold --quiet"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$batch_create_opts $global_opts" -- "$cur"))
+                return
+            fi
+            case "$prev" in
+                --warn-threshold)
+                    # Numeric value; no useful completion to offer
+                    return
+                    ;;
+            esac
             _filedir '@(yaml|yml)'
             ;;
 
