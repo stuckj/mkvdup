@@ -483,59 +483,59 @@ func buildTestM2TS(t *testing.T, streams []testStream) []byte {
 	patOffset := 0
 	// 4-byte M2TS timestamp (zeros)
 	ts := data[patOffset+tsPayloadStart:]
-	ts[0] = 0x47                       // Sync byte
-	ts[1] = 0x40                       // Payload unit start + PID high = 0
-	ts[2] = 0x00                       // PID low = 0 (PAT)
-	ts[3] = 0x10                       // No adaptation, payload only
-	ts[4] = 0x00                       // Pointer field = 0
-	ts[5] = 0x00                       // Table ID = 0 (PAT)
-	ts[6] = 0xB0                       // Section syntax + length high
-	ts[7] = 0x0D                       // Section length = 13 (5 header + 4 program + 4 CRC)
-	ts[8] = 0x00                       // Transport stream ID high
-	ts[9] = 0x01                       // Transport stream ID low
-	ts[10] = 0xC1                      // Version 0, current
-	ts[11] = 0x00                      // Section number
-	ts[12] = 0x00                      // Last section number
-	ts[13] = 0x00                      // Program number high = 0
-	ts[14] = 0x01                      // Program number low = 1
-	ts[15] = 0xE0 | byte(0x100>>8)    // PMT PID high (0x100)
-	ts[16] = byte(0x100 & 0xFF)       // PMT PID low
+	ts[0] = 0x47                   // Sync byte
+	ts[1] = 0x40                   // Payload unit start + PID high = 0
+	ts[2] = 0x00                   // PID low = 0 (PAT)
+	ts[3] = 0x10                   // No adaptation, payload only
+	ts[4] = 0x00                   // Pointer field = 0
+	ts[5] = 0x00                   // Table ID = 0 (PAT)
+	ts[6] = 0xB0                   // Section syntax + length high
+	ts[7] = 0x0D                   // Section length = 13 (5 header + 4 program + 4 CRC)
+	ts[8] = 0x00                   // Transport stream ID high
+	ts[9] = 0x01                   // Transport stream ID low
+	ts[10] = 0xC1                  // Version 0, current
+	ts[11] = 0x00                  // Section number
+	ts[12] = 0x00                  // Last section number
+	ts[13] = 0x00                  // Program number high = 0
+	ts[14] = 0x01                  // Program number low = 1
+	ts[15] = 0xE0 | byte(0x100>>8) // PMT PID high (0x100)
+	ts[16] = byte(0x100 & 0xFF)    // PMT PID low
 	// CRC (just zeros for test — we don't validate CRC)
 
 	// Packet 2: PMT (PID 0x100)
 	pmtOffset := packetSize
 	ts = data[pmtOffset+tsPayloadStart:]
-	ts[0] = 0x47                       // Sync byte
-	ts[1] = 0x41                       // Payload unit start + PID high = 1
-	ts[2] = 0x00                       // PID low = 0x00 → PID = 0x100
-	ts[3] = 0x10                       // No adaptation, payload only
-	ts[4] = 0x00                       // Pointer field = 0
-	ts[5] = 0x02                       // Table ID = 2 (PMT)
+	ts[0] = 0x47 // Sync byte
+	ts[1] = 0x41 // Payload unit start + PID high = 1
+	ts[2] = 0x00 // PID low = 0x00 → PID = 0x100
+	ts[3] = 0x10 // No adaptation, payload only
+	ts[4] = 0x00 // Pointer field = 0
+	ts[5] = 0x02 // Table ID = 2 (PMT)
 
 	// Build PMT section
 	// Section: 5 bytes header + 4 bytes (PCR PID + prog info len) + 5*len(streams) + 4 CRC
 	sectionLen := 5 + 4 + 5*len(streams) + 4
 	ts[6] = 0xB0 | byte(sectionLen>>8) // Section syntax + length high
-	ts[7] = byte(sectionLen)            // Section length low
-	ts[8] = 0x00                        // Program number high
-	ts[9] = 0x01                        // Program number low
-	ts[10] = 0xC1                       // Version 0, current
-	ts[11] = 0x00                       // Section number
-	ts[12] = 0x00                       // Last section number
+	ts[7] = byte(sectionLen)           // Section length low
+	ts[8] = 0x00                       // Program number high
+	ts[9] = 0x01                       // Program number low
+	ts[10] = 0xC1                      // Version 0, current
+	ts[11] = 0x00                      // Section number
+	ts[12] = 0x00                      // Last section number
 	ts[13] = 0xE0 | 0x01               // PCR PID high (0x101)
-	ts[14] = 0x01                       // PCR PID low
-	ts[15] = 0xF0                       // Program info length high
-	ts[16] = 0x00                       // Program info length low = 0
+	ts[14] = 0x01                      // PCR PID low
+	ts[15] = 0xF0                      // Program info length high
+	ts[16] = 0x00                      // Program info length low = 0
 
 	// Stream descriptors
 	offset := 17
 	for i, s := range streams {
 		pid := 0x101 + i
-		ts[offset] = s.streamType               // stream_type
-		ts[offset+1] = 0xE0 | byte(pid>>8)     // elementary PID high
-		ts[offset+2] = byte(pid & 0xFF)         // elementary PID low
-		ts[offset+3] = 0xF0                     // ES info length high
-		ts[offset+4] = 0x00                     // ES info length low = 0
+		ts[offset] = s.streamType          // stream_type
+		ts[offset+1] = 0xE0 | byte(pid>>8) // elementary PID high
+		ts[offset+2] = byte(pid & 0xFF)    // elementary PID low
+		ts[offset+3] = 0xF0                // ES info length high
+		ts[offset+4] = 0x00                // ES info length low = 0
 		offset += 5
 	}
 
