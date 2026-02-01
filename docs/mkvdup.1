@@ -16,6 +16,9 @@ mapping offsets. A 3.4GB MKV can be stored as approximately 50MB.
 .TP
 .B create \fR[\fIoptions\fR] \fImkv-file\fR \fIsource-dir\fR [\fIoutput\fR] [\fIname\fR]
 Create a dedup file from an MKV and its source media.
+Before matching, codecs in the MKV are compared against the source media.
+If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
+will be prompted to continue or abort.
 .RS
 .TP
 .I mkv-file
@@ -39,12 +42,18 @@ a warning is printed suggesting wrong source or transcoded MKV.
 .TP
 .B \-\-quiet
 Suppress the space savings warning entirely.
+.TP
+.B \-\-non\-interactive
+Don't prompt on codec mismatch; show warning and continue.
+Automatically enabled when stdin is not a terminal.
 .RE
 .TP
 .B batch-create \fR[\fIoptions\fR] \fImanifest.yaml\fR
 Create multiple dedup files from MKVs sharing the same source directory.
 The source is indexed once and reused for all files. The YAML manifest
 specifies the shared source directory and a list of MKV files to process.
+Codec compatibility is checked for each file; if a mismatch is detected,
+a warning is printed but processing continues (always non-interactive).
 .RS
 .TP
 .I manifest.yaml

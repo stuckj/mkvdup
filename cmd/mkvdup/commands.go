@@ -86,10 +86,72 @@ func buildSourceIndex(sourceDir string) (*source.Indexer, *source.Index, error) 
 	return indexer, index, nil
 }
 
+// checkCodecCompatibility detects source codecs and compares them against MKV tracks.
+// If mismatches are found, it prints a warning and either prompts the user (interactive)
+// or continues automatically (non-interactive). Returns an error if the user declines.
+func checkCodecCompatibility(tracks []mkv.Track, index *source.Index, nonInteractive bool) error {
+	sourceCodecs, err := source.DetectSourceCodecs(index)
+	if err != nil {
+		// Detection failure is not fatal — just skip the check
+		if verbose {
+			fmt.Printf("  Note: could not detect source codecs: %v\n", err)
+		}
+		return nil
+	}
+
+	mismatches := source.CheckCodecCompatibility(tracks, sourceCodecs)
+	if len(mismatches) == 0 {
+		return nil
+	}
+
+	// Print warning
+	fmt.Println()
+	fmt.Println("  WARNING: Codec mismatch detected")
+	for _, m := range mismatches {
+		mkvName := source.CodecTypeName(m.MKVCodecType)
+		var sourceNames []string
+		for _, sc := range m.SourceCodecs {
+			sourceNames = append(sourceNames, source.CodecTypeName(sc))
+		}
+		fmt.Printf("    MKV %s:    %s (%s)\n", m.TrackType, mkvName, m.MKVCodecID)
+		fmt.Printf("    Source %s: %s\n", m.TrackType, strings.Join(sourceNames, ", "))
+	}
+	fmt.Println()
+	fmt.Println("  Deduplication may produce poor results if the MKV was transcoded.")
+
+	// Determine if we should prompt
+	if nonInteractive || !isTerminal() {
+		fmt.Println("  Continuing (non-interactive mode)...")
+		fmt.Println()
+		return nil
+	}
+
+	// Interactive prompt
+	fmt.Print("\n  Continue anyway? [y/N]: ")
+	var response string
+	fmt.Scanln(&response)
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "y" && response != "yes" {
+		return fmt.Errorf("aborted due to codec mismatch")
+	}
+	fmt.Println()
+	return nil
+}
+
+// isTerminal returns true if stdin is a terminal (not piped).
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
 // createDedupWithIndex processes a single MKV using a pre-built source index.
 // It handles parsing, matching, writing, and verification.
+// If nonInteractive is true, codec mismatch warnings do not prompt the user.
 func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
-	indexer *source.Indexer, index *source.Index) *createResult {
+	indexer *source.Indexer, index *source.Index, nonInteractive bool) *createResult {
 	start := time.Now()
 	result := &createResult{
 		MkvPath:     mkvPath,
@@ -112,6 +174,12 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		return result
 	}
 	fmt.Printf("    Parsed %d packets in %v\n", parser.PacketCount(), time.Since(parseStart))
+
+	// Check codec compatibility
+	if err := checkCodecCompatibility(parser.Tracks(), index, nonInteractive); err != nil {
+		result.Err = err
+		return result
+	}
 
 	// Calculate MKV checksum
 	fmt.Print("    Calculating MKV checksum...")
@@ -228,7 +296,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 }
 
 // createDedup creates a .mkvdup file from an MKV and source directory.
-func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThreshold float64, quiet bool) error {
+func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThreshold float64, quiet bool, nonInteractive bool) error {
 	totalStart := time.Now()
 
 	// Default output path
@@ -257,7 +325,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 
 	// Phase 2-5: Process MKV
 	fmt.Println()
-	result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index)
+	result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index, nonInteractive)
 	if result.Err != nil {
 		return result.Err
 	}
@@ -320,7 +388,7 @@ func createBatch(manifestPath string, warnThreshold float64, quiet bool) error {
 	results := make([]*createResult, len(manifest.Files))
 	for i, f := range manifest.Files {
 		fmt.Printf("\n[%d/%d] %s\n", i+1, len(manifest.Files), filepath.Base(f.MKV))
-		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index)
+		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index, true)
 		if results[i].Err != nil {
 			fmt.Printf("  ERROR: %v\n", results[i].Err)
 			if i < len(manifest.Files)-1 {
