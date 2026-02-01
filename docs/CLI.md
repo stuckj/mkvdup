@@ -37,6 +37,7 @@ mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
 mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv"
 mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
 mkvdup create --quiet movie.mkv /media/dvd-backups
+mkvdup create --non-interactive movie.mkv /media/dvd-backups
 ```
 
 **Arguments:**
@@ -51,6 +52,9 @@ mkvdup create --quiet movie.mkv /media/dvd-backups
 |--------|-------------|
 | `--warn-threshold N` | Minimum space savings percentage to avoid warning (default: `75`) |
 | `--quiet` | Suppress the space savings warning |
+| `--non-interactive` | Don't prompt on codec mismatch (show warning and continue) |
+
+**Codec check:** Before matching, codecs in the MKV are compared against the source media. If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you will be prompted to continue or abort. Use `--non-interactive` for scripted usage. When stdin is not a terminal, non-interactive mode is used automatically.
 
 **Outputs:**
 - `video.mkvdup` — The dedup data file (index + delta)
@@ -61,7 +65,7 @@ The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`
 
 ### batch-create
 
-Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file.
+Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file. Codec compatibility is checked for each file; if a mismatch is detected, a warning is printed but processing continues (always non-interactive).
 
 ```bash
 mkvdup batch-create [options] <manifest.yaml>

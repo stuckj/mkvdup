@@ -85,7 +85,7 @@ _mkvdup() {
     case "$cmd" in
         create)
             # create [options] <mkv-file> <source-dir> [output] [name]
-            local create_opts="--warn-threshold --quiet"
+            local create_opts="--warn-threshold --quiet --non-interactive"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$create_opts $global_opts" -- "$cur"))
                 return

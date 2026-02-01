@@ -133,18 +133,27 @@ Arguments:
 Options:
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --quiet             Suppress the space savings warning
+    --non-interactive   Don't prompt on codec mismatch (show warning and continue)
+
+Before matching, codecs in the MKV are compared against the source media.
+If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
+will be prompted to continue. Use --non-interactive for scripted usage.
 
 Examples:
     mkvdup create movie.mkv /media/dvd-backups
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
     mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
     mkvdup create --quiet movie.mkv /media/dvd-backups
+    mkvdup create --non-interactive movie.mkv /media/dvd-backups
 `)
 	case "batch-create":
 		fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
 
 Create multiple dedup files from MKVs sharing the same source directory.
 The source is indexed once and reused for all files.
+
+Codec compatibility is checked for each file. If a mismatch is detected,
+a warning is printed but processing continues (non-interactive mode).
 
 Arguments:
     <manifest.yaml>  YAML manifest file specifying source and MKV files
@@ -400,7 +409,17 @@ func main() {
 
 	switch cmd {
 	case "create":
-		warnThreshold, quiet, createArgs := parseWarnFlags(args)
+		warnThreshold, quiet, remaining := parseWarnFlags(args)
+		nonInteractive := false
+		var createArgs []string
+		for i := 0; i < len(remaining); i++ {
+			switch remaining[i] {
+			case "--non-interactive":
+				nonInteractive = true
+			default:
+				createArgs = append(createArgs, remaining[i])
+			}
+		}
 		if len(createArgs) < 2 {
 			printCommandUsage("create")
 			os.Exit(1)
@@ -413,7 +432,7 @@ func main() {
 		if len(createArgs) >= 4 {
 			name = createArgs[3]
 		}
-		if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, quiet); err != nil {
+		if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, quiet, nonInteractive); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
