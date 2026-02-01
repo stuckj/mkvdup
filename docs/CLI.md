@@ -29,12 +29,14 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 Create a dedup file from an MKV and its source directory.
 
 ```bash
-mkvdup create <mkv-file> <source-dir> [output] [name]
+mkvdup create [options] <mkv-file> <source-dir> [output] [name]
 
 # Examples:
 mkvdup create movie.mkv /media/dvd-backups
 mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
 mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv"
+mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
+mkvdup create --quiet movie.mkv /media/dvd-backups
 ```
 
 **Arguments:**
@@ -42,6 +44,13 @@ mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv
 - `<source-dir>` — Directory containing source media (ISO files or BDMV folders)
 - `[output]` — Output `.mkvdup` file (default: `<mkv-file>.mkvdup`)
 - `[name]` — Display name in FUSE mount (default: basename of mkv-file)
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--warn-threshold N` | Minimum space savings percentage to avoid warning (default: `75`) |
+| `--quiet` | Suppress the space savings warning |
 
 **Outputs:**
 - `video.mkvdup` — The dedup data file (index + delta)
@@ -55,14 +64,23 @@ The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`
 Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file.
 
 ```bash
-mkvdup batch-create <manifest.yaml>
+mkvdup batch-create [options] <manifest.yaml>
 
-# Example:
+# Examples:
 mkvdup batch-create episodes.yaml
+mkvdup batch-create --quiet episodes.yaml
+mkvdup batch-create --warn-threshold 50 episodes.yaml
 ```
 
 **Arguments:**
 - `<manifest.yaml>` — YAML manifest specifying the shared source directory and MKV files
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--warn-threshold N` | Minimum space savings percentage to avoid warning (default: `75`) |
+| `--quiet` | Suppress the space savings warning |
 
 **Manifest format:**
 
@@ -335,14 +353,22 @@ mkvdup match video.mkv /path/to/source_dir
 
 ## Warning Threshold
 
-If space savings fall below 75%, a warning is shown but the file is still created:
+If space savings fall below the warning threshold (default: 75%), a warning is shown but the file is still created:
 
 ```
 WARNING: Space savings (28.4%) below 75%
   This may indicate wrong source or transcoded MKV.
 ```
 
-*Planned ([#82](https://github.com/stuckj/mkvdup/issues/82)): `--warn-threshold` to customize the percentage, and `--quiet` to suppress the warning.*
+Use `--warn-threshold N` to customize the percentage, or `--quiet` to suppress the warning entirely. These options are available on both `create` and `batch-create`.
+
+```bash
+# Lower the threshold to 50%
+mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
+
+# Suppress warnings entirely
+mkvdup create --quiet movie.mkv /media/dvd-backups
+```
 
 ## Statistics Output
 

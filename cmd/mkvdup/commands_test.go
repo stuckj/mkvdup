@@ -993,7 +993,7 @@ func TestCheckDedup_SkipsChecksumOnSizeError(t *testing.T) {
 // --- batch-create command tests ---
 
 func TestCreateBatch_InvalidManifest(t *testing.T) {
-	err := createBatch("/nonexistent/batch.yaml")
+	err := createBatch("/nonexistent/batch.yaml", 75.0, false)
 	if err == nil {
 		t.Error("expected error for nonexistent manifest")
 	}
@@ -1007,7 +1007,7 @@ files:
   - mkv: /nonexistent/ep1.mkv
 `)
 
-	err := createBatch(manifestPath)
+	err := createBatch(manifestPath, 75.0, false)
 	if err == nil {
 		t.Error("expected error for nonexistent source directory")
 	}
@@ -1020,7 +1020,7 @@ func TestCreateBatch_EmptyManifest(t *testing.T) {
 files: []
 `)
 
-	err := createBatch(manifestPath)
+	err := createBatch(manifestPath, 75.0, false)
 	if err == nil {
 		t.Error("expected error for empty files list")
 	}
@@ -1045,5 +1045,5 @@ func TestPrintBatchSummary(t *testing.T) {
 	}
 
 	// Just verify it doesn't panic
-	printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second))
+	printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
 }

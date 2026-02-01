@@ -228,7 +228,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 }
 
 // createDedup creates a .mkvdup file from an MKV and source directory.
-func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
+func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThreshold float64, quiet bool) error {
 	totalStart := time.Now()
 
 	// Default output path
@@ -287,9 +287,9 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 	fmt.Printf("Index entries:      %s\n", formatInt(int64(result.IndexEntries)))
 
 	// Warning for low savings
-	if result.Savings < 75 {
+	if !quiet && result.Savings < warnThreshold {
 		fmt.Println()
-		fmt.Printf("WARNING: Space savings (%.1f%%) below 75%%\n", result.Savings)
+		fmt.Printf("WARNING: Space savings (%.1f%%) below %.0f%%\n", result.Savings, warnThreshold)
 		fmt.Println("  This may indicate wrong source or transcoded MKV.")
 	}
 
@@ -297,7 +297,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string) error {
 }
 
 // createBatch processes multiple MKVs from a batch manifest, indexing the source once.
-func createBatch(manifestPath string) error {
+func createBatch(manifestPath string, warnThreshold float64, quiet bool) error {
 	totalStart := time.Now()
 
 	manifest, err := dedup.ReadBatchManifest(manifestPath)
@@ -330,7 +330,7 @@ func createBatch(manifestPath string) error {
 	}
 
 	// Print summary
-	printBatchSummary(results, indexDuration, totalStart)
+	printBatchSummary(results, indexDuration, totalStart, warnThreshold, quiet)
 
 	// Return error if any file failed
 	for _, r := range results {
@@ -342,12 +342,13 @@ func createBatch(manifestPath string) error {
 }
 
 // printBatchSummary prints the aggregate results of a batch create operation.
-func printBatchSummary(results []*createResult, indexDuration time.Duration, totalStart time.Time) {
+func printBatchSummary(results []*createResult, indexDuration time.Duration, totalStart time.Time, warnThreshold float64, quiet bool) {
 	fmt.Println()
 	fmt.Println("=== Batch Results ===")
 	fmt.Printf("Total time: %v (indexing: %v)\n\n", time.Since(totalStart), indexDuration)
 
 	succeeded := 0
+	var lowSavings []string
 	for _, r := range results {
 		base := filepath.Base(r.MkvPath)
 		if r.Err != nil {
@@ -355,9 +356,20 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 		} else {
 			fmt.Printf("  OK    %s -> %s (%.1f%% savings)\n", base, filepath.Base(r.OutputPath), r.Savings)
 			succeeded++
+			if r.Savings < warnThreshold {
+				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", base, r.Savings))
+			}
 		}
 	}
 	fmt.Printf("\nSucceeded: %d/%d\n", succeeded, len(results))
+
+	if !quiet && len(lowSavings) > 0 {
+		fmt.Printf("\nWARNING: %d file(s) with space savings below %.0f%%:\n", len(lowSavings), warnThreshold)
+		for _, s := range lowSavings {
+			fmt.Println(s)
+		}
+		fmt.Println("  This may indicate wrong source or transcoded MKV.")
+	}
 }
 
 // verifyReconstruction verifies that the dedup file can reconstruct the original MKV.
