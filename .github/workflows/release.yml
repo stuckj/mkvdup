@@ -334,7 +334,7 @@ jobs:
           gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
           # Copy to all repo directories that exist
           for dir in apt yum yum-canary; do
-            [[ -d "$dir" ]] && cp gpg-key.asc "$dir/"
+            if [[ -d "$dir" ]]; then cp gpg-key.asc "$dir/"; fi
           done
 
       - name: Create index page
