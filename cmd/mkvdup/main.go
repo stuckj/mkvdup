@@ -609,6 +609,10 @@ func main() {
 		}
 
 	case "validate":
+		if len(args) == 0 {
+			printCommandUsage("validate")
+			os.Exit(1)
+		}
 		configDir := false
 		deep := false
 		strict := false
