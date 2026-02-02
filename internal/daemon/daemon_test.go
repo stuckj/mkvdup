@@ -286,3 +286,66 @@ func TestWritePidFile_InvalidPath(t *testing.T) {
 		t.Error("WritePidFile should fail for invalid path")
 	}
 }
+
+func TestReadPidFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidFile := filepath.Join(tmpDir, "test.pid")
+
+	if err := WritePidFile(pidFile, 12345); err != nil {
+		t.Fatalf("WritePidFile failed: %v", err)
+	}
+
+	pid, err := ReadPidFile(pidFile)
+	if err != nil {
+		t.Fatalf("ReadPidFile failed: %v", err)
+	}
+	if pid != 12345 {
+		t.Errorf("ReadPidFile = %d, want 12345", pid)
+	}
+}
+
+func TestReadPidFile_NotFound(t *testing.T) {
+	_, err := ReadPidFile("/nonexistent/test.pid")
+	if err == nil {
+		t.Error("ReadPidFile should fail for nonexistent file")
+	}
+}
+
+func TestReadPidFile_InvalidContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidFile := filepath.Join(tmpDir, "bad.pid")
+	if err := os.WriteFile(pidFile, []byte("not-a-number\n"), 0644); err != nil {
+		t.Fatalf("failed to write test pid file: %v", err)
+	}
+
+	_, err := ReadPidFile(pidFile)
+	if err == nil {
+		t.Error("ReadPidFile should fail for non-numeric content")
+	}
+}
+
+func TestReadPidFile_NegativePid(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidFile := filepath.Join(tmpDir, "neg.pid")
+	if err := os.WriteFile(pidFile, []byte("-1\n"), 0644); err != nil {
+		t.Fatalf("failed to write test pid file: %v", err)
+	}
+
+	_, err := ReadPidFile(pidFile)
+	if err == nil {
+		t.Error("ReadPidFile should fail for negative PID")
+	}
+}
+
+func TestReadPidFile_ZeroPid(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidFile := filepath.Join(tmpDir, "zero.pid")
+	if err := os.WriteFile(pidFile, []byte("0\n"), 0644); err != nil {
+		t.Fatalf("failed to write test pid file: %v", err)
+	}
+
+	_, err := ReadPidFile(pidFile)
+	if err == nil {
+		t.Error("ReadPidFile should fail for zero PID")
+	}
+}

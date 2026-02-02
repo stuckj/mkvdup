@@ -3,13 +3,16 @@ package fuse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
 // mockReader implements ReaderInitializer for testing.
@@ -2006,5 +2009,376 @@ func TestNewMKVFSWithFactories_WithPermStore(t *testing.T) {
 	}
 	if out.Gid != 1000 {
 		t.Errorf("dir GID = %d, want 1000", out.Gid)
+	}
+}
+
+// --- Reload tests ---
+
+func TestMKVFSRoot_Reload_AddFile(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+			"/data/m2.dedup": {data: []byte("m2"), originalSize: 200},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root.files) != 1 {
+		t.Fatalf("expected 1 file initially, got %d", len(root.files))
+	}
+
+	// Reload with two files
+	updated := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "movie2.mkv", DedupFile: "/data/m2.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(updated, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(root.files) != 2 {
+		t.Errorf("expected 2 files after reload, got %d", len(root.files))
+	}
+	if _, ok := root.rootDir.files["movie2.mkv"]; !ok {
+		t.Error("expected movie2.mkv in root dir after reload")
+	}
+}
+
+func TestMKVFSRoot_Reload_RemoveFile(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+			"/data/m2.dedup": {data: []byte("m2"), originalSize: 200},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "movie2.mkv", DedupFile: "/data/m2.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root.files) != 2 {
+		t.Fatalf("expected 2 files initially, got %d", len(root.files))
+	}
+
+	// Reload with only one file
+	updated := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(updated, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(root.files) != 1 {
+		t.Errorf("expected 1 file after reload, got %d", len(root.files))
+	}
+	if _, ok := root.rootDir.files["movie2.mkv"]; ok {
+		t.Error("movie2.mkv should have been removed")
+	}
+}
+
+func TestMKVFSRoot_Reload_MappingChangedWithActiveReader(t *testing.T) {
+	reader1 := &mockReader{data: []byte("original"), originalSize: 100}
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup":     reader1,
+			"/data/m1_new.dedup": {data: []byte("updated"), originalSize: 200},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an active reader on the file
+	oldFile := root.files["movie.mkv"]
+	oldFile.mu.Lock()
+	oldFile.reader = reader1
+	oldFile.mu.Unlock()
+
+	// Reload with changed mapping
+	updated := []dedup.Config{
+		{Name: "movie.mkv", DedupFile: "/data/m1_new.dedup", SourceDir: "/src2"},
+	}
+	if err := root.Reload(updated, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both tree and flat map should have the new mapping
+	treeFile := root.rootDir.files["movie.mkv"]
+	if treeFile.DedupPath != "/data/m1_new.dedup" {
+		t.Errorf("expected tree file to have new dedup path, got %s", treeFile.DedupPath)
+	}
+	if root.files["movie.mkv"].DedupPath != "/data/m1_new.dedup" {
+		t.Error("expected flat files map to have new mapping")
+	}
+
+	// Pointer identity should be preserved (cached inodes see updates in place)
+	if root.files["movie.mkv"] != oldFile {
+		t.Error("expected flat map to preserve original *MKVFile pointer")
+	}
+	if treeFile != oldFile {
+		t.Error("expected tree to preserve original *MKVFile pointer")
+	}
+
+	// Old reader should have been closed since dedup path changed
+	if !reader1.closed {
+		t.Error("expected old reader to be closed after mapping change")
+	}
+}
+
+func TestMKVFSRoot_Reload_NewDirectory(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+			"/data/m2.dedup": {data: []byte("m2"), originalSize: 200},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := root.rootDir.subdirs["Movies"]; ok {
+		t.Fatal("Movies dir should not exist initially")
+	}
+
+	// Reload with file in subdirectory
+	updated := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "Movies/movie2.mkv", DedupFile: "/data/m2.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(updated, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	movies, ok := root.rootDir.subdirs["Movies"]
+	if !ok {
+		t.Fatal("expected Movies subdirectory after reload")
+	}
+	if _, ok := movies.files["movie2.mkv"]; !ok {
+		t.Error("expected movie2.mkv in Movies dir")
+	}
+}
+
+func TestMKVFSRoot_Reload_RemoveDirectory(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+			"/data/m2.dedup": {data: []byte("m2"), originalSize: 200},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "root.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "Movies/movie.mkv", DedupFile: "/data/m2.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := root.rootDir.subdirs["Movies"]; !ok {
+		t.Fatal("expected Movies dir initially")
+	}
+
+	// Reload without the subdir file
+	updated := []dedup.Config{
+		{Name: "root.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(updated, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := root.rootDir.subdirs["Movies"]; ok {
+		t.Error("Movies dir should have been removed after reload")
+	}
+}
+
+func TestMKVFSRoot_Reload_SkipsBadConfigs(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reload with a config that has a bad dedup file
+	var logMessages []string
+	logFn := func(format string, args ...interface{}) {
+		logMessages = append(logMessages, fmt.Sprintf(format, args...))
+	}
+
+	updated := []dedup.Config{
+		{Name: "movie1.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "bad.mkv", DedupFile: "/data/nonexistent.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(updated, logFn); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have 1 file (bad config skipped)
+	if len(root.files) != 1 {
+		t.Errorf("expected 1 file after reload, got %d", len(root.files))
+	}
+
+	// Should have logged a warning
+	foundWarning := false
+	for _, msg := range logMessages {
+		if strings.Contains(msg, "skipping") && strings.Contains(msg, "bad.mkv") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Error("expected warning about skipped bad config")
+	}
+}
+
+// --- mergeDirectoryTree tests ---
+
+func TestMergeDirectoryTree_AddFiles(t *testing.T) {
+	existing := &MKVFSDirNode{
+		files:   map[string]*MKVFile{"a.mkv": {Name: "a.mkv"}},
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+	newTree := &MKVFSDirNode{
+		files:   map[string]*MKVFile{"a.mkv": {Name: "a.mkv"}, "b.mkv": {Name: "b.mkv"}},
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+
+	mergeDirectoryTree(existing, newTree)
+
+	if len(existing.files) != 2 {
+		t.Errorf("expected 2 files, got %d", len(existing.files))
+	}
+	if _, ok := existing.files["b.mkv"]; !ok {
+		t.Error("expected b.mkv after merge")
+	}
+}
+
+func TestMergeDirectoryTree_RemoveFiles(t *testing.T) {
+	existing := &MKVFSDirNode{
+		files:   map[string]*MKVFile{"a.mkv": {Name: "a.mkv"}, "b.mkv": {Name: "b.mkv"}},
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+	newTree := &MKVFSDirNode{
+		files:   map[string]*MKVFile{"a.mkv": {Name: "a.mkv"}},
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+
+	mergeDirectoryTree(existing, newTree)
+
+	if len(existing.files) != 1 {
+		t.Errorf("expected 1 file, got %d", len(existing.files))
+	}
+	if _, ok := existing.files["b.mkv"]; ok {
+		t.Error("b.mkv should have been removed")
+	}
+}
+
+func TestMergeDirectoryTree_AddSubdir(t *testing.T) {
+	existing := &MKVFSDirNode{
+		files:   make(map[string]*MKVFile),
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+	newTree := &MKVFSDirNode{
+		files: make(map[string]*MKVFile),
+		subdirs: map[string]*MKVFSDirNode{
+			"Movies": {
+				name:    "Movies",
+				path:    "Movies",
+				files:   map[string]*MKVFile{"film.mkv": {Name: "Movies/film.mkv"}},
+				subdirs: make(map[string]*MKVFSDirNode),
+			},
+		},
+	}
+
+	mergeDirectoryTree(existing, newTree)
+
+	if _, ok := existing.subdirs["Movies"]; !ok {
+		t.Error("expected Movies subdir after merge")
+	}
+}
+
+func TestMergeDirectoryTree_RemoveSubdir(t *testing.T) {
+	existing := &MKVFSDirNode{
+		files: make(map[string]*MKVFile),
+		subdirs: map[string]*MKVFSDirNode{
+			"Movies": {
+				name:    "Movies",
+				path:    "Movies",
+				files:   map[string]*MKVFile{"film.mkv": {Name: "Movies/film.mkv"}},
+				subdirs: make(map[string]*MKVFSDirNode),
+			},
+		},
+	}
+	newTree := &MKVFSDirNode{
+		files:   make(map[string]*MKVFile),
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+
+	mergeDirectoryTree(existing, newTree)
+
+	if _, ok := existing.subdirs["Movies"]; ok {
+		t.Error("Movies subdir should have been removed")
+	}
+}
+
+func TestMergeDirectoryTree_RecursiveMerge(t *testing.T) {
+	existingMovies := &MKVFSDirNode{
+		name:    "Movies",
+		path:    "Movies",
+		files:   map[string]*MKVFile{"old.mkv": {Name: "Movies/old.mkv"}},
+		subdirs: make(map[string]*MKVFSDirNode),
+	}
+	existing := &MKVFSDirNode{
+		files:   make(map[string]*MKVFile),
+		subdirs: map[string]*MKVFSDirNode{"Movies": existingMovies},
+	}
+
+	newTree := &MKVFSDirNode{
+		files: make(map[string]*MKVFile),
+		subdirs: map[string]*MKVFSDirNode{
+			"Movies": {
+				name:    "Movies",
+				path:    "Movies",
+				files:   map[string]*MKVFile{"new.mkv": {Name: "Movies/new.mkv"}},
+				subdirs: make(map[string]*MKVFSDirNode),
+			},
+		},
+	}
+
+	mergeDirectoryTree(existing, newTree)
+
+	// The existing Movies node should be the SAME object (not replaced)
+	if existing.subdirs["Movies"] != existingMovies {
+		t.Error("existing Movies node should be preserved (same pointer)")
+	}
+	// But its files should be updated
+	if _, ok := existingMovies.files["new.mkv"]; !ok {
+		t.Error("expected new.mkv in Movies after merge")
+	}
+	if _, ok := existingMovies.files["old.mkv"]; ok {
+		t.Error("old.mkv should have been removed from Movies")
 	}
 }

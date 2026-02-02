@@ -124,3 +124,48 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
 
 	current.files[fileName] = file
 }
+
+// mergeDirectoryTree merges newTree's contents into existing's maps in place.
+// This is necessary because go-fuse caches persistent inode objects by inode
+// number — swapping the root directory won't affect already-cached inodes.
+// Instead, we update existing MKVFSDirNode objects' files and subdirs maps
+// so cached inodes see the new data.
+func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
+	existing.mu.Lock()
+	defer existing.mu.Unlock()
+
+	// Remove files that are no longer present
+	for name := range existing.files {
+		if _, inNew := newTree.files[name]; !inNew {
+			delete(existing.files, name)
+		}
+	}
+
+	// Add or update files (update in place to preserve pointer identity for cached inodes)
+	for name, newFile := range newTree.files {
+		if existingFile, ok := existing.files[name]; ok {
+			existingFile.mu.Lock()
+			existingFile.updateFrom(newFile)
+			existingFile.mu.Unlock()
+		} else {
+			existing.files[name] = newFile
+		}
+	}
+
+	// Remove subdirectories that are no longer present
+	for name := range existing.subdirs {
+		if _, inNew := newTree.subdirs[name]; !inNew {
+			delete(existing.subdirs, name)
+		}
+	}
+
+	// Add or recursively merge subdirectories
+	for name, newSubdir := range newTree.subdirs {
+		existingSubdir, exists := existing.subdirs[name]
+		if !exists {
+			existing.subdirs[name] = newSubdir
+		} else {
+			mergeDirectoryTree(existingSubdir, newSubdir)
+		}
+	}
+}
