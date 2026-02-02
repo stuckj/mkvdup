@@ -143,27 +143,7 @@ func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
 
 	// Add or update files
 	for name, newFile := range newTree.files {
-		oldFile, exists := existing.files[name]
-		if !exists {
-			existing.files[name] = newFile
-			continue
-		}
-
-		// Mapping unchanged — keep existing (preserves any cached reader)
-		if oldFile.DedupPath == newFile.DedupPath && oldFile.SourceDir == newFile.SourceDir && oldFile.Size == newFile.Size {
-			continue
-		}
-
-		// Mapping changed — replace unless old file has an active reader
-		oldFile.mu.RLock()
-		hasReader := oldFile.reader != nil
-		oldFile.mu.RUnlock()
-
-		if !hasReader {
-			existing.files[name] = newFile
-		}
-		// If hasReader: keep old MKVFile. Active readers continue using
-		// old mapping until close (documented behavior).
+		existing.files[name] = newFile
 	}
 
 	// Remove subdirectories that are no longer present

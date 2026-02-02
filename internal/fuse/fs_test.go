@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -2083,7 +2084,7 @@ func TestMKVFSRoot_Reload_RemoveFile(t *testing.T) {
 	}
 }
 
-func TestMKVFSRoot_Reload_ActiveReaderPreserved(t *testing.T) {
+func TestMKVFSRoot_Reload_MappingChangedWithActiveReader(t *testing.T) {
 	reader1 := &mockReader{data: []byte("original"), originalSize: 100}
 	factory := &mockReaderFactory{
 		readers: map[string]*mockReader{
@@ -2114,12 +2115,11 @@ func TestMKVFSRoot_Reload_ActiveReaderPreserved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The tree should still have the old file (active reader)
+	// Both tree and flat map should have the new mapping
 	treeFile := root.rootDir.files["movie.mkv"]
-	if treeFile != oldFile {
-		t.Error("expected old MKVFile with active reader to be preserved in tree")
+	if treeFile.DedupPath != "/data/m1_new.dedup" {
+		t.Errorf("expected tree file to have new dedup path, got %s", treeFile.DedupPath)
 	}
-	// But the flat files map gets the new file (for new lookups after reader closes)
 	if root.files["movie.mkv"].DedupPath != "/data/m1_new.dedup" {
 		t.Error("expected flat files map to have new mapping")
 	}
@@ -2231,7 +2231,7 @@ func TestMKVFSRoot_Reload_SkipsBadConfigs(t *testing.T) {
 	// Should have logged a warning
 	foundWarning := false
 	for _, msg := range logMessages {
-		if contains(msg, "skipping") && contains(msg, "bad.mkv") {
+		if strings.Contains(msg, "skipping") && strings.Contains(msg, "bad.mkv") {
 			foundWarning = true
 			break
 		}
@@ -2239,19 +2239,6 @@ func TestMKVFSRoot_Reload_SkipsBadConfigs(t *testing.T) {
 	if !foundWarning {
 		t.Error("expected warning about skipped bad config")
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // --- mergeDirectoryTree tests ---

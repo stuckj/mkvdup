@@ -1233,12 +1233,17 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	logFn := func(format string, args ...interface{}) {
 		log.Printf(format, args...)
 	}
+	var syslogWriter *syslog.Writer
 	if daemon.IsChild() {
-		if syslogWriter, err := syslog.New(syslog.LOG_INFO|syslog.LOG_DAEMON, "mkvdup"); err == nil {
+		if w, err := syslog.New(syslog.LOG_INFO|syslog.LOG_DAEMON, "mkvdup"); err == nil {
+			syslogWriter = w
 			logFn = func(format string, args ...interface{}) {
 				syslogWriter.Info(fmt.Sprintf(format, args...))
 			}
 		}
+	}
+	if syslogWriter != nil {
+		defer syslogWriter.Close()
 	}
 
 	// Handle signals for graceful shutdown and config reload

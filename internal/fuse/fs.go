@@ -350,8 +350,8 @@ func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory Rea
 //
 // Semantics:
 //   - New files become immediately visible
-//   - Removed files disappear from listings (active readers continue via held refs)
-//   - Modified mappings: existing readers use old mapping until close
+//   - Removed files disappear from listings
+//   - Modified mappings take effect immediately for new opens
 //   - Permissions are reloaded from disk and stale entries cleaned up
 func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interface{})) error {
 	if logFn == nil {
@@ -375,6 +375,9 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 			readerFactory: r.readerFactory,
 		}
 		reader.Close()
+		if existing, ok := newFiles[config.Name]; ok {
+			logFn("warning: duplicate name %q (dedup: %s replaced by %s)", config.Name, existing.DedupPath, mkvFile.DedupPath)
+		}
 		newFiles[config.Name] = mkvFile
 	}
 
@@ -416,9 +419,6 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 // This ensures the root directory uses permissions from the permission store,
 // consistent with all subdirectories.
 func (r *MKVFSRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	now := time.Now()
 
 	uid, gid, mode := getDirPerms(r.permStore, "")
@@ -431,7 +431,9 @@ func (r *MKVFSRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Att
 	out.Ctime = uint64(now.Unix())
 	out.Nlink = 2
 	if r.rootDir != nil {
+		r.rootDir.mu.RLock()
 		out.Nlink += uint32(len(r.rootDir.subdirs))
+		r.rootDir.mu.RUnlock()
 	}
 	return 0
 }

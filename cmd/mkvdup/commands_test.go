@@ -1139,7 +1139,9 @@ func TestReloadDaemon_DeadProcess(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "test.pid")
 	// Use a very high PID that almost certainly doesn't exist
-	os.WriteFile(pidFile, []byte("4194304\n"), 0644)
+	if err := os.WriteFile(pidFile, []byte("4194304\n"), 0644); err != nil {
+		t.Fatalf("failed to write test pid file: %v", err)
+	}
 
 	err := reloadDaemon(pidFile, nil, false)
 	if err == nil {
