@@ -141,9 +141,15 @@ func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
 		}
 	}
 
-	// Add or update files
+	// Add or update files (update in place to preserve pointer identity for cached inodes)
 	for name, newFile := range newTree.files {
-		existing.files[name] = newFile
+		if existingFile, ok := existing.files[name]; ok {
+			existingFile.mu.Lock()
+			existingFile.updateFrom(newFile)
+			existingFile.mu.Unlock()
+		} else {
+			existing.files[name] = newFile
+		}
 	}
 
 	// Remove subdirectories that are no longer present

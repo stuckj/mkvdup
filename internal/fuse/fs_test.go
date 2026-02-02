@@ -2123,6 +2123,19 @@ func TestMKVFSRoot_Reload_MappingChangedWithActiveReader(t *testing.T) {
 	if root.files["movie.mkv"].DedupPath != "/data/m1_new.dedup" {
 		t.Error("expected flat files map to have new mapping")
 	}
+
+	// Pointer identity should be preserved (cached inodes see updates in place)
+	if root.files["movie.mkv"] != oldFile {
+		t.Error("expected flat map to preserve original *MKVFile pointer")
+	}
+	if treeFile != oldFile {
+		t.Error("expected tree to preserve original *MKVFile pointer")
+	}
+
+	// Old reader should have been closed since dedup path changed
+	if !reader1.closed {
+		t.Error("expected old reader to be closed after mapping change")
+	}
 }
 
 func TestMKVFSRoot_Reload_NewDirectory(t *testing.T) {

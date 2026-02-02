@@ -344,15 +344,19 @@ func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory Rea
 	return root, nil
 }
 
-// Reload updates the filesystem with new configs. It merges the new file tree
-// into the existing directory tree in-place (required because go-fuse caches
+// Reload updates the filesystem with new configs. It updates existing MKVFile
+// objects in place to preserve pointer identity for cached FUSE inodes, and
+// merges the directory tree structure (required because go-fuse caches
 // persistent inode objects by inode number).
 //
 // Semantics:
 //   - New files become immediately visible
 //   - Removed files disappear from listings
-//   - Modified mappings take effect immediately for new opens
+//   - Modified mappings update existing MKVFile objects in place; active readers
+//     are closed if the underlying dedup path changed (re-opened lazily on next read)
 //   - Permissions are reloaded from disk and stale entries cleaned up
+//     (cleanup is skipped if permission reload fails, to avoid overwriting
+//     a temporarily unreadable permissions file)
 func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interface{})) error {
 	if logFn == nil {
 		logFn = func(string, ...interface{}) {}
@@ -388,9 +392,22 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	}
 	newTree := BuildDirectoryTree(fileList, r.verbose, r.readerFactory, r.permStore)
 
-	// Update flat files map
+	// Update flat files map in place (preserves pointer identity for cached inodes)
 	r.mu.Lock()
-	r.files = newFiles
+	for name := range r.files {
+		if _, inNew := newFiles[name]; !inNew {
+			delete(r.files, name)
+		}
+	}
+	for name, newFile := range newFiles {
+		if existingFile, ok := r.files[name]; ok {
+			existingFile.mu.Lock()
+			existingFile.updateFrom(newFile)
+			existingFile.mu.Unlock()
+		} else {
+			r.files[name] = newFile
+		}
+	}
 	r.mu.Unlock()
 
 	// Merge new tree into existing tree in place
@@ -400,13 +417,14 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	if r.permStore != nil {
 		if err := r.permStore.Load(); err != nil {
 			logFn("warning: failed to reload permissions: %v", err)
-		}
-		validFiles, validDirs := r.collectValidPaths()
-		removed := r.permStore.CleanupStale(validFiles, validDirs)
-		if removed > 0 {
-			logFn("cleaned up %d stale permission entries", removed)
-			if err := r.permStore.Save(); err != nil {
-				logFn("warning: failed to save permissions after cleanup: %v", err)
+		} else {
+			validFiles, validDirs := r.collectValidPaths()
+			removed := r.permStore.CleanupStale(validFiles, validDirs)
+			if removed > 0 {
+				logFn("cleaned up %d stale permission entries", removed)
+				if err := r.permStore.Save(); err != nil {
+					logFn("warning: failed to save permissions after cleanup: %v", err)
+				}
 			}
 		}
 	}
@@ -781,6 +799,22 @@ func (f *MKVFile) Close() {
 		f.reader.Close()
 		f.reader = nil
 	}
+}
+
+// updateFrom copies data fields from src into f. If the underlying dedup file
+// changed, any active reader is closed since it's no longer valid.
+// The caller must hold f.mu (write lock).
+func (f *MKVFile) updateFrom(src *MKVFile) {
+	// Close reader if the underlying file changed — it's no longer valid
+	if f.reader != nil && (f.DedupPath != src.DedupPath || f.SourceDir != src.SourceDir) {
+		f.reader.Close()
+		f.reader = nil
+	}
+	f.Name = src.Name
+	f.DedupPath = src.DedupPath
+	f.SourceDir = src.SourceDir
+	f.Size = src.Size
+	f.readerFactory = src.readerFactory
 }
 
 // hashString creates a stable inode number from a string.

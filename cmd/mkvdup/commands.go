@@ -1243,6 +1243,10 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		}
 	}
 	if syslogWriter != nil {
+		// Redirect global log output to syslog so that log.Printf calls
+		// from BuildDirectoryTree (during reload) go to syslog too.
+		log.SetOutput(syslogWriter)
+		log.SetFlags(0) // syslog adds its own timestamp
 		defer syslogWriter.Close()
 	}
 
