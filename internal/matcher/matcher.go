@@ -36,9 +36,14 @@ func detectNALLengthSize(codecID string, codecPrivate []byte) int {
 		return 4 // Default for AVC if CodecPrivate is missing or malformed
 	case "V_MPEGH/ISO/HEVC":
 		// HVCC format: CodecPrivate is HEVCDecoderConfigurationRecord
+		// Byte 0 = configurationVersion (must be 1)
 		// Byte 21 bits 0-1 = NAL length size - 1
-		if len(codecPrivate) >= 23 {
-			return int(codecPrivate[21]&0x03) + 1
+		if len(codecPrivate) >= 23 && codecPrivate[0] == 1 {
+			size := int(codecPrivate[21]&0x03) + 1
+			// Valid NAL length sizes are 1, 2, or 4 bytes
+			if size == 1 || size == 2 || size == 4 {
+				return size
+			}
 		}
 		return 4 // Default for HEVC if CodecPrivate is missing or malformed
 	default:
@@ -853,6 +858,8 @@ func (m *Matcher) mergeRegions() {
 			overlap := last.mkvEnd - curr.mkvStart
 			curr.mkvStart = last.mkvEnd
 			curr.srcOffset += overlap
+			// After clipping, curr may have zero or negative length if the overlap
+			// equals or exceeds the original region size. Only keep valid regions.
 			if curr.mkvStart < curr.mkvEnd {
 				merged = append(merged, curr)
 			}

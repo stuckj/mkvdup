@@ -382,11 +382,14 @@ func (sm *StreamRangeMap) seekTo(esOffset int64) (rangeMapCursor, error) {
 			if maxForwardSeek > 0 && esOffset-curEnd < maxForwardSeek {
 				cur := cc
 				for cur.esOff+int64(cur.size) <= esOffset {
-					// RLE fast path
+					// RLE fast path: use arithmetic to skip directly to the target entry
+					// instead of advancing one-by-one through the RLE run.
 					if cur.rleRem > 0 && sm.defaultSize > 0 {
 						afterCurrent := cur.esOff + int64(cur.size)
 						maxRLEES := afterCurrent + int64(cur.rleRem)*int64(sm.defaultSize)
 						if esOffset < maxRLEES {
+							// k = entries to skip (1-based). k-1 in offset calc positions
+							// relative to afterCurrent (the start of entry 1 in the run).
 							k := int((esOffset-afterCurrent)/int64(sm.defaultSize)) + 1
 							if k > cur.rleRem {
 								k = cur.rleRem
@@ -779,7 +782,7 @@ func readRangeMapSection(data []byte) ([]SourceRangeMaps, error) {
 
 			// Parse stream header
 			var hdr RangeMapStreamHeader
-			hdr.FileIndex = binary.LittleEndian.Uint16(data[off : off+2])
+			_ = binary.LittleEndian.Uint16(data[off : off+2]) // per-stream FileIndex (already tracked per source)
 			hdr.StreamType = data[off+2]
 			hdr.SubStreamID = data[off+3]
 			hdr.EntryCount = binary.LittleEndian.Uint32(data[off+4 : off+8])
