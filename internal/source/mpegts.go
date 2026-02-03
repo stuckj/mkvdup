@@ -32,9 +32,9 @@ type MPEGTSParser struct {
 	audioBySubStream    map[byte][]PESPayloadRange
 
 	// Audio PID → sub-stream ID mapping
-	audioSubStreams []byte            // sequential IDs: 0, 1, 2, ...
-	pidToSubStream  map[uint16]byte   // PID → sub-stream ID
-	subStreamToPID  map[byte]uint16   // sub-stream ID → PID
+	audioSubStreams []byte          // sequential IDs: 0, 1, 2, ...
+	pidToSubStream  map[uint16]byte // PID → sub-stream ID
+	subStreamToPID  map[byte]uint16 // sub-stream ID → PID
 
 	filterUserData bool
 }
@@ -670,4 +670,3 @@ var (
 	_ ESReader         = (*MPEGTSParser)(nil)
 	_ ESRangeConverter = (*MPEGTSParser)(nil)
 )
-

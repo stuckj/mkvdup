@@ -37,12 +37,12 @@ const (
 	IDBlock       = 0xA1
 
 	// Track elements
-	IDTrackEntry    = 0xAE
-	IDTrackNum      = 0xD7
-	IDTrackUID      = 0x73C5
-	IDTrackType     = 0x83
-	IDCodecID       = 0x86
-	IDCodecPrivate  = 0x63A2
+	IDTrackEntry   = 0xAE
+	IDTrackNum     = 0xD7
+	IDTrackUID     = 0x73C5
+	IDTrackType    = 0x83
+	IDCodecID      = 0x86
+	IDCodecPrivate = 0x63A2
 )
 
 // Track types

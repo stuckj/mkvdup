@@ -168,10 +168,10 @@ type Matcher struct {
 	mkvSize        int64
 	windowSize     int
 	matchedRegions []matchedRegion
-	regionsMu      sync.Mutex           // Protects matchedRegions for concurrent access
-	trackTypes     map[int]int          // Map from track number to track type
+	regionsMu      sync.Mutex             // Protects matchedRegions for concurrent access
+	trackTypes     map[int]int            // Map from track number to track type
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
-	numWorkers     int                  // Number of worker goroutines for parallel matching
+	numWorkers     int                    // Number of worker goroutines for parallel matching
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered

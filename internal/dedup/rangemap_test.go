@@ -183,15 +183,15 @@ func TestEncodeDecodeRoundTrip_MixedEntries(t *testing.T) {
 	// Mix of default and non-default entries
 	ranges := []source.PESPayloadRange{
 		{FileOffset: 100, Size: 184, ESOffset: 0},
-		{FileOffset: 292, Size: 184, ESOffset: 184},     // default (gap=8)
-		{FileOffset: 484, Size: 184, ESOffset: 368},     // default
-		{FileOffset: 676, Size: 184, ESOffset: 552},     // default
-		{FileOffset: 900, Size: 200, ESOffset: 736},     // non-default (gap=32, size=200)
-		{FileOffset: 1108, Size: 184, ESOffset: 936},    // default (gap=8)
-		{FileOffset: 1300, Size: 184, ESOffset: 1120},   // default
-		{FileOffset: 1500, Size: 150, ESOffset: 1304},   // non-default (gap=8, size=150)
-		{FileOffset: 1658, Size: 184, ESOffset: 1454},   // default (gap=8)
-		{FileOffset: 1850, Size: 184, ESOffset: 1638},   // default
+		{FileOffset: 292, Size: 184, ESOffset: 184},   // default (gap=8)
+		{FileOffset: 484, Size: 184, ESOffset: 368},   // default
+		{FileOffset: 676, Size: 184, ESOffset: 552},   // default
+		{FileOffset: 900, Size: 200, ESOffset: 736},   // non-default (gap=32, size=200)
+		{FileOffset: 1108, Size: 184, ESOffset: 936},  // default (gap=8)
+		{FileOffset: 1300, Size: 184, ESOffset: 1120}, // default
+		{FileOffset: 1500, Size: 150, ESOffset: 1304}, // non-default (gap=8, size=150)
+		{FileOffset: 1658, Size: 184, ESOffset: 1454}, // default (gap=8)
+		{FileOffset: 1850, Size: 184, ESOffset: 1638}, // default
 	}
 
 	defGap, defSize := findDefaults(ranges)
@@ -493,7 +493,6 @@ func TestReadData_EmptyRangeMap(t *testing.T) {
 		t.Error("expected error for empty range map, got nil")
 	}
 }
-
 
 func TestCompressedEncoding_ZeroDeltas(t *testing.T) {
 	// Verify that the +1 shift works: explicit entry with zero delta

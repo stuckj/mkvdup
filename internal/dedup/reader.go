@@ -656,7 +656,6 @@ func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset in
 	return err
 }
 
-
 func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) {
 	if fileIndex < 0 || fileIndex >= len(r.sourceMmaps) {
 		return nil, fmt.Errorf("invalid file index: %d", fileIndex)
