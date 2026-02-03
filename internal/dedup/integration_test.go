@@ -277,8 +277,8 @@ func TestFullDedupCycle_Bluray(t *testing.T) {
 	defer index.Close()
 	t.Logf("  Indexed %d hashes", len(index.HashToLocations))
 
-	if index.UsesESOffsets {
-		t.Fatal("Expected UsesESOffsets=false for Blu-ray source")
+	if !index.UsesESOffsets {
+		t.Fatal("Expected UsesESOffsets=true for Blu-ray source")
 	}
 
 	// Phase 4: Match packets
