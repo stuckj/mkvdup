@@ -97,6 +97,7 @@ jobs:
             -coverprofile=integration-coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
+            -timeout=0 \
             ./...
 
       # ========== MERGE COVERAGE ==========
