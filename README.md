@@ -25,6 +25,13 @@ This tool is intended for personal backup and archival of legally owned media. I
 
 ## Installation
 
+### macOS / Linux (Homebrew)
+
+```bash
+brew tap stuckj/mkvdup https://github.com/stuckj/mkvdup
+brew install mkvdup
+```
+
 ### Debian/Ubuntu (APT)
 
 ```bash
@@ -67,19 +74,19 @@ go install github.com/stuckj/mkvdup/cmd/mkvdup@latest
 ### Create a deduplicated file
 
 ```bash
-mkvdup create -m video.mkv -s /path/to/source/dir -o video.mkvdup
+mkvdup create video.mkv /path/to/source/dir video.mkvdup
 ```
 
 ### Mount deduplicated files
 
 ```bash
-mkvdup mount config.yaml /mnt/videos
+mkvdup mount /mnt/videos config.yaml
 ```
 
 ### Verify reconstruction
 
 ```bash
-mkvdup verify video.mkvdup -s /path/to/source/dir -m original.mkv
+mkvdup verify video.mkvdup /path/to/source/dir original.mkv
 ```
 
 ### Show dedup file info

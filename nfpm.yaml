@@ -78,6 +78,20 @@ contents:
     file_info:
       mode: 0644
 
+  # Zsh completion
+  - src: scripts/mkvdup-completion.zsh
+    dst: /usr/share/zsh/vendor-completions/_${PACKAGE_NAME}
+    expand: true
+    file_info:
+      mode: 0644
+
+  # Fish completion
+  - src: scripts/mkvdup.fish
+    dst: /usr/share/fish/vendor_completions.d/${PACKAGE_NAME}.fish
+    expand: true
+    file_info:
+      mode: 0644
+
 # RPM-specific settings
 rpm:
   group: Applications/Multimedia
