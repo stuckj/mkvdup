@@ -846,7 +846,7 @@ func matchMKV(mkvPath, sourceDir string) error {
 	totalStart := time.Now()
 
 	// Phase 1: Parse MKV
-	fmt.Println("Phase 1/3: Parsing MKV file...")
+	fmt.Print("Phase 1/3: Parsing MKV file...")
 	parser, err := mkv.NewParser(mkvPath)
 	if err != nil {
 		return fmt.Errorf("create parser: %w", err)
@@ -854,10 +854,17 @@ func matchMKV(mkvPath, sourceDir string) error {
 	defer parser.Close()
 
 	start := time.Now()
-	if err := parser.Parse(nil); err != nil {
+	lastProgress := time.Now()
+	if err := parser.Parse(func(processed, total int64) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(processed) / float64(total) * 100
+			fmt.Printf("\rPhase 1/3: Parsing MKV file... %.1f%%", pct)
+			lastProgress = time.Now()
+		}
+	}); err != nil {
 		return fmt.Errorf("parse MKV: %w", err)
 	}
-	fmt.Printf("  Parsed %d packets in %v\n", parser.PacketCount(), time.Since(start))
+	fmt.Printf("\rPhase 1/3: Parsed %d packets in %v                    \n", parser.PacketCount(), time.Since(start))
 
 	// Phase 2: Index source
 	fmt.Println("Phase 2/3: Indexing source...")
@@ -867,7 +874,7 @@ func matchMKV(mkvPath, sourceDir string) error {
 	}
 
 	start = time.Now()
-	lastProgress := time.Now()
+	lastProgress = time.Now()
 	err = indexer.Build(func(processed, total int64) {
 		if time.Since(lastProgress) > 500*time.Millisecond {
 			pct := float64(processed) / float64(total) * 100

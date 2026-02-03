@@ -34,8 +34,13 @@ func FindAudioSyncPoints(data []byte) []int {
 		}
 
 		// MPEG Audio / AAC ADTS: FF Fx (0xFF followed by 0xF0-0xFF)
-		// The sync word is 11 bits of 1s, so we check for 0xFF followed by 0xFx
-		if data[i] == 0xFF && (data[i+1]&0xF0) == 0xF0 {
+		// The sync word is 11 bits of 1s, so we check for 0xFF followed by 0xFx.
+		// Validate byte 2: bitrate index 1111 (upper nibble 0xF) is reserved/invalid.
+		// This eliminates massive false positives from 0xFF adaptation field padding
+		// in MPEG-TS, where every consecutive byte pair in a 0xFF run would match.
+		if i <= len(data)-3 &&
+			data[i] == 0xFF && (data[i+1]&0xF0) == 0xF0 &&
+			(data[i+2]&0xF0) != 0xF0 {
 			offsets = append(offsets, i)
 			continue
 		}
@@ -76,8 +81,10 @@ func FindAudioSyncPointsInRange(data []byte, startOffset int) []int {
 			continue
 		}
 
-		// MPEG Audio / AAC ADTS: FF Fx
-		if data[i] == 0xFF && (data[i+1]&0xF0) == 0xF0 {
+		// MPEG Audio / AAC ADTS: FF Fx with valid bitrate index
+		if i <= len(data)-3 &&
+			data[i] == 0xFF && (data[i+1]&0xF0) == 0xF0 &&
+			(data[i+2]&0xF0) != 0xF0 {
 			offsets = append(offsets, startOffset+i)
 			continue
 		}

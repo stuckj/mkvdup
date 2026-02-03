@@ -76,9 +76,10 @@ func TestFullDedupCycle(t *testing.T) {
 		t.Fatalf("Failed to match: %v", err)
 	}
 
-	matchRate := float64(result.MatchedBytes) / float64(result.MatchedBytes+int64(len(result.DeltaData))) * 100
+	defer result.Close()
+	matchRate := float64(result.MatchedBytes) / float64(result.MatchedBytes+result.DeltaSize()) * 100
 	t.Logf("  Matched %d bytes (%.1f%%)", result.MatchedBytes, matchRate)
-	t.Logf("  Delta: %d bytes", len(result.DeltaData))
+	t.Logf("  Delta: %d bytes", result.DeltaSize())
 
 	// Phase 4: Write dedup file
 	t.Log("Phase 4: Writing dedup file...")
@@ -293,9 +294,10 @@ func TestFullDedupCycle_Bluray(t *testing.T) {
 		t.Fatalf("Failed to match: %v", err)
 	}
 
-	matchRate := float64(result.MatchedBytes) / float64(result.MatchedBytes+int64(len(result.DeltaData))) * 100
+	defer result.Close()
+	matchRate := float64(result.MatchedBytes) / float64(result.MatchedBytes+result.DeltaSize()) * 100
 	t.Logf("  Matched %d bytes (%.1f%%)", result.MatchedBytes, matchRate)
-	t.Logf("  Delta: %d bytes", len(result.DeltaData))
+	t.Logf("  Delta: %d bytes", result.DeltaSize())
 
 	// Phase 5: Write dedup file
 	t.Log("Phase 5: Writing dedup file...")

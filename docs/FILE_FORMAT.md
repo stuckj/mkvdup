@@ -12,9 +12,12 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 
 | Version | Description |
 |---------|-------------|
-| 3 (current) | Source field expanded to uint16 (supports >256 source files). Entry size: 28 bytes. |
+| 4 (current) | Adds embedded range map section for Blu-ray M2TS sources. Index entries use ES offsets; the range map translates ES offsets to raw file offsets at read time. Footer extended to 32 bytes with range map checksum. |
+| 3 (current) | Source field expanded to uint16 (supports >256 source files). Entry size: 28 bytes. Index entries use raw file offsets directly. |
 | 2 (deprecated) | Raw file offsets stored directly. Source field was uint8 (max 256 files). No longer supported; files must be recreated. |
 | 1 (deprecated) | Used ES (elementary stream) offsets for DVD sources. No longer supported; files must be recreated. |
+
+Version 3 is used for DVD sources (MPEG-PS). Version 4 is used for Blu-ray sources (MPEG-TS/M2TS).
 
 ## Design Principles
 
@@ -23,19 +26,19 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 3. **Relative paths**: Source file paths relative to `source_dir` from FUSE config
 4. **Compact index entries**: Use smallest types that fit the data
 
-## File Structure
+## File Structure (Version 3 — DVD)
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │  Header (fixed size: 60 bytes)                         │
 ├────────────────────────────────────────────────────────┤
 │  Magic: "MKVDUP01" (8 bytes)                           │
-│  Version: uint32 (4 bytes)                             │
+│  Version: uint32 (4 bytes) = 3                         │
 │  Flags: uint32 (4 bytes)  [reserved for future use]    │
 │  OriginalSize: int64 (8 bytes)                         │
 │  OriginalChecksum: uint64 (8 bytes)                    │
-│  SourceType: uint8 (1 byte)  [0=DVD, 1=Blu-ray]        │
-│  UsesESOffsets: uint8 (1 byte)  [always 0 in v2]       │
+│  SourceType: uint8 (1 byte)  [0=DVD, 1=Blu-ray]       │
+│  UsesESOffsets: uint8 (1 byte)  [always 0 in v3]       │
 │  SourceFileCount: uint16 (2 bytes)                     │
 │  EntryCount: uint64 (8 bytes)                          │
 │  DeltaOffset: int64 (8 bytes)                          │
@@ -50,17 +53,17 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 │    FileChecksum: uint64 (8 bytes)                      │
 │                                                        │
 │  Note: Path is relative to source_dir in FUSE config   │
-│  Example: "VIDEO_TS/VTS_09_1.VOB" not full path        │
+│  Example: "VIDEO_TS/VTS_09_1.VOB"                      │
 ├────────────────────────────────────────────────────────┤
 │  Index Entries Section (fixed 28 bytes per entry)      │
 ├────────────────────────────────────────────────────────┤
 │  For each entry (sorted by MkvOffset, contiguous):     │
 │    MkvOffset: int64 (8 bytes)                          │
-│    Length: int64 (8 bytes)                             │
+│    Length: int64 (8 bytes)                              │
 │    Source: uint16 (2 bytes) [0=DELTA, 1+=file idx+1]   │
-│    SourceOffset: int64 (8 bytes)                       │
-│    IsVideo: uint8 (1 byte)  [for ES-based sources]     │
-│    AudioSubStreamID: uint8 (1 byte)  [for ES audio]    │
+│    SourceOffset: int64 (8 bytes) [raw file offset]     │
+│    IsVideo: uint8 (1 byte)                             │
+│    AudioSubStreamID: uint8 (1 byte)                    │
 │                                                        │
 │  Entry size: 28 bytes                                  │
 │  1M entries = 28 MB index overhead                     │
@@ -78,6 +81,49 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 └────────────────────────────────────────────────────────┘
 ```
 
+## File Structure (Version 4 — Blu-ray)
+
+Version 4 adds a **range map section** between the delta section and footer. This section maps ES (elementary stream) offsets to raw file offsets, allowing the reader to reconstruct data from M2TS source files at read time.
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Header (fixed size: 60 bytes)                         │
+├────────────────────────────────────────────────────────┤
+│  (same fields as V3)                                   │
+│  Version: uint32 (4 bytes) = 4                         │
+│  SourceType: uint8 = 1 (Blu-ray)                       │
+│  UsesESOffsets: uint8 = 1                              │
+├────────────────────────────────────────────────────────┤
+│  Source Files Section (variable size)                  │
+├────────────────────────────────────────────────────────┤
+│  (same format as V3)                                   │
+│  Example: "BDMV/STREAM/00705.m2ts"                     │
+├────────────────────────────────────────────────────────┤
+│  Index Entries Section (fixed 28 bytes per entry)      │
+├────────────────────────────────────────────────────────┤
+│  (same format as V3, but SourceOffset = ES offset)     │
+│  For source entries: SourceOffset is a continuous       │
+│  byte position within the elementary stream, not a     │
+│  raw file offset. The range map section provides the   │
+│  mapping from ES offsets to raw M2TS file offsets.     │
+├────────────────────────────────────────────────────────┤
+│  Delta Section (variable size)                         │
+├────────────────────────────────────────────────────────┤
+│  (same format as V3)                                   │
+├────────────────────────────────────────────────────────┤
+│  Range Map Section (variable size)                     │
+├────────────────────────────────────────────────────────┤
+│  (see Range Map Format below)                          │
+├────────────────────────────────────────────────────────┤
+│  Footer (32 bytes — 8 bytes larger than V3)            │
+├────────────────────────────────────────────────────────┤
+│  IndexChecksum: uint64 (8 bytes, xxhash of entries)    │
+│  DeltaChecksum: uint64 (8 bytes, xxhash of delta)      │
+│  RangeMapChecksum: uint64 (8 bytes, xxhash of ranges)  │
+│  Magic: "MKVDUP01" (8 bytes, for reverse scanning)     │
+└────────────────────────────────────────────────────────┘
+```
+
 ## Source Reference Encoding
 
 For index entries:
@@ -90,6 +136,127 @@ In version 3, `SourceOffset` is always a raw byte offset into the source file.
 Entries that would span multiple non-contiguous regions in the source file
 (due to container header removal) are split into multiple entries during creation.
 
+In version 4, `SourceOffset` is an ES (elementary stream) offset — a continuous
+byte position within the decoded stream. The range map section provides the
+mapping from ES offsets to raw M2TS file offsets, allowing the reader to
+extract payloads from the correct positions in the source file.
+
+## Range Map Format (Version 4)
+
+The range map section encodes the mapping from ES offsets to raw file offsets
+for each stream (video and audio) of each source file. It uses compressed
+delta+varint+RLE encoding to achieve high compression ratios on the highly
+regular M2TS packet structure.
+
+### Section Layout
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Magic: "RNGEMAPX" (8 bytes)                           │
+│  SourceCount: uint16 (2 bytes)                         │
+├────────────────────────────────────────────────────────┤
+│  For each source file:                                 │
+│    FileIndex: uint16 (2 bytes)                         │
+│    StreamCount: uint8 (1 byte)                         │
+│                                                        │
+│    For each stream:                                    │
+│      Stream Header (8 bytes):                          │
+│        FileIndex: uint16                               │
+│        StreamType: uint8 (0=video, 1=audio)            │
+│        SubStreamID: uint8                              │
+│        EntryCount: uint32                              │
+│                                                        │
+│      Compression Parameters (8 bytes):                 │
+│        DefaultGap: uint16                              │
+│        DefaultSize: uint16                             │
+│        CompressedDataSize: uint32                      │
+│                                                        │
+│      Compressed Range Data (CompressedDataSize bytes)  │
+└────────────────────────────────────────────────────────┘
+```
+
+### Compressed Range Encoding
+
+#### Background: M2TS Packet Structure
+
+An M2TS file consists of 192-byte transport stream packets:
+```
+┌─────────────────────────────────────────────────────────────┐
+│ TS Packet (192 bytes)                                        │
+├──────────────┬──────────────────────────────────────────────┤
+│ Header (4B)  │ Adaptation + Payload (188 bytes max)         │
+│ + timecode   │ └── PES payload portion (≤184 bytes)         │
+│ (4B)         │                                               │
+└──────────────┴──────────────────────────────────────────────┘
+    offset 0       offset 8                              offset 192
+```
+
+For a given stream (video or audio), the range map records where each PES
+payload starts in the file and how long it is. Most payloads are exactly 184
+bytes, spaced 192 bytes apart (one per packet). This regularity enables
+extreme compression.
+
+#### What We Encode
+
+Each range map entry is a (file_offset, payload_size) pair:
+```
+Entry 0:  file_offset=1000,  size=184   ← first packet's payload
+Entry 1:  file_offset=1192,  size=184   ← +192 bytes later (gap=8, then 184 payload)
+Entry 2:  file_offset=1384,  size=184   ← +192 bytes later
+Entry 3:  file_offset=1576,  size=184   ← +192 bytes later
+...
+Entry N:  file_offset=X,     size=120   ← partial payload at end of PES
+```
+
+The "gap" between entries is the space from the end of one payload to the
+start of the next (typically 8 bytes: 4-byte TS header + 4-byte timecode).
+
+#### Compression Scheme
+
+Default values (determined by sampling):
+- `defaultGap`: Most common gap between entries (typically 8)
+- `defaultSize`: Most common payload size (typically 184)
+
+Encoding rules:
+1. **First entry**: Absolute file offset (uvarint) + size (uvarint)
+2. **RLE run**: When consecutive entries all have the default gap and size,
+   encode as: `0x00` + run_count (uvarint)
+3. **Explicit entry**: When gap or size differs from default, encode as:
+   `zigzag(gap_delta) + 1` (uvarint) + size (uvarint)
+
+The zigzag encoding converts signed deltas to unsigned varints (0→0, -1→1,
+1→2, -2→3, 2→4, etc.). Adding 1 ensures the value is never 0x00 (reserved
+for RLE marker).
+
+#### Concrete Example
+
+Given entries at offsets 1000, 1192, 1384, 1576, 1768 (all size=184):
+```
+Encoded bytes:
+  [uvarint: 1000]    ← first entry file offset
+  [uvarint: 184]     ← first entry size
+  [0x00]             ← RLE marker
+  [uvarint: 4]       ← run of 4 more entries with default gap/size
+```
+
+This encodes 5 entries in ~5 bytes instead of 80 bytes (5 × 16 bytes raw).
+
+For a 35 GB M2TS file with ~190 million payload entries, nearly all follow
+the regular pattern. The compressed range data is typically 10-20 KB—a
+compression ratio exceeding 1000:1.
+
+### Read-Time Range Map Usage
+
+At read time, the range map is decoded into a `StreamRangeMap` with a coarse
+in-memory index (one entry per 1024 compressed entries) for fast binary search.
+Sequential reads use a cached cursor for O(1) access. RLE runs support
+arithmetic skip for O(1) seeking within a run.
+
+For each FUSE read:
+1. Look up the index entry to get the ES offset and stream type
+2. Seek to the correct position in the range map (cached cursor or binary search)
+3. Batch-copy payloads from the mmap'd source file using stride arithmetic
+
 ## Storage Efficiency
 
 **Current entry size: 28 bytes**
@@ -101,20 +268,13 @@ Entries that would span multiple non-contiguous regions in the source file
 - AudioSubStreamID: 1 byte
 
 **Estimated index size for typical video:**
-- ~1-2 million packets → 28-56 MB index
-- Acceptable given ~3 GB space savings
+- DVD: ~1-2 million packets → 28-56 MB index
+- Blu-ray: ~1-2 million packets → 28-56 MB index (similar to DVD because
+  entries that span multiple PES payloads are merged during creation)
 
-**Future optimization (if needed): Varint encoding**
-- Use variable-length integer encoding (protobuf-style)
-- Small offsets/lengths use fewer bytes
-- Could reduce index by 40-60%
-- Adds complexity, defer unless index size is problematic
-
-**Future optimization (if needed): Delta encoding**
-- Store MkvOffset as delta from previous entry
-- Most deltas are small (packet sizes)
-- Combined with varint, significant savings
-- Complicates random access
+**Range map overhead (V4 only):**
+- Typically <100 KB total for all streams, even for 35+ GB source files
+- Negligible compared to index and delta sizes
 
 ## Delta Contents
 
@@ -125,7 +285,7 @@ The delta section contains ONLY data that couldn't be matched to the source:
 
 Audio and video codec data should NOT end up in delta if the matching algorithm works correctly. The delta should be almost entirely container overhead.
 
-**Expected delta size (tested with a DVD ISO):**
+**Expected delta size:**
 
 For a typical video with ~8,000-12,000 clusters and ~200,000 blocks:
 - Cluster headers: ~120-180 KB

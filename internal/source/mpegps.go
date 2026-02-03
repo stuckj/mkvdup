@@ -572,20 +572,12 @@ func (p *MPEGPSParser) ESOffsetToFileOffset(esOffset int64, isVideo bool) (fileO
 // For audio, this returns 0 - use AudioSubStreamESSize instead.
 func (p *MPEGPSParser) TotalESSize(isVideo bool) int64 {
 	if !isVideo {
-		// Audio now uses per-sub-stream ranges - return 0 to indicate callers should use AudioSubStreamESSize
 		return 0
 	}
-	var ranges []PESPayloadRange
 	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
-		ranges = p.filteredVideoRanges
-	} else {
-		ranges = p.videoRanges
+		return totalESSizeFromRanges(p.filteredVideoRanges)
 	}
-	if len(ranges) == 0 {
-		return 0
-	}
-	last := ranges[len(ranges)-1]
-	return last.ESOffset + int64(last.Size)
+	return totalESSizeFromRanges(p.videoRanges)
 }
 
 // AudioSubStreams returns the list of audio sub-stream IDs in order of appearance.
@@ -600,12 +592,7 @@ func (p *MPEGPSParser) AudioSubStreamCount() int {
 
 // AudioSubStreamESSize returns the total ES size for a specific audio sub-stream.
 func (p *MPEGPSParser) AudioSubStreamESSize(subStreamID byte) int64 {
-	ranges, ok := p.filteredAudioBySubStream[subStreamID]
-	if !ok || len(ranges) == 0 {
-		return 0
-	}
-	last := ranges[len(ranges)-1]
-	return last.ESOffset + int64(last.Size)
+	return totalESSizeFromRanges(p.filteredAudioBySubStream[subStreamID])
 }
 
 // FilteredVideoRanges returns the filtered video payload ranges for zero-copy iteration.
@@ -628,133 +615,27 @@ func (p *MPEGPSParser) Data() []byte {
 	return p.data
 }
 
-// binarySearchRanges performs binary search on ranges to find the one containing esOffset.
-func (p *MPEGPSParser) binarySearchRanges(ranges []PESPayloadRange, esOffset int64) int {
-	if len(ranges) == 0 {
-		return -1
-	}
-
-	// Binary search for the range containing esOffset
-	low, high := 0, len(ranges)-1
-	for low <= high {
-		mid := (low + high) / 2
-		r := ranges[mid]
-		if esOffset < r.ESOffset {
-			high = mid - 1
-		} else if esOffset >= r.ESOffset+int64(r.Size) {
-			low = mid + 1
-		} else {
-			return mid
-		}
-	}
-	return -1
-}
-
 // ReadESByteWithHint reads a single byte from the ES stream, using a range hint
 // to avoid binary search when reading sequentially. Returns the byte, the range
 // index where it was found (for use as hint on next call), and success status.
 // Pass rangeHint=-1 to force binary search.
 func (p *MPEGPSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHint int) (byte, int, bool) {
-	var ranges []PESPayloadRange
-	if isVideo {
-		if p.filterUserData && len(p.filteredVideoRanges) > 0 {
-			ranges = p.filteredVideoRanges
-		} else {
-			ranges = p.videoRanges
-		}
-	} else {
+	if !isVideo {
 		// Audio doesn't use this method - it goes through sub-stream reader
 		return 0, -1, false
 	}
-
-	if len(ranges) == 0 {
-		return 0, -1, false
+	var ranges []PESPayloadRange
+	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
+		ranges = p.filteredVideoRanges
+	} else {
+		ranges = p.videoRanges
 	}
-
-	// Fast path: check if hint is still valid (O(1) check)
-	if rangeHint >= 0 && rangeHint < len(ranges) {
-		r := ranges[rangeHint]
-		if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
-			// Hint was correct - read directly
-			offsetInPayload := esOffset - r.ESOffset
-			fileOffset := r.FileOffset + offsetInPayload
-			if fileOffset >= 0 && fileOffset < p.size {
-				return p.data[fileOffset], rangeHint, true
-			}
-		}
-		// Check adjacent range (common case when crossing boundaries)
-		if rangeHint+1 < len(ranges) {
-			r = ranges[rangeHint+1]
-			if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
-				offsetInPayload := esOffset - r.ESOffset
-				fileOffset := r.FileOffset + offsetInPayload
-				if fileOffset >= 0 && fileOffset < p.size {
-					return p.data[fileOffset], rangeHint + 1, true
-				}
-			}
-		}
-	}
-
-	// Slow path: binary search
-	rangeIdx := p.binarySearchRanges(ranges, esOffset)
-	if rangeIdx < 0 {
-		return 0, -1, false
-	}
-
-	r := ranges[rangeIdx]
-	offsetInPayload := esOffset - r.ESOffset
-	fileOffset := r.FileOffset + offsetInPayload
-	if fileOffset >= 0 && fileOffset < p.size {
-		return p.data[fileOffset], rangeIdx, true
-	}
-
-	return 0, -1, false
+	return readByteWithHint(p.data, p.size, ranges, esOffset, rangeHint)
 }
 
 // ReadAudioByteWithHint reads a single byte from an audio sub-stream, using a range hint.
 func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
-	ranges := p.filteredAudioBySubStream[subStreamID]
-	if len(ranges) == 0 {
-		return 0, -1, false
-	}
-
-	// Fast path: check if hint is still valid
-	if rangeHint >= 0 && rangeHint < len(ranges) {
-		r := ranges[rangeHint]
-		if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
-			offsetInPayload := esOffset - r.ESOffset
-			fileOffset := r.FileOffset + offsetInPayload
-			if fileOffset >= 0 && fileOffset < p.size {
-				return p.data[fileOffset], rangeHint, true
-			}
-		}
-		// Check adjacent range
-		if rangeHint+1 < len(ranges) {
-			r = ranges[rangeHint+1]
-			if esOffset >= r.ESOffset && esOffset < r.ESOffset+int64(r.Size) {
-				offsetInPayload := esOffset - r.ESOffset
-				fileOffset := r.FileOffset + offsetInPayload
-				if fileOffset >= 0 && fileOffset < p.size {
-					return p.data[fileOffset], rangeHint + 1, true
-				}
-			}
-		}
-	}
-
-	// Slow path: binary search
-	rangeIdx := p.binarySearchRanges(ranges, esOffset)
-	if rangeIdx < 0 {
-		return 0, -1, false
-	}
-
-	r := ranges[rangeIdx]
-	offsetInPayload := esOffset - r.ESOffset
-	fileOffset := r.FileOffset + offsetInPayload
-	if fileOffset >= 0 && fileOffset < p.size {
-		return p.data[fileOffset], rangeIdx, true
-	}
-
-	return 0, -1, false
+	return readByteWithHint(p.data, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)
 }
 
 // Video start codes that should be KEPT (not user_data)
@@ -770,22 +651,18 @@ type RawRange struct {
 }
 
 // RawRangesForESRegion returns the raw file ranges that contain the given ES region.
-// Each returned range represents a contiguous chunk of raw file data.
-// The sum of all returned range sizes equals the requested ES region size.
 // For video streams only - audio should use RawRangesForAudioSubStream.
 func (p *MPEGPSParser) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) {
 	if !isVideo {
 		return nil, fmt.Errorf("audio uses per-sub-stream methods, use RawRangesForAudioSubStream")
 	}
-
 	var ranges []PESPayloadRange
 	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
 		ranges = p.filteredVideoRanges
 	} else {
 		ranges = p.videoRanges
 	}
-
-	return p.rawRangesFromPESRanges(ranges, esOffset, size)
+	return rawRangesFromPESRanges(ranges, esOffset, size)
 }
 
 // RawRangesForAudioSubStream returns the raw file ranges for audio data from a specific sub-stream.
@@ -794,73 +671,7 @@ func (p *MPEGPSParser) RawRangesForAudioSubStream(subStreamID byte, esOffset int
 	if !ok {
 		return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
 	}
-	return p.rawRangesFromPESRanges(ranges, esOffset, size)
-}
-
-// rawRangesFromPESRanges enumerates raw file ranges for a given ES region.
-func (p *MPEGPSParser) rawRangesFromPESRanges(ranges []PESPayloadRange, esOffset int64, size int) ([]RawRange, error) {
-	if len(ranges) == 0 {
-		return nil, fmt.Errorf("no ranges available")
-	}
-
-	// Use binary search to find starting range
-	rangeIdx := p.binarySearchRanges(ranges, esOffset)
-	if rangeIdx < 0 {
-		// Maybe esOffset is before the first range, try linear from start
-		rangeIdx = 0
-		for rangeIdx < len(ranges) && esOffset >= ranges[rangeIdx].ESOffset+int64(ranges[rangeIdx].Size) {
-			rangeIdx++
-		}
-	}
-
-	if rangeIdx >= len(ranges) {
-		return nil, fmt.Errorf("ES offset %d not found in ranges", esOffset)
-	}
-
-	r := ranges[rangeIdx]
-	if esOffset < r.ESOffset || esOffset >= r.ESOffset+int64(r.Size) {
-		return nil, fmt.Errorf("ES offset %d not in range [%d, %d)", esOffset, r.ESOffset, r.ESOffset+int64(r.Size))
-	}
-
-	// Collect raw ranges
-	var result []RawRange
-	remaining := size
-
-	for remaining > 0 && rangeIdx < len(ranges) {
-		r := ranges[rangeIdx]
-
-		if esOffset < r.ESOffset {
-			break
-		}
-
-		if esOffset >= r.ESOffset+int64(r.Size) {
-			rangeIdx++
-			continue
-		}
-
-		offsetInPayload := esOffset - r.ESOffset
-		availableInRange := int64(r.Size) - offsetInPayload
-		toTake := remaining
-		if int64(toTake) > availableInRange {
-			toTake = int(availableInRange)
-		}
-
-		fileOffset := r.FileOffset + offsetInPayload
-		result = append(result, RawRange{
-			FileOffset: fileOffset,
-			Size:       toTake,
-		})
-
-		esOffset += int64(toTake)
-		remaining -= toTake
-		rangeIdx++
-	}
-
-	if remaining > 0 {
-		return nil, fmt.Errorf("could not map entire ES region: %d bytes remaining", remaining)
-	}
-
-	return result, nil
+	return rawRangesFromPESRanges(ranges, esOffset, size)
 }
 
 // ReadESData reads elementary stream data at the given ES offset.
@@ -870,15 +681,13 @@ func (p *MPEGPSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byt
 	if !isVideo {
 		return nil, fmt.Errorf("audio uses per-sub-stream methods, use ReadAudioSubStreamData")
 	}
-
 	var ranges []PESPayloadRange
 	if p.filterUserData && len(p.filteredVideoRanges) > 0 {
 		ranges = p.filteredVideoRanges
 	} else {
 		ranges = p.videoRanges
 	}
-
-	return p.readFromRanges(ranges, esOffset, size, isVideo)
+	return readFromRanges(p.data, p.size, ranges, esOffset, size)
 }
 
 // ReadAudioSubStreamData reads audio data from a specific sub-stream.
@@ -887,87 +696,5 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 	if !ok {
 		return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
 	}
-	return p.readFromRanges(ranges, esOffset, size, false)
-}
-
-// readFromRanges reads data from a range list starting at the given ES offset.
-// Returns a zero-copy slice when data fits in a single range (common case),
-// only copies when data spans multiple ranges.
-func (p *MPEGPSParser) readFromRanges(ranges []PESPayloadRange, esOffset int64, size int, _ bool) ([]byte, error) {
-	if len(ranges) == 0 {
-		return nil, fmt.Errorf("no ranges available")
-	}
-
-	// Use binary search to find starting range
-	rangeIdx := p.binarySearchRanges(ranges, esOffset)
-	if rangeIdx < 0 {
-		// Maybe esOffset is before the first range, try linear from start
-		rangeIdx = 0
-		for rangeIdx < len(ranges) && esOffset >= ranges[rangeIdx].ESOffset+int64(ranges[rangeIdx].Size) {
-			rangeIdx++
-		}
-	}
-
-	if rangeIdx >= len(ranges) {
-		return nil, fmt.Errorf("ES offset %d not found in ranges", esOffset)
-	}
-
-	r := ranges[rangeIdx]
-	if esOffset < r.ESOffset || esOffset >= r.ESOffset+int64(r.Size) {
-		return nil, fmt.Errorf("ES offset %d not in range [%d, %d)", esOffset, r.ESOffset, r.ESOffset+int64(r.Size))
-	}
-
-	offsetInPayload := esOffset - r.ESOffset
-	availableInRange := int64(r.Size) - offsetInPayload
-
-	// Fast path: data fits entirely within this single range (zero-copy)
-	if int64(size) <= availableInRange {
-		fileOffset := r.FileOffset + offsetInPayload
-		endOffset := fileOffset + int64(size)
-		if endOffset > p.size {
-			return nil, fmt.Errorf("file offset out of range")
-		}
-		// Return slice directly into mmap'd data - no copy!
-		return p.data[fileOffset:endOffset], nil
-	}
-
-	// Slow path: data spans multiple ranges - must copy
-	result := make([]byte, 0, size)
-	remaining := size
-
-	for remaining > 0 && rangeIdx < len(ranges) {
-		r := ranges[rangeIdx]
-
-		if esOffset < r.ESOffset {
-			break
-		}
-
-		if esOffset >= r.ESOffset+int64(r.Size) {
-			rangeIdx++
-			continue
-		}
-
-		offsetInPayload := esOffset - r.ESOffset
-		availableInRange := int64(r.Size) - offsetInPayload
-		toRead := remaining
-		if int64(toRead) > availableInRange {
-			toRead = int(availableInRange)
-		}
-
-		fileOffset := r.FileOffset + offsetInPayload
-		endOffset := fileOffset + int64(toRead)
-		if endOffset > p.size {
-			if len(result) > 0 {
-				return result, nil
-			}
-			return nil, fmt.Errorf("failed to read ES data: offset out of range")
-		}
-
-		result = append(result, p.data[fileOffset:endOffset]...)
-		esOffset += int64(toRead)
-		remaining -= toRead
-		rangeIdx++
-	}
-
-	return result, nil
+	return readFromRanges(p.data, p.size, ranges, esOffset, size)
 }

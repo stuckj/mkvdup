@@ -86,6 +86,131 @@ func intSliceEqual(a, b []int) bool {
 	return true
 }
 
+func TestFindVideoNALStarts(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected []int
+	}{
+		{
+			name:     "empty data",
+			data:     []byte{},
+			expected: nil,
+		},
+		{
+			name:     "too short",
+			data:     []byte{0x00, 0x00, 0x01},
+			expected: nil,
+		},
+		{
+			name: "single NAL at beginning",
+			// 00 00 01 B3 FF → NAL header at position 3
+			data:     []byte{0x00, 0x00, 0x01, 0xB3, 0xFF},
+			expected: []int{3},
+		},
+		{
+			name: "NAL in middle",
+			// FF FF 00 00 01 67 FF → NAL header at position 5
+			data:     []byte{0xFF, 0xFF, 0x00, 0x00, 0x01, 0x67, 0xFF},
+			expected: []int{5},
+		},
+		{
+			name: "multiple NALs",
+			// 00 00 01 B3 00 00 01 00 → NAL headers at 3 and 7
+			data:     []byte{0x00, 0x00, 0x01, 0xB3, 0x00, 0x00, 0x01, 0x00, 0xFF},
+			expected: []int{3, 7},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FindVideoNALStarts(tt.data)
+			if !intSliceEqual(result, tt.expected) {
+				t.Errorf("FindVideoNALStarts() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFindVideoNALStartsInRange(t *testing.T) {
+	// 00 00 01 B3 FF 00 00 01 00 FF → NAL headers at local positions 3 and 8
+	data := []byte{0x00, 0x00, 0x01, 0xB3, 0xFF, 0x00, 0x00, 0x01, 0x00, 0xFF}
+	startOffset := 1000
+
+	result := FindVideoNALStartsInRange(data, startOffset)
+	expected := []int{1003, 1008}
+
+	if !intSliceEqual(result, expected) {
+		t.Errorf("FindVideoNALStartsInRange() = %v, want %v", result, expected)
+	}
+}
+
+func TestFindAVCCNALStarts(t *testing.T) {
+	tests := []struct {
+		name          string
+		data          []byte
+		nalLengthSize int
+		expected      []int
+	}{
+		{
+			name:          "empty data",
+			data:          []byte{},
+			nalLengthSize: 4,
+			expected:      nil,
+		},
+		{
+			name:          "invalid length size",
+			data:          []byte{0x00, 0x00, 0x00, 0x05, 0x67, 0x01, 0x02, 0x03, 0x04},
+			nalLengthSize: 0,
+			expected:      nil,
+		},
+		{
+			name: "single NAL 4-byte length",
+			// [00 00 00 05][67 01 02 03 04] → NAL header at position 4
+			data:          []byte{0x00, 0x00, 0x00, 0x05, 0x67, 0x01, 0x02, 0x03, 0x04},
+			nalLengthSize: 4,
+			expected:      []int{4},
+		},
+		{
+			name: "two NALs 4-byte length",
+			// [00 00 00 02][67 01] [00 00 00 03][68 01 02] → NAL headers at 4 and 10
+			data:          []byte{0x00, 0x00, 0x00, 0x02, 0x67, 0x01, 0x00, 0x00, 0x00, 0x03, 0x68, 0x01, 0x02},
+			nalLengthSize: 4,
+			expected:      []int{4, 10},
+		},
+		{
+			name: "single NAL 2-byte length",
+			// [00 05][67 01 02 03 04] → NAL header at position 2
+			data:          []byte{0x00, 0x05, 0x67, 0x01, 0x02, 0x03, 0x04},
+			nalLengthSize: 2,
+			expected:      []int{2},
+		},
+		{
+			name: "single NAL 1-byte length",
+			// [05][67 01 02 03 04] → NAL header at position 1
+			data:          []byte{0x05, 0x67, 0x01, 0x02, 0x03, 0x04},
+			nalLengthSize: 1,
+			expected:      []int{1},
+		},
+		{
+			name: "zero length stops parsing",
+			// [00 00 00 00] → zero length, should stop
+			data:          []byte{0x00, 0x00, 0x00, 0x00, 0x67, 0x01, 0x02, 0x03},
+			nalLengthSize: 4,
+			expected:      nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FindAVCCNALStarts(tt.data, tt.nalLengthSize)
+			if !intSliceEqual(result, tt.expected) {
+				t.Errorf("FindAVCCNALStarts() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
 func BenchmarkFindVideoStartCodes(b *testing.B) {
 	// Create test data with start codes scattered throughout
 	data := make([]byte, 1024*1024) // 1MB

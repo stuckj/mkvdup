@@ -12,14 +12,18 @@ import (
 const (
 	Magic   = "MKVDUP01"
 	Version = 3 // v3: Source field expanded to uint16 for >256 source files
+	// VersionRangeMap is the version for files with embedded range maps.
+	// Entries use ES offsets; a range map section maps ES offsets to raw file offsets.
+	VersionRangeMap uint32 = 4
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
-	HeaderSize  = 60
-	EntrySize   = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
-	FooterSize  = 24
-	MagicSize   = 8
-	VersionSize = 4
+	HeaderSize      = 60
+	EntrySize       = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
+	FooterSize      = 24
+	FooterV4Size    = 32 // V4 footer adds RangeMapChecksum (8 bytes)
+	MagicSize       = 8
+	VersionSize     = 4
 )
 
 // Source types
@@ -87,9 +91,10 @@ func (r *RawEntry) ToEntry() Entry {
 
 // Footer represents the footer at the end of a .mkvdup file.
 type Footer struct {
-	IndexChecksum uint64  // xxhash of index section
-	DeltaChecksum uint64  // xxhash of delta section
-	Magic         [8]byte // "MKVDUP01" (for reverse scanning)
+	IndexChecksum    uint64  // xxhash of index section
+	DeltaChecksum    uint64  // xxhash of delta section
+	RangeMapChecksum uint64  // xxhash of range map section (V4 only; 0 for V3)
+	Magic            [8]byte // "MKVDUP01" (for reverse scanning)
 }
 
 // File represents a complete dedup file structure for reconstruction.

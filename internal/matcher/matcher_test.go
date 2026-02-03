@@ -2,6 +2,7 @@ package matcher
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/cespare/xxhash/v2"
@@ -19,7 +20,7 @@ func TestExtractProbeHashes_Video(t *testing.T) {
 	data[12] = 0x01
 	data[13] = 0xB3 // Sequence header start code
 
-	hashes := ExtractProbeHashes(data, true, windowSize)
+	hashes := ExtractProbeHashes(data, true, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash from video data with start code")
 	}
@@ -31,8 +32,8 @@ func TestExtractProbeHashes_Video(t *testing.T) {
 		}
 	}
 
-	// Verify the hash is computed from the sync point
-	expectedHash := xxhash.Sum64(data[10 : 10+windowSize])
+	// Verify the hash is computed from the NAL header byte (offset 13, after 00 00 01)
+	expectedHash := xxhash.Sum64(data[13 : 13+windowSize])
 	found := false
 	for _, h := range hashes {
 		if h.Hash == expectedHash {
@@ -41,7 +42,7 @@ func TestExtractProbeHashes_Video(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("Expected hash computed from sync point at offset 10")
+		t.Errorf("Expected hash computed from NAL header at offset 13")
 	}
 }
 
@@ -54,7 +55,7 @@ func TestExtractProbeHashes_Audio(t *testing.T) {
 	data[20] = 0x0B
 	data[21] = 0x77
 
-	hashes := ExtractProbeHashes(data, false, windowSize)
+	hashes := ExtractProbeHashes(data, false, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash from audio data with sync word")
 	}
@@ -90,7 +91,7 @@ func TestExtractProbeHashes_NoSyncPoint(t *testing.T) {
 	}
 
 	// Should still return a hash from the start of data
-	hashes := ExtractProbeHashes(data, true, windowSize)
+	hashes := ExtractProbeHashes(data, true, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash even without sync points")
 	}
@@ -108,7 +109,7 @@ func TestExtractProbeHashes_TooSmall(t *testing.T) {
 	// Data smaller than window size
 	data := make([]byte, windowSize-1)
 
-	hashes := ExtractProbeHashes(data, true, windowSize)
+	hashes := ExtractProbeHashes(data, true, windowSize, 0)
 	if hashes != nil {
 		t.Errorf("Expected nil for data smaller than window size, got %d hashes", len(hashes))
 	}
@@ -128,9 +129,115 @@ func TestExtractProbeHashes_MultipleSyncPoints(t *testing.T) {
 	data[101] = 0x00
 	data[102] = 0x01
 
-	hashes := ExtractProbeHashes(data, true, windowSize)
+	hashes := ExtractProbeHashes(data, true, windowSize, 0)
 	if len(hashes) < 2 {
 		t.Errorf("Expected at least 2 hashes for 2 sync points, got %d", len(hashes))
+	}
+}
+
+func TestExtractProbeHashes_AVCC(t *testing.T) {
+	windowSize := 64
+
+	// Build AVCC formatted data: [4-byte length][NAL unit data]
+	// NAL unit 1: length=80, data starts at offset 4
+	data := make([]byte, 256)
+	data[0] = 0x00
+	data[1] = 0x00
+	data[2] = 0x00
+	data[3] = 80 // NAL length = 80
+	for i := 4; i < 84; i++ {
+		data[i] = byte(i) // NAL data
+	}
+	// NAL unit 2: length=80, data starts at offset 88
+	data[84] = 0x00
+	data[85] = 0x00
+	data[86] = 0x00
+	data[87] = 80
+	for i := 88; i < 168; i++ {
+		data[i] = byte(i)
+	}
+
+	hashes := ExtractProbeHashes(data, true, windowSize, 4)
+	if len(hashes) < 2 {
+		t.Fatalf("Expected at least 2 hashes from 2 AVCC NAL units, got %d", len(hashes))
+	}
+
+	// First hash should be from offset 4 (first NAL header)
+	expectedHash1 := xxhash.Sum64(data[4 : 4+windowSize])
+	if hashes[0].Hash != expectedHash1 {
+		t.Errorf("First hash should be from NAL header at offset 4")
+	}
+
+	// Second hash should be from offset 88 (second NAL header)
+	expectedHash2 := xxhash.Sum64(data[88 : 88+windowSize])
+	if hashes[1].Hash != expectedHash2 {
+		t.Errorf("Second hash should be from NAL header at offset 88")
+	}
+
+	// Both should be video
+	for _, h := range hashes {
+		if !h.IsVideo {
+			t.Error("AVCC hashes should be marked as video")
+		}
+	}
+}
+
+func TestDetectNALLengthSize(t *testing.T) {
+	tests := []struct {
+		name         string
+		codecID      string
+		codecPrivate []byte
+		expected     int
+	}{
+		{
+			name:     "MPEG-2 is Annex B",
+			codecID:  "V_MPEG2",
+			expected: 0,
+		},
+		{
+			name:    "H.264 with valid AVCC",
+			codecID: "V_MPEG4/ISO/AVC",
+			// AVCDecoderConfigurationRecord: version=1, profile=100, compat=0, level=40, NALLengthSize=4 (0x03+1)
+			codecPrivate: []byte{0x01, 0x64, 0x00, 0x28, 0xFF, 0xE1, 0x00},
+			expected:     4,
+		},
+		{
+			name:    "H.264 NALLengthSize=2",
+			codecID: "V_MPEG4/ISO/AVC",
+			// byte 4: 0xFD = 1111_1101, &0x03 = 01, +1 = 2
+			codecPrivate: []byte{0x01, 0x64, 0x00, 0x28, 0xFD, 0xE1, 0x00},
+			expected:     2,
+		},
+		{
+			name:     "H.264 no CodecPrivate defaults to 4",
+			codecID:  "V_MPEG4/ISO/AVC",
+			expected: 4,
+		},
+		{
+			name:         "H.265 with valid HVCC",
+			codecID:      "V_MPEGH/ISO/HEVC",
+			codecPrivate: make([]byte, 23), // byte 21 defaults to 0x00, &0x03+1 = 1
+			expected:     1,
+		},
+		{
+			name:     "H.265 no CodecPrivate defaults to 4",
+			codecID:  "V_MPEGH/ISO/HEVC",
+			expected: 4,
+		},
+		{
+			name:     "Audio codec returns 0",
+			codecID:  "A_AC3",
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detectNALLengthSize(tt.codecID, tt.codecPrivate)
+			if result != tt.expected {
+				t.Errorf("detectNALLengthSize(%q) = %d, want %d", tt.codecID, result, tt.expected)
+			}
+		})
 	}
 }
 
@@ -230,7 +337,7 @@ func TestExtractProbeHashes_ExactWindowSize(t *testing.T) {
 		data[i] = byte(i)
 	}
 
-	hashes := ExtractProbeHashes(data, true, windowSize)
+	hashes := ExtractProbeHashes(data, true, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash for data equal to window size")
 	}
@@ -250,7 +357,7 @@ func TestExtractProbeHashes_DifferentSyncPoints(t *testing.T) {
 	data[10] = 0x7F
 	data[11] = 0xFE
 
-	hashes := ExtractProbeHashes(data, false, windowSize)
+	hashes := ExtractProbeHashes(data, false, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash from DTS data")
 	}
@@ -270,7 +377,7 @@ func TestExtractProbeHashes_MPASync(t *testing.T) {
 	data[5] = 0xFF
 	data[6] = 0xFB // Valid MP3 frame sync
 
-	hashes := ExtractProbeHashes(data, false, windowSize)
+	hashes := ExtractProbeHashes(data, false, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash from MPA data")
 	}
@@ -375,7 +482,7 @@ func TestExtractProbeHashes_VideoStartCodesTypes(t *testing.T) {
 			data[12] = 0x01
 			data[13] = tt.code
 
-			hashes := ExtractProbeHashes(data, true, windowSize)
+			hashes := ExtractProbeHashes(data, true, windowSize, 0)
 			if len(hashes) < tt.wantLen {
 				t.Errorf("Expected at least %d hash(es), got %d", tt.wantLen, len(hashes))
 			}
@@ -384,7 +491,7 @@ func TestExtractProbeHashes_VideoStartCodesTypes(t *testing.T) {
 }
 
 func TestExtractProbeHashes_EmptyData(t *testing.T) {
-	hashes := ExtractProbeHashes([]byte{}, true, 64)
+	hashes := ExtractProbeHashes([]byte{}, true, 64, 0)
 	if hashes != nil {
 		t.Errorf("Expected nil for empty data, got %d hashes", len(hashes))
 	}
@@ -400,7 +507,7 @@ func TestExtractProbeHashes_AudioWithNoSyncPoint(t *testing.T) {
 	}
 
 	// Should still return a hash from start
-	hashes := ExtractProbeHashes(data, false, windowSize)
+	hashes := ExtractProbeHashes(data, false, windowSize, 0)
 	if len(hashes) == 0 {
 		t.Fatal("Expected at least one hash")
 	}
@@ -512,53 +619,85 @@ func TestMergeRegions(t *testing.T) {
 			},
 		},
 		{
-			name: "adjacent touching",
+			name: "adjacent touching same source",
 			regions: []matchedRegion{
 				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
-				{mkvStart: 100, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 200, fileIndex: 0, srcOffset: 100},
 			},
 			expected: []matchedRegion{
-				{mkvStart: 0, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
+				// Adjacent regions are not overlapping (curr.mkvStart >= last.mkvEnd),
+				// so they remain separate even with consistent source mapping.
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 200, fileIndex: 0, srcOffset: 100},
 			},
 		},
 		{
-			name: "fully contained",
+			name: "fully contained same source",
 			regions: []matchedRegion{
 				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
-				{mkvStart: 50, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 50, mkvEnd: 150, fileIndex: 0, srcOffset: 50},
 			},
 			expected: []matchedRegion{
 				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
 			},
 		},
 		{
-			name: "overlap replace with longer",
+			name: "fully contained different source",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 50, mkvEnd: 150, fileIndex: 1, srcOffset: 500},
+			},
+			expected: []matchedRegion{
+				// curr is fully contained in last, so it's dropped
+				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+			},
+		},
+		{
+			name: "overlap different file clips later region",
 			regions: []matchedRegion{
 				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
 				{mkvStart: 50, mkvEnd: 250, fileIndex: 1, srcOffset: 500},
 			},
 			expected: []matchedRegion{
-				{mkvStart: 50, mkvEnd: 250, fileIndex: 1, srcOffset: 500},
+				// Earlier region keeps priority, later region is clipped
+				{mkvStart: 0, mkvEnd: 100, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 250, fileIndex: 1, srcOffset: 550},
 			},
 		},
 		{
-			name: "overlap extend shorter",
+			name: "overlap same source consistent offsets merges",
+			regions: []matchedRegion{
+				{mkvStart: 0, mkvEnd: 200, fileIndex: 0, srcOffset: 1000},
+				{mkvStart: 100, mkvEnd: 300, fileIndex: 0, srcOffset: 1100},
+			},
+			expected: []matchedRegion{
+				// Same source, consistent mapping: merge into one
+				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 1000},
+			},
+		},
+		{
+			name: "overlap different source clips shorter",
 			regions: []matchedRegion{
 				{mkvStart: 0, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
 				{mkvStart: 100, mkvEnd: 250, fileIndex: 1, srcOffset: 500},
 			},
 			expected: []matchedRegion{
-				{mkvStart: 0, mkvEnd: 250, fileIndex: 0, srcOffset: 0},
+				// Earlier region keeps priority, later region is clipped
+				{mkvStart: 0, mkvEnd: 200, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 200, mkvEnd: 250, fileIndex: 1, srcOffset: 600},
 			},
 		},
 		{
-			name: "unsorted input",
+			name: "unsorted input same source consistent offsets",
 			regions: []matchedRegion{
-				{mkvStart: 200, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 200, mkvEnd: 300, fileIndex: 0, srcOffset: 200},
 				{mkvStart: 0, mkvEnd: 150, fileIndex: 0, srcOffset: 0},
-				{mkvStart: 100, mkvEnd: 250, fileIndex: 0, srcOffset: 0},
+				{mkvStart: 100, mkvEnd: 250, fileIndex: 0, srcOffset: 100},
 			},
 			expected: []matchedRegion{
+				// After sort: [0,150) src=0, [100,250) src=100, [200,300) src=200
+				// [0,150) + [100,250): same source, consistent (0+100=100) → merge [0,250)
+				// [0,250) + [200,300): same source, consistent (0+200=200) → merge [0,300)
 				{mkvStart: 0, mkvEnd: 300, fileIndex: 0, srcOffset: 0},
 			},
 		},
@@ -733,7 +872,11 @@ func TestBuildEntries(t *testing.T) {
 				mkvData[i] = byte(i % 256)
 			}
 			m := newTestMatcherWithRegions(tt.mkvSize, mkvData, tt.regions)
-			entries, deltaData := m.buildEntries()
+			entries, deltaWriter, err := m.buildEntries()
+			if err != nil {
+				t.Fatalf("buildEntries error: %v", err)
+			}
+			defer deltaWriter.Close()
 
 			if len(entries) != tt.wantEntryCount {
 				t.Fatalf("got %d entries, want %d", len(entries), tt.wantEntryCount)
@@ -765,8 +908,8 @@ func TestBuildEntries(t *testing.T) {
 			}
 
 			// For "all matched", delta should be empty
-			if tt.name == "all matched" && len(deltaData) != 0 {
-				t.Errorf("expected empty delta data for all matched, got %d bytes", len(deltaData))
+			if tt.name == "all matched" && deltaWriter.Size() != 0 {
+				t.Errorf("expected empty delta data for all matched, got %d bytes", deltaWriter.Size())
 			}
 		})
 	}
@@ -783,7 +926,21 @@ func TestBuildEntries_DeltaDataContent(t *testing.T) {
 		{mkvStart: 20, mkvEnd: 30, fileIndex: 0, srcOffset: 0},
 	}
 	m := newTestMatcherWithRegions(mkvSize, mkvData, regions)
-	_, deltaData := m.buildEntries()
+	_, deltaWriter, err := m.buildEntries()
+	if err != nil {
+		t.Fatalf("buildEntries error: %v", err)
+	}
+	defer deltaWriter.Close()
+
+	// Read delta data back from temp file
+	f := deltaWriter.File()
+	if _, err := f.Seek(0, 0); err != nil {
+		t.Fatalf("seek error: %v", err)
+	}
+	deltaData := make([]byte, deltaWriter.Size())
+	if _, err := io.ReadFull(f, deltaData); err != nil {
+		t.Fatalf("read delta file: %v", err)
+	}
 
 	// Delta should be mkvData[0:20] + mkvData[30:50]
 	expectedDelta := make([]byte, 0, 40)
@@ -792,7 +949,6 @@ func TestBuildEntries_DeltaDataContent(t *testing.T) {
 
 	if !bytes.Equal(deltaData, expectedDelta) {
 		t.Errorf("delta data mismatch: got %d bytes, want %d bytes", len(deltaData), len(expectedDelta))
-		// Show first divergence
 		for i := 0; i < len(deltaData) && i < len(expectedDelta); i++ {
 			if deltaData[i] != expectedDelta[i] {
 				t.Errorf("first difference at byte %d: got 0x%02X, want 0x%02X", i, deltaData[i], expectedDelta[i])

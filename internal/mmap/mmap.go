@@ -84,10 +84,10 @@ func (m *File) Advise(advice int) error {
 
 // Close unmaps the file from memory.
 func (m *File) Close() error {
-	if m.data == nil {
-		return nil
+	if m.data != nil {
+		err := unix.Munmap(m.data)
+		m.data = nil
+		return err
 	}
-	err := unix.Munmap(m.data)
-	m.data = nil
-	return err
+	return nil
 }

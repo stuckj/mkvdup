@@ -162,7 +162,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	}
 
 	// Parse MKV
-	fmt.Println("  Parsing MKV file...")
+	fmt.Print("  Parsing MKV file...")
 	parser, err := mkv.NewParser(mkvPath)
 	if err != nil {
 		result.Err = fmt.Errorf("create parser: %w", err)
@@ -171,11 +171,18 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	defer parser.Close()
 
 	parseStart := time.Now()
-	if err := parser.Parse(nil); err != nil {
+	lastParseProgress := time.Now()
+	if err := parser.Parse(func(processed, total int64) {
+		if time.Since(lastParseProgress) > 500*time.Millisecond {
+			pct := float64(processed) / float64(total) * 100
+			fmt.Printf("\r  Parsing MKV file... %.1f%%", pct)
+			lastParseProgress = time.Now()
+		}
+	}); err != nil {
 		result.Err = fmt.Errorf("parse MKV: %w", err)
 		return result
 	}
-	fmt.Printf("    Parsed %d packets in %v\n", parser.PacketCount(), time.Since(parseStart))
+	fmt.Printf("\r  Parsed %d packets in %v                    \n", parser.PacketCount(), time.Since(parseStart))
 
 	// Check codec compatibility
 	if err := checkCodecCompatibility(parser.Tracks(), index, nonInteractive); err != nil {
@@ -214,6 +221,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		result.Err = fmt.Errorf("match: %w", err)
 		return result
 	}
+	defer matchResult.Close()
 	fmt.Printf("\r    Matched in %v                              \n", time.Since(matchStart))
 
 	// Write dedup file
@@ -230,13 +238,37 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
 
-	// Convert ES offsets to raw offsets if we have ES readers (DVD sources)
+	// For sources with ES offsets, decide between V3 (convert to raw) and V4 (range maps)
 	var esConverters []source.ESRangeConverter
 	if index.UsesESOffsets && len(index.ESReaders) > 0 {
-		esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
-		for i, r := range index.ESReaders {
-			if converter, ok := r.(source.ESRangeConverter); ok {
-				esConverters[i] = converter
+		// Try to build range maps (V4) from PES range providers
+		var rangeMaps []dedup.RangeMapData
+		for i, reader := range index.ESReaders {
+			if provider, ok := reader.(source.PESRangeProvider); ok {
+				rm := dedup.RangeMapData{
+					FileIndex:   uint16(i),
+					VideoRanges: provider.FilteredVideoRanges(),
+				}
+				for _, subID := range provider.AudioSubStreams() {
+					rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
+						SubStreamID: subID,
+						Ranges:      provider.FilteredAudioRanges(subID),
+					})
+				}
+				rangeMaps = append(rangeMaps, rm)
+			}
+		}
+
+		if len(rangeMaps) > 0 {
+			// V4: use range maps (preserves ES offsets in entries)
+			writer.SetRangeMaps(rangeMaps)
+		} else {
+			// V3 fallback: convert ES offsets to raw offsets
+			esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
+			for i, r := range index.ESReaders {
+				if converter, ok := r.(source.ESRangeConverter); ok {
+					esConverters[i] = converter
+				}
 			}
 		}
 	}
@@ -245,6 +277,17 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		os.Remove(outputPath)
 		result.Err = fmt.Errorf("set match result: %w", err)
 		return result
+	}
+
+	// Pre-encode range maps (CPU-intensive) before the progress-tracked write.
+	rangeMapSize, err := writer.EncodeRangeMaps()
+	if err != nil {
+		os.Remove(outputPath)
+		result.Err = fmt.Errorf("encode range maps: %w", err)
+		return result
+	}
+	if rangeMapSize > 0 {
+		fmt.Printf("    Range maps encoded: %s bytes\n", formatInt(rangeMapSize))
 	}
 
 	lastProgress = time.Time{}
@@ -451,11 +494,11 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 	}
 	defer reader.Close()
 
-	// Set ES reader if this is an ES-based source
-	if reader.UsesESOffsets() && len(index.ESReaders) > 0 {
+	// V4 range maps or V3 raw offsets: just need source files mmap'd.
+	// V1 external ES readers: only if UsesESOffsets without range maps.
+	if reader.UsesESOffsets() && !reader.HasRangeMaps() && len(index.ESReaders) > 0 {
 		reader.SetESReader(index.ESReaders[0])
 	} else {
-		// Load raw source files
 		if err := reader.LoadSourceFiles(); err != nil {
 			return fmt.Errorf("load source files: %w", err)
 		}
@@ -558,6 +601,9 @@ func showInfo(dedupPath string) error {
 	}
 	fmt.Printf("Source type:        %s\n", sourceType)
 	fmt.Printf("Uses ES offsets:    %v\n", info["uses_es_offsets"].(bool))
+	if info["has_range_maps"].(bool) {
+		fmt.Printf("Has range maps:     true\n")
+	}
 	fmt.Printf("Source file count:  %d\n", info["source_file_count"].(int))
 	fmt.Printf("Index entry count:  %d\n", info["entry_count"].(int))
 	fmt.Printf("Delta size:         %s bytes (%.2f MB)\n",
@@ -596,9 +642,11 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 	}
 	fmt.Println(" OK")
 
-	// For ES-based sources, we need to set up the ES reader
-	if reader.UsesESOffsets() {
-		// Create indexer to get ES reader
+	// V4 range maps: just need source files mmap'd (range maps are in dedup file).
+	// V1 external ES readers: need indexer to get ES reader.
+	// V3 raw offsets: just need source files mmap'd.
+	if reader.UsesESOffsets() && !reader.HasRangeMaps() {
+		// V1 path: need external ES reader
 		indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
 		if err != nil {
 			return fmt.Errorf("create indexer: %w", err)
@@ -613,7 +661,7 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 			reader.SetESReader(index.ESReaders[0])
 		}
 	} else {
-		// Load source files for raw access
+		// V3/V4: raw source files
 		if err := reader.LoadSourceFiles(); err != nil {
 			return fmt.Errorf("load source files: %w", err)
 		}
@@ -847,26 +895,37 @@ func probe(mkvPath string, sourceDirs []string) error {
 	fmt.Println()
 
 	// Phase 1: Parse MKV and sample packets
-	fmt.Println("Parsing MKV and sampling packets...")
+	fmt.Print("Parsing MKV...")
 	parser, err := mkv.NewParser(mkvPath)
 	if err != nil {
 		return fmt.Errorf("create parser: %w", err)
 	}
 	defer parser.Close()
 
-	if err := parser.Parse(nil); err != nil {
+	parseStart := time.Now()
+	lastParseProgress := time.Now()
+	if err := parser.Parse(func(processed, total int64) {
+		if time.Since(lastParseProgress) > 500*time.Millisecond {
+			pct := float64(processed) / float64(total) * 100
+			fmt.Printf("\rParsing MKV... %.1f%%", pct)
+			lastParseProgress = time.Now()
+		}
+	}); err != nil {
 		return fmt.Errorf("parse MKV: %w", err)
 	}
+	fmt.Printf("\rParsed %d packets in %v                    \n", len(parser.Packets()), time.Since(parseStart))
 
 	packets := parser.Packets()
 	if len(packets) == 0 {
 		return fmt.Errorf("no packets found in MKV")
 	}
 
-	// Build track type map
+	// Build track type and codec maps
 	trackTypes := make(map[int]int)
+	trackNALLengthSize := make(map[int]int) // 0 = Annex B, 1/2/4 = AVCC/HVCC
 	for _, t := range parser.Tracks() {
 		trackTypes[int(t.Number)] = t.Type
+		trackNALLengthSize[int(t.Number)] = matcher.NALLengthSizeForTrack(t.CodecID, t.CodecPrivate)
 	}
 
 	// Sample packets from different positions
@@ -903,9 +962,10 @@ func probe(mkvPath string, sourceDirs []string) error {
 		// Determine if this is video or audio
 		trackType := trackTypes[int(pkt.TrackNum)]
 		isVideo := trackType == mkv.TrackTypeVideo
+		nalLenSize := trackNALLengthSize[int(pkt.TrackNum)]
 
 		// Use shared function to extract probe hashes
-		hashes := matcher.ExtractProbeHashes(data[:n], isVideo, windowSize)
+		hashes := matcher.ExtractProbeHashes(data[:n], isVideo, windowSize, nalLenSize)
 		if len(hashes) > 0 {
 			// Only need one hash per packet for probing
 			probeHashes = append(probeHashes, hashes[0])
@@ -1188,6 +1248,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 			AllowOther: opts.AllowOther,
 			Name:       "mkvdup",
 			FsName:     "mkvdup",
+			MaxWrite:   1 << 20, // 1MB max read/write; go-fuse sets max_read = MaxWrite
 			// Enable kernel permission checks for standard Unix semantics.
 			// This properly handles supplementary groups and matches behavior
 			// of real filesystems (ext4, XFS, btrfs, etc.).

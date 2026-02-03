@@ -18,7 +18,10 @@ type Writer struct {
 	header      Header
 	sourceFiles []SourceFile
 	entries     []Entry
-	deltaData   []byte
+	deltaData   []byte               // In-memory delta (for tests / small files)
+	deltaFile   *matcher.DeltaWriter // File-backed delta (for large files)
+	rangeMaps   []RangeMapData       // V4: per-source-file range maps (nil for V3)
+	rangeMapBuf []byte               // Pre-encoded range map section (set by EncodeRangeMaps)
 }
 
 // NewWriter creates a new dedup file writer.
@@ -57,6 +60,31 @@ func (w *Writer) SetSourceFiles(files []source.File) {
 	w.header.SourceFileCount = uint16(len(files))
 }
 
+// SetRangeMaps sets the range map data for V4 format.
+// When range maps are set, ES-offset entries are preserved (not converted to raw offsets)
+// and a range map section is written to the dedup file for mapping ES offsets to
+// raw file positions at read time.
+func (w *Writer) SetRangeMaps(rangeMaps []RangeMapData) {
+	w.rangeMaps = rangeMaps
+	w.header.Version = VersionRangeMap
+	w.header.UsesESOffsets = 1
+}
+
+// EncodeRangeMaps pre-encodes the range map section. Call this before
+// WriteWithProgress to avoid a CPU-intensive encoding phase with no progress
+// output. Returns the encoded size. If range maps are nil, this is a no-op.
+func (w *Writer) EncodeRangeMaps() (int64, error) {
+	if w.rangeMaps == nil {
+		return 0, nil
+	}
+	buf, err := encodeRangeMapSection(w.rangeMaps)
+	if err != nil {
+		return 0, fmt.Errorf("encode range maps: %w", err)
+	}
+	w.rangeMapBuf = buf
+	return int64(len(buf)), nil
+}
+
 // SetMatchResult sets the match result (entries and delta).
 // If esConverters is provided and non-empty, ES-offset entries will be converted
 // to raw-offset entries, potentially splitting entries that span multiple ranges.
@@ -67,8 +95,9 @@ func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ES
 		entries[i] = FromMatcherEntry(e)
 	}
 
-	// Convert ES offsets to raw offsets if we have converters
-	if len(esConverters) > 0 {
+	// Convert ES offsets to raw offsets if we have converters.
+	// Skip conversion for V4 (range maps handle the mapping at read time).
+	if len(esConverters) > 0 && w.rangeMaps == nil {
 		var err error
 		entries, err = w.convertESToRawOffsets(entries, esConverters)
 		if err != nil {
@@ -77,9 +106,15 @@ func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ES
 	}
 
 	w.entries = entries
-	w.deltaData = result.DeltaData
 	w.header.EntryCount = uint64(len(w.entries))
-	w.header.DeltaSize = int64(len(result.DeltaData))
+
+	if result.DeltaFile != nil {
+		w.deltaFile = result.DeltaFile
+		w.header.DeltaSize = result.DeltaFile.Size()
+	} else {
+		w.deltaData = result.DeltaData
+		w.header.DeltaSize = int64(len(result.DeltaData))
+	}
 	return nil
 }
 
@@ -145,13 +180,29 @@ func (w *Writer) Write() error {
 
 // WriteWithProgress writes the dedup file with progress reporting.
 func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
+	// Use pre-encoded range maps if available (from EncodeRangeMaps),
+	// otherwise encode now.
+	rangeMapBuf := w.rangeMapBuf
+	if rangeMapBuf == nil && w.rangeMaps != nil {
+		var err error
+		rangeMapBuf, err = encodeRangeMapSection(w.rangeMaps)
+		if err != nil {
+			return fmt.Errorf("encode range maps: %w", err)
+		}
+	}
+
 	// Calculate offsets and total size
 	sourceFilesSize := w.calculateSourceFilesSize()
 	indexSize := int64(len(w.entries)) * EntrySize
 	deltaOffset := int64(HeaderSize) + sourceFilesSize + indexSize
 	w.header.DeltaOffset = deltaOffset
 
-	totalSize := deltaOffset + w.header.DeltaSize + FooterSize
+	footerSize := int64(FooterSize)
+	if rangeMapBuf != nil {
+		footerSize = FooterV4Size
+	}
+
+	totalSize := deltaOffset + w.header.DeltaSize + int64(len(rangeMapBuf)) + footerSize
 	var written int64
 
 	// Write header
@@ -178,8 +229,21 @@ func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
 		return fmt.Errorf("write delta: %w", err)
 	}
 
+	// Write range map section (V4 only)
+	var rangeMapChecksum uint64
+	if rangeMapBuf != nil {
+		rangeMapChecksum, err = writeRangeMapSection(w.file, rangeMapBuf)
+		if err != nil {
+			return fmt.Errorf("write range map: %w", err)
+		}
+		written += int64(len(rangeMapBuf))
+		if progress != nil {
+			progress(written, totalSize)
+		}
+	}
+
 	// Write footer
-	if err := w.writeFooter(indexChecksum, deltaChecksum); err != nil {
+	if err := w.writeFooter(indexChecksum, deltaChecksum, rangeMapChecksum); err != nil {
 		return fmt.Errorf("write footer: %w", err)
 	}
 
@@ -346,35 +410,64 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
 
 func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int64, total int64) (uint64, error) {
 	hasher := xxhash.New()
-
-	// Write delta in chunks to report progress
 	const chunkSize = 64 * 1024 // 64KB chunks
-	data := w.deltaData
 	lastProgress := 0
 
-	for len(data) > 0 {
-		chunk := data
-		if len(chunk) > chunkSize {
-			chunk = data[:chunkSize]
-		}
-		data = data[len(chunk):]
-
-		// Write to file
-		if _, err := w.file.Write(chunk); err != nil {
-			return 0, err
+	if w.deltaFile != nil {
+		// Read from temp file and write to output
+		f := w.deltaFile.File()
+		if _, err := f.Seek(0, 0); err != nil {
+			return 0, fmt.Errorf("seek delta file: %w", err)
 		}
 
-		// Update hash
-		hasher.Write(chunk)
+		buf := make([]byte, chunkSize)
+		for {
+			n, err := f.Read(buf)
+			if n > 0 {
+				chunk := buf[:n]
+				if _, werr := w.file.Write(chunk); werr != nil {
+					return 0, werr
+				}
+				hasher.Write(chunk)
+				*written += int64(n)
 
-		*written += int64(len(chunk))
+				if progress != nil && w.header.DeltaSize > 0 {
+					pct := int((*written * 100) / total)
+					if pct > lastProgress {
+						progress(*written, total)
+						lastProgress = pct
+					}
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return 0, err
+			}
+		}
+	} else {
+		// In-memory path (for tests / small files)
+		data := w.deltaData
+		for len(data) > 0 {
+			chunk := data
+			if len(chunk) > chunkSize {
+				chunk = data[:chunkSize]
+			}
+			data = data[len(chunk):]
 
-		// Report progress every chunk
-		if progress != nil && w.header.DeltaSize > 0 {
-			pct := int((*written * 100) / total)
-			if pct > lastProgress {
-				progress(*written, total)
-				lastProgress = pct
+			if _, err := w.file.Write(chunk); err != nil {
+				return 0, err
+			}
+			hasher.Write(chunk)
+			*written += int64(len(chunk))
+
+			if progress != nil && w.header.DeltaSize > 0 {
+				pct := int((*written * 100) / total)
+				if pct > lastProgress {
+					progress(*written, total)
+					lastProgress = pct
+				}
 			}
 		}
 	}
@@ -382,7 +475,7 @@ func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int
 	return hasher.Sum64(), nil
 }
 
-func (w *Writer) writeFooter(indexChecksum, deltaChecksum uint64) error {
+func (w *Writer) writeFooter(indexChecksum, deltaChecksum, rangeMapChecksum uint64) error {
 	// Write index checksum
 	if err := binary.Write(w.file, binary.LittleEndian, indexChecksum); err != nil {
 		return err
@@ -391,6 +484,13 @@ func (w *Writer) writeFooter(indexChecksum, deltaChecksum uint64) error {
 	// Write delta checksum
 	if err := binary.Write(w.file, binary.LittleEndian, deltaChecksum); err != nil {
 		return err
+	}
+
+	// Write range map checksum (V4 only)
+	if w.rangeMaps != nil {
+		if err := binary.Write(w.file, binary.LittleEndian, rangeMapChecksum); err != nil {
+			return err
+		}
 	}
 
 	// Write magic

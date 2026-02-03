@@ -159,9 +159,11 @@ Coverage is automatically updated by CI on merges to main.
 ## Key Technical Details
 
 - DVDs use MPEG-PS (Program Stream) container format with PES packet framing
+- Blu-rays use MPEG-TS (Transport Stream) container in M2TS files (192-byte packets)
 - MKV files contain raw ES (Elementary Stream) data
-- Video matching requires ES-aware indexing that accounts for PES headers
-- Private Stream 1 (0xBD) contains AC-3 audio (sub-streams 0x80-0x87) and subpictures
+- Both DVD and Blu-ray use ES-aware indexing for matching — ES offsets map to raw file offsets at write time
+- DVD audio uses Private Stream 1 (0xBD) with sub-stream IDs (0x80-0x87 = AC3, 0x88-0x8F = DTS)
+- Blu-ray audio uses separate PIDs per track (not Private Stream 1 sub-streams), mapped to sequential byte IDs
 
 ## Project Documentation
 

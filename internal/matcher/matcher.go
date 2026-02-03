@@ -2,6 +2,7 @@
 package matcher
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"runtime"
@@ -21,6 +22,36 @@ const (
 	MaxExpansionBytes = 16 * 1024 * 1024 // 16MB
 )
 
+// detectNALLengthSize determines the NAL unit length field size from an MKV track's
+// codec ID and codec private data. Returns 0 for Annex B (start code) formats,
+// or the length field size (1, 2, or 4) for AVCC/HVCC formats.
+func detectNALLengthSize(codecID string, codecPrivate []byte) int {
+	switch codecID {
+	case "V_MPEG4/ISO/AVC":
+		// AVCC format: CodecPrivate is AVCDecoderConfigurationRecord
+		// Byte 4 bits 0-1 = NAL length size - 1
+		if len(codecPrivate) >= 7 && codecPrivate[0] == 1 {
+			return int(codecPrivate[4]&0x03) + 1
+		}
+		return 4 // Default for AVC if CodecPrivate is missing or malformed
+	case "V_MPEGH/ISO/HEVC":
+		// HVCC format: CodecPrivate is HEVCDecoderConfigurationRecord
+		// Byte 21 bits 0-1 = NAL length size - 1
+		if len(codecPrivate) >= 23 {
+			return int(codecPrivate[21]&0x03) + 1
+		}
+		return 4 // Default for HEVC if CodecPrivate is missing or malformed
+	default:
+		return 0 // Annex B format (MPEG-2, etc.)
+	}
+}
+
+// NALLengthSizeForTrack returns the NAL length size for a track, suitable for
+// use by external callers like ExtractProbeHashes. Returns 0 for Annex B.
+func NALLengthSizeForTrack(codecID string, codecPrivate []byte) int {
+	return detectNALLengthSize(codecID, codecPrivate)
+}
+
 // Entry represents a region in the MKV file and where its data comes from.
 type Entry struct {
 	MkvOffset        int64  // Start offset in the MKV file
@@ -33,12 +64,80 @@ type Entry struct {
 
 // Result contains the results of the matching process.
 type Result struct {
-	Entries        []Entry // All entries covering the entire MKV file
-	DeltaData      []byte  // Concatenated unique data (delta)
-	MatchedBytes   int64   // Total bytes matched to source
-	UnmatchedBytes int64   // Total bytes in delta
-	MatchedPackets int     // Number of packets that matched
-	TotalPackets   int     // Total number of packets processed
+	Entries        []Entry      // All entries covering the entire MKV file
+	DeltaData      []byte       // Concatenated unique data (for small deltas / tests)
+	DeltaFile      *DeltaWriter // File-backed delta data (for large files)
+	MatchedBytes   int64        // Total bytes matched to source
+	UnmatchedBytes int64        // Total bytes in delta
+	MatchedPackets int          // Number of packets that matched
+	TotalPackets   int          // Total number of packets processed
+}
+
+// DeltaSize returns the total size of delta data.
+func (r *Result) DeltaSize() int64 {
+	if r.DeltaFile != nil {
+		return r.DeltaFile.Size()
+	}
+	return int64(len(r.DeltaData))
+}
+
+// Close cleans up resources held by the result (temp files).
+func (r *Result) Close() {
+	if r.DeltaFile != nil {
+		r.DeltaFile.Close()
+		r.DeltaFile = nil
+	}
+}
+
+// DeltaWriter writes delta data to a temp file to avoid heap accumulation.
+type DeltaWriter struct {
+	file     *os.File
+	buffered *bufio.Writer
+	size     int64
+}
+
+// NewDeltaWriter creates a DeltaWriter backed by a temp file.
+func NewDeltaWriter() (*DeltaWriter, error) {
+	f, err := os.CreateTemp("", "mkvdup-delta-*")
+	if err != nil {
+		return nil, fmt.Errorf("create delta temp file: %w", err)
+	}
+	return &DeltaWriter{
+		file:     f,
+		buffered: bufio.NewWriterSize(f, 256*1024),
+	}, nil
+}
+
+// Write appends data to the delta file.
+func (dw *DeltaWriter) Write(data []byte) error {
+	n, err := dw.buffered.Write(data)
+	dw.size += int64(n)
+	return err
+}
+
+// Flush ensures all buffered data is written to disk.
+func (dw *DeltaWriter) Flush() error {
+	return dw.buffered.Flush()
+}
+
+// Size returns the total bytes written.
+func (dw *DeltaWriter) Size() int64 {
+	return dw.size
+}
+
+// File returns the underlying file for reading. Must call Flush() first.
+func (dw *DeltaWriter) File() *os.File {
+	return dw.file
+}
+
+// Close removes the temp file.
+func (dw *DeltaWriter) Close() {
+	if dw.file != nil {
+		name := dw.file.Name()
+		dw.file.Close()
+		os.Remove(name)
+		dw.file = nil
+	}
 }
 
 // matchedRegion tracks a region that was matched to a source.
@@ -56,6 +155,12 @@ type matchedRegion struct {
 // Smaller values give more accurate coverage checks but use more memory.
 const coverageChunkSize = 4096 // 4KB chunks
 
+// trackCodecInfo stores per-track codec information for format-aware matching.
+type trackCodecInfo struct {
+	trackType     int
+	nalLengthSize int // 0 = Annex B (start codes), 1/2/4 = AVCC/HVCC (length-prefixed NAL units)
+}
+
 type Matcher struct {
 	sourceIndex    *source.Index
 	mkvMmap        *mmap.File
@@ -63,9 +168,10 @@ type Matcher struct {
 	mkvSize        int64
 	windowSize     int
 	matchedRegions []matchedRegion
-	regionsMu      sync.Mutex  // Protects matchedRegions for concurrent access
-	trackTypes     map[int]int // Map from track number to track type
-	numWorkers     int         // Number of worker goroutines for parallel matching
+	regionsMu      sync.Mutex           // Protects matchedRegions for concurrent access
+	trackTypes     map[int]int          // Map from track number to track type
+	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
+	numWorkers     int                  // Number of worker goroutines for parallel matching
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
@@ -82,6 +188,7 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 		sourceIndex: sourceIndex,
 		windowSize:  sourceIndex.WindowSize,
 		trackTypes:  make(map[int]int),
+		trackCodecs: make(map[int]trackCodecInfo),
 		numWorkers:  numWorkers,
 	}, nil
 }
@@ -120,9 +227,13 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	}
 	m.mkvData = m.mkvMmap.Data() // Store reference for zero-copy access
 
-	// Build track type map
+	// Build track type and codec info maps
 	for _, t := range tracks {
 		m.trackTypes[int(t.Number)] = t.Type
+		m.trackCodecs[int(t.Number)] = trackCodecInfo{
+			trackType:     t.Type,
+			nalLengthSize: detectNALLengthSize(t.CodecID, t.CodecPrivate),
+		}
 	}
 
 	// Reset matched regions with pre-allocated capacity
@@ -147,7 +258,11 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 
 	// Merge overlapping regions and build final entries
 	m.mergeRegions()
-	result.Entries, result.DeltaData = m.buildEntries()
+	var buildErr error
+	result.Entries, result.DeltaFile, buildErr = m.buildEntries()
+	if buildErr != nil {
+		return nil, fmt.Errorf("build entries: %w", buildErr)
+	}
 
 	// Calculate statistics
 	for _, e := range result.Entries {
@@ -171,8 +286,9 @@ type ProbeHash struct {
 // This is the same algorithm used by the matcher to find matching points.
 // The data should be the first few KB of a packet (typically up to 4096 bytes).
 // windowSize should match the source index window size (typically 64 bytes).
+// nalLengthSize is 0 for Annex B video, or 1/2/4 for AVCC/HVCC video.
 // Returns nil if no valid hashes could be extracted.
-func ExtractProbeHashes(data []byte, isVideo bool, windowSize int) []ProbeHash {
+func ExtractProbeHashes(data []byte, isVideo bool, windowSize int, nalLengthSize int) []ProbeHash {
 	if len(data) < windowSize {
 		return nil
 	}
@@ -182,7 +298,11 @@ func ExtractProbeHashes(data []byte, isVideo bool, windowSize int) []ProbeHash {
 	// Find sync points within the packet data
 	var syncPoints []int
 	if isVideo {
-		syncPoints = source.FindVideoStartCodes(data)
+		if nalLengthSize > 0 {
+			syncPoints = source.FindAVCCNALStarts(data, nalLengthSize)
+		} else {
+			syncPoints = source.FindVideoNALStarts(data)
+		}
 	} else {
 		syncPoints = source.FindAudioSyncPoints(data)
 	}
@@ -266,11 +386,25 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 
 	// Read packet data to find sync points (zero-copy slice access)
 	readSize := pkt.Size
-	if readSize > 4096 {
-		readSize = 4096 // Only need to check beginning for sync points
-	}
 	if readSize < int64(m.windowSize) {
 		return false
+	}
+
+	// For AVCC/HVCC video, use the full packet data. AVCC parsing is O(num_NALs)
+	// not O(packet_size) — it reads 4-byte length fields and jumps, touching only
+	// ~20 bytes for a typical frame with 5 NALs. Without this, large frames with
+	// multiple slice NALs (common in 1080p Blu-ray) only match the first slice
+	// since subsequent slices start past the truncated window.
+	// For audio and Annex B video (linear scan), cap at 4096 to avoid waste.
+	var useFullPacket bool
+	if isVideo {
+		codecInfo := m.trackCodecs[int(pkt.TrackNum)]
+		if codecInfo.nalLengthSize > 0 {
+			useFullPacket = true
+		}
+	}
+	if !useFullPacket && readSize > 4096 {
+		readSize = 4096
 	}
 
 	// Zero-copy: slice directly into mmap'd data
@@ -286,27 +420,44 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 	// Find sync points within the packet data
 	var syncPoints []int
 	if isVideo {
-		syncPoints = source.FindVideoStartCodes(data)
+		codecInfo := m.trackCodecs[int(pkt.TrackNum)]
+		if codecInfo.nalLengthSize > 0 {
+			// AVCC/HVCC format: parse length-prefixed NAL units
+			syncPoints = source.FindAVCCNALStarts(data, codecInfo.nalLengthSize)
+		} else {
+			// Annex B format: find NAL starts after 00 00 01
+			syncPoints = source.FindVideoNALStarts(data)
+		}
 	} else {
 		syncPoints = source.FindAudioSyncPoints(data)
 	}
 
-	// Try sync points first
+	// Try ALL sync points, not just the first match.
+	// For AVCC/HVCC video, each NAL unit has different framing bytes than the
+	// source (length prefix vs start code), so expansion stops at NAL boundaries.
+	// We must match each NAL individually to cover the full packet.
+	anyMatched := false
 	for _, syncOff := range syncPoints {
 		if syncOff+m.windowSize > len(data) {
 			continue
 		}
 		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo) {
-			return true
+			anyMatched = true
+			// If the full packet is now covered, no need to try more sync points
+			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+				return true
+			}
 		}
 	}
 
 	// Also try from packet start (in case it's already aligned)
-	if m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo) {
-		return true
+	if !anyMatched {
+		if m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo) {
+			anyMatched = true
+		}
 	}
 
-	return false
+	return anyMatched
 }
 
 // isRangeCoveredParallel checks if a range is likely covered using a coverage bitmap.
@@ -466,6 +617,10 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 	}
 }
 
+// expandChunkSize is the number of bytes to read at once during match expansion.
+// Larger chunks reduce page faults when expanding across mmap'd source files.
+const expandChunkSize = 4096
+
 // expandMatch expands a verified match in both directions.
 func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen int64) (mkvStart, srcStart, length int64) {
 	mkvStart = mkvOffset
@@ -481,98 +636,182 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
 			srcSize = m.sourceIndex.ESReaders[loc.FileIndex].AudioSubStreamESSize(loc.AudioSubStreamID)
 		}
 	} else {
-		// For raw files, use file size
 		if int(loc.FileIndex) < len(m.sourceIndex.Files) {
 			srcSize = m.sourceIndex.Files[loc.FileIndex].Size
 		}
 	}
 
-	// Expand backward (zero-copy single-byte reads from mmap'd data)
-	// Track range hint across reads to avoid repeated binary searches
-	backwardHint := -1
-	backwardExpanded := int64(0)
-	for mkvStart > 0 && srcStart > 0 && backwardExpanded < MaxExpansionBytes {
-		// Zero-copy: direct byte access
-		mkvByte := m.mkvData[mkvStart-1]
-
-		var srcByteVal byte
-		var ok bool
-		if m.sourceIndex.UsesESOffsets {
-			readLoc := source.Location{
-				FileIndex:        loc.FileIndex,
-				Offset:           srcStart - 1,
-				IsVideo:          loc.IsVideo,
-				AudioSubStreamID: loc.AudioSubStreamID,
-			}
-			srcByteVal, backwardHint, ok = m.sourceIndex.ReadESByteWithHint(readLoc, backwardHint)
-			if !ok {
-				break
-			}
-		} else {
-			// Zero-copy for raw indexes
-			srcByte := m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcStart - 1}, 1)
-			if len(srcByte) == 0 {
-				break
-			}
-			srcByteVal = srcByte[0]
-		}
-
-		if mkvByte != srcByteVal {
-			break
-		}
-
-		mkvStart--
-		srcStart--
-		length++
-		backwardExpanded++
-	}
-
-	// Expand forward (zero-copy single-byte reads from mmap'd data)
-	// Track range hint across reads to avoid repeated binary searches
-	forwardHint := -1
-	mkvEnd := mkvOffset + initialLen
-	srcEnd := loc.Offset + initialLen
-	forwardExpanded := int64(0)
-	for mkvEnd < m.mkvSize && srcEnd < srcSize && forwardExpanded < MaxExpansionBytes {
-		// Zero-copy: direct byte access
-		mkvByte := m.mkvData[mkvEnd]
-
-		var srcByteVal byte
-		var ok bool
-		if m.sourceIndex.UsesESOffsets {
-			readLoc := source.Location{
-				FileIndex:        loc.FileIndex,
-				Offset:           srcEnd,
-				IsVideo:          loc.IsVideo,
-				AudioSubStreamID: loc.AudioSubStreamID,
-			}
-			srcByteVal, forwardHint, ok = m.sourceIndex.ReadESByteWithHint(readLoc, forwardHint)
-			if !ok {
-				break
-			}
-		} else {
-			// Zero-copy for raw indexes
-			srcByte := m.sourceIndex.RawSlice(source.Location{FileIndex: loc.FileIndex, Offset: srcEnd}, 1)
-			if len(srcByte) == 0 {
-				break
-			}
-			srcByteVal = srcByte[0]
-		}
-
-		if mkvByte != srcByteVal {
-			break
-		}
-
-		mkvEnd++
-		srcEnd++
-		length++
-		forwardExpanded++
+	if m.sourceIndex.UsesESOffsets {
+		m.expandMatchES(mkvOffset, loc, srcSize, &mkvStart, &srcStart, &length)
+	} else {
+		m.expandMatchRaw(mkvOffset, loc, srcSize, &mkvStart, &srcStart, &length)
 	}
 
 	return mkvStart, srcStart, length
 }
 
+// expandMatchES expands a match using byte-by-byte ES reads with range hints.
+// This is optimized for DVD MPEG-PS sources where ES data is non-contiguous.
+func (m *Matcher) expandMatchES(mkvOffset int64, loc source.Location, srcSize int64, mkvStart, srcStart, length *int64) {
+	// Expand backward
+	backwardHint := -1
+	backwardExpanded := int64(0)
+	for *mkvStart > 0 && *srcStart > 0 && backwardExpanded < MaxExpansionBytes {
+		mkvByte := m.mkvData[*mkvStart-1]
+		readLoc := source.Location{
+			FileIndex:        loc.FileIndex,
+			Offset:           *srcStart - 1,
+			IsVideo:          loc.IsVideo,
+			AudioSubStreamID: loc.AudioSubStreamID,
+		}
+		srcByteVal, hint, ok := m.sourceIndex.ReadESByteWithHint(readLoc, backwardHint)
+		backwardHint = hint
+		if !ok || mkvByte != srcByteVal {
+			break
+		}
+		*mkvStart--
+		*srcStart--
+		*length++
+		backwardExpanded++
+	}
+
+	// Expand forward
+	forwardHint := -1
+	mkvEnd := mkvOffset + *length - (mkvOffset - *mkvStart) // current end position
+	srcEnd := loc.Offset + *length - (loc.Offset - *srcStart)
+	// Simplify: mkvEnd = mkvStart + length, srcEnd = srcStart + length
+	mkvEnd = *mkvStart + *length
+	srcEnd = *srcStart + *length
+	forwardExpanded := int64(0)
+	for mkvEnd < m.mkvSize && srcEnd < srcSize && forwardExpanded < MaxExpansionBytes {
+		mkvByte := m.mkvData[mkvEnd]
+		readLoc := source.Location{
+			FileIndex:        loc.FileIndex,
+			Offset:           srcEnd,
+			IsVideo:          loc.IsVideo,
+			AudioSubStreamID: loc.AudioSubStreamID,
+		}
+		srcByteVal, hint, ok := m.sourceIndex.ReadESByteWithHint(readLoc, forwardHint)
+		forwardHint = hint
+		if !ok || mkvByte != srcByteVal {
+			break
+		}
+		mkvEnd++
+		srcEnd++
+		*length++
+		forwardExpanded++
+	}
+}
+
+// expandMatchRaw expands a match using chunked reads from raw mmap'd source files.
+// Reads 4KB chunks at a time to reduce page faults compared to byte-by-byte access.
+func (m *Matcher) expandMatchRaw(mkvOffset int64, loc source.Location, srcSize int64, mkvStart, srcStart, length *int64) {
+	// Expand backward in chunks
+	backwardExpanded := int64(0)
+	for *mkvStart > 0 && *srcStart > 0 && backwardExpanded < MaxExpansionBytes {
+		// Determine chunk size
+		chunkLen := int64(expandChunkSize)
+		if chunkLen > *srcStart {
+			chunkLen = *srcStart
+		}
+		if chunkLen > *mkvStart {
+			chunkLen = *mkvStart
+		}
+		if chunkLen > MaxExpansionBytes-backwardExpanded {
+			chunkLen = MaxExpansionBytes - backwardExpanded
+		}
+		if chunkLen <= 0 {
+			break
+		}
+
+		srcChunk := m.sourceIndex.RawSlice(source.Location{
+			FileIndex: loc.FileIndex,
+			Offset:    *srcStart - chunkLen,
+		}, int(chunkLen))
+		if len(srcChunk) == 0 {
+			break
+		}
+
+		// Compare backwards through the chunk
+		mkvChunkStart := *mkvStart - int64(len(srcChunk))
+		matched := int64(0)
+		for i := len(srcChunk) - 1; i >= 0; i-- {
+			if srcChunk[i] != m.mkvData[mkvChunkStart+int64(i)] {
+				break
+			}
+			matched++
+		}
+
+		if matched == 0 {
+			break
+		}
+
+		*mkvStart -= matched
+		*srcStart -= matched
+		*length += matched
+		backwardExpanded += matched
+
+		if matched < int64(len(srcChunk)) {
+			break
+		}
+	}
+
+	// Expand forward in chunks
+	mkvEnd := *mkvStart + *length
+	srcEnd := *srcStart + *length
+	forwardExpanded := int64(0)
+	for mkvEnd < m.mkvSize && srcEnd < srcSize && forwardExpanded < MaxExpansionBytes {
+		chunkLen := int64(expandChunkSize)
+		if chunkLen > srcSize-srcEnd {
+			chunkLen = srcSize - srcEnd
+		}
+		if chunkLen > m.mkvSize-mkvEnd {
+			chunkLen = m.mkvSize - mkvEnd
+		}
+		if chunkLen > MaxExpansionBytes-forwardExpanded {
+			chunkLen = MaxExpansionBytes - forwardExpanded
+		}
+		if chunkLen <= 0 {
+			break
+		}
+
+		srcChunk := m.sourceIndex.RawSlice(source.Location{
+			FileIndex: loc.FileIndex,
+			Offset:    srcEnd,
+		}, int(chunkLen))
+		if len(srcChunk) == 0 {
+			break
+		}
+
+		// Compare forward through the chunk
+		matched := int64(0)
+		for i := 0; i < len(srcChunk); i++ {
+			if srcChunk[i] != m.mkvData[mkvEnd+int64(i)] {
+				break
+			}
+			matched++
+		}
+
+		if matched == 0 {
+			break
+		}
+
+		mkvEnd += matched
+		srcEnd += matched
+		*length += matched
+		forwardExpanded += matched
+
+		if matched < int64(len(srcChunk)) {
+			break
+		}
+	}
+}
+
 // mergeRegions merges overlapping matched regions.
+// Regions from the same source with consistent offset mappings are merged into one.
+// Overlapping regions from different sources (or inconsistent offsets) are clipped:
+// the earlier region keeps its full range, the later region is trimmed to start
+// after the earlier one ends.
 func (m *Matcher) mergeRegions() {
 	if len(m.matchedRegions) == 0 {
 		return
@@ -591,49 +830,62 @@ func (m *Matcher) mergeRegions() {
 		curr := m.matchedRegions[i]
 		last := &merged[len(merged)-1]
 
-		// Check for overlap
-		if curr.mkvStart <= last.mkvEnd {
-			// Overlapping - extend if needed (keep the longer one)
-			if curr.mkvEnd > last.mkvEnd {
-				// Current extends beyond last - need to decide which source to use
-				// For simplicity, keep the one that covers more
-				if (curr.mkvEnd - curr.mkvStart) > (last.mkvEnd - last.mkvStart) {
-					*last = curr
-				} else {
-					last.mkvEnd = curr.mkvEnd
-				}
-			}
-		} else {
+		if curr.mkvStart >= last.mkvEnd {
 			// No overlap - add new region
 			merged = append(merged, curr)
+			continue
 		}
+
+		// Regions overlap. Check if they're from the same source with consistent
+		// offset mapping, meaning the overlapping bytes map to the same source bytes.
+		expectedSrcOffset := last.srcOffset + (curr.mkvStart - last.mkvStart)
+		sameMapping := curr.fileIndex == last.fileIndex &&
+			curr.srcOffset == expectedSrcOffset &&
+			curr.isVideo == last.isVideo &&
+			curr.audioSubStreamID == last.audioSubStreamID
+
+		if sameMapping {
+			// Same source, consistent mapping - safe to extend since both regions
+			// were independently verified and the combined range maps correctly.
+			if curr.mkvEnd > last.mkvEnd {
+				last.mkvEnd = curr.mkvEnd
+			}
+		} else if curr.mkvEnd > last.mkvEnd {
+			// Different source or inconsistent mapping. The earlier region (last)
+			// keeps priority. Clip curr to start where last ends.
+			overlap := last.mkvEnd - curr.mkvStart
+			curr.mkvStart = last.mkvEnd
+			curr.srcOffset += overlap
+			if curr.mkvStart < curr.mkvEnd {
+				merged = append(merged, curr)
+			}
+		}
+		// If curr is fully contained in last, drop it (nothing to add).
 	}
 
 	m.matchedRegions = merged
 }
 
-// buildEntries creates the final entry list and delta data.
-func (m *Matcher) buildEntries() ([]Entry, []byte) {
-	// Pre-allocate entries: we'll have at most 2x matchedRegions (matched + gap entries)
+// buildEntries creates the final entry list and streams delta data to a temp file.
+func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) {
 	entries := make([]Entry, 0, len(m.matchedRegions)*2+1)
-	// Pre-allocate deltaData with estimated unmatched size (typically small)
-	deltaData := make([]byte, 0, 16*1024*1024) // 16MB initial capacity
-	deltaOffset := int64(0)
 
-	// Start from beginning of file
+	deltaWriter, err := NewDeltaWriter()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	deltaOffset := int64(0)
 	pos := int64(0)
 	regionIdx := 0
 
 	for pos < m.mkvSize {
-		// Check if we're in a matched region
 		var inRegion *matchedRegion
 		if regionIdx < len(m.matchedRegions) && m.matchedRegions[regionIdx].mkvStart <= pos {
 			inRegion = &m.matchedRegions[regionIdx]
 		}
 
 		if inRegion != nil && pos >= inRegion.mkvStart && pos < inRegion.mkvEnd {
-			// We're in a matched region
-			// Adjust source offset for our position within the region
 			offsetInRegion := pos - inRegion.mkvStart
 			regionLen := inRegion.mkvEnd - pos
 
@@ -649,24 +901,24 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) {
 			pos = inRegion.mkvEnd
 			regionIdx++
 		} else {
-			// We're in a gap (unmatched data)
 			gapEnd := m.mkvSize
 			if regionIdx < len(m.matchedRegions) {
 				gapEnd = m.matchedRegions[regionIdx].mkvStart
 			}
 			gapLen := gapEnd - pos
 
-			// Zero-copy: slice directly into mmap'd data for reading,
-			// but we need to copy it to deltaData since that's returned to caller
 			if gapEnd <= m.mkvSize {
-				data := m.mkvData[pos:gapEnd]
 				entries = append(entries, Entry{
 					MkvOffset:    pos,
 					Length:       gapLen,
 					Source:       0,
 					SourceOffset: deltaOffset,
 				})
-				deltaData = append(deltaData, data...)
+				// Write gap data directly from mmap to temp file
+				if err := deltaWriter.Write(m.mkvData[pos:gapEnd]); err != nil {
+					deltaWriter.Close()
+					return nil, nil, fmt.Errorf("write delta: %w", err)
+				}
 				deltaOffset += gapLen
 			}
 
@@ -674,5 +926,10 @@ func (m *Matcher) buildEntries() ([]Entry, []byte) {
 		}
 	}
 
-	return entries, deltaData
+	if err := deltaWriter.Flush(); err != nil {
+		deltaWriter.Close()
+		return nil, nil, fmt.Errorf("flush delta: %w", err)
+	}
+
+	return entries, deltaWriter, nil
 }
