@@ -214,10 +214,15 @@ func TestDetectNALLengthSize(t *testing.T) {
 			expected: 4,
 		},
 		{
-			name:         "H.265 with valid HVCC",
-			codecID:      "V_MPEGH/ISO/HEVC",
-			codecPrivate: make([]byte, 23), // byte 21 defaults to 0x00, &0x03+1 = 1
-			expected:     1,
+			name:    "H.265 with valid HVCC",
+			codecID: "V_MPEGH/ISO/HEVC",
+			codecPrivate: func() []byte {
+				b := make([]byte, 23)
+				b[0] = 1 // configurationVersion must be 1
+				// byte 21 defaults to 0x00, &0x03+1 = 1
+				return b
+			}(),
+			expected: 1,
 		},
 		{
 			name:     "H.265 no CodecPrivate defaults to 4",
