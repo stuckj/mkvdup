@@ -599,33 +599,6 @@ func (r *Reader) readDelta(offset int64, size int) ([]byte, error) {
 	return data, nil
 }
 
-func (r *Reader) readViaRangeMap(fileIndex int, entry Entry, sourceOffset int64, size int) ([]byte, error) {
-	src, ok := r.rangeMapsByFile[fileIndex]
-	if !ok {
-		return nil, fmt.Errorf("no range map for source file %d", fileIndex)
-	}
-
-	if fileIndex < 0 || fileIndex >= len(r.sourceMmaps) || r.sourceMmaps[fileIndex] == nil {
-		return nil, fmt.Errorf("source file %d not loaded for range map read", fileIndex)
-	}
-
-	sourceData := r.sourceMmaps[fileIndex].Data()
-	sourceSize := r.sourceMmaps[fileIndex].Size()
-
-	if entry.IsVideo {
-		if src.VideoMap == nil {
-			return nil, fmt.Errorf("no video range map for source file %d", fileIndex)
-		}
-		return src.VideoMap.ReadData(sourceData, sourceSize, sourceOffset, size)
-	}
-
-	audioMap, ok := src.AudioMaps[entry.AudioSubStreamID]
-	if !ok {
-		return nil, fmt.Errorf("no audio sub-stream %d range map for source file %d", entry.AudioSubStreamID, fileIndex)
-	}
-	return audioMap.ReadData(sourceData, sourceSize, sourceOffset, size)
-}
-
 // readViaRangeMapInto reads via range map directly into dest, avoiding allocation.
 func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset int64, dest []byte) error {
 	src, ok := r.rangeMapsByFile[fileIndex]

@@ -677,11 +677,8 @@ func (m *Matcher) expandMatchES(mkvOffset int64, loc source.Location, srcSize in
 
 	// Expand forward
 	forwardHint := -1
-	mkvEnd := mkvOffset + *length - (mkvOffset - *mkvStart) // current end position
-	srcEnd := loc.Offset + *length - (loc.Offset - *srcStart)
-	// Simplify: mkvEnd = mkvStart + length, srcEnd = srcStart + length
-	mkvEnd = *mkvStart + *length
-	srcEnd = *srcStart + *length
+	mkvEnd := *mkvStart + *length
+	srcEnd := *srcStart + *length
 	forwardExpanded := int64(0)
 	for mkvEnd < m.mkvSize && srcEnd < srcSize && forwardExpanded < MaxExpansionBytes {
 		mkvByte := m.mkvData[mkvEnd]
