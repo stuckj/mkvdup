@@ -218,7 +218,7 @@ func TestDetectNALLengthSize(t *testing.T) {
 			codecID: "V_MPEGH/ISO/HEVC",
 			codecPrivate: func() []byte {
 				b := make([]byte, 23)
-				b[0] = 1    // configurationVersion must be 1
+				b[0] = 1     // configurationVersion must be 1
 				b[21] = 0xFC // upper 6 bits = 111111 (reserved), lower 2 bits = 00, size = 1
 				return b
 			}(),
