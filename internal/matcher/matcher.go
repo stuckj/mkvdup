@@ -37,12 +37,17 @@ func detectNALLengthSize(codecID string, codecPrivate []byte) int {
 	case "V_MPEGH/ISO/HEVC":
 		// HVCC format: CodecPrivate is HEVCDecoderConfigurationRecord
 		// Byte 0 = configurationVersion (must be 1)
+		// Byte 21 bits 6-7 = reserved (must be 111111)
 		// Byte 21 bits 0-1 = NAL length size - 1
 		if len(codecPrivate) >= 23 && codecPrivate[0] == 1 {
-			size := int(codecPrivate[21]&0x03) + 1
-			// Valid NAL length sizes are 1, 2, or 4 bytes
-			if size == 1 || size == 2 || size == 4 {
-				return size
+			b := codecPrivate[21]
+			// Upper 6 bits must be all 1s per ISO/IEC 23008-2
+			if b&0xFC == 0xFC {
+				size := int(b&0x03) + 1
+				// Valid NAL length sizes are 1, 2, or 4 bytes
+				if size == 1 || size == 2 || size == 4 {
+					return size
+				}
 			}
 		}
 		return 4 // Default for HEVC if CodecPrivate is missing or malformed
