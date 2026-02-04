@@ -135,6 +135,10 @@ jobs:
             -e "s/@PACKAGE_NAME_UPPER@/${UPPER}/g" \
             -e "s/@PACKAGE_NAME@/${PACKAGE_NAME}/g" \
             docs/mkvdup.1
+          # Rename man page to match package name
+          if [[ "$PACKAGE_NAME" != "mkvdup" ]]; then
+            cp docs/mkvdup.1 "docs/${PACKAGE_NAME}.1"
+          fi
 
       - name: Install nfpm
         if: matrix.goos == 'linux'
@@ -170,11 +174,15 @@ jobs:
           # Create staging directory
           mkdir -p staging
 
-          # Copy binary (rename to mkvdup for consistency in tarball)
-          cp "${PACKAGE_NAME}" staging/mkvdup
+          # Copy binary with correct name
+          cp "${PACKAGE_NAME}" "staging/${PACKAGE_NAME}"
 
-          # Copy man page
-          cp docs/mkvdup.1 staging/
+          # Copy man page with correct name
+          if [[ "$PACKAGE_NAME" == "mkvdup" ]]; then
+            cp docs/mkvdup.1 staging/mkvdup.1
+          else
+            cp "docs/${PACKAGE_NAME}.1" "staging/${PACKAGE_NAME}.1"
+          fi
 
           # Copy documentation
           cp README.md DESIGN.md LICENSE staging/
@@ -241,7 +249,6 @@ jobs:
 
   update-homebrew:
     needs: [prepare, build, release]
-    if: needs.prepare.outputs.is_canary == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -280,7 +287,8 @@ jobs:
           echo "  linux_arm64: ${SHA_LINUX_ARM64}"
           echo "  linux_amd64: ${SHA_LINUX_AMD64}"
 
-      - name: Update Homebrew formula
+      - name: Update stable Homebrew formula
+        if: needs.prepare.outputs.is_canary == 'false'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           TAG: ${{ needs.prepare.outputs.tag }}
@@ -289,11 +297,11 @@ jobs:
           SHA_LINUX_ARM64: ${{ steps.checksums.outputs.sha_linux_arm64 }}
           SHA_LINUX_AMD64: ${{ steps.checksums.outputs.sha_linux_amd64 }}
         run: |
-          cat > HomebrewFormula/mkvdup.rb << EOF
+          cat > Formula/mkvdup.rb << 'FORMULA'
           # typed: false
           # frozen_string_literal: true
 
-          # Homebrew formula for mkvdup
+          # Homebrew formula for mkvdup (stable)
           # This file is auto-updated by the release workflow.
           # To install: brew tap stuckj/mkvdup https://github.com/stuckj/mkvdup && brew install mkvdup
 
@@ -301,6 +309,9 @@ jobs:
             desc "Storage deduplication tool for MKV files and their source media"
             homepage "https://github.com/stuckj/mkvdup"
             license "MIT"
+          FORMULA
+
+          cat >> Formula/mkvdup.rb << EOF
             version "${VERSION}"
 
             on_macos do
@@ -324,28 +335,147 @@ jobs:
                 sha256 "${SHA_LINUX_AMD64}"
               end
             end
+          EOF
+
+          cat >> Formula/mkvdup.rb << 'FORMULA'
+
+            # Build from source when formula hasn't been updated yet
+            head "https://github.com/stuckj/mkvdup.git", branch: "main"
+
+            depends_on "go" => :build if build.head?
 
             def install
-              bin.install "mkvdup"
-              man1.install "mkvdup.1"
-              doc.install "README.md", "DESIGN.md", "LICENSE"
-              doc.install Dir["docs/*"]
-              bash_completion.install "mkvdup-completion.bash" => "mkvdup"
-              zsh_completion.install "mkvdup-completion.zsh" => "_mkvdup"
-              fish_completion.install "mkvdup.fish"
+              if build.head?
+                system "go", "build", *std_go_args(ldflags: "-s -w"), "./cmd/mkvdup"
+                man1.install "docs/mkvdup.1"
+                doc.install "README.md", "DESIGN.md", "LICENSE"
+                doc.install Dir["docs/*.md"]
+                bash_completion.install "scripts/mkvdup-completion.bash" => "mkvdup"
+                zsh_completion.install "scripts/mkvdup-completion.zsh" => "_mkvdup"
+                fish_completion.install "scripts/mkvdup.fish"
+              else
+                bin.install "mkvdup"
+                man1.install "mkvdup.1"
+                doc.install "README.md", "DESIGN.md", "LICENSE"
+                doc.install Dir["docs/*"]
+                bash_completion.install "mkvdup-completion.bash" => "mkvdup"
+                zsh_completion.install "mkvdup-completion.zsh" => "_mkvdup"
+                fish_completion.install "mkvdup.fish"
+              end
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/mkvdup --version")
+              if build.head?
+                assert_match "mkvdup", shell_output("#{bin}/mkvdup --help")
+              else
+                assert_match version.to_s, shell_output("#{bin}/mkvdup --version")
+              end
             end
           end
+          FORMULA
+
+      - name: Update canary Homebrew formula
+        if: needs.prepare.outputs.is_canary == 'true'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA_DARWIN_ARM64: ${{ steps.checksums.outputs.sha_darwin_arm64 }}
+          SHA_DARWIN_AMD64: ${{ steps.checksums.outputs.sha_darwin_amd64 }}
+          SHA_LINUX_ARM64: ${{ steps.checksums.outputs.sha_linux_arm64 }}
+          SHA_LINUX_AMD64: ${{ steps.checksums.outputs.sha_linux_amd64 }}
+        run: |
+          cat > Formula/mkvdup-canary.rb << 'FORMULA'
+          # typed: false
+          # frozen_string_literal: true
+
+          # Homebrew formula for mkvdup-canary (pre-release)
+          # This file is auto-updated by the release workflow.
+          # To install: brew tap stuckj/mkvdup https://github.com/stuckj/mkvdup && brew install mkvdup-canary
+          #
+          # The canary version can be installed alongside the stable version.
+
+          class MkvdupCanary < Formula
+            desc "Storage deduplication tool for MKV files (canary/pre-release)"
+            homepage "https://github.com/stuckj/mkvdup"
+            license "MIT"
+          FORMULA
+
+          cat >> Formula/mkvdup-canary.rb << EOF
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/stuckj/mkvdup/releases/download/${TAG}/mkvdup-canary_darwin_arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/stuckj/mkvdup/releases/download/${TAG}/mkvdup-canary_darwin_amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/stuckj/mkvdup/releases/download/${TAG}/mkvdup-canary_linux_arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/stuckj/mkvdup/releases/download/${TAG}/mkvdup-canary_linux_amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
           EOF
+
+          cat >> Formula/mkvdup-canary.rb << 'FORMULA'
+
+            # Build from source when formula hasn't been updated yet
+            head "https://github.com/stuckj/mkvdup.git", branch: "main"
+
+            depends_on "go" => :build if build.head?
+
+            def install
+              if build.head?
+                system "go", "build", *std_go_args(output: bin/"mkvdup-canary", ldflags: "-s -w"), "./cmd/mkvdup"
+                man1.install "docs/mkvdup.1" => "mkvdup-canary.1"
+                doc.install "README.md", "DESIGN.md", "LICENSE"
+                doc.install Dir["docs/*.md"]
+                bash_completion.install "scripts/mkvdup-completion.bash" => "mkvdup-canary"
+                zsh_completion.install "scripts/mkvdup-completion.zsh" => "_mkvdup-canary"
+                fish_completion.install "scripts/mkvdup.fish" => "mkvdup-canary.fish"
+              else
+                bin.install "mkvdup-canary"
+                man1.install "mkvdup-canary.1"
+                doc.install "README.md", "DESIGN.md", "LICENSE"
+                doc.install Dir["docs/*"]
+                bash_completion.install "mkvdup-completion.bash" => "mkvdup-canary"
+                zsh_completion.install "mkvdup-completion.zsh" => "_mkvdup-canary"
+                fish_completion.install "mkvdup.fish" => "mkvdup-canary.fish"
+              end
+            end
+
+            def caveats
+              <<~EOS
+                This is the canary (pre-release) version of mkvdup.
+                The binary is installed as 'mkvdup-canary' to allow side-by-side
+                installation with the stable 'mkvdup' package.
+              EOS
+            end
+
+            test do
+              if build.head?
+                assert_match "mkvdup", shell_output("#{bin}/mkvdup-canary --help")
+              else
+                assert_match version.to_s, shell_output("#{bin}/mkvdup-canary --version")
+              end
+            end
+          end
+          FORMULA
 
       - name: Commit and push formula update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add HomebrewFormula/mkvdup.rb
+          git add Formula/
           git diff --staged --quiet || git commit -m "Update Homebrew formula for ${{ needs.prepare.outputs.tag }} [skip ci]"
           git push origin main
         env:
@@ -557,6 +687,11 @@ jobs:
             <h2>Canary Channel (Pre-release)</h2>
             <p>The canary channel provides early access to new features. It installs as
             <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
+
+            <h3>macOS / Linux (Homebrew) - Canary</h3>
+            <pre>
+          brew tap stuckj/mkvdup https://github.com/stuckj/mkvdup
+          brew install mkvdup-canary</pre>
 
             <h3>Debian/Ubuntu (APT) - Canary</h3>
             <pre>
