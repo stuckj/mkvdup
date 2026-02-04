@@ -3,34 +3,11 @@
 # Zsh completion for mkvdup
 # Install to /usr/share/zsh/vendor-completions/_mkvdup
 
-local curcontext="$curcontext" state line
-local -a commands global_opts
-
-commands=(
-    'create:Create a dedup file from an MKV and its source directory'
-    'batch-create:Create multiple dedup files from a manifest'
-    'probe:Quick test if an MKV likely matches a source'
-    'mount:Mount virtual filesystem from config files'
-    'info:Show information about a dedup file'
-    'verify:Verify a dedup file against the original MKV'
-    'check:Check integrity of a dedup file and its source files'
-    'validate:Validate configuration files for correctness'
-    'reload:Reload a running daemon configuration'
-    'parse-mkv:Parse and display MKV structure (debug)'
-    'index-source:Index a source directory (debug)'
-    'match:Match packets between MKV and source (debug)'
-    'help:Show help for a command'
-)
-
-global_opts=(
-    '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]'
-    '(-h --help)'{-h,--help}'[Show help]'
-    '--version[Show version]'
-)
-
 _mkvdup_create() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
         '--quiet[Suppress the space savings warning]' \
         '--non-interactive[Do not prompt on codec mismatch]' \
@@ -42,7 +19,9 @@ _mkvdup_create() {
 
 _mkvdup_batch_create() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
         '--quiet[Suppress the space savings warning]' \
         '1:Manifest file:_files -g "*.y(a|)ml(-.)"'
@@ -50,14 +29,18 @@ _mkvdup_batch_create() {
 
 _mkvdup_probe() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
         '*:Source directories:_files -/'
 }
 
 _mkvdup_mount() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '--allow-other[Allow other users to access the mount]' \
         '(-f --foreground)'{-f,--foreground}'[Run in foreground]' \
         '--config-dir[Treat config argument as directory of YAML files]' \
@@ -74,13 +57,17 @@ _mkvdup_mount() {
 
 _mkvdup_info() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"'
 }
 
 _mkvdup_verify() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
         '2:Source directory:_files -/' \
         '3:Original MKV:_files -g "*.mkv(-.)"'
@@ -88,7 +75,9 @@ _mkvdup_verify() {
 
 _mkvdup_check() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '--source-checksums[Verify source file checksums]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
         '2:Source directory:_files -/'
@@ -96,7 +85,9 @@ _mkvdup_check() {
 
 _mkvdup_validate() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '--config-dir[Treat config argument as directory of YAML files]' \
         '--deep[Verify dedup file headers and internal checksums]' \
         '--strict[Treat warnings as errors]' \
@@ -105,7 +96,9 @@ _mkvdup_validate() {
 
 _mkvdup_reload() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '--pid-file=[PID file of the running daemon]:PID file:_files' \
         '--config-dir[Treat config argument as directory of YAML files]' \
         '*:Config files:_files -g "*.y(a|)ml(-.)"'
@@ -113,44 +106,62 @@ _mkvdup_reload() {
 
 _mkvdup_parse_mkv() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"'
 }
 
 _mkvdup_index_source() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:Source directory:_files -/'
 }
 
 _mkvdup_match() {
     _arguments -s \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
         '2:Source directory:_files -/'
 }
 
-_mkvdup_help() {
-    local -a help_commands
-    help_commands=(${commands%%:*})
-    _arguments '1:command:($help_commands)'
-}
-
 _mkvdup() {
-    local cmd
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
 
     _arguments -C \
-        $global_opts \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
         '1:command:->command' \
         '*::arg:->args'
 
     case $state in
         command)
-            _describe -t commands 'mkvdup command' commands
+            local -a subcommands
+            subcommands=(
+                'create:Create a dedup file from an MKV and its source directory'
+                'batch-create:Create multiple dedup files from a manifest'
+                'probe:Quick test if an MKV likely matches a source'
+                'mount:Mount virtual filesystem from config files'
+                'info:Show information about a dedup file'
+                'verify:Verify a dedup file against the original MKV'
+                'check:Check integrity of a dedup file and its source files'
+                'validate:Validate configuration files for correctness'
+                'reload:Reload a running daemon configuration'
+                'parse-mkv:Parse and display MKV structure (debug)'
+                'index-source:Index a source directory (debug)'
+                'match:Match packets between MKV and source (debug)'
+                'help:Show help for a command'
+            )
+            _describe -t commands 'mkvdup command' subcommands
             ;;
         args)
-            cmd="${line[1]}"
-            case $cmd in
+            case ${line[1]} in
                 create)       _mkvdup_create ;;
                 batch-create) _mkvdup_batch_create ;;
                 probe)        _mkvdup_probe ;;
@@ -163,7 +174,11 @@ _mkvdup() {
                 parse-mkv)    _mkvdup_parse_mkv ;;
                 index-source) _mkvdup_index_source ;;
                 match)        _mkvdup_match ;;
-                help)         _mkvdup_help ;;
+                help)
+                    local -a help_cmds
+                    help_cmds=(create batch-create probe mount info verify check validate reload parse-mkv index-source match)
+                    _describe -t commands 'command' help_cmds
+                    ;;
             esac
             ;;
     esac
