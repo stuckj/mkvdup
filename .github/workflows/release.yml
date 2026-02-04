@@ -255,7 +255,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          # Use PAT for checkout (needed for formula update push to bypass branch protection)
+          token: ${{ secrets.BENCHMARK_PAT || github.token }}
 
       - name: Download tarball artifacts
         uses: actions/download-artifact@v7
@@ -473,13 +475,18 @@ jobs:
 
       - name: Commit and push formula update
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Validate that BENCHMARK_PAT was configured (checkout would have used it)
+          if [ "${{ secrets.BENCHMARK_PAT }}" = "" ]; then
+            echo "WARNING: BENCHMARK_PAT secret not configured. Skipping formula update."
+            exit 0
+          fi
+          git config user.name "stuckj"
+          git config user.email "stuckj@users.noreply.github.com"
           git add Formula/
           git diff --staged --quiet || git commit -m "Update Homebrew formula for ${{ needs.prepare.outputs.tag }} [skip ci]"
-          git push origin main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pull any changes that occurred during the workflow run
+          git pull --rebase origin main
+          git push
 
   publish-repo:
     needs: [prepare, build]
