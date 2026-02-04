@@ -110,18 +110,20 @@ jobs:
           sudo modprobe fuse
           sudo chmod 666 /dev/fuse
 
-      - name: Run DVD integration tests with coverage
+      - name: Run DVD and FUSE integration tests with coverage
         env:
           MKVDUP_TESTDATA: /tmp/mkvdup-testdata
         run: |
+          # Run dedup DVD tests (skip Blu-ray) and all FUSE tests
+          # FUSE tests use DVD testdata, so they run here
           gotestsum --junitfile dvd-results.xml -- \
             -tags=integration \
-            -run 'TestFullDedupCycle$$|TestConcurrentReaders' \
+            -skip 'TestFullDedupCycle_Bluray' \
             -coverprofile=dvd-coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
             -timeout=0 \
-            ./...
+            ./internal/dedup/... ./internal/fuse/...
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v6
@@ -181,15 +183,11 @@ jobs:
           path: /tmp/mkvdup-testdata
           key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
 
-      - name: Setup FUSE permissions
-        run: |
-          sudo modprobe fuse
-          sudo chmod 666 /dev/fuse
-
       - name: Run Blu-ray integration tests with coverage
         env:
           MKVDUP_TESTDATA: /tmp/mkvdup-testdata
         run: |
+          # Only run the Blu-ray dedup test (no FUSE tests - they run in DVD job)
           gotestsum --junitfile bluray-results.xml -- \
             -tags=integration \
             -run 'TestFullDedupCycle_Bluray' \
@@ -197,7 +195,7 @@ jobs:
             -covermode=atomic \
             -coverpkg=./... \
             -timeout=0 \
-            ./...
+            ./internal/dedup/...
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v6
