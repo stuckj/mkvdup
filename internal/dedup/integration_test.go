@@ -328,9 +328,34 @@ func TestFullDedupCycle_Bluray(t *testing.T) {
 	writer.SetHeader(mkvInfo.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
 
-	// Blu-ray uses raw indexing — no ES converters needed
+	// Build range maps from ESReaders (V4 format)
+	var rangeMaps []dedup.RangeMapData
+	for i, reader := range index.ESReaders {
+		if provider, ok := reader.(source.PESRangeProvider); ok {
+			rm := dedup.RangeMapData{
+				FileIndex:   uint16(i),
+				VideoRanges: provider.FilteredVideoRanges(),
+			}
+			for _, subID := range provider.AudioSubStreams() {
+				rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
+					SubStreamID: subID,
+					Ranges:      provider.FilteredAudioRanges(subID),
+				})
+			}
+			rangeMaps = append(rangeMaps, rm)
+		}
+	}
+	if len(rangeMaps) > 0 {
+		writer.SetRangeMaps(rangeMaps)
+	}
+
 	if err := writer.SetMatchResult(result, nil); err != nil {
 		t.Fatalf("Failed to set match result: %v", err)
+	}
+
+	// Pre-encode range maps before writing
+	if _, err := writer.EncodeRangeMaps(); err != nil {
+		t.Fatalf("Failed to encode range maps: %v", err)
 	}
 
 	if err := writer.Write(); err != nil {
@@ -352,9 +377,13 @@ func TestFullDedupCycle_Bluray(t *testing.T) {
 	}
 	defer reader.Close()
 
-	// Blu-ray path: UsesESOffsets should be false, use LoadSourceFiles
-	if reader.UsesESOffsets() {
-		t.Fatal("Reader reports UsesESOffsets=true, expected false for Blu-ray")
+	// V4 Blu-ray path: UsesESOffsets=true (entries contain ES offsets),
+	// but reader uses embedded range maps instead of external ES reader
+	if !reader.UsesESOffsets() {
+		t.Fatal("Reader reports UsesESOffsets=false, expected true for V4 Blu-ray")
+	}
+	if !reader.HasRangeMaps() {
+		t.Fatal("Reader reports no range maps, expected them for V4 Blu-ray")
 	}
 
 	if err := reader.LoadSourceFiles(); err != nil {
