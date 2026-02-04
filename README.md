@@ -25,6 +25,13 @@ This tool is intended for personal backup and archival of legally owned media. I
 
 ## Installation
 
+### macOS / Linux (Homebrew)
+
+```bash
+brew tap stuckj/mkvdup https://github.com/stuckj/mkvdup
+brew install mkvdup
+```
+
 ### Debian/Ubuntu (APT)
 
 ```bash
