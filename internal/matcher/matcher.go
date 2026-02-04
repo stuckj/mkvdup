@@ -442,10 +442,12 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		syncPoints = source.FindAudioSyncPoints(data)
 	}
 
-	// Try ALL sync points, not just the first match.
 	// For AVCC/HVCC video, each NAL unit has different framing bytes than the
 	// source (length prefix vs start code), so expansion stops at NAL boundaries.
 	// We must match each NAL individually to cover the full packet.
+	// For Annex B video (nalLengthSize == 0), one match is sufficient since
+	// expansion works correctly across start code boundaries.
+	isAVCC := isVideo && m.trackCodecs[int(pkt.TrackNum)].nalLengthSize > 0
 	anyMatched := false
 	for _, syncOff := range syncPoints {
 		if syncOff+m.windowSize > len(data) {
@@ -453,8 +455,9 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		}
 		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo) {
 			anyMatched = true
-			// If the full packet is now covered, no need to try more sync points
-			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+			// Early return for Annex B video (expansion covers full packet)
+			// or AVCC when full packet is now covered
+			if !isAVCC || m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
 				return true
 			}
 		}
