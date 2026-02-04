@@ -105,14 +105,7 @@ func TestFullDedupCycle(t *testing.T) {
 	t.Logf("Dedup file: %d bytes (%.1f%% of original)",
 		dedupInfo.Size(), float64(dedupInfo.Size())/float64(mkvInfo.Size())*100)
 
-	// Run mkvdup validate to verify the dedup file
-	t.Log("Running mkvdup validate...")
-	output, err = runMkvdup(t, "validate", dedupPath, paths.ISODir, paths.MKVFile)
-	if err != nil {
-		t.Fatalf("mkvdup validate failed: %v\nOutput:\n%s", err, output)
-	}
-	t.Log(output)
-
+	// The create command already does internal verification.
 	// Additional verification: use internal reader to verify byte-by-byte
 	t.Log("Verifying reconstruction via internal reader...")
 	verifyReconstruction(t, dedupPath, paths.ISODir, paths.MKVFile)
@@ -168,14 +161,7 @@ func TestFullDedupCycle_Bluray(t *testing.T) {
 	t.Logf("Dedup file: %d bytes (%.1f%% of original)",
 		dedupInfo.Size(), float64(dedupInfo.Size())/float64(mkvInfo.Size())*100)
 
-	// Run mkvdup validate to verify the dedup file
-	t.Log("Running mkvdup validate...")
-	output, err = runMkvdup(t, "validate", dedupPath, blurayDir, paths.MKVFile)
-	if err != nil {
-		t.Fatalf("mkvdup validate failed: %v\nOutput:\n%s", err, output)
-	}
-	t.Log(output)
-
+	// The create command already does internal verification.
 	// Additional verification: use internal reader to verify byte-by-byte
 	// This also verifies that HasRangeMaps() returns true for V4
 	t.Log("Verifying reconstruction via internal reader...")
