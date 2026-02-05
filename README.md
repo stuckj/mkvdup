@@ -32,6 +32,8 @@ brew tap stuckj/mkvdup
 brew install mkvdup
 ```
 
+**Canary (pre-release):** `brew install mkvdup-canary` — installs alongside stable as `mkvdup-canary`
+
 ### Debian/Ubuntu (APT)
 
 ```bash
@@ -45,6 +47,23 @@ echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://st
 sudo apt update
 sudo apt install mkvdup
 ```
+
+<details>
+<summary><strong>Canary (pre-release)</strong></summary>
+
+```bash
+# Add the GPG key (same as stable)
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
+
+# Add the canary repository
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt canary main" | sudo tee /etc/apt/sources.list.d/mkvdup-canary.list
+
+# Install
+sudo apt update
+sudo apt install mkvdup-canary
+```
+
+</details>
 
 ### RHEL/Fedora (DNF)
 
@@ -63,11 +82,33 @@ EOF
 sudo dnf install mkvdup
 ```
 
+<details>
+<summary><strong>Canary (pre-release)</strong></summary>
+
+```bash
+# Add the canary repository
+sudo tee /etc/yum.repos.d/mkvdup-canary.repo << 'EOF'
+[mkvdup-canary]
+name=mkvdup-canary
+baseurl=https://stuckj.github.io/mkvdup/yum-canary
+enabled=1
+gpgcheck=1
+gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
+EOF
+
+# Install
+sudo dnf install mkvdup-canary
+```
+
+</details>
+
 ### From Source
 
 ```bash
 go install github.com/stuckj/mkvdup/cmd/mkvdup@latest
 ```
+
+**Canary:** `go install github.com/stuckj/mkvdup/cmd/mkvdup@v0.x.x-canary.N` (see [releases](https://github.com/stuckj/mkvdup/releases) for versions)
 
 ## Usage
 
