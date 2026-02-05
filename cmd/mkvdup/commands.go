@@ -45,6 +45,35 @@ func formatInt(n int64) string {
 	return string(result)
 }
 
+// parseMKVWithProgress parses an MKV file with progress reporting.
+// The progressPrefix is shown during parsing (e.g., "Parsing MKV...", "Phase 1/3: Parsing MKV file...").
+// Returns the parser (caller must Close it) and an error if any.
+func parseMKVWithProgress(mkvPath, progressPrefix string) (*mkv.Parser, time.Duration, error) {
+	fmt.Print(progressPrefix)
+	parser, err := mkv.NewParser(mkvPath)
+	if err != nil {
+		fmt.Println()
+		return nil, 0, fmt.Errorf("create parser: %w", err)
+	}
+
+	parseStart := time.Now()
+	lastProgress := time.Now()
+	if err := parser.Parse(func(processed, total int64) {
+		if time.Since(lastProgress) > 500*time.Millisecond {
+			pct := float64(processed) / float64(total) * 100
+			fmt.Printf("\r%s %.1f%%", progressPrefix, pct)
+			lastProgress = time.Now()
+		}
+	}); err != nil {
+		parser.Close()
+		fmt.Println()
+		return nil, 0, fmt.Errorf("parse MKV: %w", err)
+	}
+	elapsed := time.Since(parseStart)
+	fmt.Printf("\r%s done (%d packets in %v)                    \n", progressPrefix, parser.PacketCount(), elapsed)
+	return parser, elapsed, nil
+}
+
 // createResult holds per-file statistics from a create operation.
 type createResult struct {
 	MkvPath        string
@@ -84,6 +113,9 @@ func buildSourceIndex(sourceDir string) (*source.Indexer, *source.Index, error) 
 	}
 	index := indexer.Index()
 	fmt.Printf("\r  Indexed %d hashes in %v                    \n", len(index.HashToLocations), time.Since(start))
+	if index.UsesESOffsets {
+		fmt.Println("  (Using ES-aware indexing for MPEG-PS)")
+	}
 
 	return indexer, index, nil
 }
@@ -162,27 +194,12 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	}
 
 	// Parse MKV
-	fmt.Print("  Parsing MKV file...")
-	parser, err := mkv.NewParser(mkvPath)
+	parser, _, err := parseMKVWithProgress(mkvPath, "  Parsing MKV file...")
 	if err != nil {
-		result.Err = fmt.Errorf("create parser: %w", err)
+		result.Err = err
 		return result
 	}
 	defer parser.Close()
-
-	parseStart := time.Now()
-	lastParseProgress := time.Now()
-	if err := parser.Parse(func(processed, total int64) {
-		if time.Since(lastParseProgress) > 500*time.Millisecond {
-			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\r  Parsing MKV file... %.1f%%", pct)
-			lastParseProgress = time.Now()
-		}
-	}); err != nil {
-		result.Err = fmt.Errorf("parse MKV: %w", err)
-		return result
-	}
-	fmt.Printf("\r  Parsed %d packets in %v                    \n", parser.PacketCount(), time.Since(parseStart))
 
 	// Check codec compatibility
 	if err := checkCodecCompatibility(parser.Tracks(), index, nonInteractive); err != nil {
@@ -494,14 +511,8 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 	}
 	defer reader.Close()
 
-	// V4 range maps or V3 raw offsets: just need source files mmap'd.
-	// V1 external ES readers: only if UsesESOffsets without range maps.
-	if reader.UsesESOffsets() && !reader.HasRangeMaps() && len(index.ESReaders) > 0 {
-		reader.SetESReader(index.ESReaders[0])
-	} else {
-		if err := reader.LoadSourceFiles(); err != nil {
-			return fmt.Errorf("load source files: %w", err)
-		}
+	if err := reader.LoadSourceFiles(); err != nil {
+		return fmt.Errorf("load source files: %w", err)
 	}
 
 	// Open original MKV
@@ -642,29 +653,8 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 	}
 	fmt.Println(" OK")
 
-	// V4 range maps: just need source files mmap'd (range maps are in dedup file).
-	// V1 external ES readers: need indexer to get ES reader.
-	// V3 raw offsets: just need source files mmap'd.
-	if reader.UsesESOffsets() && !reader.HasRangeMaps() {
-		// V1 path: need external ES reader
-		indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
-		if err != nil {
-			return fmt.Errorf("create indexer: %w", err)
-		}
-		if err := indexer.Build(nil); err != nil {
-			return fmt.Errorf("build index: %w", err)
-		}
-		index := indexer.Index()
-		defer index.Close()
-
-		if len(index.ESReaders) > 0 {
-			reader.SetESReader(index.ESReaders[0])
-		}
-	} else {
-		// V3/V4: raw source files
-		if err := reader.LoadSourceFiles(); err != nil {
-			return fmt.Errorf("load source files: %w", err)
-		}
+	if err := reader.LoadSourceFiles(); err != nil {
+		return fmt.Errorf("load source files: %w", err)
 	}
 
 	// Verify source file sizes
@@ -895,25 +885,11 @@ func probe(mkvPath string, sourceDirs []string) error {
 	fmt.Println()
 
 	// Phase 1: Parse MKV and sample packets
-	fmt.Print("Parsing MKV...")
-	parser, err := mkv.NewParser(mkvPath)
+	parser, _, err := parseMKVWithProgress(mkvPath, "Parsing MKV...")
 	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
+		return err
 	}
 	defer parser.Close()
-
-	parseStart := time.Now()
-	lastParseProgress := time.Now()
-	if err := parser.Parse(func(processed, total int64) {
-		if time.Since(lastParseProgress) > 500*time.Millisecond {
-			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\rParsing MKV... %.1f%%", pct)
-			lastParseProgress = time.Now()
-		}
-	}); err != nil {
-		return fmt.Errorf("parse MKV: %w", err)
-	}
-	fmt.Printf("\rParsed %d packets in %v                    \n", len(parser.Packets()), time.Since(parseStart))
 
 	packets := parser.Packets()
 	if len(packets) == 0 {

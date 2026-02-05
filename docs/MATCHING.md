@@ -73,16 +73,17 @@ The parser maintains a mapping of ES offsets to file offsets for each PES payloa
 
 ## ES-Aware Indexing (Blu-ray)
 
-**Problem:** Blu-rays use MPEG Transport Stream (MPEG-TS) containers in M2TS files. M2TS files consist of fixed-size 192-byte packets: a 4-byte timestamp prefix followed by a 188-byte TS packet. Each TS packet carries a small fragment of a PES packet, identified by a 13-bit PID. PES packets span multiple TS packets and contain the actual codec data. When ripping to MKV, tools extract the raw ES data, stripping all TS and PES framing. If we index raw file offsets in the M2TS file, the TS headers (interleaved every ~188 bytes) cause misalignments — expansion fails at every packet boundary.
+**Problem:** Blu-rays use MPEG Transport Stream (MPEG-TS) containers in M2TS files. M2TS files consist of fixed-size 192-byte packets: a 4-byte timecode prefix plus a 188-byte TS packet (which itself has a 4-byte header, leaving up to 184 bytes for payload). Each TS packet carries a small fragment of a PES packet, identified by a 13-bit PID. PES packets span multiple TS packets and contain the actual codec data. When ripping to MKV, tools extract the raw ES data, stripping all TS and PES framing. If we index raw file offsets in the M2TS file, the 8-byte headers (4-byte timecode + 4-byte TS header, interleaved every 192 bytes) cause misalignments — expansion fails at every packet boundary.
 
 **Solution:** Parse the MPEG-TS structure (PAT → PMT → PES packets) and build an index based on continuous ES offsets, the same approach used for DVDs.
 
 ```
 M2TS file structure (192-byte packets):
-┌───────────┬─────────────────────────────────────────────────────┐
-│ Timestamp │ TS Packet (188 bytes)                               │
-│ (4 bytes) │ [sync 0x47][PID][flags][adaptation?][PES payload]   │
-└───────────┴─────────────────────────────────────────────────────┘
+┌───────────┬──────────────────────────────────────────────────────────────┐
+│ Timecode  │ TS Packet (188 bytes)                                        │
+│ (4 bytes) │ [sync 0x47][PID][flags][adaptation?][PES payload ≤184 bytes] │
+└───────────┴──────────────────────────────────────────────────────────────┘
+             └─ 4-byte TS header ─┘
 
 PES packets span multiple TS packets:
 ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
