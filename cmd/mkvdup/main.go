@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
 	"github.com/stuckj/mkvdup/internal/mkv"
 	"github.com/stuckj/mkvdup/internal/source"
@@ -767,7 +768,16 @@ func parseMKV(path string) error {
 		case mkv.TrackTypeSubtitle:
 			typeStr = "subtitle"
 		}
-		fmt.Printf("  Track %d: %s (codec: %s)\n", t.Number, typeStr, t.CodecID)
+		extra := ""
+		if t.Type == mkv.TrackTypeVideo {
+			nalSize := matcher.NALLengthSizeForTrack(t.CodecID, t.CodecPrivate)
+			if nalSize > 0 {
+				extra = fmt.Sprintf(", NAL length: %d bytes (AVCC/HVCC)", nalSize)
+			} else {
+				extra = ", Annex B"
+			}
+		}
+		fmt.Printf("  Track %d: %s (codec: %s%s)\n", t.Number, typeStr, t.CodecID, extra)
 	}
 	fmt.Println()
 
@@ -829,7 +839,11 @@ func indexSource(dir string) error {
 
 	fmt.Printf("Unique hashes: %d\n", len(index.HashToLocations))
 	if index.UsesESOffsets {
-		fmt.Printf("Index type: ES-aware (MPEG-PS)\n")
+		containerType := "MPEG-PS"
+		if indexer.SourceType() == source.TypeBluray {
+			containerType = "MPEG-TS"
+		}
+		fmt.Printf("Index type: ES-aware (%s)\n", containerType)
 	}
 
 	// Count total locations
@@ -846,44 +860,19 @@ func matchMKV(mkvPath, sourceDir string) error {
 	totalStart := time.Now()
 
 	// Phase 1: Parse MKV
-	fmt.Println("Phase 1/3: Parsing MKV file...")
-	parser, err := mkv.NewParser(mkvPath)
+	parser, _, err := parseMKVWithProgress(mkvPath, "Phase 1/3: Parsing MKV file...")
 	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
+		return err
 	}
 	defer parser.Close()
 
-	start := time.Now()
-	if err := parser.Parse(nil); err != nil {
-		return fmt.Errorf("parse MKV: %w", err)
-	}
-	fmt.Printf("  Parsed %d packets in %v\n", parser.PacketCount(), time.Since(start))
-
 	// Phase 2: Index source
 	fmt.Println("Phase 2/3: Indexing source...")
-	indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
+	_, index, err := buildSourceIndex(sourceDir)
 	if err != nil {
-		return fmt.Errorf("create indexer: %w", err)
+		return err
 	}
-
-	start = time.Now()
-	lastProgress := time.Now()
-	err = indexer.Build(func(processed, total int64) {
-		if time.Since(lastProgress) > 500*time.Millisecond {
-			pct := float64(processed) / float64(total) * 100
-			fmt.Printf("\r  Progress: %.1f%%", pct)
-			lastProgress = time.Now()
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("build index: %w", err)
-	}
-	index := indexer.Index()
 	defer index.Close()
-	fmt.Printf("\r  Indexed %d hashes in %v                    \n", len(index.HashToLocations), time.Since(start))
-	if index.UsesESOffsets {
-		fmt.Println("  (Using ES-aware indexing for MPEG-PS)")
-	}
 
 	// Phase 3: Match packets
 	fmt.Println("Phase 3/3: Matching packets...")
@@ -893,8 +882,8 @@ func matchMKV(mkvPath, sourceDir string) error {
 	}
 	defer m.Close()
 
-	start = time.Now()
-	lastProgress = time.Now()
+	start := time.Now()
+	lastProgress := time.Now()
 	result, err := m.Match(mkvPath, parser.Packets(), parser.Tracks(), func(processed, total int) {
 		if time.Since(lastProgress) > 500*time.Millisecond {
 			pct := float64(processed) / float64(total) * 100
@@ -929,18 +918,31 @@ func matchMKV(mkvPath, sourceDir string) error {
 	fmt.Printf("Index entries:      %d\n", len(result.Entries))
 	fmt.Println()
 
-	// Storage savings
-	indexSize := int64(len(result.Entries) * 25) // Approximate: each entry ~25 bytes
-	headerSize := int64(57)
-	totalDedupSize := headerSize + indexSize + int64(len(result.DeltaData))
+	// Storage savings (using actual format constants)
+	indexSize := int64(len(result.Entries) * dedup.EntrySize)
+	headerSize := int64(dedup.HeaderSize)
+	footerSize := int64(dedup.FooterSize)
+	totalDedupSize := headerSize + indexSize + int64(len(result.DeltaData)) + footerSize
+
+	// For Blu-ray sources, V4 format includes range map section (estimate)
+	rangeMapNote := ""
+	if index.UsesESOffsets {
+		// Range map is compressed; rough estimate is ~5-10% of index size
+		rangeMapEstimate := indexSize / 10
+		totalDedupSize += rangeMapEstimate
+		footerSize = int64(dedup.FooterV4Size)
+		rangeMapNote = fmt.Sprintf(" + ~%s range map", formatInt(rangeMapEstimate))
+	}
+
 	savings := float64(mkvSize-totalDedupSize) / float64(mkvSize) * 100
 
 	fmt.Printf("Estimated dedup file size:\n")
 	fmt.Printf("  Header:     %s bytes\n", formatInt(headerSize))
-	fmt.Printf("  Index:      %s bytes (~%s entries × 25)\n", formatInt(indexSize), formatInt(int64(len(result.Entries))))
+	fmt.Printf("  Index:      %s bytes (%s entries × %d)\n", formatInt(indexSize), formatInt(int64(len(result.Entries))), dedup.EntrySize)
 	fmt.Printf("  Delta:      %s bytes\n", formatInt(int64(len(result.DeltaData))))
-	fmt.Printf("  Total:      %s bytes (%.2f MB)\n", formatInt(totalDedupSize), float64(totalDedupSize)/(1024*1024))
-	fmt.Printf("  Savings:    %.1f%% reduction\n", savings)
+	fmt.Printf("  Footer:     %s bytes\n", formatInt(footerSize))
+	fmt.Printf("  Total:      ~%s bytes (%.2f MB)%s\n", formatInt(totalDedupSize), float64(totalDedupSize)/(1024*1024), rangeMapNote)
+	fmt.Printf("  Savings:    ~%.1f%% reduction\n", savings)
 
 	return nil
 }

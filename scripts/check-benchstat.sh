@@ -35,6 +35,7 @@ fi
 REGRESSIONS=()
 IMPROVEMENTS=()
 CURRENT_METRIC=""
+HIGHER_IS_BETTER=0  # Flag for metrics where increases are improvements (e.g., throughput)
 
 # ANSI color codes (only if outputting to terminal)
 if [ -t 1 ]; then
@@ -49,14 +50,22 @@ fi
 
 while IFS= read -r line; do
     # Track which metric section we're in based on header
+    # For most metrics, lower is better. For throughput (B/s), higher is better.
     if echo "$line" | grep -qE 'sec/op.*vs base'; then
         CURRENT_METRIC="time (sec/op)"
+        HIGHER_IS_BETTER=0
         continue
     elif echo "$line" | grep -qE 'B/op.*vs base'; then
         CURRENT_METRIC="memory (B/op)"
+        HIGHER_IS_BETTER=0
         continue
     elif echo "$line" | grep -qE 'allocs/op.*vs base'; then
         CURRENT_METRIC="allocations (allocs/op)"
+        HIGHER_IS_BETTER=0
+        continue
+    elif echo "$line" | grep -qE 'B/s.*vs base'; then
+        CURRENT_METRIC="throughput (B/s)"
+        HIGHER_IS_BETTER=1  # Higher throughput is better
         continue
     fi
 
@@ -68,21 +77,36 @@ while IFS= read -r line; do
     # Extract the benchmark name (first column)
     benchmark_name=$(echo "$line" | awk '{print $1}')
 
-    # Check for regression (positive percentage)
+    # Check for positive percentage change
     if echo "$line" | grep -qE '\+[0-9]+\.[0-9]+%'; then
         pct=$(echo "$line" | grep -oE '\+[0-9]+\.[0-9]+%' | head -1 | tr -d '+%')
         if [ -n "$pct" ]; then
-            # Check if it exceeds threshold
-            is_significant=$(awk "BEGIN {print ($pct > $THRESHOLD)}")
-            if [ "$is_significant" -eq 1 ]; then
-                REGRESSIONS+=("${benchmark_name}|+${pct}%|${CURRENT_METRIC}")
+            if [ "$HIGHER_IS_BETTER" -eq 1 ]; then
+                # For throughput metrics, positive change is an improvement
+                IMPROVEMENTS+=("${benchmark_name}|+${pct}%|${CURRENT_METRIC}")
+            else
+                # For time/memory/allocs, positive change is a regression
+                is_significant=$(awk "BEGIN {print ($pct > $THRESHOLD)}")
+                if [ "$is_significant" -eq 1 ]; then
+                    REGRESSIONS+=("${benchmark_name}|+${pct}%|${CURRENT_METRIC}")
+                fi
             fi
         fi
-    # Check for improvement (negative percentage)
+    # Check for negative percentage change
     elif echo "$line" | grep -qE '\-[0-9]+\.[0-9]+%'; then
         pct=$(echo "$line" | grep -oE '\-[0-9]+\.[0-9]+%' | head -1)
+        pct_abs=$(echo "$pct" | tr -d '-' | tr -d '%')
         if [ -n "$pct" ]; then
-            IMPROVEMENTS+=("${benchmark_name}|${pct}|${CURRENT_METRIC}")
+            if [ "$HIGHER_IS_BETTER" -eq 1 ]; then
+                # For throughput metrics, negative change is a regression
+                is_significant=$(awk "BEGIN {print ($pct_abs > $THRESHOLD)}")
+                if [ "$is_significant" -eq 1 ]; then
+                    REGRESSIONS+=("${benchmark_name}|${pct}|${CURRENT_METRIC}")
+                fi
+            else
+                # For time/memory/allocs, negative change is an improvement
+                IMPROVEMENTS+=("${benchmark_name}|${pct}|${CURRENT_METRIC}")
+            fi
         fi
     fi
 done < "$INPUT_FILE"

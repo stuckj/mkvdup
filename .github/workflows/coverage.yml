@@ -19,13 +19,12 @@ permissions:
   actions: write
 
 jobs:
-  coverage:
-    name: Full Coverage
+  # ========== UNIT TESTS (fast, no testdata needed) ==========
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -35,14 +34,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse-dev fuse3 wget ffmpeg
+          sudo apt-get install -y libfuse-dev fuse3
 
-      - name: Install tools
-        run: |
-          go install gotest.tools/gotestsum@v1.12.0
-          go install github.com/wadey/gocovmerge@latest
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.0
 
-      # ========== UNIT TESTS (fail fast) ==========
       - name: Run unit tests with coverage
         run: |
           gotestsum --junitfile unit-results.xml -- \
@@ -51,7 +47,39 @@ jobs:
             -coverpkg=./... \
             ./...
 
-      # ========== INTEGRATION TEST SETUP ==========
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-coverage
+          path: unit-coverage.out
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-results
+          path: unit-results.xml
+
+  # ========== DVD INTEGRATION TESTS ==========
+  integration-dvd:
+    name: Integration Tests (DVD)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse-dev fuse3
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.0
+
       - name: Restore testdata cache
         id: cache-testdata
         uses: actions/cache/restore@v5
@@ -71,8 +99,6 @@ jobs:
         run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
 
       - name: Save testdata cache
-        # Only save cache on main branch to avoid duplicate caches per PR branch (10GB limit).
-        # PRs can restore from main's cache but shouldn't create their own copies.
         if: github.ref == 'refs/heads/main' && (steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache))
         uses: actions/cache/save@v5
         with:
@@ -84,31 +110,140 @@ jobs:
           sudo modprobe fuse
           sudo chmod 666 /dev/fuse
 
-      # ========== INTEGRATION TESTS ==========
-      # Note: This also runs unit tests because -tags=integration includes all test files.
-      # This is intentional - coverage merge will deduplicate, and re-running unit tests
-      # ensures they pass with the integration build tag. The extra time is minimal.
-      - name: Run integration tests with coverage
+      - name: Run DVD and FUSE integration tests with coverage
         env:
           MKVDUP_TESTDATA: /tmp/mkvdup-testdata
         run: |
-          gotestsum --junitfile integration-results.xml -- \
+          # Run dedup DVD tests (skip Blu-ray) and all FUSE tests
+          # FUSE tests use DVD testdata, so they run here
+          gotestsum --junitfile dvd-results.xml -- \
             -tags=integration \
-            -coverprofile=integration-coverage.out \
+            -skip 'TestFullDedupCycle_Bluray' \
+            -coverprofile=dvd-coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
-            -timeout=30m \
-            ./...
+            -timeout=0 \
+            ./internal/dedup/... ./internal/fuse/...
 
-      # ========== MERGE COVERAGE ==========
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: dvd-coverage
+          path: dvd-coverage.out
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: dvd-results
+          path: dvd-results.xml
+
+  # ========== BLU-RAY INTEGRATION TESTS ==========
+  integration-bluray:
+    name: Integration Tests (Blu-ray)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse-dev fuse3 ffmpeg
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.0
+
+      - name: Restore testdata cache
+        id: cache-testdata
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Delete existing cache (skip_cache only)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_cache && steps.cache-testdata.outputs.cache-hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08 --repo ${{ github.repository }} || true
+
+      - name: Generate testdata
+        if: steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache)
+        run: ./testdata/generate-test-data.sh --output-dir /tmp/mkvdup-testdata
+
+      - name: Save testdata cache
+        if: github.ref == 'refs/heads/main' && (steps.cache-testdata.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_cache))
+        uses: actions/cache/save@v5
+        with:
+          path: /tmp/mkvdup-testdata
+          key: testdata-bbb-pal-cb67e9bc8e97b9d625e7cd7ee0d85e08
+
+      - name: Run Blu-ray integration tests with coverage
+        env:
+          MKVDUP_TESTDATA: /tmp/mkvdup-testdata
+        run: |
+          # Only run the Blu-ray dedup test (no FUSE tests - they run in DVD job)
+          gotestsum --junitfile bluray-results.xml -- \
+            -tags=integration \
+            -run 'TestFullDedupCycle_Bluray' \
+            -coverprofile=bluray-coverage.out \
+            -covermode=atomic \
+            -coverpkg=./... \
+            -timeout=0 \
+            ./internal/dedup/...
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: bluray-coverage
+          path: bluray-coverage.out
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: bluray-results
+          path: bluray-results.xml
+
+  # ========== MERGE COVERAGE AND REPORT ==========
+  merge-coverage:
+    name: Merge Coverage
+    needs: [unit-tests, integration-dvd, integration-bluray]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+
+      - name: Install gocovmerge
+        run: go install github.com/wadey/gocovmerge@latest
+
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: '*-coverage'
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: ls -la *.out || echo "No .out files found"
+
       - name: Merge coverage profiles
-        run: gocovmerge unit-coverage.out integration-coverage.out > merged-coverage.out
+        run: gocovmerge unit-coverage.out dvd-coverage.out bluray-coverage.out > merged-coverage.out
 
       - name: Generate coverage reports
         id: coverage
         run: |
           go tool cover -func=merged-coverage.out | tee coverage-summary.txt
-          COVERAGE=$(go tool cover -func=merged-coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          # Use $NF (last field) and exact match on "^total:" for robust parsing
+          COVERAGE=$(go tool cover -func=merged-coverage.out | grep "^total:" | awk '{print $NF}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
           echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
           go tool cover -html=merged-coverage.out -o coverage.html
@@ -145,7 +280,7 @@ jobs:
 
             const body = `## Test Coverage Report
 
-            **Total Coverage: ${coverage}%** (unit + integration)
+            **Total Coverage: ${coverage}%** (unit + DVD + Blu-ray integration)
 
             <details>
             <summary>Coverage by function</summary>
@@ -172,14 +307,20 @@ jobs:
               });
             }
 
-      - name: Upload test results
-        if: ${{ !cancelled() }}
+      - name: Download test results
+        uses: actions/download-artifact@v6
+        with:
+          pattern: '*-results'
+          merge-multiple: true
+
+      - name: Upload combined results
         uses: actions/upload-artifact@v6
         with:
           name: test-results
           path: |
             unit-results.xml
-            integration-results.xml
+            dvd-results.xml
+            bluray-results.xml
             coverage.html
             coverage.json
             coverage-summary.txt

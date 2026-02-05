@@ -20,10 +20,11 @@ type Packet struct {
 
 // Track represents an MKV track (video, audio, etc).
 type Track struct {
-	Number  uint64
-	UID     uint64
-	Type    int
-	CodecID string
+	Number       uint64
+	UID          uint64
+	Type         int
+	CodecID      string
+	CodecPrivate []byte // Codec-specific init data (zero-copy slice into mmap'd data)
 }
 
 // Parser parses MKV files to extract codec packets.
@@ -209,6 +210,9 @@ func (p *Parser) parseTrackEntry(trackElem Element) (Track, error) {
 			track.Type = int(t)
 		case IDCodecID:
 			track.CodecID, _ = ReadString(r, elem.Size)
+		case IDCodecPrivate:
+			// Zero-copy: slice directly into mmap'd data
+			track.CodecPrivate = p.data[elem.DataOffset : elem.DataOffset+elem.Size]
 		}
 
 		offset = elem.DataOffset + elem.Size

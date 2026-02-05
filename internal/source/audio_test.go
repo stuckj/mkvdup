@@ -138,7 +138,7 @@ func TestFindAudioSyncPoints_Mixed(t *testing.T) {
 		0x00, 0x00,
 		0x7F, 0xFE, 0x80, 0x01, // DTS at 4
 		0x00,
-		0xFF, 0xFB, // MPEG at 9
+		0xFF, 0xFB, 0x90, // MPEG at 9 (byte 2 upper nibble 0x9 = valid bitrate)
 	}
 
 	result := FindAudioSyncPoints(data)
@@ -146,6 +146,21 @@ func TestFindAudioSyncPoints_Mixed(t *testing.T) {
 
 	if !intSliceEqual(result, expected) {
 		t.Errorf("FindAudioSyncPoints() = %v, want %v", result, expected)
+	}
+}
+
+func TestFindAudioSyncPoints_FFPaddingRejection(t *testing.T) {
+	// A run of 0xFF bytes (MPEG-TS adaptation field padding) should NOT
+	// produce sync points. Before the bitrate-index validation fix, every
+	// consecutive byte pair in this run matched the MPEG audio pattern.
+	data := make([]byte, 256)
+	for i := range data {
+		data[i] = 0xFF
+	}
+
+	result := FindAudioSyncPoints(data)
+	if len(result) != 0 {
+		t.Errorf("FindAudioSyncPoints() on 0xFF padding returned %d sync points, want 0", len(result))
 	}
 }
 

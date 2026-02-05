@@ -138,12 +138,11 @@ All file access uses true zero-copy memory mapping via `unix.Mmap` from `golang.
 - Uses byte arrays with explicit little-endian decoding for portability
 - Single-entry cache eliminates repeated parsing for sequential access
 
-### File Format Version 3 (Current)
+### File Format Versions
 - **v1 (deprecated)**: Stored ES (elementary stream) offsets for DVD sources
 - **v2 (deprecated)**: Used uint8 for Source field (max 256 files)
-- **v3 (current)**: Uses uint16 for Source field (max 65535 files), raw file offsets
-- Entries that span multiple PES payload ranges are split during create
-- Trade-off: ~10-30% more entries, but significantly faster reads
+- **v3 (current, DVD)**: Uses uint16 for Source field (max 65535 files), raw file offsets. Entries that span multiple PES payload ranges are split during create.
+- **v4 (current, Blu-ray)**: Adds embedded range map section mapping ES offsets to raw M2TS file offsets. Uses compressed delta+varint+RLE encoding for >1000:1 compression of the highly regular M2TS packet structure. Footer extended to 32 bytes with range map checksum. See [FILE_FORMAT.md](docs/FILE_FORMAT.md#range-map-format-version-4) for details.
 
 ## Performance Results
 

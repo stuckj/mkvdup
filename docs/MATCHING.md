@@ -71,6 +71,52 @@ File offset:          47                            1314
 
 The parser maintains a mapping of ES offsets to file offsets for each PES payload range.
 
+## ES-Aware Indexing (Blu-ray)
+
+**Problem:** Blu-rays use MPEG Transport Stream (MPEG-TS) containers in M2TS files. M2TS files consist of fixed-size 192-byte packets: a 4-byte timecode prefix plus a 188-byte TS packet (which itself has a 4-byte header, leaving up to 184 bytes for payload). Each TS packet carries a small fragment of a PES packet, identified by a 13-bit PID. PES packets span multiple TS packets and contain the actual codec data. When ripping to MKV, tools extract the raw ES data, stripping all TS and PES framing. If we index raw file offsets in the M2TS file, the 8-byte headers (4-byte timecode + 4-byte TS header, interleaved every 192 bytes) cause misalignments — expansion fails at every packet boundary.
+
+**Solution:** Parse the MPEG-TS structure (PAT → PMT → PES packets) and build an index based on continuous ES offsets, the same approach used for DVDs.
+
+```
+M2TS file structure (192-byte packets):
+┌───────────┬──────────────────────────────────────────────────────────────┐
+│ Timecode  │ TS Packet (188 bytes)                                        │
+│ (4 bytes) │ [sync 0x47][PID][flags][adaptation?][PES payload ≤184 bytes] │
+└───────────┴──────────────────────────────────────────────────────────────┘
+             └─ 4-byte TS header ─┘
+
+PES packets span multiple TS packets:
+┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+│ TS pkt (PUSI=1)      │  │ TS pkt (continuation)│  │ TS pkt (continuation)│
+│ [PES header][payload]│  │ [payload............]│  │ [payload............]│
+└──────────────────────┘  └──────────────────────┘  └──────────────────────┘
+         │                         │                         │
+         ▼                         ▼                         ▼
+ES:      [payload bytes....][payload bytes.........][payload bytes.........]
+ES off:  0                  ~167                    ~351
+```
+
+### Key Differences from DVD (MPEG-PS)
+
+| Feature | DVD (MPEG-PS) | Blu-ray (MPEG-TS) |
+|---------|--------------|-------------------|
+| Container | MPEG Program Stream | MPEG Transport Stream |
+| Packet size | Variable | Fixed 192 bytes (M2TS) or 188 bytes (TS) |
+| Stream ID | Stream ID byte in PES header | PID (13-bit) per TS packet |
+| Audio framing | Private Stream 1 with 4-byte sub-headers | Separate PID per audio track, no sub-headers |
+| Audio sub-streams | Sub-stream IDs (0x80-0x87 = AC3, etc.) | PIDs mapped to sequential byte IDs (0, 1, 2...) |
+| user_data filtering | Required (MPEG-2 video) | Not needed for H.264/H.265 (only for MPEG-2) |
+
+### PAT/PMT Parsing
+
+The parser identifies streams via MPEG-TS Program Specific Information:
+1. **PAT** (PID 0): Maps program numbers to PMT PIDs
+2. **PMT**: Lists elementary stream PIDs and their stream types (e.g., 0x1B = H.264, 0x81 = AC3)
+
+### Audio PID Mapping
+
+Unlike DVDs where audio is multiplexed in Private Stream 1 with sub-stream IDs, Blu-ray audio tracks have individual PIDs. The parser assigns sequential byte sub-stream IDs (0, 1, 2, ...) to audio PIDs in PMT order, maintaining compatibility with the `Location.AudioSubStreamID` field used throughout the codebase.
+
 ## Video user_data Filtering
 
 **Problem:** MKV remuxing tools typically strip `user_data` sections (start code `00 00 01 B2`) from video streams. These contain closed captions and other auxiliary data.
@@ -191,16 +237,16 @@ MKV byte range 9020-11000:    Audio packet → SOURCE file=0, offset=464500
 
 ## Boundary Expansion
 
-After finding a match via hash lookup, expand in both directions to maximize deduplication:
+After finding a match via hash lookup, expand in both directions to maximize deduplication. For both DVD and Blu-ray sources with ES-aware indexing, expansion reads continuous ES bytes through the ES reader interface, transparently skipping container framing (MPEG-PS pack headers or MPEG-TS packet headers).
 
 ```
-Source (VOB):     [container][video data...............][container]
-                            ^
-                       start code (indexed)
+Source (VOB/M2TS): [container][video data...............][container]
+                              ^
+                         start code (indexed)
 
-MKV:              [ebml hdr][video data...............][block hdr]
-                            ^
-                       matches here
+MKV:               [ebml hdr][video data...............][block hdr]
+                              ^
+                         matches here
 
 Without expansion: Only match from start code to next start code
 With expansion:    Match extends to include adjacent matching bytes

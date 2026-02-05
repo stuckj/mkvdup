@@ -3,10 +3,10 @@ package source
 import (
 	"fmt"
 	"path/filepath"
-	"runtime"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -104,9 +104,12 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 	}
 	idx.index.HashToLocations = make(map[uint64][]Location, estimatedSyncPoints)
 
-	// For DVDs (MPEG-PS), we can use ES-based indexing or raw indexing
-	// Raw indexing is more reliable as it finds content from any title/stream
+	// For DVDs (MPEG-PS) and Blu-rays (MPEG-TS), use ES-based indexing
+	// so the matcher works with continuous ES data.
+	// Raw indexing is available as fallback for DVDs.
 	if idx.sourceType == TypeDVD && !idx.useRawIndexing {
+		idx.index.UsesESOffsets = true
+	} else if idx.sourceType == TypeBluray {
 		idx.index.UsesESOffsets = true
 	}
 
@@ -124,6 +127,12 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 		var checksum uint64
 		if idx.sourceType == TypeDVD && !idx.useRawIndexing {
 			checksum, err = idx.indexMPEGPSFile(uint16(fileIndex), fullPath, size, func(fileProcessed int64) {
+				if progress != nil {
+					progress(processedSize+fileProcessed, totalSize)
+				}
+			})
+		} else if idx.sourceType == TypeBluray {
+			checksum, err = idx.indexM2TSFile(uint16(fileIndex), fullPath, size, func(fileProcessed int64) {
 				if progress != nil {
 					progress(processedSize+fileProcessed, totalSize)
 				}
@@ -151,6 +160,24 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 	return nil
 }
 
+// checksumWithProgress computes xxhash checksum of data in chunks, calling
+// progress with the number of bytes processed so far after each chunk.
+func checksumWithProgress(data []byte, progress func(int64)) uint64 {
+	hasher := xxhash.New()
+	const chunkSize = 16 * 1024 * 1024 // 16MB chunks
+	for offset := 0; offset < len(data); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		hasher.Write(data[offset:end])
+		if progress != nil {
+			progress(int64(end))
+		}
+	}
+	return hasher.Sum64()
+}
+
 // indexMPEGPSFile processes an MPEG-PS file (DVD ISO) using ES-aware indexing.
 // It extracts the elementary stream data and indexes sync points within it.
 func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, progress func(int64)) (uint64, error) {
@@ -167,10 +194,10 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 	// Parse MPEG-PS structure with progress reporting using zero-copy data
 	parser := NewMPEGPSParser(mmapFile.Data())
 
+	// Phase 1: Parse MPEG-PS structure (0% → 33%)
 	if err := parser.ParseWithProgress(func(processed, total int64) {
 		if progress != nil {
-			// Report parsing progress (first 50% of the indexing)
-			progress(processed / 2)
+			progress(processed / 3)
 		}
 	}); err != nil {
 		return 0, fmt.Errorf("parse MPEG-PS: %w", err)
@@ -179,13 +206,22 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 	// Store parser for later use by matcher
 	idx.index.ESReaders = append(idx.index.ESReaders, parser)
 
-	// Calculate file checksum using zero-copy data (no allocation needed)
-	checksum := xxhash.Sum64(mmapFile.Data())
+	// Phase 2: Checksum (33% → 66%)
+	checksum := checksumWithProgress(mmapFile.Data(), func(processed int64) {
+		if progress != nil {
+			progress(size/3 + processed/3)
+		}
+	})
 
-	// Index video ES
+	// Phase 3: Index ES data (66% → 100%)
 	videoESSize := parser.TotalESSize(true)
 	if videoESSize > 0 {
-		if err := idx.indexESData(fileIndex, parser, true, videoESSize, progress); err != nil {
+		indexProgress := func(fileOffset int64) {
+			if progress != nil {
+				progress(2*size/3 + fileOffset/3)
+			}
+		}
+		if err := idx.indexESData(fileIndex, parser, true, videoESSize, indexProgress); err != nil {
 			return 0, fmt.Errorf("index video ES: %w", err)
 		}
 	}
@@ -208,9 +244,19 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 	return checksum, nil
 }
 
-// indexESData indexes the elementary stream data from an MPEG-PS parser.
+// esDataProvider is the interface needed by indexESData and indexAudioSubStream.
+// Both MPEGPSParser and MPEGTSParser implement this.
+type esDataProvider interface {
+	Data() []byte
+	FilteredVideoRanges() []PESPayloadRange
+	FilteredAudioRanges(subStreamID byte) []PESPayloadRange
+	ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error)
+	ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
+}
+
+// indexESData indexes the elementary stream data from an ES-aware parser.
 // Uses zero-copy iteration through PES payload ranges.
-func (idx *Indexer) indexESData(fileIndex uint16, parser *MPEGPSParser, isVideo bool, esSize int64, progress func(int64)) error {
+func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo bool, esSize int64, progress func(int64)) error {
 	ranges := parser.FilteredVideoRanges()
 	if len(ranges) == 0 {
 		return nil
@@ -228,8 +274,9 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser *MPEGPSParser, isVideo 
 		}
 		rangeData := data[r.FileOffset:endOffset]
 
-		// Find sync points in this range
-		syncPoints := FindVideoStartCodes(rangeData)
+		// Find NAL unit start positions (byte after 00 00 01)
+		// Hashing from NAL header enables matching both Annex B and AVCC formats
+		syncPoints := FindVideoNALStarts(rangeData)
 
 		// Add each sync point to the index
 		for _, offsetInRange := range syncPoints {
@@ -268,15 +315,9 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser *MPEGPSParser, isVideo 
 			}
 		}
 
-		// Report progress periodically and force GC to prevent memory buildup
-		if rangeIdx%1000 == 0 {
-			if progress != nil {
-				progress(r.FileOffset)
-			}
-			// Force GC periodically to clean up temporary allocations
-			if rangeIdx%10000 == 0 {
-				runtime.GC()
-			}
+		// Report progress periodically
+		if rangeIdx%10000 == 0 && progress != nil {
+			progress(r.FileOffset)
 		}
 	}
 
@@ -285,7 +326,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser *MPEGPSParser, isVideo 
 
 // indexAudioSubStream indexes a specific audio sub-stream.
 // Uses zero-copy iteration through PES payload ranges.
-func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser *MPEGPSParser, subStreamID byte, esSize int64) error {
+func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64) error {
 	ranges := parser.FilteredAudioRanges(subStreamID)
 	if len(ranges) == 0 {
 		return nil
@@ -373,46 +414,76 @@ func (r *mmapRawReader) Close() error {
 	return r.mmapFile.Close()
 }
 
-// indexRawFile processes a raw file (for Blu-ray M2TS or other formats).
-// This is the original indexing approach.
+// indexRawFile processes a raw file (for non-DVD, non-Blu-ray formats).
+// Processes the file in a single pass: computes checksum and indexes sync points
+// together in chunks, releasing mmap pages as they're processed.
 func (idx *Indexer) indexRawFile(fileIndex uint16, path string, size int64, progress func(int64)) (uint64, error) {
-	// Memory-map the file with zero-copy access
 	mmapFile, err := mmap.Open(path)
 	if err != nil {
 		return 0, fmt.Errorf("mmap open: %w", err)
 	}
-	// Don't close the mmapFile - keep it for later use by matcher
 	idx.index.RawReaders = append(idx.index.RawReaders, &mmapRawReader{mmapFile: mmapFile})
 
-	// Zero-copy access to file data
+	mmapFile.Advise(unix.MADV_SEQUENTIAL)
 	data := mmapFile.Data()
 
-	// Calculate file checksum (zero-copy - no allocation)
-	checksum := xxhash.Sum64(data)
+	return idx.indexRawFileData(fileIndex, mmapFile, data, size, progress)
+}
 
-	// Find all sync points
-	syncPoints := FindAllSyncPoints(data)
+// indexM2TSFile processes a Blu-ray M2TS file using ES-aware indexing.
+// It parses the MPEG-TS structure to extract elementary stream data and
+// indexes sync points within the continuous ES, matching what MKV files contain.
+func (idx *Indexer) indexM2TSFile(fileIndex uint16, path string, size int64, progress func(int64)) (uint64, error) {
+	mmapFile, err := mmap.Open(path)
+	if err != nil {
+		return 0, fmt.Errorf("mmap open: %w", err)
+	}
+	// Note: Don't close mmapFile - it's stored in MmapFiles for later use
+	idx.index.MmapFiles = append(idx.index.MmapFiles, mmapFile)
 
-	// Add each sync point to the index
-	for i, offset := range syncPoints {
-		// Ensure we have enough data for the window
-		if int64(offset)+int64(idx.windowSize) > size {
-			continue
+	mmapFile.Advise(unix.MADV_SEQUENTIAL)
+
+	// Phase 1: Parse MPEG-TS structure (0% → 33%)
+	parser := NewMPEGTSParser(mmapFile.Data())
+
+	if err := parser.ParseWithProgress(func(processed, total int64) {
+		if progress != nil {
+			progress(processed / 3)
 		}
+	}); err != nil {
+		return 0, fmt.Errorf("parse MPEG-TS: %w", err)
+	}
 
-		// Hash the window at this offset (zero-copy slice)
-		window := data[offset : offset+idx.windowSize]
-		hash := xxhash.Sum64(window)
+	// Store parser for later use by matcher
+	idx.index.ESReaders = append(idx.index.ESReaders, parser)
 
-		// Add to index
-		idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
-			FileIndex: fileIndex,
-			Offset:    int64(offset),
-		})
+	// Phase 2: Checksum (33% → 66%)
+	checksum := checksumWithProgress(mmapFile.Data(), func(processed int64) {
+		if progress != nil {
+			progress(size/3 + processed/3)
+		}
+	})
 
-		// Report progress periodically (every 10000 sync points)
-		if progress != nil && i%10000 == 0 {
-			progress(int64(offset))
+	// Phase 3: Index ES data (66% → 100%)
+	videoESSize := parser.TotalESSize(true)
+	if videoESSize > 0 {
+		indexProgress := func(fileOffset int64) {
+			if progress != nil {
+				progress(2*size/3 + fileOffset/3)
+			}
+		}
+		if err := idx.indexESData(fileIndex, parser, true, videoESSize, indexProgress); err != nil {
+			return 0, fmt.Errorf("index video ES: %w", err)
+		}
+	}
+
+	// Index each audio sub-stream separately
+	for _, subStreamID := range parser.AudioSubStreams() {
+		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
+		if subStreamSize > 0 {
+			if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
+				return 0, fmt.Errorf("index audio sub-stream %d: %w", subStreamID, err)
+			}
 		}
 	}
 
@@ -420,6 +491,75 @@ func (idx *Indexer) indexRawFile(fileIndex uint16, path string, size int64, prog
 		progress(size)
 	}
 
+	return checksum, nil
+}
+
+// indexRawFileData is the core of indexRawFile operating on already-opened mmap data.
+// Used as a fallback when M2TS packet structure cannot be detected.
+func (idx *Indexer) indexRawFileData(fileIndex uint16, mmapFile *mmap.File, data []byte, size int64, progress func(int64)) (uint64, error) {
+	hasher := xxhash.New()
+	const chunkSize = 64 * 1024 * 1024
+	const overlap = 3
+	pageSize := unix.Getpagesize()
+	checksumPos := 0
+
+	for chunkStart := 0; chunkStart < len(data); {
+		chunkEnd := chunkStart + chunkSize
+		if chunkEnd > len(data) {
+			chunkEnd = len(data)
+		}
+
+		chunk := data[chunkStart:chunkEnd]
+
+		if chunkEnd > checksumPos {
+			hasher.Write(data[checksumPos:chunkEnd])
+			checksumPos = chunkEnd
+		}
+
+		videoOffsets := FindVideoNALStartsInRange(chunk, chunkStart)
+		audioOffsets := FindAudioSyncPointsInRange(chunk, chunkStart)
+
+		for _, offset := range videoOffsets {
+			if offset+idx.windowSize > len(data) {
+				continue
+			}
+			window := data[offset : offset+idx.windowSize]
+			hash := xxhash.Sum64(window)
+			idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
+				FileIndex: fileIndex,
+				Offset:    int64(offset),
+			})
+		}
+
+		for _, offset := range audioOffsets {
+			if offset+idx.windowSize > len(data) {
+				continue
+			}
+			window := data[offset : offset+idx.windowSize]
+			hash := xxhash.Sum64(window)
+			idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
+				FileIndex: fileIndex,
+				Offset:    int64(offset),
+			})
+		}
+
+		if progress != nil {
+			progress(int64(chunkEnd))
+		}
+
+		releaseUpTo := (chunkStart / pageSize) * pageSize
+		if releaseUpTo > 0 {
+			unix.Madvise(data[:releaseUpTo], unix.MADV_DONTNEED)
+		}
+
+		if chunkEnd >= len(data) {
+			break
+		}
+		chunkStart = chunkEnd - overlap
+	}
+
+	checksum := hasher.Sum64()
+	mmapFile.Advise(unix.MADV_RANDOM)
 	return checksum, nil
 }
 
@@ -448,6 +588,13 @@ func (idx *Index) ReadESDataAt(loc Location, size int) ([]byte, error) {
 	return idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, size)
 }
 
+// hintedESReader is the interface for hint-based byte reading.
+// Both MPEGPSParser and MPEGTSParser implement this.
+type hintedESReader interface {
+	ReadESByteWithHint(esOffset int64, isVideo bool, rangeHint int) (byte, int, bool)
+	ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool)
+}
+
 // ReadESByteWithHint reads a single byte from the ES stream, using a range hint
 // to avoid binary search when reading sequentially. Returns the byte, the new range
 // hint for the next call, and success status. Pass rangeHint=-1 to force binary search.
@@ -457,28 +604,26 @@ func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bo
 		return 0, -1, false
 	}
 
-	// Type-assert to MPEGPSParser to access hint-based methods
-	parser, ok := idx.ESReaders[loc.FileIndex].(*MPEGPSParser)
-	if !ok {
-		// Fallback: use ReadESData (allocates, but works for any ESReader)
-		var data []byte
-		var err error
+	// Try hint-based reading (fast path for MPEGPSParser and MPEGTSParser)
+	if hinted, ok := idx.ESReaders[loc.FileIndex].(hintedESReader); ok {
 		if loc.IsVideo {
-			data, err = idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, 1, true)
-		} else {
-			data, err = idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, 1)
+			return hinted.ReadESByteWithHint(loc.Offset, true, rangeHint)
 		}
-		if err != nil || len(data) == 0 {
-			return 0, -1, false
-		}
-		return data[0], -1, true
+		return hinted.ReadAudioByteWithHint(loc.AudioSubStreamID, loc.Offset, rangeHint)
 	}
 
-	// Use hint-based reading for MPEGPSParser
+	// Fallback: use ReadESData (allocates, but works for any ESReader)
+	var data []byte
+	var err error
 	if loc.IsVideo {
-		return parser.ReadESByteWithHint(loc.Offset, true, rangeHint)
+		data, err = idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, 1, true)
+	} else {
+		data, err = idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, 1)
 	}
-	return parser.ReadAudioByteWithHint(loc.AudioSubStreamID, loc.Offset, rangeHint)
+	if err != nil || len(data) == 0 {
+		return 0, -1, false
+	}
+	return data[0], -1, true
 }
 
 // ComputeHash calculates the xxhash of the given data.

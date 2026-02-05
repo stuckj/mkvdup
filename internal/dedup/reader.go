@@ -10,6 +10,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
+	"golang.org/x/sys/unix"
 )
 
 // blockSize is the block size for the block index.
@@ -45,6 +46,9 @@ type Reader struct {
 	lastEntryIdx   int   // Index of last accessed entry (-1 if none)
 	lastEntry      Entry // The cached parsed entry
 	lastEntryValid bool  // Whether lastEntry is valid
+
+	// V4 range map data (maps ES offsets to raw file offsets)
+	rangeMapsByFile map[int]*SourceRangeMaps // file index -> range maps
 }
 
 // ESReader interface for reading ES data from MPEG-PS sources.
@@ -119,6 +123,9 @@ func (r *Reader) LoadSourceFiles() error {
 			}
 			return fmt.Errorf("mmap source file %s: %w", sf.RelativePath, err)
 		}
+		// Hint sequential access so the kernel does aggressive readahead
+		// instead of handling individual 4KB page faults.
+		m.Advise(unix.MADV_SEQUENTIAL)
 		r.sourceMmaps[i] = m
 	}
 	return nil
@@ -155,8 +162,53 @@ func (r *Reader) initEntryAccess() error {
 
 		// Build block index for fast random access lookup
 		r.buildBlockIndex()
+
+		// V4: parse range map section
+		if r.file.Header.Version == VersionRangeMap {
+			if err := r.initRangeMaps(); err != nil {
+				r.entriesErr = fmt.Errorf("init range maps: %w", err)
+				return
+			}
+		}
 	})
 	return r.entriesErr
+}
+
+// initRangeMaps parses the range map section from the mmap'd dedup file.
+func (r *Reader) initRangeMaps() error {
+	// Range map section is between delta and footer
+	rangeMapOffset := r.file.DeltaOffset + r.file.Header.DeltaSize
+	fileSize := r.dedupMmap.Size()
+	rangeMapSize := int(fileSize) - FooterV4Size - int(rangeMapOffset)
+
+	if rangeMapSize <= 0 {
+		return fmt.Errorf("no range map section found (offset %d, file size %d)", rangeMapOffset, fileSize)
+	}
+
+	data := r.dedupMmap.Slice(rangeMapOffset, rangeMapSize)
+	if data == nil {
+		return fmt.Errorf("range map slice out of bounds")
+	}
+
+	sources, err := readRangeMapSection(data)
+	if err != nil {
+		return fmt.Errorf("parse range map section: %w", err)
+	}
+
+	r.rangeMapsByFile = make(map[int]*SourceRangeMaps, len(sources))
+	for i := range sources {
+		r.rangeMapsByFile[int(sources[i].FileIndex)] = &sources[i]
+	}
+
+	return nil
+}
+
+// HasRangeMaps returns true if this dedup file uses V4 range maps.
+// This checks the header version (available immediately after NewReaderLazy)
+// rather than the lazily-loaded range map data, so it's safe to call
+// before the first ReadAt.
+func (r *Reader) HasRangeMaps() bool {
+	return r.file.Header.Version == VersionRangeMap
 }
 
 // buildBlockIndex creates a mapping from block numbers to entry indices.
@@ -324,11 +376,15 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		remaining = int(r.file.Header.OriginalSize - offset)
 	}
 
-	// Find entries that cover this range
-	entries := r.findEntriesForRange(offset, int64(remaining))
+	endOffset := offset + int64(remaining)
 
-	for _, entry := range entries {
-		if remaining <= 0 {
+	// Find starting entry index (zero-allocation inline lookup)
+	startIdx := r.findStartEntry(offset)
+
+	// Iterate entries directly — no []Entry allocation
+	for i := startIdx; i < r.entryCount && remaining > 0; i++ {
+		entry, ok := r.getEntry(i)
+		if !ok || entry.MkvOffset >= endOffset {
 			break
 		}
 
@@ -352,35 +408,48 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		offsetInEntry := readStart - entry.MkvOffset
 		sourceOffset := entry.SourceOffset + offsetInEntry
 
-		// Read data from appropriate source
-		var data []byte
-		var err error
+		// Calculate buffer position
+		bufOffset := int(readStart - originalOffset)
 
+		// Read data from appropriate source
 		if entry.Source == 0 {
-			// Read from delta section
-			data, err = r.readDelta(sourceOffset, readLen)
+			// Read from delta section (zero-copy mmap slice)
+			data, err := r.readDelta(sourceOffset, readLen)
+			if err != nil {
+				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
+			}
+			copy(buf[bufOffset:], data)
+		} else if r.rangeMapsByFile != nil {
+			// V4: Read via range map directly into output buffer (no allocation)
+			fileIndex := int(entry.Source - 1)
+			if err := r.readViaRangeMapInto(fileIndex, entry, sourceOffset, buf[bufOffset:bufOffset+readLen]); err != nil {
+				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
+			}
 		} else if r.file.UsesESOffsets && r.esReader != nil {
-			// Read from ES
+			// V1: Read from ES via external reader
+			var data []byte
+			var err error
 			if entry.IsVideo {
 				data, err = r.esReader.ReadESData(sourceOffset, readLen, true)
 			} else {
 				data, err = r.esReader.ReadAudioSubStreamData(entry.AudioSubStreamID, sourceOffset, readLen)
 			}
+			if err != nil {
+				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
+			}
+			copy(buf[bufOffset:], data)
 		} else {
-			// Read from raw source file
+			// V3: Read from raw source file (zero-copy mmap slice)
 			fileIndex := int(entry.Source - 1)
-			data, err = r.readSource(fileIndex, sourceOffset, readLen)
+			data, err := r.readSource(fileIndex, sourceOffset, readLen)
+			if err != nil {
+				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
+			}
+			copy(buf[bufOffset:], data)
 		}
 
-		if err != nil {
-			return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
-		}
-
-		// Copy to output buffer - use original offset to calculate buffer position
-		bufOffset := int(readStart - originalOffset)
-		copy(buf[bufOffset:], data)
-		totalRead += len(data)
-		remaining -= len(data)
+		totalRead += readLen
+		remaining -= readLen
 		offset = readEnd
 	}
 
@@ -389,6 +458,57 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 	}
 
 	return totalRead, nil
+}
+
+// findStartEntry returns the index of the first entry whose range covers offset.
+// Uses the entry cache for O(1) sequential access, block index for O(1) narrowing,
+// then bounded binary search. Zero allocations.
+func (r *Reader) findStartEntry(offset int64) int {
+	// Fast path: check if offset is within cached entry
+	r.cacheMu.Lock()
+	if r.lastEntryValid && r.lastEntryIdx >= 0 && r.lastEntryIdx < r.entryCount {
+		if offset >= r.lastEntry.MkvOffset && offset < r.lastEntry.MkvOffset+r.lastEntry.Length {
+			idx := r.lastEntryIdx
+			r.cacheMu.Unlock()
+			return idx
+		}
+	}
+	r.cacheMu.Unlock()
+
+	// Use block index to narrow binary search range
+	var lo, hi int
+	if r.blockIndex != nil {
+		blockNum := int(offset / blockSize)
+		if blockNum >= len(r.blockIndex) {
+			blockNum = len(r.blockIndex) - 1
+		}
+		lo = r.blockIndex[blockNum]
+
+		if blockNum+1 < len(r.blockIndex) {
+			hi = r.blockIndex[blockNum+1] + 1
+			if hi > r.entryCount {
+				hi = r.entryCount
+			}
+		} else {
+			hi = r.entryCount
+		}
+	} else {
+		lo = 0
+		hi = r.entryCount
+	}
+
+	// Binary search within [lo, hi) for first entry whose range covers offset
+	return lo + sort.Search(hi-lo, func(i int) bool {
+		mkvOffset, ok := r.getMkvOffset(lo + i)
+		if !ok {
+			return true
+		}
+		entryLen, ok := r.getEntryLength(lo + i)
+		if !ok {
+			return true
+		}
+		return mkvOffset+entryLen > offset
+	})
 }
 
 func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
@@ -479,6 +599,36 @@ func (r *Reader) readDelta(offset int64, size int) ([]byte, error) {
 	return data, nil
 }
 
+// readViaRangeMapInto reads via range map directly into dest, avoiding allocation.
+func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset int64, dest []byte) error {
+	src, ok := r.rangeMapsByFile[fileIndex]
+	if !ok {
+		return fmt.Errorf("no range map for source file %d", fileIndex)
+	}
+
+	if fileIndex < 0 || fileIndex >= len(r.sourceMmaps) || r.sourceMmaps[fileIndex] == nil {
+		return fmt.Errorf("source file %d not loaded for range map read", fileIndex)
+	}
+
+	sourceData := r.sourceMmaps[fileIndex].Data()
+	sourceSize := r.sourceMmaps[fileIndex].Size()
+
+	if entry.IsVideo {
+		if src.VideoMap == nil {
+			return fmt.Errorf("no video range map for source file %d", fileIndex)
+		}
+		_, err := src.VideoMap.ReadDataInto(sourceData, sourceSize, sourceOffset, dest)
+		return err
+	}
+
+	audioMap, ok := src.AudioMaps[entry.AudioSubStreamID]
+	if !ok {
+		return fmt.Errorf("no audio sub-stream %d range map for source file %d", entry.AudioSubStreamID, fileIndex)
+	}
+	_, err := audioMap.ReadDataInto(sourceData, sourceSize, sourceOffset, dest)
+	return err
+}
+
 func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) {
 	if fileIndex < 0 || fileIndex >= len(r.sourceMmaps) {
 		return nil, fmt.Errorf("invalid file index: %d", fileIndex)
@@ -513,15 +663,15 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
-	// Support current version (3) only. Older versions must be recreated.
-	if file.Header.Version != Version {
+	// Support versions 3 and 4. Older versions must be recreated.
+	if file.Header.Version != Version && file.Header.Version != VersionRangeMap {
 		if file.Header.Version == 1 {
 			return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
 		}
 		if file.Header.Version == 2 {
 			return nil, fmt.Errorf("unsupported version 2 (uses uint8 source index); please recreate with 'mkvdup create'")
 		}
-		return nil, fmt.Errorf("unsupported version: %d (expected %d)", file.Header.Version, Version)
+		return nil, fmt.Errorf("unsupported version: %d (expected %d or %d)", file.Header.Version, Version, VersionRangeMap)
 	}
 
 	// Read flags
@@ -605,36 +755,32 @@ func (r *Reader) VerifyIntegrity() error {
 		return fmt.Errorf("init entry access: %w", err)
 	}
 
-	f, err := os.Open(r.dedupPath)
-	if err != nil {
-		return fmt.Errorf("open dedup file: %w", err)
-	}
-	defer f.Close()
-
-	// Get file size
-	stat, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("stat dedup file: %w", err)
+	isV4 := r.file.Header.Version == VersionRangeMap
+	footerSz := int64(FooterSize)
+	if isV4 {
+		footerSz = int64(FooterV4Size)
 	}
 
-	// Read footer
-	footerOffset := stat.Size() - FooterSize
-	if _, err := f.Seek(footerOffset, 0); err != nil {
-		return fmt.Errorf("seek to footer: %w", err)
+	fileSize := r.dedupMmap.Size()
+
+	// Read footer from mmap
+	footerOffset := fileSize - footerSz
+	footerData := r.dedupMmap.Slice(footerOffset, int(footerSz))
+	if footerData == nil {
+		return fmt.Errorf("footer slice out of range")
 	}
 
 	var footer Footer
-	if err := binary.Read(f, binary.LittleEndian, &footer.IndexChecksum); err != nil {
-		return fmt.Errorf("read index checksum: %w", err)
+	off := 0
+	footer.IndexChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
+	off += 8
+	footer.DeltaChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
+	off += 8
+	if isV4 {
+		footer.RangeMapChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
+		off += 8
 	}
-	if err := binary.Read(f, binary.LittleEndian, &footer.DeltaChecksum); err != nil {
-		return fmt.Errorf("read delta checksum: %w", err)
-	}
-	footerMagic := make([]byte, MagicSize)
-	if _, err := io.ReadFull(f, footerMagic); err != nil {
-		return fmt.Errorf("read footer magic: %w", err)
-	}
-	if string(footerMagic) != Magic {
+	if string(footerData[off:off+MagicSize]) != Magic {
 		return fmt.Errorf("invalid footer magic")
 	}
 
@@ -655,6 +801,21 @@ func (r *Reader) VerifyIntegrity() error {
 	}
 	if xxhash.Sum64(deltaData) != footer.DeltaChecksum {
 		return fmt.Errorf("delta checksum mismatch")
+	}
+
+	// V4: verify range map checksum
+	if isV4 {
+		rangeMapOffset := r.file.DeltaOffset + r.file.Header.DeltaSize
+		rangeMapSize := int(footerOffset - rangeMapOffset)
+		if rangeMapSize > 0 {
+			rangeMapData := r.dedupMmap.Slice(rangeMapOffset, rangeMapSize)
+			if rangeMapData == nil {
+				return fmt.Errorf("read range map for checksum: slice out of range")
+			}
+			if xxhash.Sum64(rangeMapData) != footer.RangeMapChecksum {
+				return fmt.Errorf("range map checksum mismatch")
+			}
+		}
 	}
 
 	return nil
@@ -679,6 +840,7 @@ func (r *Reader) Info() map[string]any {
 		"original_checksum": r.file.Header.OriginalChecksum,
 		"source_type":       r.file.Header.SourceType,
 		"uses_es_offsets":   r.file.UsesESOffsets,
+		"has_range_maps":    r.rangeMapsByFile != nil,
 		"source_file_count": len(r.file.SourceFiles),
 		"entry_count":       r.entryCount,
 		"delta_size":        r.file.Header.DeltaSize,

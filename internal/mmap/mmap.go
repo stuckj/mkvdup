@@ -87,7 +87,11 @@ func (m *File) Close() error {
 	if m.data == nil {
 		return nil
 	}
-	err := unix.Munmap(m.data)
+
+	if err := unix.Munmap(m.data); err != nil {
+		return err
+	}
+
 	m.data = nil
-	return err
+	return nil
 }

@@ -29,8 +29,8 @@ func (a *dedupReaderAdapter) UsesESOffsets() bool {
 }
 
 func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
-	if a.reader.UsesESOffsets() {
-		// Create indexer to get ES reader
+	if a.reader.UsesESOffsets() && !a.reader.HasRangeMaps() {
+		// V1/V3: ES offsets without range maps — need full ES reader
 		indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
 		if err != nil {
 			return fmt.Errorf("create indexer: %w", err)
@@ -45,7 +45,8 @@ func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
 		// Store index for cleanup in Close()
 		a.index = index
 	} else {
-		// Load source files for raw access
+		// V4 range maps or raw offsets: just need source files mmap'd.
+		// Range maps handle ES-to-raw translation at read time.
 		if err := a.reader.LoadSourceFiles(); err != nil {
 			return fmt.Errorf("load source files: %w", err)
 		}

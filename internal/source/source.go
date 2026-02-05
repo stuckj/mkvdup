@@ -228,6 +228,14 @@ type ESReader interface {
 	ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
 }
 
+// PESRangeProvider provides access to PES payload ranges for building range maps.
+// Both MPEGPSParser and MPEGTSParser implement this.
+type PESRangeProvider interface {
+	FilteredVideoRanges() []PESPayloadRange
+	FilteredAudioRanges(subStreamID byte) []PESPayloadRange
+	AudioSubStreams() []byte
+}
+
 // RawReader provides an interface for reading raw file data.
 type RawReader interface {
 	ReadAt(buf []byte, offset int64) (int, error)

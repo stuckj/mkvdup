@@ -435,7 +435,7 @@ func BenchmarkExtractProbeHashes(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				hashes := ExtractProbeHashes(data, tc.isVideo, windowSize)
+				hashes := ExtractProbeHashes(data, tc.isVideo, windowSize, 0)
 				if len(hashes) == 0 {
 					b.Fatal("expected to find hashes")
 				}
@@ -462,7 +462,7 @@ func BenchmarkExtractProbeHashes_NoSync(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		hashes := ExtractProbeHashes(data, true, windowSize)
+		hashes := ExtractProbeHashes(data, true, windowSize, 0)
 		if len(hashes) == 0 {
 			b.Fatal("expected to find at least one hash")
 		}
