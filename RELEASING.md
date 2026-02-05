@@ -36,37 +36,21 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 
 ## Creating a Release
 
-### Option 1: Tag-based Release (Recommended)
-
-Create and push a version tag:
-
-```bash
-# Ensure you're on main and up to date
-git checkout main
-git pull
-
-# Create an annotated tag
-git tag -a v1.0.0 -m "Release v1.0.0"
-
-# Push the tag
-git push origin v1.0.0
-```
-
-This will automatically:
-1. Build packages for amd64 and arm64
-2. Create a GitHub release with the packages attached
-3. Update the APT and YUM repositories on GitHub Pages
-
-### Option 2: Manual Workflow Dispatch
-
-For testing or building without a release:
+Releases are created via the GitHub Actions workflow:
 
 1. Go to Actions → "Build and Release Packages"
 2. Click "Run workflow"
-3. Enter the version number (without `v` prefix)
-4. Click "Run workflow"
+3. Enter the version number (without `v` prefix, e.g., `1.0.0`)
+4. Optionally specify a commit SHA (defaults to latest non-benchmark commit on main)
+5. Click "Run workflow"
 
-This builds packages and updates repositories but doesn't create a GitHub release.
+The workflow will:
+1. Create and push a version tag (e.g., `v1.0.0`)
+2. Build packages for amd64 and arm64
+3. Create a GitHub release with the packages attached
+4. Update the APT and YUM repositories on GitHub Pages
+
+**Note:** Do not manually create tags before running the workflow - the workflow creates tags automatically and will fail if the tag already exists.
 
 ## Version Numbering
 
