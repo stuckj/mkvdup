@@ -631,6 +631,23 @@ func ComputeHash(data []byte) uint64 {
 	return xxhash.Sum64(data)
 }
 
+// AdviseSequential sets MADV_SEQUENTIAL on all source mmap'd files.
+// Call before matching to hint the kernel that access will be largely sequential,
+// enabling aggressive readahead. This is especially important for sources that
+// don't fit in RAM where readahead reduces page fault stalls.
+func (idx *Index) AdviseSequential() {
+	for _, mmapFile := range idx.MmapFiles {
+		if mmapFile != nil {
+			mmapFile.Advise(unix.MADV_SEQUENTIAL)
+		}
+	}
+	for _, reader := range idx.RawReaders {
+		if rr, ok := reader.(*mmapRawReader); ok {
+			rr.mmapFile.Advise(unix.MADV_SEQUENTIAL)
+		}
+	}
+}
+
 // Close releases resources held by the index.
 func (idx *Index) Close() error {
 	// Close all mmap files (these back the ESReaders and RawReaders)

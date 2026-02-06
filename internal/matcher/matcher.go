@@ -275,6 +275,11 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	// locality-aware matching. One-time cost before concurrent access.
 	m.sourceIndex.SortLocationsByOffset()
 
+	// Hint the kernel that source access will be largely sequential.
+	// This enables aggressive readahead, reducing page fault stalls
+	// for sources that don't fit in RAM.
+	m.sourceIndex.AdviseSequential()
+
 	result := &Result{
 		TotalPackets: len(packets),
 	}
