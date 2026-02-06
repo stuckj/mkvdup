@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/stuckj/mkvdup/internal/mmap"
@@ -287,6 +288,23 @@ func NewIndex(sourceDir string, sourceType Type, windowSize int) *Index {
 		SourceDir:       sourceDir,
 		SourceType:      sourceType,
 		WindowSize:      windowSize,
+	}
+}
+
+// SortLocationsByOffset sorts all location slices by (FileIndex, Offset).
+// This is a one-time cost at match setup time that enables binary search
+// for nearby locations during matching. Must be called before concurrent access.
+func (idx *Index) SortLocationsByOffset() {
+	for hash, locs := range idx.HashToLocations {
+		if len(locs) > 1 {
+			sort.Slice(locs, func(i, j int) bool {
+				if locs[i].FileIndex != locs[j].FileIndex {
+					return locs[i].FileIndex < locs[j].FileIndex
+				}
+				return locs[i].Offset < locs[j].Offset
+			})
+			idx.HashToLocations[hash] = locs
+		}
 	}
 }
 

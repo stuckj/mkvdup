@@ -20,6 +20,15 @@ const (
 	// MaxExpansionBytes is the maximum number of bytes to expand a match in each direction.
 	// Set high to allow matching entire video keyframes which can be several MB.
 	MaxExpansionBytes = 16 * 1024 * 1024 // 16MB
+
+	// localityNearbyCount is the max number of nearby locations to try in Phase 1
+	// of locality-aware matching before falling back to a full search.
+	localityNearbyCount = 8
+
+	// localityGoodMatchThreshold is the minimum match length (bytes) to accept
+	// from a nearby location without trying all remaining locations.
+	// At 4KB (64x the 64-byte window), a false positive is vanishingly unlikely.
+	localityGoodMatchThreshold = 4096
 )
 
 // detectNALLengthSize determines the NAL unit length field size from an MKV track's
@@ -186,6 +195,13 @@ type Matcher struct {
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
 	coverageMu    sync.Mutex
+
+	// Locality hint: shared across workers. Workers process near-sequential
+	// packets so hints naturally stay roughly current. Stale values just mean
+	// one wasted nearby search before falling back to the full location list.
+	lastMatchFileIndex atomic.Uint32
+	lastMatchOffset    atomic.Int64
+	lastMatchValid     atomic.Bool
 }
 
 // NewMatcher creates a new Matcher with the given source index.
@@ -254,6 +270,10 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	// Each uint64 holds 64 chunk bits, so we need (numChunks + 63) / 64 uint64s
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
+
+	// Pre-sort source locations by offset to enable binary search for
+	// locality-aware matching. One-time cost before concurrent access.
+	m.sourceIndex.SortLocationsByOffset()
 
 	result := &Result{
 		TotalPackets: len(packets),
@@ -445,11 +465,9 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 	// For AVCC/HVCC video, each NAL unit has different framing bytes than the
 	// source (length prefix vs start code), so expansion stops at NAL boundaries.
 	// We must match each NAL individually to cover the full packet.
-	// For Annex B video (MPEG-2), expansion can cross start code boundaries
-	// when the source data matches. However, shared structures like sequence
-	// headers match many source locations with short expansions. We must
-	// continue trying other sync points (e.g., slice headers) to find better
-	// matches that cover the full packet.
+	// For Annex B video (nalLengthSize == 0), one match is sufficient since
+	// expansion works correctly across start code boundaries.
+	isAVCC := isVideo && m.trackCodecs[int(pkt.TrackNum)].nalLengthSize > 0
 	anyMatched := false
 	for _, syncOff := range syncPoints {
 		if syncOff+m.windowSize > len(data) {
@@ -457,36 +475,10 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		}
 		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo) {
 			anyMatched = true
-			// Early return once the packet is fully covered
-			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+			// Early return for Annex B video (expansion covers full packet)
+			// or AVCC when full packet is now covered
+			if !isAVCC || m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
 				return true
-			}
-		}
-	}
-
-	// For Annex B video, if the first 4096 bytes didn't give full coverage,
-	// scan the rest of the packet for additional sync points. This handles
-	// cases where only shared structures (sequence headers) appear early
-	// but unique slice data further in the packet would match.
-	if isVideo && !useFullPacket && !m.isRangeCoveredParallel(pkt.Offset, pkt.Size) && pkt.Size > 4096 {
-		fullEnd := pkt.Offset + pkt.Size
-		if fullEnd > m.mkvSize {
-			fullEnd = m.mkvSize
-		}
-		fullData := m.mkvData[pkt.Offset:fullEnd]
-		moreSyncPoints := source.FindVideoNALStarts(fullData)
-		for _, syncOff := range moreSyncPoints {
-			if syncOff < int(readSize) {
-				continue // Already tried in the first pass
-			}
-			if syncOff+m.windowSize > len(fullData) {
-				continue
-			}
-			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo) {
-				anyMatched = true
-				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
-					return true
-				}
 			}
 		}
 	}
@@ -552,7 +544,82 @@ func (m *Matcher) markChunksCovered(start, end int64) {
 	}
 }
 
+// nearbyLocationIndices returns up to N indices into locations that are closest
+// to hintOffset within the same file as hintFileIndex. Locations must be pre-sorted
+// by (FileIndex, Offset) via SortLocationsByOffset. Returns nil if no locations
+// are in the target file.
+func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hintOffset int64, maxCount int) []int {
+	n := len(locations)
+	if n == 0 {
+		return nil
+	}
+
+	// Binary search for the insertion point of (hintFileIndex, hintOffset)
+	lo, hi := 0, n
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		loc := locations[mid]
+		if loc.FileIndex < hintFileIndex || (loc.FileIndex == hintFileIndex && loc.Offset < hintOffset) {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	// lo is now the index of the first location >= (hintFileIndex, hintOffset)
+
+	// Radiate outward from lo to collect the closest locations in the same file
+	result := make([]int, 0, maxCount)
+	left := lo - 1
+	right := lo
+
+	for len(result) < maxCount && (left >= 0 || right < n) {
+		// Pick the closer of left and right candidates
+		useLeft := false
+		useRight := false
+
+		leftOK := left >= 0 && locations[left].FileIndex == hintFileIndex
+		rightOK := right < n && locations[right].FileIndex == hintFileIndex
+
+		if leftOK && rightOK {
+			leftDist := hintOffset - locations[left].Offset
+			rightDist := locations[right].Offset - hintOffset
+			if leftDist < 0 {
+				leftDist = -leftDist
+			}
+			if rightDist < 0 {
+				rightDist = -rightDist
+			}
+			if leftDist <= rightDist {
+				useLeft = true
+			} else {
+				useRight = true
+			}
+		} else if leftOK {
+			useLeft = true
+		} else if rightOK {
+			useRight = true
+		} else {
+			break // No more candidates in the target file
+		}
+
+		if useLeft {
+			result = append(result, left)
+			left--
+		} else if useRight {
+			result = append(result, right)
+			right++
+		}
+	}
+
+	return result
+}
+
 // tryMatchFromOffsetParallel is a thread-safe version of tryMatchFromOffset.
+// Uses two-phase locality-aware matching:
+//   - Phase 1: If a locality hint exists, try the closest locations first.
+//     If any produces a match >= localityGoodMatchThreshold, accept immediately.
+//   - Phase 2: Fall back to trying all remaining locations (handles scene changes,
+//     chapter boundaries, multi-file sources).
 func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool) bool {
 	if len(data) < m.windowSize {
 		return false
@@ -567,24 +634,58 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 		return false
 	}
 
-	// Try all locations and find the best match (longest expansion)
 	var bestMatch *matchedRegion
 	bestMatchLen := int64(0)
 
-	for _, loc := range locations {
-		// Skip locations that don't match the stream type (video vs audio)
-		// This is important for ES-based indexes where video and audio
-		// have separate offset spaces
-		if m.sourceIndex.UsesESOffsets && loc.IsVideo != isVideo {
-			continue
-		}
+	// Track which location indices were already tried in Phase 1
+	tried := make([]bool, len(locations))
 
-		region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
-		if region != nil {
-			matchLen := region.mkvEnd - region.mkvStart
-			if matchLen > bestMatchLen {
-				bestMatch = region
-				bestMatchLen = matchLen
+	// Phase 1: Locality-aware search — try nearby locations first
+	if m.lastMatchValid.Load() && len(locations) > 1 {
+		hintFile := uint16(m.lastMatchFileIndex.Load())
+		hintOffset := m.lastMatchOffset.Load()
+
+		nearby := nearbyLocationIndices(locations, hintFile, hintOffset, localityNearbyCount)
+		for _, idx := range nearby {
+			tried[idx] = true
+			loc := locations[idx]
+
+			if m.sourceIndex.UsesESOffsets && loc.IsVideo != isVideo {
+				continue
+			}
+
+			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
+			if region != nil {
+				matchLen := region.mkvEnd - region.mkvStart
+				if matchLen > bestMatchLen {
+					bestMatch = region
+					bestMatchLen = matchLen
+				}
+				// Short-circuit: a match this large is almost certainly the best
+				if bestMatchLen >= localityGoodMatchThreshold {
+					break
+				}
+			}
+		}
+	}
+
+	// Phase 2: Full search of remaining locations (skip if Phase 1 found a good match)
+	if bestMatchLen < localityGoodMatchThreshold {
+		for i, loc := range locations {
+			if tried[i] {
+				continue
+			}
+			if m.sourceIndex.UsesESOffsets && loc.IsVideo != isVideo {
+				continue
+			}
+
+			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
+			if region != nil {
+				matchLen := region.mkvEnd - region.mkvStart
+				if matchLen > bestMatchLen {
+					bestMatch = region
+					bestMatchLen = matchLen
+				}
 			}
 		}
 	}
@@ -595,6 +696,10 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 		m.regionsMu.Unlock()
 		// Mark chunks as covered for fast coverage checks
 		m.markChunksCovered(bestMatch.mkvStart, bestMatch.mkvEnd)
+		// Update locality hint with midpoint of matched source region
+		m.lastMatchFileIndex.Store(uint32(bestMatch.fileIndex))
+		m.lastMatchOffset.Store(bestMatch.srcOffset + bestMatchLen/2)
+		m.lastMatchValid.Store(true)
 		return true
 	}
 
