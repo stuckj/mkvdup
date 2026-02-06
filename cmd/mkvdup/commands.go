@@ -120,20 +120,9 @@ func buildSourceIndex(sourceDir string) (*source.Indexer, *source.Index, error) 
 	return indexer, index, nil
 }
 
-// checkCodecCompatibility detects source codecs and compares them against MKV tracks.
-// If mismatches are found, it prints a warning and either prompts the user (interactive)
-// or continues automatically (non-interactive). Returns an error if the user declines.
-func checkCodecCompatibility(tracks []mkv.Track, index *source.Index, nonInteractive bool) error {
-	sourceCodecs, err := source.DetectSourceCodecs(index)
-	if err != nil {
-		// Detection failure is not fatal — just skip the check
-		if verbose {
-			fmt.Printf("  Note: could not detect source codecs: %v\n", err)
-		}
-		return nil
-	}
-
-	mismatches := source.CheckCodecCompatibility(tracks, sourceCodecs)
+// reportCodecMismatches prints codec mismatch warnings and handles user prompting.
+// Returns an error if the user declines to continue.
+func reportCodecMismatches(mismatches []source.CodecMismatch, nonInteractive bool) error {
 	if len(mismatches) == 0 {
 		return nil
 	}
@@ -172,6 +161,21 @@ func checkCodecCompatibility(tracks []mkv.Track, index *source.Index, nonInterac
 	return nil
 }
 
+// checkCodecCompatibilityFromDir performs a lightweight codec check using only
+// the source directory (no index needed). This runs before the expensive indexing step.
+func checkCodecCompatibilityFromDir(tracks []mkv.Track, sourceDir string, nonInteractive bool) error {
+	sourceCodecs, err := source.DetectSourceCodecsFromDir(sourceDir)
+	if err != nil {
+		if verbose {
+			fmt.Printf("  Note: could not detect source codecs: %v\n", err)
+		}
+		return nil
+	}
+
+	mismatches := source.CheckCodecCompatibility(tracks, sourceCodecs)
+	return reportCodecMismatches(mismatches, nonInteractive)
+}
+
 // isTerminal returns true if stdin is a terminal (not piped).
 func isTerminal() bool {
 	fi, err := os.Stdin.Stat()
@@ -200,12 +204,6 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		return result
 	}
 	defer parser.Close()
-
-	// Check codec compatibility
-	if err := checkCodecCompatibility(parser.Tracks(), index, nonInteractive); err != nil {
-		result.Err = err
-		return result
-	}
 
 	// Calculate MKV checksum
 	fmt.Print("    Calculating MKV checksum...")
@@ -255,32 +253,36 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType())
 	writer.SetSourceFiles(index.Files)
 
-	// For sources with ES offsets, decide between V3 (convert to raw) and V4 (range maps)
+	// For sources with ES offsets, decide between V3 (convert to raw) and V4 (range maps).
+	// V4 stores ES offsets with embedded range maps for ES-to-raw translation at read time.
+	// V3 converts ES offsets to raw file offsets at write time (simpler, smaller files).
+	// V4 is only used for Blu-ray (M2TS) where the TS packet structure makes V3 conversion
+	// impractical. DVDs use V3 since MPEG-PS raw offsets are straightforward.
 	var esConverters []source.ESRangeConverter
 	if index.UsesESOffsets && len(index.ESReaders) > 0 {
-		// Try to build range maps (V4) from PES range providers
-		var rangeMaps []dedup.RangeMapData
-		for i, reader := range index.ESReaders {
-			if provider, ok := reader.(source.PESRangeProvider); ok {
-				rm := dedup.RangeMapData{
-					FileIndex:   uint16(i),
-					VideoRanges: provider.FilteredVideoRanges(),
+		if indexer.SourceType() == source.TypeBluray {
+			// V4: use range maps for Blu-ray (preserves ES offsets in entries)
+			var rangeMaps []dedup.RangeMapData
+			for i, reader := range index.ESReaders {
+				if provider, ok := reader.(source.PESRangeProvider); ok {
+					rm := dedup.RangeMapData{
+						FileIndex:   uint16(i),
+						VideoRanges: provider.FilteredVideoRanges(),
+					}
+					for _, subID := range provider.AudioSubStreams() {
+						rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
+							SubStreamID: subID,
+							Ranges:      provider.FilteredAudioRanges(subID),
+						})
+					}
+					rangeMaps = append(rangeMaps, rm)
 				}
-				for _, subID := range provider.AudioSubStreams() {
-					rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
-						SubStreamID: subID,
-						Ranges:      provider.FilteredAudioRanges(subID),
-					})
-				}
-				rangeMaps = append(rangeMaps, rm)
 			}
-		}
-
-		if len(rangeMaps) > 0 {
-			// V4: use range maps (preserves ES offsets in entries)
-			writer.SetRangeMaps(rangeMaps)
+			if len(rangeMaps) > 0 {
+				writer.SetRangeMaps(rangeMaps)
+			}
 		} else {
-			// V3 fallback: convert ES offsets to raw offsets
+			// V3: convert ES offsets to raw offsets for DVDs
 			esConverters = make([]source.ESRangeConverter, len(index.ESReaders))
 			for i, r := range index.ESReaders {
 				if converter, ok := r.(source.ESRangeConverter); ok {
@@ -377,7 +379,20 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	fmt.Printf("  Output:  %s\n", outputPath)
 	fmt.Println()
 
-	// Phase 1: Index source
+	// Phase 1: Parse MKV and check codec compatibility (fast, before expensive indexing)
+	parser, _, err := parseMKVWithProgress(mkvPath, "Parsing MKV file...")
+	if err != nil {
+		return err
+	}
+
+	if err := checkCodecCompatibilityFromDir(parser.Tracks(), sourceDir, nonInteractive); err != nil {
+		parser.Close()
+		return err
+	}
+	parser.Close()
+
+	// Phase 2: Index source (expensive)
+	fmt.Println()
 	fmt.Println("Indexing source...")
 	indexer, index, err := buildSourceIndex(sourceDir)
 	if err != nil {
@@ -385,7 +400,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	}
 	defer index.Close()
 
-	// Phase 2-5: Process MKV
+	// Phase 3-6: Process MKV (re-parses MKV, but parsing is fast relative to indexing)
 	fmt.Println()
 	result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index, nonInteractive)
 	if result.Err != nil {
@@ -436,6 +451,28 @@ func createBatch(manifestPath string, warnThreshold float64, quiet bool) error {
 	}
 
 	fmt.Printf("Batch create: %d files from %s\n\n", len(manifest.Files), manifest.SourceDir)
+
+	// Pre-check: detect source codecs and verify all MKVs are compatible before
+	// the expensive indexing step. Parse each MKV and check codec compatibility.
+	sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(manifest.SourceDir)
+	if codecErr != nil {
+		if verbose {
+			fmt.Printf("Note: could not detect source codecs: %v\n", codecErr)
+		}
+	} else {
+		for _, f := range manifest.Files {
+			parser, _, err := parseMKVWithProgress(f.MKV, fmt.Sprintf("  Checking codecs: %s...", filepath.Base(f.MKV)))
+			if err != nil {
+				return fmt.Errorf("parse %s: %w", filepath.Base(f.MKV), err)
+			}
+			mismatches := source.CheckCodecCompatibility(parser.Tracks(), sourceCodecs)
+			parser.Close()
+			if err := reportCodecMismatches(mismatches, true); err != nil {
+				return err
+			}
+		}
+		fmt.Println()
+	}
 
 	// Index source once
 	fmt.Println("Indexing source directory...")

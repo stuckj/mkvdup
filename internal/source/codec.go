@@ -161,6 +161,121 @@ func DetectSourceCodecs(index *Index) (*SourceCodecs, error) {
 	}
 }
 
+// DetectSourceCodecsFromDir performs a lightweight codec detection from a source
+// directory without building the full hash index. This allows codec compatibility
+// checks to run before the expensive indexing step.
+func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
+	sourceType, err := DetectType(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("detect source type: %w", err)
+	}
+
+	files, err := EnumerateMediaFiles(sourceDir, sourceType)
+	if err != nil {
+		return nil, fmt.Errorf("enumerate files: %w", err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no media files found in %s", sourceDir)
+	}
+
+	// Find the largest file (most likely the main feature)
+	var largestFile string
+	var largestSize int64
+	for _, f := range files {
+		fullPath := filepath.Join(sourceDir, f)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+		if info.Size() > largestSize {
+			largestSize = info.Size()
+			largestFile = f
+		}
+	}
+	if largestFile == "" {
+		return nil, fmt.Errorf("no accessible media files found")
+	}
+
+	fullPath := filepath.Join(sourceDir, largestFile)
+
+	switch sourceType {
+	case TypeBluray:
+		return detectBlurayCodecsFromFile(fullPath)
+	case TypeDVD:
+		return detectDVDCodecsFromFile(fullPath)
+	default:
+		return nil, fmt.Errorf("unknown source type")
+	}
+}
+
+// detectDVDCodecsFromFile performs a lightweight scan of an ISO file to detect
+// MPEG-PS stream types without building the full MPEG-PS index.
+func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open ISO file: %w", err)
+	}
+	defer f.Close()
+
+	// Read first 4MB — enough to find PES headers with video and audio streams
+	const scanSize = 4 * 1024 * 1024
+	buf := make([]byte, scanSize)
+	n, err := f.Read(buf)
+	if err != nil && n == 0 {
+		return nil, fmt.Errorf("read ISO file: %w", err)
+	}
+	buf = buf[:n]
+
+	codecs := &SourceCodecs{}
+
+	// Scan for PES start codes: 0x00 0x00 0x01 <stream_id>
+	for i := 0; i+4 < len(buf); i++ {
+		if buf[i] != 0x00 || buf[i+1] != 0x00 || buf[i+2] != 0x01 {
+			continue
+		}
+		streamID := buf[i+3]
+
+		switch {
+		case streamID >= 0xE0 && streamID <= 0xEF:
+			// Video stream — DVD is MPEG-2
+			if !containsCodec(codecs.VideoCodecs, CodecMPEG2Video) {
+				codecs.VideoCodecs = append(codecs.VideoCodecs, CodecMPEG2Video)
+			}
+
+		case streamID == 0xBD:
+			// Private Stream 1 — contains AC3, DTS, LPCM sub-streams
+			// Parse the PES header to get to the sub-stream ID
+			if i+9 < len(buf) {
+				pesHeaderLen := int(buf[i+8])
+				subStreamOffset := i + 9 + pesHeaderLen
+				if subStreamOffset < len(buf) {
+					subStreamID := buf[subStreamOffset]
+					var ct CodecType
+					switch {
+					case subStreamID >= 0x80 && subStreamID <= 0x87:
+						ct = CodecAC3Audio
+					case subStreamID >= 0x88 && subStreamID <= 0x8F:
+						ct = CodecDTSAudio
+					case subStreamID >= 0xA0 && subStreamID <= 0xA7:
+						ct = CodecLPCMAudio
+					}
+					if ct != CodecUnknown && !containsCodec(codecs.AudioCodecs, ct) {
+						codecs.AudioCodecs = append(codecs.AudioCodecs, ct)
+					}
+				}
+			}
+
+		case streamID >= 0xC0 && streamID <= 0xDF:
+			// MPEG audio stream
+			if !containsCodec(codecs.AudioCodecs, CodecMPEGAudio) {
+				codecs.AudioCodecs = append(codecs.AudioCodecs, CodecMPEGAudio)
+			}
+		}
+	}
+
+	return codecs, nil
+}
+
 // detectDVDCodecs extracts codec information from an already-indexed DVD source.
 // The MPEG-PS parser has already identified video and audio streams during indexing.
 func detectDVDCodecs(index *Index) (*SourceCodecs, error) {

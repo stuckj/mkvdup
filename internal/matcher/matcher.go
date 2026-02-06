@@ -445,9 +445,11 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 	// For AVCC/HVCC video, each NAL unit has different framing bytes than the
 	// source (length prefix vs start code), so expansion stops at NAL boundaries.
 	// We must match each NAL individually to cover the full packet.
-	// For Annex B video (nalLengthSize == 0), one match is sufficient since
-	// expansion works correctly across start code boundaries.
-	isAVCC := isVideo && m.trackCodecs[int(pkt.TrackNum)].nalLengthSize > 0
+	// For Annex B video (MPEG-2), expansion can cross start code boundaries
+	// when the source data matches. However, shared structures like sequence
+	// headers match many source locations with short expansions. We must
+	// continue trying other sync points (e.g., slice headers) to find better
+	// matches that cover the full packet.
 	anyMatched := false
 	for _, syncOff := range syncPoints {
 		if syncOff+m.windowSize > len(data) {
@@ -455,10 +457,36 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		}
 		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo) {
 			anyMatched = true
-			// Early return for Annex B video (expansion covers full packet)
-			// or AVCC when full packet is now covered
-			if !isAVCC || m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+			// Early return once the packet is fully covered
+			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
 				return true
+			}
+		}
+	}
+
+	// For Annex B video, if the first 4096 bytes didn't give full coverage,
+	// scan the rest of the packet for additional sync points. This handles
+	// cases where only shared structures (sequence headers) appear early
+	// but unique slice data further in the packet would match.
+	if isVideo && !useFullPacket && !m.isRangeCoveredParallel(pkt.Offset, pkt.Size) && pkt.Size > 4096 {
+		fullEnd := pkt.Offset + pkt.Size
+		if fullEnd > m.mkvSize {
+			fullEnd = m.mkvSize
+		}
+		fullData := m.mkvData[pkt.Offset:fullEnd]
+		moreSyncPoints := source.FindVideoNALStarts(fullData)
+		for _, syncOff := range moreSyncPoints {
+			if syncOff < int(readSize) {
+				continue // Already tried in the first pass
+			}
+			if syncOff+m.windowSize > len(fullData) {
+				continue
+			}
+			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo) {
+				anyMatched = true
+				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+					return true
+				}
 			}
 		}
 	}
