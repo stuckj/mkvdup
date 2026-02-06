@@ -379,17 +379,20 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	fmt.Printf("  Output:  %s\n", outputPath)
 	fmt.Println()
 
-	// Phase 1: Parse MKV and check codec compatibility (fast, before expensive indexing)
-	parser, _, err := parseMKVWithProgress(mkvPath, "Parsing MKV file...")
+	// Phase 1: Quick codec compatibility check (only reads MKV track headers, not full file)
+	codecParser, err := mkv.NewParser(mkvPath)
 	if err != nil {
+		return fmt.Errorf("open MKV: %w", err)
+	}
+	if err := codecParser.ParseTracksOnly(); err != nil {
+		codecParser.Close()
+		return fmt.Errorf("parse MKV tracks: %w", err)
+	}
+	if err := checkCodecCompatibilityFromDir(codecParser.Tracks(), sourceDir, nonInteractive); err != nil {
+		codecParser.Close()
 		return err
 	}
-
-	if err := checkCodecCompatibilityFromDir(parser.Tracks(), sourceDir, nonInteractive); err != nil {
-		parser.Close()
-		return err
-	}
-	parser.Close()
+	codecParser.Close()
 
 	// Phase 2: Index source (expensive)
 	fmt.Println()
@@ -461,12 +464,16 @@ func createBatch(manifestPath string, warnThreshold float64, quiet bool) error {
 		}
 	} else {
 		for _, f := range manifest.Files {
-			parser, _, err := parseMKVWithProgress(f.MKV, fmt.Sprintf("  Checking codecs: %s...", filepath.Base(f.MKV)))
+			codecParser, err := mkv.NewParser(f.MKV)
 			if err != nil {
-				return fmt.Errorf("parse %s: %w", filepath.Base(f.MKV), err)
+				return fmt.Errorf("open %s: %w", filepath.Base(f.MKV), err)
 			}
-			mismatches := source.CheckCodecCompatibility(parser.Tracks(), sourceCodecs)
-			parser.Close()
+			if err := codecParser.ParseTracksOnly(); err != nil {
+				codecParser.Close()
+				return fmt.Errorf("parse tracks %s: %w", filepath.Base(f.MKV), err)
+			}
+			mismatches := source.CheckCodecCompatibility(codecParser.Tracks(), sourceCodecs)
+			codecParser.Close()
 			if err := reportCodecMismatches(mismatches, true); err != nil {
 				return err
 			}
