@@ -31,6 +31,7 @@ const (
 	CodecAACaudio
 	CodecFLACAudio
 	CodecOpusAudio
+	CodecPGSSubtitle
 )
 
 // CodecTypeName returns a human-readable name for a codec type.
@@ -66,6 +67,8 @@ func CodecTypeName(ct CodecType) string {
 		return "FLAC"
 	case CodecOpusAudio:
 		return "Opus"
+	case CodecPGSSubtitle:
+		return "PGS"
 	default:
 		return "Unknown"
 	}
@@ -78,6 +81,11 @@ func IsVideoCodec(ct CodecType) bool {
 		return true
 	}
 	return false
+}
+
+// IsSubtitleCodec returns true if the codec type is a subtitle codec.
+func IsSubtitleCodec(ct CodecType) bool {
+	return ct == CodecPGSSubtitle
 }
 
 // IsAudioCodec returns true if the codec type is an audio codec.
@@ -129,6 +137,8 @@ func MKVCodecToType(codecID string) CodecType {
 		return CodecFLACAudio
 	case codecID == "A_OPUS":
 		return CodecOpusAudio
+	case codecID == "S_HDMV/PGS":
+		return CodecPGSSubtitle
 	default:
 		return CodecUnknown
 	}
@@ -136,8 +146,9 @@ func MKVCodecToType(codecID string) CodecType {
 
 // SourceCodecs describes the codecs found in a source media.
 type SourceCodecs struct {
-	VideoCodecs []CodecType
-	AudioCodecs []CodecType
+	VideoCodecs    []CodecType
+	AudioCodecs    []CodecType
+	SubtitleCodecs []CodecType
 }
 
 // CodecMismatch describes a detected codec mismatch between MKV and source.
@@ -565,6 +576,10 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 					if !containsCodec(codecs.AudioCodecs, ct) {
 						codecs.AudioCodecs = append(codecs.AudioCodecs, ct)
 					}
+				} else if IsSubtitleCodec(ct) {
+					if !containsCodec(codecs.SubtitleCodecs, ct) {
+						codecs.SubtitleCodecs = append(codecs.SubtitleCodecs, ct)
+					}
 				}
 			}
 
@@ -610,6 +625,8 @@ func tsStreamTypeToCodecType(streamType byte) CodecType {
 		return CodecEAC3Audio
 	case 0x85, 0x86:
 		return CodecDTSHDAudio
+	case 0x90:
+		return CodecPGSSubtitle
 	default:
 		return CodecUnknown
 	}
@@ -683,6 +700,18 @@ func CheckCodecCompatibility(tracks []mkv.Track, sourceCodecs *SourceCodecs) []C
 					SourceCodecs: sourceCodecs.AudioCodecs,
 				})
 			}
+		} else if track.Type == mkv.TrackTypeSubtitle && IsSubtitleCodec(ct) {
+			if len(sourceCodecs.SubtitleCodecs) == 0 {
+				continue // No source subtitle info available
+			}
+			if !codecFamilyMatch(ct, sourceCodecs.SubtitleCodecs) {
+				mismatches = append(mismatches, CodecMismatch{
+					TrackType:    "subtitle",
+					MKVCodecID:   track.CodecID,
+					MKVCodecType: ct,
+					SourceCodecs: sourceCodecs.SubtitleCodecs,
+				})
+			}
 		}
 	}
 
@@ -729,6 +758,8 @@ func codecFamily(ct CodecType) int {
 		return 16
 	case CodecOpusAudio:
 		return 17
+	case CodecPGSSubtitle:
+		return 20
 	default:
 		return 0
 	}

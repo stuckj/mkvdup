@@ -35,6 +35,9 @@ func TestMKVCodecToType(t *testing.T) {
 		{"A_FLAC", CodecFLACAudio},
 		{"A_OPUS", CodecOpusAudio},
 
+		// Subtitle
+		{"S_HDMV/PGS", CodecPGSSubtitle},
+
 		// Unknown
 		{"S_TEXT/UTF8", CodecUnknown},
 		{"", CodecUnknown},
@@ -408,6 +411,7 @@ func TestTSStreamTypeToCodecType(t *testing.T) {
 		{0x84, CodecEAC3Audio},
 		{0x85, CodecDTSHDAudio},
 		{0x86, CodecDTSHDAudio},
+		{0x90, CodecPGSSubtitle},
 		{0xFF, CodecUnknown},
 	}
 
@@ -449,6 +453,43 @@ func TestIsAudioCodec(t *testing.T) {
 		if IsAudioCodec(c) {
 			t.Errorf("IsAudioCodec(%v) = true, want false", c)
 		}
+	}
+}
+
+func TestIsSubtitleCodec(t *testing.T) {
+	if !IsSubtitleCodec(CodecPGSSubtitle) {
+		t.Error("IsSubtitleCodec(CodecPGSSubtitle) = false, want true")
+	}
+	nonSubtitle := []CodecType{CodecUnknown, CodecH264Video, CodecAC3Audio, CodecFLACAudio}
+	for _, c := range nonSubtitle {
+		if IsSubtitleCodec(c) {
+			t.Errorf("IsSubtitleCodec(%v) = true, want false", c)
+		}
+	}
+}
+
+func TestCheckCodecCompatibility_SubtitleMatch(t *testing.T) {
+	tracks := []mkv.Track{
+		{Number: 1, Type: mkv.TrackTypeSubtitle, CodecID: "S_HDMV/PGS"},
+	}
+	sc := &SourceCodecs{
+		SubtitleCodecs: []CodecType{CodecPGSSubtitle},
+	}
+	mismatches := CheckCodecCompatibility(tracks, sc)
+	if len(mismatches) != 0 {
+		t.Errorf("PGS subtitle should match, got %d mismatches", len(mismatches))
+	}
+}
+
+func TestCheckCodecCompatibility_SubtitleMismatch(t *testing.T) {
+	tracks := []mkv.Track{
+		{Number: 1, Type: mkv.TrackTypeSubtitle, CodecID: "S_HDMV/PGS"},
+	}
+	// Source has no subtitle codecs but SubtitleCodecs is empty → should skip (no mismatch)
+	sc := &SourceCodecs{}
+	mismatches := CheckCodecCompatibility(tracks, sc)
+	if len(mismatches) != 0 {
+		t.Errorf("empty source subtitle codecs should produce no mismatches, got %d", len(mismatches))
 	}
 }
 

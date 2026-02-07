@@ -340,9 +340,17 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 	return nil
 }
 
+// syncPointFinder is a function that returns sync point offsets within data.
+type syncPointFinder func(data []byte) []int
+
 // indexAudioSubStream indexes a specific audio sub-stream.
-// Uses zero-copy iteration through PES payload ranges.
 func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64) error {
+	return idx.indexSubStream(fileIndex, parser, subStreamID, esSize, FindAudioSyncPoints)
+}
+
+// indexSubStream indexes a specific sub-stream using the provided sync point finder.
+// Uses zero-copy iteration through PES payload ranges.
+func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64, findSyncPoints syncPointFinder) error {
 	ranges := parser.FilteredAudioRanges(subStreamID)
 	if len(ranges) == 0 {
 		return nil
@@ -359,8 +367,8 @@ func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider,
 		}
 		rangeData := data[r.FileOffset:endOffset]
 
-		// Find audio sync points in this range
-		syncPoints := FindAudioSyncPoints(rangeData)
+		// Find sync points in this range
+		syncPoints := findSyncPoints(rangeData)
 
 		// Add each sync point to the index
 		for _, offsetInRange := range syncPoints {
@@ -494,11 +502,29 @@ func (idx *Indexer) indexM2TSFile(fileIndex uint16, path string, size int64, pro
 	}
 
 	// Index each audio sub-stream separately
+	subtitleIDs := parser.SubtitleSubStreams()
+	subtitleSet := make(map[byte]bool, len(subtitleIDs))
+	for _, id := range subtitleIDs {
+		subtitleSet[id] = true
+	}
 	for _, subStreamID := range parser.AudioSubStreams() {
+		if subtitleSet[subStreamID] {
+			continue // indexed below with subtitle-specific sync points
+		}
 		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
 		if subStreamSize > 0 {
 			if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
 				return 0, fmt.Errorf("index audio sub-stream %d: %w", subStreamID, err)
+			}
+		}
+	}
+
+	// Index subtitle sub-streams with PGS sync point detection
+	for _, subStreamID := range subtitleIDs {
+		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
+		if subStreamSize > 0 {
+			if err := idx.indexSubStream(fileIndex, parser, subStreamID, subStreamSize, FindPGSSyncPoints); err != nil {
+				return 0, fmt.Errorf("index subtitle sub-stream %d: %w", subStreamID, err)
 			}
 		}
 	}

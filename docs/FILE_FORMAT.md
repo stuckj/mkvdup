@@ -63,7 +63,7 @@ Version 3 is used for DVD sources (MPEG-PS). Version 4 is used for Blu-ray sourc
 │    Source: uint16 (2 bytes) [0=DELTA, 1+=file idx+1]   │
 │    SourceOffset: int64 (8 bytes) [raw file offset]     │
 │    IsVideo: uint8 (1 byte)                             │
-│    AudioSubStreamID: uint8 (1 byte)                    │
+│    AudioSubStreamID: uint8 (1 byte) [audio or sub]     │
 │                                                        │
 │  Entry size: 28 bytes                                  │
 │  1M entries = 28 MB index overhead                     │
@@ -265,7 +265,7 @@ For each FUSE read:
 - Source: 2 bytes (uint16, supports up to 65535 source files)
 - SourceOffset: 8 bytes
 - IsVideo: 1 byte
-- AudioSubStreamID: 1 byte
+- AudioSubStreamID: 1 byte (also used for subtitle sub-streams)
 
 **Estimated index size for typical video:**
 - DVD: ~1-2 million packets → 28-56 MB index

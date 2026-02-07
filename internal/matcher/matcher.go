@@ -544,6 +544,8 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			// Annex B format: find NAL starts after 00 00 01
 			syncPoints = source.FindVideoNALStarts(data)
 		}
+	} else if trackType == mkv.TrackTypeSubtitle {
+		syncPoints = source.FindPGSSyncPoints(data)
 	} else {
 		syncPoints = source.FindAudioSyncPoints(data)
 	}

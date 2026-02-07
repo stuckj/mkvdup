@@ -1126,3 +1126,38 @@ func TestSplitCombinedAudioRanges_CrossRange(t *testing.T) {
 		}
 	}
 }
+
+func TestMPEGTSParser_SubtitleSubStreams(t *testing.T) {
+	// Build M2TS with video + 2 audio + 1 PGS subtitle
+	data := buildTestM2TS(t, []testStream{
+		{0x1B}, // H.264 video
+		{0x81}, // AC3 audio → sub-stream 0
+		{0x83}, // TrueHD audio → sub-stream 1
+		{0x90}, // PGS subtitle → sub-stream 2
+	})
+
+	parser := NewMPEGTSParser(data)
+	if err := parser.ParseWithProgress(nil); err != nil {
+		t.Fatalf("ParseWithProgress: %v", err)
+	}
+
+	// AudioSubStreams should include all 3 non-video sub-streams
+	allSubs := parser.AudioSubStreams()
+	if len(allSubs) != 3 {
+		t.Fatalf("AudioSubStreams() = %d, want 3", len(allSubs))
+	}
+
+	// SubtitleSubStreams should return only the PGS sub-stream
+	subtitleSubs := parser.SubtitleSubStreams()
+	if len(subtitleSubs) != 1 {
+		t.Fatalf("SubtitleSubStreams() = %d, want 1", len(subtitleSubs))
+	}
+	if subtitleSubs[0] != 2 {
+		t.Errorf("SubtitleSubStreams()[0] = %d, want 2", subtitleSubs[0])
+	}
+
+	// Verify the subtitle sub-stream codec type
+	if parser.subStreamCodec[subtitleSubs[0]] != CodecPGSSubtitle {
+		t.Errorf("subStreamCodec[%d] = %v, want CodecPGSSubtitle", subtitleSubs[0], parser.subStreamCodec[subtitleSubs[0]])
+	}
+}

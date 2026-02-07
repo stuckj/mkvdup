@@ -410,7 +410,7 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 				if IsVideoCodec(ct) && p.videoPID == 0 {
 					p.videoPID = esPID
 					p.videoCodec = ct
-				} else if IsAudioCodec(ct) {
+				} else if IsAudioCodec(ct) || IsSubtitleCodec(ct) {
 					p.audioPIDs = append(p.audioPIDs, esPID)
 					p.pidToSubStream[esPID] = subStreamSeq
 					p.subStreamToPID[subStreamSeq] = esPID
@@ -563,6 +563,17 @@ func (p *MPEGTSParser) TotalESSize(isVideo bool) int64 {
 // AudioSubStreams returns the list of audio sub-stream IDs.
 func (p *MPEGTSParser) AudioSubStreams() []byte {
 	return p.audioSubStreams
+}
+
+// SubtitleSubStreams returns the sub-stream IDs that carry subtitle data (e.g., PGS).
+func (p *MPEGTSParser) SubtitleSubStreams() []byte {
+	var ids []byte
+	for _, id := range p.audioSubStreams {
+		if IsSubtitleCodec(p.subStreamCodec[id]) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // AudioSubStreamESSize returns the ES size for a specific audio sub-stream.
