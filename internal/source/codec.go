@@ -229,7 +229,7 @@ func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
 	codecs := &SourceCodecs{}
 
 	// Scan for PES start codes: 0x00 0x00 0x01 <stream_id>
-	for i := 0; i+4 < len(buf); i++ {
+	for i := 0; i+3 < len(buf); i++ {
 		if buf[i] != 0x00 || buf[i+1] != 0x00 || buf[i+2] != 0x01 {
 			continue
 		}
@@ -271,6 +271,10 @@ func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
 				codecs.AudioCodecs = append(codecs.AudioCodecs, CodecMPEGAudio)
 			}
 		}
+	}
+
+	if len(codecs.VideoCodecs) == 0 && len(codecs.AudioCodecs) == 0 {
+		return nil, fmt.Errorf("no DVD codecs detected in scanned region of %s", path)
 	}
 
 	return codecs, nil

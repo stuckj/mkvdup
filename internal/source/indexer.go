@@ -2,6 +2,7 @@ package source
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/cespare/xxhash/v2"
@@ -264,6 +265,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 
 	data := parser.Data() // Get mmap'd data for direct access
 	syncPointCount := 0
+	var indexFastPath, indexSlowPath, indexSkipped int
 
 	// Iterate through each PES payload range (zero-copy)
 	for rangeIdx, r := range ranges {
@@ -298,10 +300,12 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 					IsVideo:   isVideo,
 				})
 				syncPointCount++
+				indexFastPath++
 			} else {
 				// Window spans range boundary - use ReadESData (may copy)
 				window, err := parser.ReadESData(syncESOffset, idx.windowSize, isVideo)
 				if err != nil || len(window) < idx.windowSize {
+					indexSkipped++
 					continue
 				}
 				hash := xxhash.Sum64(window)
@@ -312,6 +316,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 					IsVideo:   isVideo,
 				})
 				syncPointCount++
+				indexSlowPath++
 			}
 		}
 
@@ -320,6 +325,9 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 			progress(r.FileOffset)
 		}
 	}
+
+	fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
+		isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped)
 
 	return nil
 }

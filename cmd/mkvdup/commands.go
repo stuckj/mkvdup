@@ -205,6 +205,17 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	}
 	defer parser.Close()
 
+	// Fallback codec check using the index (in case the pre-indexing directory-based
+	// check was skipped, e.g. detection failure or batch mode with undetectable codecs)
+	sourceCodecs, codecErr := source.DetectSourceCodecs(index)
+	if codecErr == nil {
+		mismatches := source.CheckCodecCompatibility(parser.Tracks(), sourceCodecs)
+		if err := reportCodecMismatches(mismatches, nonInteractive); err != nil {
+			result.Err = err
+			return result
+		}
+	}
+
 	// Calculate MKV checksum
 	fmt.Print("    Calculating MKV checksum...")
 	mkvChecksum, err := calculateFileChecksum(mkvPath)

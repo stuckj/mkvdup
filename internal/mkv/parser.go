@@ -431,10 +431,9 @@ func (p *Parser) ParseTracksOnly() error {
 
 		// Skip to next element
 		if elem.Size < 0 {
-			offset = elem.DataOffset
-		} else {
-			offset = elem.DataOffset + elem.Size
+			return fmt.Errorf("unsupported unknown-size element 0x%X before Tracks", elem.ID)
 		}
+		offset = elem.DataOffset + elem.Size
 	}
 
 	return fmt.Errorf("no Tracks element found")
