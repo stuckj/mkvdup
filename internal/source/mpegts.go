@@ -730,7 +730,12 @@ func (p *MPEGTSParser) detectCombinedTrueHDAC3(ranges []PESPayloadRange) bool {
 			continue
 		}
 		data := p.data[r.FileOffset:endOffset]
-		for i := 0; i < len(data)-1 && bytesChecked < maxCheck; i++ {
+		// Clamp to remaining check budget
+		remaining := maxCheck - bytesChecked
+		if remaining < len(data) {
+			data = data[:remaining]
+		}
+		for i := 0; i < len(data)-1; i++ {
 			if data[i] == 0x0B && data[i+1] == 0x77 {
 				hasAC3 = true
 			}
@@ -743,7 +748,7 @@ func (p *MPEGTSParser) detectCombinedTrueHDAC3(ranges []PESPayloadRange) bool {
 				return true
 			}
 		}
-		bytesChecked += r.Size
+		bytesChecked += len(data)
 	}
 	return false
 }
@@ -769,21 +774,24 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 		data := p.data[r.FileOffset:endOffset]
 		pos := 0
 
-		// Handle header bytes buffered from previous range
+		// Handle header bytes buffered from previous range.
+		// The buffered bytes were trimmed from the previous range's TrueHD output,
+		// so we must classify them here (as AC3 or TrueHD).
 		if headerBufLen > 0 && ac3Remaining == 0 {
-			// We had a partial AC3 sync word at end of previous range
 			need := 5 - headerBufLen
 			if need > len(data) {
-				// Still not enough data, buffer more
-				copy(headerBuf[headerBufLen:], data)
-				headerBufLen += len(data)
-				// All bytes go to... we don't know yet. Treat as TrueHD for safety.
+				// Still not enough data to complete header check.
+				// Classify buffered bytes as TrueHD and buffer the new bytes.
+				// (headerBufFileOffset already tracked the previous range's bytes;
+				// these new bytes are from the current range)
 				truehdRanges = append(truehdRanges, PESPayloadRange{
 					FileOffset: r.FileOffset,
 					Size:       len(data),
 					ESOffset:   truehdES,
 				})
 				truehdES += int64(len(data))
+				copy(headerBuf[headerBufLen:], data)
+				headerBufLen += len(data)
 				continue
 			}
 			copy(headerBuf[headerBufLen:], data[:need])
@@ -792,18 +800,42 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 				frmsizecod := headerBuf[4] & 0x3F
 				frameSize := AC3FrameSize(fscod, frmsizecod)
 				if frameSize > 0 {
-					// Valid AC3 frame spanning range boundary
-					// The bytes already consumed from prev range were headerBufLen bytes
-					// (accounted for in previous iteration as TrueHD - we need to fix this)
-					// Actually, let's handle this differently: don't buffer across ranges.
-					// Instead, treat the partial header as TrueHD. The AC3 frame will
-					// be missed (rare: ~2/184 chance per frame), but this keeps the code simple.
+					// Valid AC3 frame header spanning range boundary.
+					// The headerBufLen bytes from the previous range were already
+					// trimmed from TrueHD and added to AC3 when buffered.
+					// Now add the header-completion bytes from this range to AC3.
+					ac3Ranges = append(ac3Ranges, PESPayloadRange{
+						FileOffset: r.FileOffset,
+						Size:       need,
+						ESOffset:   ac3ES,
+					})
+					ac3ES += int64(need)
+					ac3Remaining = frameSize - 5 // remaining frame bytes after 5-byte header
+					pos = need
+					headerBufLen = 0
+					// Fall through to normal scan which will consume ac3Remaining
+					goto scanLoop
 				}
 			}
+			// Not a valid AC3 header. The buffered bytes from the previous range
+			// were already added to AC3 ranges optimistically; re-attribute them
+			// to TrueHD by adjusting ES offsets.
+			if len(ac3Ranges) > 0 {
+				last := ac3Ranges[len(ac3Ranges)-1]
+				ac3Ranges = ac3Ranges[:len(ac3Ranges)-1]
+				ac3ES -= int64(last.Size)
+				truehdRanges = append(truehdRanges, PESPayloadRange{
+					FileOffset: last.FileOffset,
+					Size:       last.Size,
+					ESOffset:   truehdES,
+				})
+				truehdES += int64(last.Size)
+			}
 			headerBufLen = 0
-			// Fall through to normal processing
+			// Fall through to normal processing for the rest of this range
 		}
 
+	scanLoop:
 		for pos < len(data) {
 			if ac3Remaining > 0 {
 				// Inside an AC3 frame - consume bytes
@@ -822,7 +854,7 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 				continue
 			}
 
-			// Look for AC3 sync word
+			// Look for AC3 sync word (need 5 bytes: 2-byte sync + byte 4 for frame size)
 			if pos+4 < len(data) && data[pos] == 0x0B && data[pos+1] == 0x77 {
 				fscod := (data[pos+4] >> 6) & 0x03
 				frmsizecod := data[pos+4] & 0x3F
@@ -855,6 +887,61 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 				truehdES += int64(pos - start)
 			}
 		}
+
+		// After processing all bytes in this range, check if trailing bytes
+		// could be a partial AC3 header for cross-range detection.
+		// Only relevant when not inside an AC3 frame.
+		if ac3Remaining == 0 && len(truehdRanges) > 0 {
+			last := &truehdRanges[len(truehdRanges)-1]
+			lastEnd := last.FileOffset + int64(last.Size)
+			rangeEnd := r.FileOffset + int64(r.Size)
+			if lastEnd == rangeEnd && last.Size > 0 {
+				// TrueHD range extends to end of PES range. Check if last
+				// 1-4 bytes could start an AC3 header (contain 0x0B).
+				checkStart := last.Size - 4
+				if checkStart < 0 {
+					checkStart = 0
+				}
+				tailData := p.data[last.FileOffset:lastEnd]
+				bufStart := -1
+				for j := len(tailData) - 1; j >= checkStart; j-- {
+					if tailData[j] == 0x0B {
+						bufStart = j
+						break
+					}
+				}
+				if bufStart >= 0 {
+					tailLen := len(tailData) - bufStart
+					copy(headerBuf[:], tailData[bufStart:])
+					headerBufLen = tailLen
+					// Trim TrueHD range and add trimmed bytes to AC3 optimistically
+					last.Size -= tailLen
+					truehdES -= int64(tailLen)
+					if last.Size == 0 {
+						truehdRanges = truehdRanges[:len(truehdRanges)-1]
+					}
+					ac3Ranges = append(ac3Ranges, PESPayloadRange{
+						FileOffset: rangeEnd - int64(tailLen),
+						Size:       tailLen,
+						ESOffset:   ac3ES,
+					})
+					ac3ES += int64(tailLen)
+				}
+			}
+		}
+	}
+
+	// If we ended with buffered bytes, they weren't AC3 — re-attribute to TrueHD
+	if headerBufLen > 0 && len(ac3Ranges) > 0 {
+		last := ac3Ranges[len(ac3Ranges)-1]
+		ac3Ranges = ac3Ranges[:len(ac3Ranges)-1]
+		ac3ES -= int64(last.Size)
+		truehdRanges = append(truehdRanges, PESPayloadRange{
+			FileOffset: last.FileOffset,
+			Size:       last.Size,
+			ESOffset:   truehdES,
+		})
+		truehdES += int64(last.Size)
 	}
 
 	return ac3Ranges, truehdRanges

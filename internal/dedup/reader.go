@@ -345,8 +345,11 @@ func (r *Reader) EntryCount() int {
 }
 
 // GetEntry returns the entry at the given index.
-// Returns false if the index is out of range.
+// Returns false if the index is out of range or if entry access initialization failed.
 func (r *Reader) GetEntry(idx int) (Entry, bool) {
+	if err := r.initEntryAccess(); err != nil {
+		return Entry{}, false
+	}
 	return r.getEntry(idx)
 }
 

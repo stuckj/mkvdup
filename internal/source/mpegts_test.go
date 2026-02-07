@@ -1060,3 +1060,69 @@ func TestSplitCombinedAudioRanges(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitCombinedAudioRanges_CrossRange(t *testing.T) {
+	// Build combined payload: AC3(192) + TrueHD(100) + AC3(192) + TrueHD(50)
+	var payload []byte
+	payload = append(payload, makeAC3Frame(0x11)...)        // 192 bytes
+	payload = append(payload, makeTrueHDUnit(100, 0x22)...) // 100 bytes
+	payload = append(payload, makeAC3Frame(0x33)...)        // 192 bytes
+	payload = append(payload, makeTrueHDUnit(50, 0x44)...)  // 50 bytes
+	// Total: 534 bytes
+
+	p := &MPEGTSParser{
+		data: payload,
+		size: int64(len(payload)),
+	}
+
+	// Split into small ranges that force AC3 headers to straddle boundaries.
+	// Use 100-byte ranges so the second AC3 frame at offset 292 has its header
+	// split: bytes 0-7 are in range[2] (200-300), sync word at byte 92 in that range,
+	// but if we use 90-byte ranges, AC3 at 292 will have its sync at offset 292
+	// which is range[3] (270-360) at pos 22 — that fits. So let's use a boundary
+	// that splits the AC3 header. AC3 frame 2 starts at offset 292.
+	// Using 294-byte first range puts the AC3 sync 0B 77 inside range[0],
+	// but let's use a size that splits the 5-byte header.
+	// Offset 292 = sync word. If range boundary is at 293, the 0B is in range[0], 77 in range[1].
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: 293, ESOffset: 0},     // ends mid AC3 header (has 0B at [292])
+		{FileOffset: 293, Size: 241, ESOffset: 293}, // rest (has 77 at [0])
+	}
+
+	ac3Ranges, truehdRanges := p.splitCombinedAudioRanges(ranges)
+
+	var ac3Total, truehdTotal int64
+	for _, r := range ac3Ranges {
+		ac3Total += int64(r.Size)
+	}
+	for _, r := range truehdRanges {
+		truehdTotal += int64(r.Size)
+	}
+
+	if ac3Total != 384 {
+		t.Errorf("AC3 total size = %d, want 384 (2 × 192)", ac3Total)
+	}
+	if truehdTotal != 150 {
+		t.Errorf("TrueHD total size = %d, want 150 (100 + 50)", truehdTotal)
+	}
+	if ac3Total+truehdTotal != int64(len(payload)) {
+		t.Errorf("AC3(%d) + TrueHD(%d) = %d, want %d",
+			ac3Total, truehdTotal, ac3Total+truehdTotal, len(payload))
+	}
+
+	// Verify ES offsets are sequential
+	for i := 1; i < len(ac3Ranges); i++ {
+		prev := ac3Ranges[i-1]
+		cur := ac3Ranges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("AC3 range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+	for i := 1; i < len(truehdRanges); i++ {
+		prev := truehdRanges[i-1]
+		cur := truehdRanges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("TrueHD range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+}
