@@ -193,7 +193,7 @@ type Matcher struct {
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
 	numWorkers     int                    // Number of worker goroutines for parallel matching
 	verbose        bool                   // Enable diagnostic output
-	hasH264Track   bool                   // Whether any video track uses H.264 NAL types
+	isAVCTrack     map[int]bool           // Per-track: whether this track uses H.264 NAL types
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
@@ -240,6 +240,7 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 		windowSize:  sourceIndex.WindowSize,
 		trackTypes:  make(map[int]int),
 		trackCodecs: make(map[int]trackCodecInfo),
+		isAVCTrack:  make(map[int]bool),
 		numWorkers:  numWorkers,
 	}, nil
 }
@@ -292,7 +293,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 			nalLengthSize: nlSize,
 		}
 		if t.Type == mkv.TrackTypeVideo && strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") {
-			m.hasH264Track = true
+			m.isAVCTrack[int(t.Number)] = true
 		}
 	}
 
@@ -337,7 +338,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		fmt.Fprintf(os.Stderr, "Video NALs matched bytes:   %d (%.2f MB)\n",
 			m.diagVideoNALsMatchedBytes.Load(), float64(m.diagVideoNALsMatchedBytes.Load())/(1024*1024))
 		fmt.Fprintf(os.Stderr, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
-		if m.hasH264Track {
+		if len(m.isAVCTrack) > 0 {
 			fmt.Fprintf(os.Stderr, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
 			nalTypeNames := map[byte]string{
 				1: "non-IDR slice", 2: "slice A", 3: "slice B", 4: "slice C",
@@ -567,18 +568,22 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			continue
 		}
 
-		// Track NAL type for video diagnostics (H.264/HEVC only —
-		// for MPEG-2, the byte after the start code is a start code type, not a NAL type)
-		nalType := byte(0)
 		if isVideo {
 			m.diagVideoNALsTotal.Add(1)
-			if m.hasH264Track && syncOff < len(data) {
-				nalType = data[syncOff] & 0x1F
-				m.diagNALTypeTotal[nalType].Add(1)
-			}
 		}
 
-		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, nalType) {
+		// Track NAL type for video diagnostics (H.264 only —
+		// HEVC uses different NAL type encoding, MPEG-2 uses start code types)
+		var matched bool
+		if isVideo && m.isAVCTrack[int(pkt.TrackNum)] && syncOff < len(data) {
+			nalType := data[syncOff] & 0x1F
+			m.diagNALTypeTotal[nalType].Add(1)
+			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, nalType)
+		} else {
+			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo)
+		}
+
+		if matched {
 			anyMatched = true
 			// Early return once the packet is fully covered
 			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
