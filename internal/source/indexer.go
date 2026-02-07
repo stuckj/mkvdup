@@ -28,6 +28,7 @@ type Indexer struct {
 	windowSize     int
 	index          *Index
 	useRawIndexing bool // Force raw file indexing even for DVDs
+	verbose        bool // Enable diagnostic output
 }
 
 // NewIndexer creates a new Indexer for the given source directory.
@@ -63,6 +64,11 @@ func NewIndexerWithOptions(sourceDir string, windowSize int, useRawIndexing bool
 // SourceType returns the detected source type.
 func (idx *Indexer) SourceType() Type {
 	return idx.sourceType
+}
+
+// SetVerbose enables or disables diagnostic output during indexing.
+func (idx *Indexer) SetVerbose(v bool) {
+	idx.verbose = v
 }
 
 // SourceDir returns the source directory path.
@@ -326,8 +332,10 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
-		isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped)
+	if idx.verbose {
+		fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
+			isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped)
+	}
 
 	return nil
 }

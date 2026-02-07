@@ -100,6 +100,7 @@ func buildSourceIndex(sourceDir string) (*source.Indexer, *source.Index, error) 
 	if err != nil {
 		return nil, nil, fmt.Errorf("create indexer: %w", err)
 	}
+	indexer.SetVerbose(verbose)
 
 	start := time.Now()
 	lastProgress := time.Now()
@@ -235,6 +236,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		return result
 	}
 	defer m.Close()
+	m.SetVerbose(verbose)
 
 	matchStart := time.Now()
 	lastProgress := time.Now()
@@ -468,8 +470,8 @@ func createBatch(manifestPath string, warnThreshold float64, quiet bool) error {
 
 	fmt.Printf("Batch create: %d files from %s\n\n", len(manifest.Files), manifest.SourceDir)
 
-	// Pre-check: detect source codecs and verify all MKVs are compatible before
-	// the expensive indexing step. Parse each MKV and check codec compatibility.
+	// Pre-check: detect source codecs and warn about any MKVs with incompatible codecs
+	// before the expensive indexing step. Parse each MKV and check codec compatibility.
 	sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(manifest.SourceDir)
 	if codecErr != nil {
 		if verbose {
@@ -1029,6 +1031,7 @@ func probe(mkvPath string, sourceDirs []string) error {
 			})
 			continue
 		}
+		indexer.SetVerbose(verbose)
 
 		if err := indexer.Build(nil); err != nil {
 			fmt.Printf("  Error building index: %v\n", err)

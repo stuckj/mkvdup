@@ -2,6 +2,7 @@ package source
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,11 +221,13 @@ func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
 	// Read first 4MB — enough to find PES headers with video and audio streams
 	const scanSize = 4 * 1024 * 1024
 	buf := make([]byte, scanSize)
-	n, err := f.Read(buf)
-	if err != nil && n == 0 {
+	n, err := io.ReadFull(f, buf)
+	if err == io.ErrUnexpectedEOF {
+		// File smaller than scanSize — scan what we got
+		buf = buf[:n]
+	} else if err != nil {
 		return nil, fmt.Errorf("read ISO file: %w", err)
 	}
-	buf = buf[:n]
 
 	codecs := &SourceCodecs{}
 

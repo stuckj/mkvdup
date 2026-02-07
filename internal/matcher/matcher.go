@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -191,6 +192,8 @@ type Matcher struct {
 	trackTypes     map[int]int            // Map from track number to track type
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
 	numWorkers     int                    // Number of worker goroutines for parallel matching
+	verbose        bool                   // Enable diagnostic output
+	hasH264Track   bool                   // Whether any video track uses H.264 NAL types
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
@@ -209,7 +212,8 @@ type Matcher struct {
 	diagVideoNALsTotal          atomic.Int64 // Total video NAL sync points tried
 	diagVideoNALsTooSmall       atomic.Int64 // NALs where window didn't fit
 	diagVideoNALsHashNotFound   atomic.Int64 // NALs where hash wasn't in index
-	diagVideoNALsVerifyFailed   atomic.Int64 // NALs where hash found but verify failed
+	diagVideoNALsVerifyFailed   atomic.Int64 // NALs where hash found but all verifications failed
+	diagVideoNALsAllSkipped     atomic.Int64 // NALs where hash found but all locations skipped (e.g. isVideo mismatch)
 	diagVideoNALsMatched        atomic.Int64 // NALs successfully matched
 	diagVideoNALsMatchedBytes   atomic.Int64 // Total bytes from matched video NALs
 	diagVideoNALsSkippedIsVideo atomic.Int64 // Locations skipped due to isVideo mismatch
@@ -238,6 +242,11 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 		trackCodecs: make(map[int]trackCodecInfo),
 		numWorkers:  numWorkers,
 	}, nil
+}
+
+// SetVerbose enables or disables diagnostic output during matching.
+func (m *Matcher) SetVerbose(v bool) {
+	m.verbose = v
 }
 
 // SetNumWorkers sets the number of worker goroutines for parallel matching.
@@ -277,9 +286,13 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	// Build track type and codec info maps
 	for _, t := range tracks {
 		m.trackTypes[int(t.Number)] = t.Type
+		nlSize := detectNALLengthSize(t.CodecID, t.CodecPrivate)
 		m.trackCodecs[int(t.Number)] = trackCodecInfo{
 			trackType:     t.Type,
-			nalLengthSize: detectNALLengthSize(t.CodecID, t.CodecPrivate),
+			nalLengthSize: nlSize,
+		}
+		if t.Type == 1 && (strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") || strings.HasPrefix(t.CodecID, "V_MPEGH/ISO/HEVC")) {
+			m.hasH264Track = true
 		}
 	}
 
@@ -310,42 +323,47 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		progress(len(packets), len(packets))
 	}
 
-	// Print diagnostic summary
-	fmt.Fprintf(os.Stderr, "\n=== Video Matching Diagnostics ===\n")
-	fmt.Fprintf(os.Stderr, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
-	fmt.Fprintf(os.Stderr, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
-	fmt.Fprintf(os.Stderr, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
-	fmt.Fprintf(os.Stderr, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
-	fmt.Fprintf(os.Stderr, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
-	fmt.Fprintf(os.Stderr, "Video NALs verify failed:   %d\n", m.diagVideoNALsVerifyFailed.Load())
-	fmt.Fprintf(os.Stderr, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
-	fmt.Fprintf(os.Stderr, "Video NALs matched bytes:   %d (%.2f MB)\n",
-		m.diagVideoNALsMatchedBytes.Load(), float64(m.diagVideoNALsMatchedBytes.Load())/(1024*1024))
-	fmt.Fprintf(os.Stderr, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
-	fmt.Fprintf(os.Stderr, "\nPer-NAL-type breakdown (type: total / matched / not_found / miss%%):\n")
-	nalTypeNames := map[byte]string{
-		1: "non-IDR slice", 2: "slice A", 3: "slice B", 4: "slice C",
-		5: "IDR slice", 6: "SEI", 7: "SPS", 8: "PPS", 9: "AUD", 12: "filler",
-	}
-	for i := 0; i < 32; i++ {
-		total := m.diagNALTypeTotal[i].Load()
-		if total == 0 {
-			continue
+	// Print diagnostic summary (verbose only)
+	if m.verbose {
+		fmt.Fprintf(os.Stderr, "\n=== Video Matching Diagnostics ===\n")
+		fmt.Fprintf(os.Stderr, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
+		fmt.Fprintf(os.Stderr, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs verify failed:   %d\n", m.diagVideoNALsVerifyFailed.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs all skipped:     %d\n", m.diagVideoNALsAllSkipped.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
+		fmt.Fprintf(os.Stderr, "Video NALs matched bytes:   %d (%.2f MB)\n",
+			m.diagVideoNALsMatchedBytes.Load(), float64(m.diagVideoNALsMatchedBytes.Load())/(1024*1024))
+		fmt.Fprintf(os.Stderr, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
+		if m.hasH264Track {
+			fmt.Fprintf(os.Stderr, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
+			nalTypeNames := map[byte]string{
+				1: "non-IDR slice", 2: "slice A", 3: "slice B", 4: "slice C",
+				5: "IDR slice", 6: "SEI", 7: "SPS", 8: "PPS", 9: "AUD", 12: "filler",
+			}
+			for i := 0; i < 32; i++ {
+				total := m.diagNALTypeTotal[i].Load()
+				if total == 0 {
+					continue
+				}
+				matched := m.diagNALTypeMatched[i].Load()
+				notFound := m.diagNALTypeNotFound[i].Load()
+				name := nalTypeNames[byte(i)]
+				if name == "" {
+					name = "other"
+				}
+				fmt.Fprintf(os.Stderr, "  type %2d (%14s): %8d / %8d / %8d (%.1f%% miss)\n",
+					i, name, total, matched, notFound, float64(notFound)/float64(total)*100)
+			}
 		}
-		matched := m.diagNALTypeMatched[i].Load()
-		notFound := m.diagNALTypeNotFound[i].Load()
-		name := nalTypeNames[byte(i)]
-		if name == "" {
-			name = "other"
+		fmt.Fprintf(os.Stderr, "\nFirst hash-not-found examples:\n")
+		for _, ex := range m.diagExamplesOutput {
+			fmt.Fprintf(os.Stderr, "%s\n", ex)
 		}
-		fmt.Fprintf(os.Stderr, "  type %2d (%14s): %8d / %8d / %8d (%.1f%% miss)\n",
-			i, name, total, matched, notFound, float64(notFound)/float64(total)*100)
+		fmt.Fprintf(os.Stderr, "=================================\n")
 	}
-	fmt.Fprintf(os.Stderr, "\nFirst hash-not-found examples:\n")
-	for _, ex := range m.diagExamplesOutput {
-		fmt.Fprintf(os.Stderr, "%s\n", ex)
-	}
-	fmt.Fprintf(os.Stderr, "=================================\n")
 
 	// Merge overlapping regions and build final entries
 	m.mergeRegions()
@@ -547,12 +565,15 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			continue
 		}
 
-		// Track NAL type for video diagnostics
+		// Track NAL type for video diagnostics (H.264/HEVC only —
+		// for MPEG-2, the byte after the start code is a start code type, not a NAL type)
 		nalType := byte(0)
-		if isVideo && syncOff < len(data) {
-			nalType = data[syncOff] & 0x1F
+		if isVideo {
 			m.diagVideoNALsTotal.Add(1)
-			m.diagNALTypeTotal[nalType].Add(1)
+			if m.hasH264Track && syncOff < len(data) {
+				nalType = data[syncOff] & 0x1F
+				m.diagNALTypeTotal[nalType].Add(1)
+			}
 		}
 
 		if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, nalType) {
@@ -761,6 +782,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 
 	var bestMatch *matchedRegion
 	bestMatchLen := int64(0)
+	triedVerify := false // whether any tryVerifyAndExpand was called
 
 	// Track which location indices were tried in Phase 1 (small fixed-size array)
 	var triedIndices [localityNearbyCount]int
@@ -784,6 +806,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 				continue
 			}
 
+			triedVerify = true
 			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
 			if region != nil {
 				matchLen := region.mkvEnd - region.mkvStart
@@ -820,6 +843,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 				continue
 			}
 
+			triedVerify = true
 			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
 			if region != nil {
 				matchLen := region.mkvEnd - region.mkvStart
@@ -852,7 +876,11 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	}
 
 	if isVideo {
-		m.diagVideoNALsVerifyFailed.Add(1)
+		if triedVerify {
+			m.diagVideoNALsVerifyFailed.Add(1)
+		} else {
+			m.diagVideoNALsAllSkipped.Add(1)
+		}
 	}
 	return false
 }

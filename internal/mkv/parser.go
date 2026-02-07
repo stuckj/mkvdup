@@ -98,9 +98,9 @@ func (p *Parser) Parse(progress ProgressFunc) error {
 	}
 
 	segmentDataStart := elem.DataOffset
-	segmentEnd := p.size
-	if elem.Size > 0 {
-		segmentEnd = elem.DataOffset + elem.Size
+	segmentEnd := elem.DataOffset + elem.Size
+	if elem.Size < 0 {
+		segmentEnd = p.size
 	}
 
 	// Parse segment contents
@@ -409,9 +409,9 @@ func (p *Parser) ParseTracksOnly() error {
 	}
 
 	segmentDataStart := elem.DataOffset
-	segmentEnd := p.size
-	if elem.Size > 0 {
-		segmentEnd = elem.DataOffset + elem.Size
+	segmentEnd := elem.DataOffset + elem.Size
+	if elem.Size < 0 {
+		segmentEnd = p.size
 	}
 
 	// Scan segment children until we find Tracks
