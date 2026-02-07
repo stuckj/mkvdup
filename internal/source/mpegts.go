@@ -3,7 +3,6 @@ package source
 import (
 	"bytes"
 	"fmt"
-	"os"
 )
 
 // MPEGTSParser parses MPEG Transport Stream (M2TS) files to extract elementary
@@ -710,11 +709,6 @@ func (p *MPEGTSParser) splitTrueHDAC3Streams() {
 		p.subStreamCodec[newSubID] = CodecAC3Audio
 		p.audioSubStreams = append(p.audioSubStreams, newSubID)
 
-		fmt.Fprintf(os.Stderr, "  Split TrueHD+AC3 stream (sub %d): TrueHD=%d ranges (%.1f MB ES), AC3=%d ranges (%.1f MB ES) → new sub %d\n",
-			subID,
-			len(truehdRanges), float64(totalESSizeFromRanges(truehdRanges))/(1024*1024),
-			len(ac3Ranges), float64(totalESSizeFromRanges(ac3Ranges))/(1024*1024),
-			newSubID)
 	}
 }
 
