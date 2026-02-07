@@ -400,14 +400,17 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 		return fmt.Errorf("open MKV: %w", err)
 	}
 	if err := codecParser.ParseTracksOnly(); err != nil {
+		// Fail open: this fast-path parser can't handle all MKV layouts.
+		// Log and continue without the pre-index codec compatibility check.
+		log.Printf("Warning: fast MKV track parsing failed for %q: %v; continuing without pre-index codec check", mkvPath, err)
 		codecParser.Close()
-		return fmt.Errorf("parse MKV tracks: %w", err)
-	}
-	if err := checkCodecCompatibilityFromDir(codecParser.Tracks(), sourceDir, nonInteractive); err != nil {
+	} else {
+		if err := checkCodecCompatibilityFromDir(codecParser.Tracks(), sourceDir, nonInteractive); err != nil {
+			codecParser.Close()
+			return err
+		}
 		codecParser.Close()
-		return err
 	}
-	codecParser.Close()
 
 	// Phase 2: Index source (expensive)
 	fmt.Println()
@@ -485,7 +488,10 @@ func createBatch(manifestPath string, warnThreshold float64, quiet bool) error {
 			}
 			if err := codecParser.ParseTracksOnly(); err != nil {
 				codecParser.Close()
-				return fmt.Errorf("parse tracks %s: %w", filepath.Base(f.MKV), err)
+				if verbose {
+					fmt.Printf("Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
+				}
+				continue
 			}
 			mismatches := source.CheckCodecCompatibility(codecParser.Tracks(), sourceCodecs)
 			codecParser.Close()
