@@ -359,6 +359,29 @@ ExecStart=/usr/bin/mkvdup mount --foreground --pid-file /run/mkvdup.pid /mnt/vid
 ExecReload=/usr/bin/mkvdup reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 ```
 
+### deltadiag
+
+Analyze unmatched (delta) regions in a dedup file by cross-referencing with the original MKV to classify what stream type each delta region belongs to.
+
+```bash
+mkvdup deltadiag <dedup-file> <mkv-file>
+
+# Example:
+mkvdup deltadiag movie.mkvdup movie.mkv
+```
+
+**Arguments:**
+- `<dedup-file>` -- Path to the .mkvdup file
+- `<mkv-file>` -- Path to the original MKV file
+
+**Output includes:**
+- Total delta breakdown by stream type (video, audio, container)
+- H.264 NAL type breakdown for video delta (SPS, PPS, SEI, slices, etc.)
+- Slice NAL size distribution (small vs large)
+- Summary with percentages of original file size
+
+**Use case:** After creating a dedup file, use deltadiag to understand where the unmatched bytes are. This helps identify matching issues (e.g., audio streams that should be matching but aren't) and validate that improvements to the matching algorithm are working.
+
 ### Debug Commands
 
 ```bash

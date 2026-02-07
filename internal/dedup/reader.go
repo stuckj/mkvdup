@@ -344,6 +344,12 @@ func (r *Reader) EntryCount() int {
 	return r.entryCount
 }
 
+// GetEntry returns the entry at the given index.
+// Returns false if the index is out of range.
+func (r *Reader) GetEntry(idx int) (Entry, bool) {
+	return r.getEntry(idx)
+}
+
 // InitEntryAccess explicitly initializes entry access and returns any error.
 // This is useful when you need to check for initialization errors before calling
 // methods like EntryCount() or Info() that silently return zero/empty on error.

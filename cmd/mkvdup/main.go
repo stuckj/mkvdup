@@ -103,6 +103,9 @@ Commands:
   validate     Validate configuration files
   reload       Reload running daemon's configuration
 
+Analysis commands:
+  deltadiag    Analyze unmatched regions by stream type
+
 Debug commands:
   parse-mkv    Parse MKV and show packet info
   index-source Index source directory
@@ -344,6 +347,25 @@ Examples:
     mkvdup reload --pid-file /run/mkvdup.pid config.yaml
     mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
     mkvdup reload --pid-file /run/mkvdup.pid
+`)
+	case "deltadiag":
+		fmt.Print(`Usage: mkvdup deltadiag <dedup-file> <mkv-file>
+
+Analyze unmatched (delta) regions in a dedup file by cross-referencing
+with the original MKV to determine what stream type each delta region
+belongs to (video, audio, or container overhead).
+
+For video delta, further classifies by H.264 NAL type (IDR/non-IDR slices,
+SEI, SPS, PPS, etc.) and shows size breakdown.
+
+Works with both V3 (DVD) and V4 (Blu-ray) dedup files.
+
+Arguments:
+    <dedup-file>  Path to the .mkvdup file
+    <mkv-file>    Path to the original MKV file
+
+Examples:
+    mkvdup deltadiag movie.mkvdup movie.mkv
 `)
 	case "parse-mkv":
 		fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
@@ -682,6 +704,15 @@ func main() {
 			log.Fatalf("Error: --pid-file is required for reload")
 		}
 		if err := reloadDaemon(pidFile, reloadArgs, configDir); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "deltadiag":
+		if len(args) < 2 {
+			printCommandUsage("deltadiag")
+			os.Exit(1)
+		}
+		if err := deltadiag(args[0], args[1]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

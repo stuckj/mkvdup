@@ -117,6 +117,27 @@ The parser identifies streams via MPEG-TS Program Specific Information:
 
 Unlike DVDs where audio is multiplexed in Private Stream 1 with sub-stream IDs, Blu-ray audio tracks have individual PIDs. The parser assigns sequential byte sub-stream IDs (0, 1, 2, ...) to audio PIDs in PMT order, maintaining compatibility with the `Location.AudioSubStreamID` field used throughout the codebase.
 
+## Blu-ray TrueHD+AC3 Stream Splitting
+
+**Problem:** On Blu-ray discs, TrueHD audio streams (PMT stream type 0x83) embed an AC3 compatibility core interleaved in the same PID. The raw PES payload data looks like:
+
+```
+PES payload: [AC3 frame][TrueHD frame(s)][AC3 frame][TrueHD frame(s)]...
+```
+
+MakeMKV (and other ripping tools) split these into separate MKV tracks: one for TrueHD-only data, one for the AC3 core. If we index them as a single combined sub-stream, the interleaved AC3+TrueHD bytes don't match either MKV track.
+
+**Solution:** After parsing all PES payloads, detect combined TrueHD+AC3 streams by scanning the first 16KB of ES data for both AC3 sync words (`0B 77`) and TrueHD major sync words (`F8 72 6F BA`). When both are found, split the ranges by walking through the payload and parsing AC3 frame headers to determine frame boundaries:
+
+1. **AC3 frame detection**: When `0B 77` is found, read byte 4 for `fscod` (2-bit sample rate code) and `frmsizecod` (6-bit frame size code). The frame size is deterministic from these values (ATSC A/52 Table 5.18).
+2. **Range assignment**: AC3 frame bytes go to the new AC3 sub-stream; all other bytes go to the TrueHD sub-stream.
+3. **Cross-range tracking**: AC3 frames may span TS payload chunks. The `ac3Remaining` counter tracks bytes still belonging to the current AC3 frame across range boundaries.
+4. **Range merging**: After splitting, merge adjacent ranges that are contiguous in both file offset and ES offset to reduce range count.
+
+The original sub-stream ID keeps the TrueHD-only ranges; a new sub-stream ID is assigned for the AC3 core.
+
+**Impact:** On a 40GB Blu-ray (MI7), audio delta dropped from 1.85 GB (42% of total delta) to near-zero after splitting. The matcher can now find TrueHD data in the TrueHD MKV track and AC3 data in the AC3 MKV track.
+
 ## Video user_data Filtering
 
 **Problem:** MKV remuxing tools typically strip `user_data` sections (start code `00 00 01 B2`) from video streams. These contain closed captions and other auxiliary data.

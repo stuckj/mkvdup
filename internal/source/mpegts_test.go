@@ -699,3 +699,364 @@ func TestMPEGTSParser_ProgressCallback(t *testing.T) {
 		t.Errorf("final processed = %d, want %d (should equal total at completion)", finalProcessed, finalTotal)
 	}
 }
+
+// --- Tests for mergeAdjacentRanges ---
+
+func TestMergeAdjacentRanges(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  []PESPayloadRange
+		expect []PESPayloadRange
+	}{
+		{
+			name:   "empty",
+			input:  nil,
+			expect: nil,
+		},
+		{
+			name:   "single",
+			input:  []PESPayloadRange{{FileOffset: 100, Size: 50, ESOffset: 0}},
+			expect: []PESPayloadRange{{FileOffset: 100, Size: 50, ESOffset: 0}},
+		},
+		{
+			name: "two contiguous",
+			input: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 150, Size: 30, ESOffset: 50},
+			},
+			expect: []PESPayloadRange{
+				{FileOffset: 100, Size: 80, ESOffset: 0},
+			},
+		},
+		{
+			name: "two non-contiguous file offset",
+			input: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 200, Size: 30, ESOffset: 50},
+			},
+			expect: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 200, Size: 30, ESOffset: 50},
+			},
+		},
+		{
+			name: "two non-contiguous ES offset",
+			input: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 150, Size: 30, ESOffset: 100},
+			},
+			expect: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 150, Size: 30, ESOffset: 100},
+			},
+		},
+		{
+			name: "three ranges merge first two",
+			input: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 150, Size: 30, ESOffset: 50},
+				{FileOffset: 300, Size: 20, ESOffset: 80},
+			},
+			expect: []PESPayloadRange{
+				{FileOffset: 100, Size: 80, ESOffset: 0},
+				{FileOffset: 300, Size: 20, ESOffset: 80},
+			},
+		},
+		{
+			name: "all three merge",
+			input: []PESPayloadRange{
+				{FileOffset: 100, Size: 50, ESOffset: 0},
+				{FileOffset: 150, Size: 30, ESOffset: 50},
+				{FileOffset: 180, Size: 20, ESOffset: 80},
+			},
+			expect: []PESPayloadRange{
+				{FileOffset: 100, Size: 100, ESOffset: 0},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeAdjacentRanges(tt.input)
+			if len(got) != len(tt.expect) {
+				t.Fatalf("mergeAdjacentRanges() returned %d ranges, want %d", len(got), len(tt.expect))
+			}
+			for i, r := range got {
+				if r != tt.expect[i] {
+					t.Errorf("range[%d] = %+v, want %+v", i, r, tt.expect[i])
+				}
+			}
+		})
+	}
+}
+
+// --- Tests for TrueHD+AC3 splitting ---
+
+// makeAC3Frame creates a synthetic AC3 frame with sync word 0B 77 at the start.
+// fscod=0 (48kHz), frmsizecod=4 → frame size = 192 bytes.
+func makeAC3Frame(fillByte byte) []byte {
+	frame := make([]byte, 192)
+	frame[0] = 0x0B
+	frame[1] = 0x77
+	frame[2] = 0xAA         // CRC1
+	frame[3] = 0xBB         // CRC1
+	frame[4] = (0 << 6) | 4 // fscod=0, frmsizecod=4
+	for i := 5; i < 192; i++ {
+		frame[i] = fillByte
+	}
+	return frame
+}
+
+// makeTrueHDUnit creates a synthetic TrueHD access unit.
+// Starts with the TrueHD major sync word: F8 72 6F BA.
+func makeTrueHDUnit(size int, fillByte byte) []byte {
+	unit := make([]byte, size)
+	if size >= 4 {
+		unit[0] = 0xF8
+		unit[1] = 0x72
+		unit[2] = 0x6F
+		unit[3] = 0xBA
+	}
+	for i := 4; i < size; i++ {
+		unit[i] = fillByte
+	}
+	return unit
+}
+
+// buildTrueHDAC3M2TSData creates M2TS data with a combined TrueHD+AC3 stream.
+// The PES payload contains: [AC3 frame][TrueHD unit][AC3 frame][TrueHD unit]
+//
+// Payload sizes are chosen so the total exactly fills M2TS packets:
+// First PUSI packet carries 175 bytes ES (184 - 9 PES header).
+// Continuations carry 184 bytes each. Total = 175 + 4×184 = 911 bytes.
+// AC3: 2 × 192 = 384 bytes. TrueHD: 300 + 227 = 527 bytes.
+func buildTrueHDAC3M2TSData() []byte {
+	const (
+		pmtPID   = uint16(0x0100)
+		videoPID = uint16(0x1011)
+		audioPID = uint16(0x1101)
+	)
+
+	// Build combined TrueHD+AC3 payload (911 bytes = 175 + 4×184)
+	var audioPayload []byte
+	audioPayload = append(audioPayload, makeAC3Frame(0x11)...)        // 192 bytes AC3
+	audioPayload = append(audioPayload, makeTrueHDUnit(300, 0x22)...) // 300 bytes TrueHD
+	audioPayload = append(audioPayload, makeAC3Frame(0x33)...)        // 192 bytes AC3
+	audioPayload = append(audioPayload, makeTrueHDUnit(227, 0x44)...) // 227 bytes TrueHD
+	// Total: 911 bytes
+
+	var data []byte
+	data = append(data, makeM2TSPacket(0, true, 0x01, 0, 0, makePATPayload(pmtPID))...)
+	data = append(data, makeM2TSPacket(pmtPID, true, 0x01, 0, 0,
+		makePMTPayload(videoPID, 0x1B,
+			[]uint16{audioPID},
+			[]byte{0x83}))...) // 0x83 = TrueHD
+
+	// Video PUSI
+	data = append(data, makeM2TSPacket(videoPID, true, 0x01, 0, 1,
+		makePESStart(0xE0, 0, seqBytes(0, 175)))...)
+
+	// Audio PUSI - PES header + start of audioPayload
+	pesHdr := makePESStart(0xFD, 0, nil) // 9-byte PES header
+	firstChunkSize := 184 - len(pesHdr)  // 175 bytes
+	firstPayload := make([]byte, 184)
+	copy(firstPayload, pesHdr)
+	copy(firstPayload[len(pesHdr):], audioPayload[:firstChunkSize])
+	data = append(data, makeM2TSPacket(audioPID, true, 0x01, 0, 0, firstPayload)...)
+
+	// Audio continuation packets for remaining data
+	remaining := audioPayload[firstChunkSize:]
+	cc := byte(1)
+	for len(remaining) > 0 {
+		chunkSize := 184
+		if chunkSize > len(remaining) {
+			chunkSize = len(remaining)
+		}
+		chunk := make([]byte, 184)
+		copy(chunk, remaining[:chunkSize])
+		data = append(data, makeM2TSPacket(audioPID, false, 0x01, 0, cc, chunk)...)
+		remaining = remaining[chunkSize:]
+		cc++
+	}
+
+	return data
+}
+
+func TestMPEGTSParser_TrueHDAC3Split(t *testing.T) {
+	data := buildTrueHDAC3M2TSData()
+	p := NewMPEGTSParser(data)
+	if err := p.Parse(); err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	// Should have 2 audio sub-streams after splitting: TrueHD (original) and AC3 (new)
+	if got := p.AudioSubStreamCount(); got != 2 {
+		t.Fatalf("AudioSubStreamCount = %d, want 2 (TrueHD + AC3 after split)", got)
+	}
+
+	subs := p.AudioSubStreams()
+
+	// Sub-stream 0 should be TrueHD-only (original, now filtered)
+	truehdSize := p.AudioSubStreamESSize(subs[0])
+	// Sub-stream 1 should be AC3-only (newly created)
+	ac3Size := p.AudioSubStreamESSize(subs[1])
+
+	// AC3: 2 frames × 192 bytes = 384 bytes
+	if ac3Size != 384 {
+		t.Errorf("AC3 sub-stream size = %d, want 384 (2 × 192)", ac3Size)
+	}
+
+	// TrueHD: 300 + 227 = 527 bytes
+	if truehdSize != 527 {
+		t.Errorf("TrueHD sub-stream size = %d, want 527 (300 + 227)", truehdSize)
+	}
+
+	// Total should equal original audio payload size (911 bytes)
+	totalAudio := truehdSize + ac3Size
+	if totalAudio != 911 {
+		t.Errorf("Total audio ES = %d, want 911", totalAudio)
+	}
+
+	// Verify AC3 data starts with sync word
+	ac3Data, err := p.ReadAudioSubStreamData(subs[1], 0, 2)
+	if err != nil {
+		t.Fatalf("ReadAudioSubStreamData(AC3) error: %v", err)
+	}
+	if ac3Data[0] != 0x0B || ac3Data[1] != 0x77 {
+		t.Errorf("AC3 data starts with [%02X %02X], want [0B 77]", ac3Data[0], ac3Data[1])
+	}
+
+	// Verify TrueHD data starts with major sync
+	truehdData, err := p.ReadAudioSubStreamData(subs[0], 0, 4)
+	if err != nil {
+		t.Fatalf("ReadAudioSubStreamData(TrueHD) error: %v", err)
+	}
+	if truehdData[0] != 0xF8 || truehdData[1] != 0x72 || truehdData[2] != 0x6F || truehdData[3] != 0xBA {
+		t.Errorf("TrueHD data starts with [%02X %02X %02X %02X], want [F8 72 6F BA]",
+			truehdData[0], truehdData[1], truehdData[2], truehdData[3])
+	}
+}
+
+func TestMPEGTSParser_NoSplitForNonTrueHD(t *testing.T) {
+	// Regular AC3 stream (type 0x81) should NOT be split
+	data := buildBasicM2TSData()
+	p := NewMPEGTSParser(data)
+	if err := p.Parse(); err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	// Should still have just 1 audio sub-stream
+	if got := p.AudioSubStreamCount(); got != 1 {
+		t.Errorf("AudioSubStreamCount = %d, want 1 (no split for non-TrueHD)", got)
+	}
+}
+
+func TestDetectCombinedTrueHDAC3(t *testing.T) {
+	// Create test data buffer that contains both AC3 and TrueHD sync words
+	combined := make([]byte, 512)
+	// AC3 sync at offset 0
+	combined[0] = 0x0B
+	combined[1] = 0x77
+	// TrueHD sync at offset 200
+	combined[200] = 0xF8
+	combined[201] = 0x72
+	combined[202] = 0x6F
+	combined[203] = 0xBA
+
+	// Build a minimal parser with this data
+	p := &MPEGTSParser{
+		data: combined,
+		size: int64(len(combined)),
+	}
+
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: 512, ESOffset: 0},
+	}
+
+	if !p.detectCombinedTrueHDAC3(ranges) {
+		t.Error("detectCombinedTrueHDAC3() = false, want true for data with both sync words")
+	}
+
+	// Data with only AC3 sync
+	ac3Only := make([]byte, 512)
+	ac3Only[0] = 0x0B
+	ac3Only[1] = 0x77
+	p2 := &MPEGTSParser{
+		data: ac3Only,
+		size: int64(len(ac3Only)),
+	}
+	if p2.detectCombinedTrueHDAC3(ranges) {
+		t.Error("detectCombinedTrueHDAC3() = true, want false for AC3-only data")
+	}
+
+	// Data with only TrueHD sync
+	truehdOnly := make([]byte, 512)
+	truehdOnly[0] = 0xF8
+	truehdOnly[1] = 0x72
+	truehdOnly[2] = 0x6F
+	truehdOnly[3] = 0xBA
+	p3 := &MPEGTSParser{
+		data: truehdOnly,
+		size: int64(len(truehdOnly)),
+	}
+	if p3.detectCombinedTrueHDAC3(ranges) {
+		t.Error("detectCombinedTrueHDAC3() = true, want false for TrueHD-only data")
+	}
+}
+
+func TestSplitCombinedAudioRanges(t *testing.T) {
+	// Build combined payload: AC3(192) + TrueHD(100) + AC3(192) + TrueHD(50)
+	var payload []byte
+	payload = append(payload, makeAC3Frame(0x11)...)        // 192 bytes
+	payload = append(payload, makeTrueHDUnit(100, 0x22)...) // 100 bytes
+	payload = append(payload, makeAC3Frame(0x33)...)        // 192 bytes
+	payload = append(payload, makeTrueHDUnit(50, 0x44)...)  // 50 bytes
+	// Total: 534 bytes
+
+	p := &MPEGTSParser{
+		data: payload,
+		size: int64(len(payload)),
+	}
+
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: len(payload), ESOffset: 0},
+	}
+
+	ac3Ranges, truehdRanges := p.splitCombinedAudioRanges(ranges)
+
+	// Calculate totals
+	var ac3Total, truehdTotal int64
+	for _, r := range ac3Ranges {
+		ac3Total += int64(r.Size)
+	}
+	for _, r := range truehdRanges {
+		truehdTotal += int64(r.Size)
+	}
+
+	if ac3Total != 384 {
+		t.Errorf("AC3 total size = %d, want 384 (2 × 192)", ac3Total)
+	}
+	if truehdTotal != 150 {
+		t.Errorf("TrueHD total size = %d, want 150 (100 + 50)", truehdTotal)
+	}
+	if ac3Total+truehdTotal != int64(len(payload)) {
+		t.Errorf("AC3(%d) + TrueHD(%d) = %d, want %d (total payload)",
+			ac3Total, truehdTotal, ac3Total+truehdTotal, len(payload))
+	}
+
+	// Verify ES offsets are sequential
+	for i := 1; i < len(ac3Ranges); i++ {
+		prev := ac3Ranges[i-1]
+		cur := ac3Ranges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("AC3 range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+	for i := 1; i < len(truehdRanges); i++ {
+		prev := truehdRanges[i-1]
+		cur := truehdRanges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("TrueHD range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+}

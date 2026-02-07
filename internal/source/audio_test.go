@@ -192,6 +192,66 @@ func TestFindAudioSyncPointsInRange(t *testing.T) {
 	}
 }
 
+func TestAC3FrameSize(t *testing.T) {
+	tests := []struct {
+		name       string
+		fscod      byte
+		frmsizecod byte
+		want       int
+	}{
+		// 48 kHz (fscod=0)
+		{"48kHz/32kbps/even", 0, 0, 128},
+		{"48kHz/32kbps/odd", 0, 1, 128},
+		{"48kHz/64kbps", 0, 4, 192},
+		{"48kHz/128kbps", 0, 8, 256},
+		{"48kHz/192kbps", 0, 12, 384},
+		{"48kHz/384kbps", 0, 20, 768},
+		{"48kHz/448kbps", 0, 22, 896},
+		{"48kHz/640kbps", 0, 36, 2560},
+
+		// 44.1 kHz (fscod=1)
+		{"44.1kHz/32kbps/even", 1, 0, 138},
+		{"44.1kHz/32kbps/odd", 1, 1, 140},
+		{"44.1kHz/384kbps", 1, 20, 834},
+		{"44.1kHz/640kbps", 1, 36, 2786},
+
+		// 32 kHz (fscod=2)
+		{"32kHz/32kbps", 2, 0, 192},
+		{"32kHz/384kbps", 2, 20, 1152},
+		{"32kHz/640kbps", 2, 36, 3840},
+
+		// Invalid inputs
+		{"invalid fscod=3", 3, 0, 0},
+		{"invalid frmsizecod=38", 0, 38, 0},
+		{"invalid frmsizecod=255", 0, 255, 0},
+		{"both invalid", 3, 38, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AC3FrameSize(tt.fscod, tt.frmsizecod)
+			if got != tt.want {
+				t.Errorf("AC3FrameSize(%d, %d) = %d, want %d", tt.fscod, tt.frmsizecod, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAC3FrameSize_AllValid(t *testing.T) {
+	// Verify all valid combinations return non-zero values
+	for fscod := byte(0); fscod < 3; fscod++ {
+		for frmsizecod := byte(0); frmsizecod < 38; frmsizecod++ {
+			size := AC3FrameSize(fscod, frmsizecod)
+			if size == 0 {
+				t.Errorf("AC3FrameSize(%d, %d) = 0, want non-zero", fscod, frmsizecod)
+			}
+			if size%2 != 0 {
+				t.Errorf("AC3FrameSize(%d, %d) = %d, want even (frame sizes are in 16-bit words)", fscod, frmsizecod, size)
+			}
+		}
+	}
+}
+
 func BenchmarkFindAudioSyncPoints(b *testing.B) {
 	// Create test data with some sync patterns scattered throughout
 	data := make([]byte, 1024*1024) // 1MB

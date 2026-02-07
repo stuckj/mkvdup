@@ -201,6 +201,19 @@ Config files to validate (same as mount's config args)
 Treat config argument as directory of YAML files (.yaml, .yml)
 .RE
 .TP
+.B deltadiag \fIdedup-file\fR \fImkv-file\fR
+Analyze unmatched (delta) regions in a dedup file by cross-referencing with
+the original MKV. Classifies delta bytes by stream type (video, audio,
+container) and provides H.264 NAL type breakdown for video delta.
+.RS
+.TP
+.I dedup-file
+Path to the .mkvdup file
+.TP
+.I mkv-file
+Path to the original MKV file
+.RE
+.TP
 .B parse-mkv \fImkv-file\fR
 Parse an MKV file and display packet information (debugging).
 .TP
@@ -285,6 +298,14 @@ Reload a running daemon's configuration:
 .nf
 @PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 @PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+.fi
+.RE
+.PP
+Analyze unmatched regions in a dedup file:
+.PP
+.RS
+.nf
+@PACKAGE_NAME@ deltadiag movie.mkvdup original.mkv
 .fi
 .RE
 .SH BATCH MANIFEST FORMAT
@@ -463,19 +484,22 @@ Dedup files containing the index and delta data
 .I *.mkvdup.yaml
 Config files for mounting dedup files
 .SH FILE FORMAT
-The .mkvdup file format is versioned. The current version is 3.
+The .mkvdup file format is versioned.
 .PP
-.B Version 3 (current):
-Adds source type awareness (DVD/Blu-ray) and multi-source-file support.
+.B Version 4 (current, Blu-ray):
+Adds embedded range map section for Blu-ray M2TS sources.
+Index entries use ES offsets; the range map translates ES offsets to
+raw file offsets at read time.
+.PP
+.B Version 3 (current, DVD):
+Source type awareness and multi-source-file support.
 Stores raw file offsets for all source references.
 .PP
 .B Version 2 (deprecated):
-Stores raw file offsets for all source references. This provides faster
-FUSE read performance by eliminating offset translation overhead.
+Stores raw file offsets for all source references.
 .PP
 .B Version 1 (deprecated):
-Used elementary stream (ES) offsets for DVD sources, requiring translation
-during reads.
+Used elementary stream (ES) offsets for DVD sources.
 .PP
 Deprecated version files must be recreated using the
 .B create
