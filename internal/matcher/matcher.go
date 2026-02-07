@@ -204,14 +204,14 @@ type Matcher struct {
 	lastMatchValid     atomic.Bool
 
 	// Diagnostic counters for investigating match failures
-	diagVideoPacketsTotal      atomic.Int64 // Total video packets processed
-	diagVideoPacketsCoverage   atomic.Int64 // Video packets skipped (coverage check)
-	diagVideoNALsTotal         atomic.Int64 // Total video NAL sync points tried
-	diagVideoNALsTooSmall      atomic.Int64 // NALs where window didn't fit
-	diagVideoNALsHashNotFound  atomic.Int64 // NALs where hash wasn't in index
-	diagVideoNALsVerifyFailed  atomic.Int64 // NALs where hash found but verify failed
-	diagVideoNALsMatched       atomic.Int64 // NALs successfully matched
-	diagVideoNALsMatchedBytes  atomic.Int64 // Total bytes from matched video NALs
+	diagVideoPacketsTotal       atomic.Int64 // Total video packets processed
+	diagVideoPacketsCoverage    atomic.Int64 // Video packets skipped (coverage check)
+	diagVideoNALsTotal          atomic.Int64 // Total video NAL sync points tried
+	diagVideoNALsTooSmall       atomic.Int64 // NALs where window didn't fit
+	diagVideoNALsHashNotFound   atomic.Int64 // NALs where hash wasn't in index
+	diagVideoNALsVerifyFailed   atomic.Int64 // NALs where hash found but verify failed
+	diagVideoNALsMatched        atomic.Int64 // NALs successfully matched
+	diagVideoNALsMatchedBytes   atomic.Int64 // Total bytes from matched video NALs
 	diagVideoNALsSkippedIsVideo atomic.Int64 // Locations skipped due to isVideo mismatch
 
 	// Per-NAL-type diagnostics (H.264 NAL type = first byte & 0x1F)
