@@ -291,7 +291,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 			trackType:     t.Type,
 			nalLengthSize: nlSize,
 		}
-		if t.Type == 1 && (strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") || strings.HasPrefix(t.CodecID, "V_MPEGH/ISO/HEVC")) {
+		if t.Type == mkv.TrackTypeVideo && strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") {
 			m.hasH264Track = true
 		}
 	}

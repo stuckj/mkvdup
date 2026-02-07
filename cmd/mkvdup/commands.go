@@ -1802,9 +1802,13 @@ func deltadiag(dedupPath, mkvPath string) error {
 	// Build track type map and detect AVCC NAL length size
 	trackTypes := make(map[int]int)
 	nalLenSizes := make(map[int]int)
+	isAVCTrack := make(map[int]bool)
 	for _, t := range tracks {
 		trackTypes[int(t.Number)] = t.Type
 		nalLenSizes[int(t.Number)] = matcher.NALLengthSizeForTrack(t.CodecID, t.CodecPrivate)
+		if strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") {
+			isAVCTrack[int(t.Number)] = true
+		}
 	}
 
 	// Memory-map MKV for reading delta bytes
@@ -1851,9 +1855,9 @@ func deltadiag(dedupPath, mkvPath string) error {
 			deltaVideo.bytes += ent.Length
 			deltaVideo.count++
 
-			// Parse AVCC NALs in the delta region
+			// Parse AVCC NALs in the delta region (H.264 only — HEVC uses different NAL type encoding)
 			nalLenSize := nalLenSizes[int(pkt.TrackNum)]
-			if nalLenSize > 0 && ent.Length >= int64(nalLenSize+1) {
+			if nalLenSize > 0 && isAVCTrack[int(pkt.TrackNum)] && ent.Length >= int64(nalLenSize+1) {
 				deltaStart := ent.MkvOffset
 				deltaEnd := ent.MkvOffset + ent.Length
 				if deltaEnd <= int64(len(mkvData)) {
