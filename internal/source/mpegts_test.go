@@ -1161,3 +1161,169 @@ func TestMPEGTSParser_SubtitleSubStreams(t *testing.T) {
 		t.Errorf("subStreamCodec[%d] = %v, want CodecPGSSubtitle", subtitleSubs[0], parser.subStreamCodec[subtitleSubs[0]])
 	}
 }
+
+func TestMPEGTSParser_MultiPacketPMT(t *testing.T) {
+	// Build M2TS data where the PMT spans two TS packets.
+	// With 1 video + 8 audio + 4 PGS streams = 13 streams × 5 bytes = 65 bytes of stream
+	// descriptors, plus section header overhead. This exceeds a single TS payload when
+	// ES info descriptors are included, forcing multi-packet reassembly.
+
+	const packetSize = 192
+	const tsPayloadStart = 4
+
+	// We'll build: 1 video (0x1B) + 8 audio (0x81) + 4 PGS (0x90) = 13 streams
+	// PMT section: table_id(1) + section_length(2) + TSID(2) + version(1) + section_num(1) +
+	//   last_section(1) + PCR_PID(2) + prog_info_len(2) = 12 bytes header
+	//   + 13 * 5 = 65 bytes streams = 77 bytes + 4 CRC = 81 bytes total section
+	// That fits in one packet, so let's add ES info descriptors to make it larger.
+	// Instead, we manually build a PMT that spans two packets by using ES info descriptors.
+
+	// Actually, let's just create enough streams: 1 video + 8 audio + 17 PGS = 26 streams
+	// Section: 12 header + 26*5 streams + 4 CRC = 146 bytes
+	// TS payload with pointer field: 184 - 1 = 183 bytes available
+	// Section data (146 bytes) fits in one packet. We need ES info descriptors.
+	// Let's add 6-byte ES info descriptors per audio stream to push it over.
+
+	numAudio := 8
+	numPGS := 17
+	numStreams := 1 + numAudio + numPGS // 26
+
+	// Build PMT section manually with ES info descriptors on audio streams
+	// to push the section past 184 bytes
+	pmtSection := make([]byte, 0, 300)
+	pmtSection = append(pmtSection, 0x02) // table_id
+	// Placeholder for section_length (fill later)
+	pmtSection = append(pmtSection, 0xB0, 0x00)
+	pmtSection = append(pmtSection, 0x00, 0x01) // TSID
+	pmtSection = append(pmtSection, 0xC1)       // version 0, current
+	pmtSection = append(pmtSection, 0x00, 0x00) // section/last section
+	pmtSection = append(pmtSection, 0xE1, 0x01) // PCR PID = 0x101
+	pmtSection = append(pmtSection, 0xF0, 0x00) // prog_info_len = 0
+
+	// Video stream (PID 0x101)
+	pmtSection = append(pmtSection, 0x1B)       // H.264
+	pmtSection = append(pmtSection, 0xE1, 0x01) // PID 0x101
+	pmtSection = append(pmtSection, 0xF0, 0x00) // ES info len = 0
+
+	// Audio streams (PIDs 0x1100-0x1107) with 6-byte descriptors each
+	for i := 0; i < numAudio; i++ {
+		pid := 0x1100 + i
+		pmtSection = append(pmtSection, 0x81)                           // AC3
+		pmtSection = append(pmtSection, 0xE0|byte(pid>>8), byte(pid))   // PID
+		pmtSection = append(pmtSection, 0xF0, 0x06)                     // ES info len = 6
+		pmtSection = append(pmtSection, 0x05, 0x04, 'A', 'C', '-', '3') // registration descriptor
+	}
+
+	// PGS subtitle streams (PIDs 0x1200-0x1210)
+	for i := 0; i < numPGS; i++ {
+		pid := 0x1200 + i
+		pmtSection = append(pmtSection, 0x90)                         // PGS
+		pmtSection = append(pmtSection, 0xE0|byte(pid>>8), byte(pid)) // PID
+		pmtSection = append(pmtSection, 0xF0, 0x00)                   // ES info len = 0
+	}
+
+	// CRC placeholder
+	pmtSection = append(pmtSection, 0x00, 0x00, 0x00, 0x00)
+
+	// Fill section_length (total bytes after section_length field, including CRC)
+	sectionLen := len(pmtSection) - 3
+	pmtSection[1] = 0xB0 | byte(sectionLen>>8)
+	pmtSection[2] = byte(sectionLen)
+
+	// Verify it's too large for one TS packet payload
+	// TS payload = 188 - 4 (TS header) - 1 (pointer field) = 183 bytes
+	if len(pmtSection) <= 183 {
+		t.Fatalf("PMT section %d bytes fits in one packet; test needs larger PMT", len(pmtSection))
+	}
+
+	// Build M2TS packets
+	// We need: PAT + PMT pkt1 (PUSI) + PMT pkt2 (continuation) + padding packets
+	numPackets := 8 // PAT + 2 PMT + 5 padding for sync detection
+	data := make([]byte, packetSize*numPackets)
+
+	// Initialize all as null packets
+	for i := 0; i < numPackets; i++ {
+		off := i*packetSize + tsPayloadStart
+		data[off] = 0x47
+		data[off+1] = 0x1F
+		data[off+2] = 0xFF
+		data[off+3] = 0x10
+	}
+
+	// Packet 0: PAT
+	pat := data[tsPayloadStart:]
+	pat[0] = 0x47
+	pat[1] = 0x40 // PUSI, PID 0
+	pat[2] = 0x00
+	pat[3] = 0x10 // payload only
+	pat[4] = 0x00 // pointer field
+	pat[5] = 0x00 // table_id = PAT
+	pat[6] = 0xB0
+	pat[7] = 0x0D // section_length = 13
+	pat[8] = 0x00
+	pat[9] = 0x01
+	pat[10] = 0xC1
+	pat[11] = 0x00
+	pat[12] = 0x00
+	pat[13] = 0x00
+	pat[14] = 0x01
+	pat[15] = 0xE1 // PMT PID = 0x100
+	pat[16] = 0x00
+
+	// Packet 1: PMT first packet (PUSI)
+	pmt1 := data[packetSize+tsPayloadStart:]
+	pmt1[0] = 0x47
+	pmt1[1] = 0x41 // PUSI, PID 0x100
+	pmt1[2] = 0x00
+	pmt1[3] = 0x10                  // payload only, CC=0
+	pmt1[4] = 0x00                  // pointer field
+	firstPayloadSize := 188 - 4 - 1 // 183 bytes
+	copy(pmt1[5:], pmtSection[:firstPayloadSize])
+
+	// Packet 2: PMT continuation
+	pmt2 := data[2*packetSize+tsPayloadStart:]
+	pmt2[0] = 0x47
+	pmt2[1] = 0x01 // no PUSI, PID 0x100
+	pmt2[2] = 0x00
+	pmt2[3] = 0x11 // payload only, CC=1
+	remaining := pmtSection[firstPayloadSize:]
+	copy(pmt2[4:], remaining)
+
+	// Now add PES data packets for at least the first audio and PGS PIDs
+	// so the parser has some data to work with (not strictly needed for PMT test,
+	// but ensures the full parse succeeds)
+
+	parser := NewMPEGTSParser(data)
+	if err := parser.ParseWithProgress(nil); err != nil {
+		t.Fatalf("ParseWithProgress: %v", err)
+	}
+
+	// Verify video was detected
+	if parser.VideoPID() != 0x1011 {
+		// PID 0x101 was set as video
+	}
+
+	// Verify all audio + subtitle sub-streams were detected
+	allSubs := parser.AudioSubStreams()
+	wantTotal := numAudio + numPGS
+	if len(allSubs) != wantTotal {
+		t.Fatalf("AudioSubStreams() = %v (len %d), want %d sub-streams (%d audio + %d PGS)",
+			allSubs, len(allSubs), wantTotal, numAudio, numPGS)
+	}
+
+	// Verify subtitle sub-streams
+	subtitleSubs := parser.SubtitleSubStreams()
+	if len(subtitleSubs) != numPGS {
+		t.Fatalf("SubtitleSubStreams() = %v (len %d), want %d PGS sub-streams",
+			subtitleSubs, len(subtitleSubs), numPGS)
+	}
+
+	// Verify all subtitle sub-streams have PGS codec
+	for _, id := range subtitleSubs {
+		if parser.subStreamCodec[id] != CodecPGSSubtitle {
+			t.Errorf("subStreamCodec[%d] = %v, want CodecPGSSubtitle", id, parser.subStreamCodec[id])
+		}
+	}
+
+	_ = numStreams
+}

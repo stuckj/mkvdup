@@ -267,143 +267,55 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 // and extracts video/audio PIDs and stream types.
 func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 	// Find PAT (PID 0) to get PMT PID
+	// Find PAT (PID 0) and extract PMT PID
+	patSection, err := p.reassemblePSISection(data, startOffset, 0, 0x00)
+	if err != nil {
+		return fmt.Errorf("reassemble PAT: %w", err)
+	}
+
 	pmtPID := uint16(0)
-	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
-		tsStart := i + p.tsOffset
-		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
-			continue
-		}
-
-		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
-		if pid != 0 {
-			continue
-		}
-
-		pusi := data[tsStart+1]&0x40 != 0
-		if !pusi {
-			continue
-		}
-
-		// Parse payload
-		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
-		hdrLen := 4
-		switch adaptFieldCtrl {
-		case 0x02, 0x03:
-			if tsStart+4 >= len(data) {
-				continue
-			}
-			adaptLen := int(data[tsStart+4])
-			hdrLen = 5 + adaptLen
-		case 0x01:
-		default:
-			continue
-		}
-		if tsStart+hdrLen >= tsStart+188 {
-			continue
-		}
-
-		// Skip pointer field
-		pointerField := int(data[tsStart+hdrLen])
-		hdrLen += 1 + pointerField
-		if tsStart+hdrLen+8 > tsStart+188 {
-			continue
-		}
-
-		payload := data[tsStart+hdrLen : tsStart+188]
-		if len(payload) < 12 || payload[0] != 0x00 {
-			continue
-		}
-
-		sectionLen := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLen < 9 {
-			continue
-		}
-
+	if len(patSection) >= 8 {
+		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
 		progsEnd := 8 + sectionLen - 4
-		if progsEnd > len(payload) {
-			progsEnd = len(payload) - 4
+		if progsEnd > len(patSection) {
+			progsEnd = len(patSection)
 		}
-
 		for j := 8; j+4 <= progsEnd; j += 4 {
-			progNum := uint16(payload[j])<<8 | uint16(payload[j+1])
+			progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
 			if progNum == 0 {
 				continue
 			}
-			pmtPID = uint16(payload[j+2]&0x1F)<<8 | uint16(payload[j+3])
+			pmtPID = uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
 			break
 		}
-		break
 	}
 
 	if pmtPID == 0 {
 		return fmt.Errorf("PMT PID not found in PAT")
 	}
 
-	// Find PMT and extract stream types
-	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
-		tsStart := i + p.tsOffset
-		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
-			continue
-		}
+	// Find PMT and extract stream types.
+	// PMT sections can span multiple TS packets, so we must reassemble.
+	pmtSection, err := p.reassemblePSISection(data, startOffset, pmtPID, 0x02)
+	if err != nil {
+		return fmt.Errorf("reassemble PMT: %w", err)
+	}
 
-		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
-		if pid != pmtPID {
-			continue
-		}
-
-		pusi := data[tsStart+1]&0x40 != 0
-		if !pusi {
-			continue
-		}
-
-		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
-		hdrLen := 4
-		switch adaptFieldCtrl {
-		case 0x02, 0x03:
-			if tsStart+4 >= len(data) {
-				continue
-			}
-			adaptLen := int(data[tsStart+4])
-			hdrLen = 5 + adaptLen
-		case 0x01:
-		default:
-			continue
-		}
-		if tsStart+hdrLen >= tsStart+188 {
-			continue
-		}
-
-		pointerField := int(data[tsStart+hdrLen])
-		hdrLen += 1 + pointerField
-		if tsStart+hdrLen+12 > tsStart+188 {
-			continue
-		}
-
-		payload := data[tsStart+hdrLen : tsStart+188]
-		if len(payload) < 12 || payload[0] != 0x02 {
-			continue
-		}
-
-		sectionLen := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLen < 13 {
-			continue
-		}
-
-		progInfoLen := int(payload[10]&0x0F)<<8 | int(payload[11])
+	if len(pmtSection) >= 12 {
+		progInfoLen := int(pmtSection[10]&0x0F)<<8 | int(pmtSection[11])
 		streamsStart := 12 + progInfoLen
-		streamsEnd := 3 + sectionLen - 4
-		if streamsEnd > len(payload) {
-			streamsEnd = len(payload) - 4
-		}
-		if streamsStart > streamsEnd {
-			continue
+		sectionLen := int(pmtSection[1]&0x0F)<<8 | int(pmtSection[2])
+		streamsEnd := 3 + sectionLen - 4 // exclude CRC32
+
+		if streamsEnd > len(pmtSection) {
+			streamsEnd = len(pmtSection)
 		}
 
 		var subStreamSeq byte
 		for j := streamsStart; j+5 <= streamsEnd; {
-			streamType := payload[j]
-			esPID := uint16(payload[j+1]&0x1F)<<8 | uint16(payload[j+2])
-			esInfoLen := int(payload[j+3]&0x0F)<<8 | int(payload[j+4])
+			streamType := pmtSection[j]
+			esPID := uint16(pmtSection[j+1]&0x1F)<<8 | uint16(pmtSection[j+2])
+			esInfoLen := int(pmtSection[j+3]&0x0F)<<8 | int(pmtSection[j+4])
 
 			ct := tsStreamTypeToCodecType(streamType)
 			if ct != CodecUnknown {
@@ -426,7 +338,6 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 			}
 			j = next
 		}
-		break
 	}
 
 	return nil
@@ -435,6 +346,88 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 // buildFilteredVideoRanges creates filtered video ranges.
 // For MPEG-2 video, this excludes user_data (00 00 01 B2) sections.
 // For H.264/H.265, filtered ranges are the same as raw ranges (no filtering needed).
+// reassemblePSISection collects a complete PSI section (PAT, PMT, etc.) from
+// one or more TS packets. PSI sections can span multiple TS packets when the
+// section is larger than a single TS payload (~170 bytes). This happens on
+// Blu-ray discs with many audio and subtitle streams in the PMT.
+func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, targetPID uint16, tableID byte) ([]byte, error) {
+	var section []byte
+	sectionLen := -1
+	collecting := false
+
+	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
+		tsStart := i + p.tsOffset
+		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
+			continue
+		}
+
+		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
+		if pid != targetPID {
+			continue
+		}
+
+		pusi := data[tsStart+1]&0x40 != 0
+		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
+		hdrLen := 4
+		switch adaptFieldCtrl {
+		case 0x02, 0x03:
+			if tsStart+4 >= len(data) {
+				continue
+			}
+			hdrLen = 5 + int(data[tsStart+4])
+		case 0x01:
+		default:
+			continue
+		}
+		if tsStart+hdrLen >= tsStart+188 {
+			continue
+		}
+
+		payload := data[tsStart+hdrLen : tsStart+188]
+
+		if pusi {
+			// PUSI packet: skip pointer field, find section start
+			pointerField := int(payload[0])
+			sectionStart := 1 + pointerField
+			if sectionStart >= len(payload) {
+				continue
+			}
+			payload = payload[sectionStart:]
+			if len(payload) < 3 || payload[0] != tableID {
+				continue
+			}
+
+			sectionLen = 3 + (int(payload[1]&0x0F)<<8 | int(payload[2]))
+			section = make([]byte, 0, sectionLen)
+			collecting = true
+
+			// Append what we have from this packet
+			n := len(payload)
+			if n > sectionLen {
+				n = sectionLen
+			}
+			section = append(section, payload[:n]...)
+		} else if collecting {
+			// Continuation packet
+			remaining := sectionLen - len(section)
+			n := len(payload)
+			if n > remaining {
+				n = remaining
+			}
+			section = append(section, payload[:n]...)
+		}
+
+		if collecting && len(section) >= sectionLen {
+			return section, nil
+		}
+	}
+
+	if len(section) > 0 {
+		return section, nil
+	}
+	return nil, fmt.Errorf("PSI section with table ID 0x%02X not found on PID 0x%04X", tableID, targetPID)
+}
+
 func (p *MPEGTSParser) buildFilteredVideoRanges() error {
 	if len(p.videoRanges) == 0 {
 		return nil
