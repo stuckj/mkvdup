@@ -631,19 +631,27 @@ func ComputeHash(data []byte) uint64 {
 	return xxhash.Sum64(data)
 }
 
-// AdviseSequential sets MADV_SEQUENTIAL on all source mmap'd files.
-// Call before matching to hint the kernel that access will be largely sequential,
-// enabling aggressive readahead. This is especially important for sources that
-// don't fit in RAM where readahead reduces page fault stalls.
-func (idx *Index) AdviseSequential() {
-	for _, mmapFile := range idx.MmapFiles {
-		if mmapFile != nil {
-			mmapFile.Advise(unix.MADV_SEQUENTIAL)
+// AdviseForMatching sets madvise hints on source mmap'd files before matching.
+// For raw-indexed sources (Blu-ray with raw offsets), sets MADV_SEQUENTIAL since
+// locality-aware matching produces largely sequential access.
+// For ES-indexed sources (DVD MPEG-PS, Blu-ray M2TS with ES offsets), the ES reader
+// translates ES offsets to scattered positions in the container file, so MADV_SEQUENTIAL
+// would hurt. Uses MADV_NORMAL (default adaptive readahead) instead.
+func (idx *Index) AdviseForMatching() {
+	if idx.UsesESOffsets {
+		// ES-based: access pattern in the raw file is not sequential
+		// (ES offsets map to scattered PES packets). Use normal adaptive readahead.
+		for _, mmapFile := range idx.MmapFiles {
+			if mmapFile != nil {
+				mmapFile.Advise(unix.MADV_NORMAL)
+			}
 		}
-	}
-	for _, reader := range idx.RawReaders {
-		if rr, ok := reader.(*mmapRawReader); ok {
-			rr.mmapFile.Advise(unix.MADV_SEQUENTIAL)
+	} else {
+		// Raw-indexed: locality-aware matching produces sequential access
+		for _, reader := range idx.RawReaders {
+			if rr, ok := reader.(*mmapRawReader); ok {
+				rr.mmapFile.Advise(unix.MADV_SEQUENTIAL)
+			}
 		}
 	}
 }
