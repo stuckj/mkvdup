@@ -29,22 +29,20 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 Create a dedup file from an MKV and its source directory.
 
 ```bash
-mkvdup create [options] <mkv-file> <source-dir> [output] [name]
+mkvdup create [options] <mkv-file> <source-dir> <output> [name]
 
 # Examples:
-mkvdup create movie.mkv /media/dvd-backups
 mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
-mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv"
-mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
-mkvdup create --quiet movie.mkv /media/dvd-backups
-mkvdup create --non-interactive movie.mkv /media/dvd-backups
+mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/My Movie"
+mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups movie.mkvdup
+mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 ```
 
 **Arguments:**
 - `<mkv-file>` — Path to the MKV file to deduplicate
 - `<source-dir>` — Directory containing source media (ISO files or BDMV folders)
-- `[output]` — Output `.mkvdup` file (default: `<mkv-file>.mkvdup`)
-- `[name]` — Display name in FUSE mount (default: basename of mkv-file)
+- `<output>` — Output `.mkvdup` file path
+- `[name]` — Display name in FUSE mount (default: basename of mkv-file; `.mkv` extension auto-added if missing)
 
 **Options:**
 
@@ -93,10 +91,11 @@ source_dir: /media/dvd-backups/disc1
 
 files:
   - mkv: episode1.mkv
-    output: episode1.mkvdup        # optional (default: <mkv>.mkvdup)
-    name: "Show/S01/Episode 1.mkv" # optional (default: basename of mkv)
+    output: episode1.mkvdup
+    name: "Show/S01/Episode 1" # optional (.mkv auto-added)
 
   - mkv: episode2.mkv
+    output: episode2.mkvdup
 
   - mkv: /absolute/path/to/episode3.mkv
     output: /absolute/path/to/episode3.mkvdup
@@ -109,8 +108,8 @@ files:
 | `source_dir` | Yes | Shared source directory for all MKV files |
 | `files` | Yes | List of MKV files to process (at least one) |
 | `files[].mkv` | Yes | Path to the MKV file |
-| `files[].output` | No | Output `.mkvdup` file (default: `<mkv>.mkvdup`) |
-| `files[].name` | No | Display name in FUSE mount (default: basename of mkv) |
+| `files[].output` | Yes | Output `.mkvdup` file |
+| `files[].name` | No | Display name in FUSE mount (default: basename of mkv; `.mkv` auto-added if missing) |
 
 Relative paths are resolved against the manifest file's directory.
 

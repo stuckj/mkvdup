@@ -13,7 +13,7 @@ _mkvdup_create() {
         '--non-interactive[Do not prompt on codec mismatch]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
         '2:Source directory:_files -/' \
-        '3::Output file:_files -g "*.mkvdup(-.)"' \
+        '3:Output file:_files -g "*.mkvdup(-.)"' \
         '4::Display name'
 }
 

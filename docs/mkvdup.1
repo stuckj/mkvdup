@@ -14,7 +14,7 @@ between an MKV and its source, we store only the unique MKV data plus an index
 mapping offsets. A 3.4GB MKV can be stored as approximately 50MB.
 .SH COMMANDS
 .TP
-.B create \fR[\fIoptions\fR] \fImkv-file\fR \fIsource-dir\fR [\fIoutput\fR] [\fIname\fR]
+.B create \fR[\fIoptions\fR] \fImkv-file\fR \fIsource-dir\fR \fIoutput\fR [\fIname\fR]
 Create a dedup file from an MKV and its source media.
 Before matching, codecs in the MKV are compared against the source media.
 If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
@@ -28,11 +28,12 @@ Path to the MKV file to deduplicate
 Directory containing source media (ISO files or BDMV folders)
 .TP
 .I output
-Output .mkvdup file (default: \fImkv-file\fR.mkvdup)
+Output .mkvdup file path.
 .TP
 .I name
-Display name in FUSE mount (default: basename of mkv-file).
-Supports directory paths (e.g., "Movies/Action/Video1.mkv").
+Display name in FUSE mount (default: basename of mkv-file;
+\fI.mkv\fR extension auto-added if missing).
+Supports directory paths (e.g., "Movies/Action/Video1").
 Directories are auto-created when mounted via FUSE.
 .TP
 .B \-\-warn\-threshold N
@@ -320,9 +321,10 @@ source_dir: /media/dvd-backups/disc1
 files:
   \- mkv: episode1.mkv
     output: episode1.mkvdup
-    name: "Show/S01/Episode 1.mkv"
+    name: "Show/S01/Episode 1"
 
   \- mkv: episode2.mkv
+    output: episode2.mkvdup
 
   \- mkv: /absolute/path/to/episode3.mkv
     output: /absolute/path/to/episode3.mkvdup
@@ -342,10 +344,11 @@ files:
 (Required) Path to the MKV file.
 .TP
 .B output
-(Optional) Output .mkvdup file. Default: \fImkv\fR.mkvdup.
+(Required) Output .mkvdup file path.
 .TP
 .B name
 (Optional) Display name in FUSE mount. Default: basename of \fImkv\fR.
+The \fI.mkv\fR extension is auto-added if missing.
 .RE
 .PP
 Relative paths are resolved against the manifest file's directory.

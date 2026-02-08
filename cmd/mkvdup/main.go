@@ -125,15 +125,16 @@ See 'man mkvdup' for detailed documentation.
 func printCommandUsage(cmd string) {
 	switch cmd {
 	case "create":
-		fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> [output] [name]
+		fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> <output> [name]
 
 Create a dedup file from an MKV and its source media.
 
 Arguments:
     <mkv-file>    Path to the MKV file to deduplicate
     <source-dir>  Directory containing source media (ISO files or BDMV folders)
-    [output]      Output .mkvdup file (default: <mkv-file>.mkvdup)
-    [name]        Display name in FUSE mount (default: basename of mkv-file)
+    <output>      Output .mkvdup file path
+    [name]        Display name in FUSE mount (default: basename of mkv-file;
+                  .mkv extension auto-added if missing)
 
 Options:
     -v, --verbose       Enable verbose/debug output
@@ -146,11 +147,10 @@ If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
 will be prompted to continue. Use --non-interactive for scripted usage.
 
 Examples:
-    mkvdup create movie.mkv /media/dvd-backups
+    mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
-    mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
-    mkvdup create --quiet movie.mkv /media/dvd-backups
-    mkvdup create --non-interactive movie.mkv /media/dvd-backups
+    mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups movie.mkvdup
+    mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 `)
 	case "batch-create":
 		fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
@@ -173,16 +173,18 @@ Manifest format:
     source_dir: /media/dvd-backups/disc1
     files:
       - mkv: episode1.mkv
-        output: episode1.mkvdup        # optional
-        name: "Show/S01/Episode 1.mkv" # optional
+        output: episode1.mkvdup
+        name: "Show/S01/Episode 1" # optional (.mkv auto-added)
       - mkv: episode2.mkv
+        output: episode2.mkvdup
 
 Fields:
     source_dir   Shared source directory (required)
     files        List of MKV files to process (required, at least one)
     mkv          Path to MKV file (required per entry)
-    output       Output .mkvdup file (default: <mkv>.mkvdup)
-    name         Display name in FUSE mount (default: basename of mkv)
+    output       Output .mkvdup file (required per entry)
+    name         Display name in FUSE mount (default: basename of mkv;
+                 .mkv extension auto-added if missing)
 
 Relative paths are resolved against the manifest file's directory.
 
@@ -472,15 +474,12 @@ func main() {
 				createArgs = append(createArgs, remaining[i])
 			}
 		}
-		if len(createArgs) < 2 {
+		if len(createArgs) < 3 {
 			printCommandUsage("create")
 			os.Exit(1)
 		}
-		output := ""
+		output := createArgs[2]
 		name := ""
-		if len(createArgs) >= 3 {
-			output = createArgs[2]
-		}
 		if len(createArgs) >= 4 {
 			name = createArgs[3]
 		}

@@ -379,14 +379,13 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThreshold float64, quiet bool, nonInteractive bool) error {
 	totalStart := time.Now()
 
-	// Default output path
-	if outputPath == "" {
-		outputPath = mkvPath + ".mkvdup"
-	}
-
 	// Default virtual name
 	if virtualName == "" {
 		virtualName = filepath.Base(mkvPath)
+	}
+	// Ensure virtual name has .mkv extension
+	if !strings.HasSuffix(strings.ToLower(virtualName), ".mkv") {
+		virtualName += ".mkv"
 	}
 
 	fmt.Println("Creating dedup file...")
