@@ -76,7 +76,7 @@ _mkvdup() {
     fi
 
     # Global options available for commands that don't define their own options
-    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" && "$cmd" != "reload" ]]; then
+    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" && "$cmd" != "reload" && "$cmd" != "info" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
