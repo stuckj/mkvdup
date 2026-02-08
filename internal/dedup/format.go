@@ -22,12 +22,13 @@ const (
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
-	HeaderSize   = 60
-	EntrySize    = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
-	FooterSize   = 24
-	FooterV4Size = 32 // V4 footer adds RangeMapChecksum (8 bytes)
-	MagicSize    = 8
-	VersionSize  = 4
+	HeaderSize           = 60
+	EntrySize            = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
+	FooterSize           = 24
+	FooterV4Size         = 32 // V4 footer adds RangeMapChecksum (8 bytes)
+	MagicSize            = 8
+	VersionSize          = 4
+	MaxCreatorVersionLen = 4096 // Max bytes for creator version string (writer truncates, reader rejects)
 )
 
 // Source types

@@ -37,8 +37,8 @@ func NewWriter(path string) (*Writer, error) {
 // SetCreatorVersion sets the version string to embed in the file.
 // When set, the writer produces V5 (or V6 if range maps are also set).
 func (w *Writer) SetCreatorVersion(v string) {
-	if len(v) > 4096 {
-		v = v[:4096]
+	if len(v) > MaxCreatorVersionLen {
+		v = v[:MaxCreatorVersionLen]
 	}
 	w.creatorVersion = v
 }

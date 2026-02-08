@@ -1791,10 +1791,6 @@ func deltadiag(dedupPath, mkvPath string) error {
 	}
 	defer reader.Close()
 
-	if err := reader.InitEntryAccess(); err != nil {
-		return fmt.Errorf("init entry access: %w", err)
-	}
-
 	entryCount := reader.EntryCount()
 	origSize := reader.OriginalSize()
 	fmt.Fprintf(os.Stderr, "Dedup file: %d entries, original size %s bytes (%.2f MB)\n",

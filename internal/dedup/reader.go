@@ -738,8 +738,8 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 		if err := binary.Read(r, binary.LittleEndian, &versionLen); err != nil {
 			return nil, fmt.Errorf("read creator version length: %w", err)
 		}
-		if versionLen > 4096 {
-			return nil, fmt.Errorf("creator version length %d exceeds maximum (4096)", versionLen)
+		if versionLen > MaxCreatorVersionLen {
+			return nil, fmt.Errorf("creator version length %d exceeds maximum (%d)", versionLen, MaxCreatorVersionLen)
 		}
 		if versionLen > 0 {
 			versionBytes := make([]byte, versionLen)
