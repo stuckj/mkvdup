@@ -155,8 +155,13 @@ _mkvdup() {
             ;;
 
         info)
-            # info <dedup-file>
-            _filedir '@(mkvdup)'
+            # info [--hide-unused-files] <dedup-file>
+            local info_opts="--hide-unused-files"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$info_opts $global_opts" -- "$cur"))
+            else
+                _filedir '@(mkvdup)'
+            fi
             ;;
 
         verify)

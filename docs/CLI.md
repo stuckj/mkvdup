@@ -280,11 +280,18 @@ mkvdup validate --strict /etc/mkvdup.conf
 Show information about a dedup file.
 
 ```bash
-mkvdup info <dedup-file>
+mkvdup info [options] <dedup-file>
 
 # Example:
 mkvdup info movie.mkvdup
+mkvdup info --hide-unused-files movie.mkvdup
 ```
+
+| Option | Description |
+|--------|-------------|
+| `--hide-unused-files` | Hide source files not referenced by any index entry |
+
+Source files are listed with their sizes. For V7/V8 dedup files, unused source files are marked `(unused)`. Use `--hide-unused-files` to omit them entirely.
 
 ### extract *(planned — [#13](https://github.com/stuckj/mkvdup/issues/13))*
 

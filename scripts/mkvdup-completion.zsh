@@ -60,6 +60,7 @@ _mkvdup_info() {
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
+        '--hide-unused-files[Hide unused source files]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"'
 }
 

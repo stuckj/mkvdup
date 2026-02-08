@@ -96,6 +96,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command mount' -l permissions-file -d '
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -F -d 'Mount point or config files'
 
 # info options
+complete -c $cmd -n '__fish_mkvdup_using_command info' -l hide-unused-files -d 'Hide unused source files'
 complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Dedup file'
 
 # verify options

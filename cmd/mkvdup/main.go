@@ -246,15 +246,19 @@ Examples:
     mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
 `)
 	case "info":
-		fmt.Print(`Usage: mkvdup info <dedup-file>
+		fmt.Print(`Usage: mkvdup info [options] <dedup-file>
 
 Show information about a dedup file.
 
 Arguments:
     <dedup-file>  Path to the .mkvdup file
 
+Options:
+    --hide-unused-files  Hide source files not referenced by any index entry
+
 Examples:
     mkvdup info movie.mkvdup
+    mkvdup info --hide-unused-files movie.mkvdup
 `)
 	case "verify":
 		fmt.Print(`Usage: mkvdup verify <dedup-file> <source-dir> <original-mkv>
@@ -623,11 +627,20 @@ func main() {
 		}
 
 	case "info":
-		if len(args) < 1 {
+		hideUnused := false
+		var infoArgs []string
+		for _, a := range args {
+			if a == "--hide-unused-files" {
+				hideUnused = true
+			} else {
+				infoArgs = append(infoArgs, a)
+			}
+		}
+		if len(infoArgs) < 1 {
 			printCommandUsage("info")
 			os.Exit(1)
 		}
-		if err := showInfo(args[0]); err != nil {
+		if err := showInfo(infoArgs[0], hideUnused); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

@@ -650,7 +650,7 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 }
 
 // showInfo displays information about a dedup file.
-func showInfo(dedupPath string) error {
+func showInfo(dedupPath string, hideUnused bool) error {
 	reader, err := dedup.NewReader(dedupPath, "")
 	if err != nil {
 		return fmt.Errorf("open dedup file: %w", err)
@@ -698,6 +698,9 @@ func showInfo(dedupPath string) error {
 	fmt.Println("Source files:")
 	hasUsedFlags := reader.HasSourceUsedFlags()
 	for _, sf := range reader.SourceFiles() {
+		if hideUnused && hasUsedFlags && !sf.Used {
+			continue
+		}
 		suffix := ""
 		if hasUsedFlags && !sf.Used {
 			suffix = " (unused)"

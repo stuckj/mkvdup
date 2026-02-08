@@ -129,12 +129,17 @@ Path to permissions file (overrides default locations). See
 section for default search order.
 .RE
 .TP
-.B info \fIdedup-file\fR
+.B info \fR[\fIoptions\fR] \fIdedup-file\fR
 Show information about a dedup file.
 .RS
 .TP
 .I dedup-file
 Path to the .mkvdup file
+.TP
+.B \-\-hide\-unused\-files
+Hide source files not referenced by any index entry.
+For V7/V8 dedup files, unused source files are normally shown with
+an \fI(unused)\fR marker; this option omits them entirely.
 .RE
 .TP
 .B verify \fIdedup-file\fR \fIsource-dir\fR \fIoriginal-mkv\fR
