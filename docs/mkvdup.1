@@ -487,14 +487,23 @@ Dedup files containing the index and delta data
 .I *.mkvdup.yaml
 Config files for mounting dedup files
 .SH FILE FORMAT
-The .mkvdup file format is versioned.
+The .mkvdup file format is versioned. The writer produces V5 (DVD) or V6
+(Blu-ray) files by default; older versions are supported for reading.
 .PP
-.B Version 4 (current, Blu-ray):
+.B Version 6 (current, Blu-ray):
+V4 with an embedded creator version string after the header. The on-disk
+layout of index entries and range maps is identical to V4.
+.PP
+.B Version 5 (current, DVD):
+V3 with an embedded creator version string after the header. The on-disk
+layout of index entries and source references is identical to V3.
+.PP
+.B Version 4 (Blu-ray):
 Adds embedded range map section for Blu-ray M2TS sources.
 Index entries use ES offsets; the range map translates ES offsets to
 raw file offsets at read time.
 .PP
-.B Version 3 (current, DVD):
+.B Version 3 (DVD):
 Source type awareness and multi-source-file support.
 Stores raw file offsets for all source references.
 .PP

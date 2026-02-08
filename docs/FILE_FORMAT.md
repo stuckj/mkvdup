@@ -12,12 +12,14 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 
 | Version | Description |
 |---------|-------------|
-| 4 (current) | Adds embedded range map section for Blu-ray M2TS sources. Index entries use ES offsets; the range map translates ES offsets to raw file offsets at read time. Footer extended to 32 bytes with range map checksum. |
-| 3 (current) | Source field expanded to uint16 (supports >256 source files). Entry size: 28 bytes. Index entries use raw file offsets directly. |
+| 6 (current) | V4 + embedded creator version string after the header. On-disk layout otherwise identical to V4. |
+| 5 (current) | V3 + embedded creator version string after the header. On-disk layout otherwise identical to V3. |
+| 4 | Adds embedded range map section for Blu-ray M2TS sources. Index entries use ES offsets; the range map translates ES offsets to raw file offsets at read time. Footer extended to 32 bytes with range map checksum. |
+| 3 | Source field expanded to uint16 (supports >256 source files). Entry size: 28 bytes. Index entries use raw file offsets directly. |
 | 2 (deprecated) | Raw file offsets stored directly. Source field was uint8 (max 256 files). No longer supported; files must be recreated. |
 | 1 (deprecated) | Used ES (elementary stream) offsets for DVD sources. No longer supported; files must be recreated. |
 
-Version 3 is used for DVD sources (MPEG-PS). Version 4 is used for Blu-ray sources (MPEG-TS/M2TS).
+The writer produces V5 (DVD) or V6 (Blu-ray) files. V3/V4 files are supported for reading. V5/V6 add a creator version string (uint16 length + UTF-8 string) immediately after the 60-byte header, shifting all subsequent sections by `2 + len(version_string)` bytes.
 
 ## Design Principles
 

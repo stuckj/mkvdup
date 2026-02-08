@@ -356,11 +356,15 @@ func (w *Writer) writeHeader() error {
 
 	// Write creator version string (V5/V6)
 	if w.creatorVersion != "" {
-		versionLen := uint16(len(w.creatorVersion))
+		cv := w.creatorVersion
+		if len(cv) > 65535 {
+			cv = cv[:65535]
+		}
+		versionLen := uint16(len(cv))
 		if err := binary.Write(w.file, binary.LittleEndian, versionLen); err != nil {
 			return err
 		}
-		if _, err := w.file.Write([]byte(w.creatorVersion)); err != nil {
+		if _, err := w.file.Write([]byte(cv)); err != nil {
 			return err
 		}
 	}
