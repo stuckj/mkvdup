@@ -126,6 +126,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command index-source' -F -d 'Source dir
 complete -c $cmd -n '__fish_mkvdup_using_command match' -F -d 'MKV file or source directory'
 
 # deltadiag options
+complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -F -d 'Dedup file or MKV file'
 
 # help - complete with subcommand names

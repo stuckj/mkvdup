@@ -738,8 +738,8 @@ func (m *Matcher) markChunksCovered(start, end int64) {
 
 // nearbyLocationIndices returns up to N indices into locations that are closest
 // to hintOffset within the same file as hintFileIndex. Locations must be pre-sorted
-// by (FileIndex, Offset) via SortLocationsByOffset. Returns nil if no locations
-// are in the target file.
+// by (FileIndex, Offset) via SortLocationsByOffset. Returns an empty slice if no
+// locations are in the target file.
 func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hintOffset int64, maxCount int) []int {
 	n := len(locations)
 	if n == 0 {
