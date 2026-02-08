@@ -266,7 +266,6 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 // parsePATandPMT finds the PAT and PMT in the first portion of the file
 // and extracts video/audio PIDs and stream types.
 func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
-	// Find PAT (PID 0) to get PMT PID
 	// Find PAT (PID 0) and extract PMT PID
 	patSection, err := p.reassemblePSISection(data, startOffset, 0, 0x00)
 	if err != nil {

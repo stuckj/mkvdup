@@ -308,6 +308,11 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.diagExamplesOutput = nil
 	m.diagExamplesMu.Unlock()
 
+	// Reset locality hint so matches from a previous MKV do not bias this run
+	m.lastMatchFileIndex.Store(0)
+	m.lastMatchOffset.Store(0)
+	m.lastMatchValid.Store(false)
+
 	// Build track type and codec info maps
 	for _, t := range tracks {
 		m.trackTypes[int(t.Number)] = t.Type
