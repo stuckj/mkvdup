@@ -136,6 +136,7 @@ Arguments:
     [name]        Display name in FUSE mount (default: basename of mkv-file)
 
 Options:
+    -v, --verbose       Enable verbose/debug output
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --quiet             Suppress the space savings warning
     --non-interactive   Don't prompt on codec mismatch (show warning and continue)
@@ -164,6 +165,7 @@ Arguments:
     <manifest.yaml>  YAML manifest file specifying source and MKV files
 
 Options:
+    -v, --verbose       Enable verbose/debug output
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --quiet             Suppress the space savings warning
 
