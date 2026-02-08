@@ -63,15 +63,18 @@ complete -c $cmd -n __fish_mkvdup_needs_command -a reload -d 'Reload a running d
 complete -c $cmd -n __fish_mkvdup_needs_command -a parse-mkv -d 'Parse and display MKV structure (debug)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a index-source -d 'Index a source directory (debug)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a match -d 'Match packets between MKV and source (debug)'
+complete -c $cmd -n __fish_mkvdup_needs_command -a deltadiag -d 'Analyze delta entries in a dedup file'
 complete -c $cmd -n __fish_mkvdup_needs_command -a help -d 'Show help for a command'
 
 # create options
+complete -c $cmd -n '__fish_mkvdup_using_command create' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l warn-threshold -d 'Minimum space savings percentage' -x
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l quiet -d 'Suppress the space savings warning'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l non-interactive -d 'Do not prompt on codec mismatch'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -F -d 'MKV file or source directory'
 
 # batch-create options
+complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l warn-threshold -d 'Minimum space savings percentage' -x
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l quiet -d 'Suppress the space savings warning'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -F -d 'Manifest file'
@@ -122,5 +125,8 @@ complete -c $cmd -n '__fish_mkvdup_using_command index-source' -F -d 'Source dir
 # match options
 complete -c $cmd -n '__fish_mkvdup_using_command match' -F -d 'MKV file or source directory'
 
+# deltadiag options
+complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -F -d 'Dedup file or MKV file'
+
 # help - complete with subcommand names
-complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify check validate reload parse-mkv index-source match' -d 'Command'
+complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify check validate reload parse-mkv index-source match deltadiag' -d 'Command'

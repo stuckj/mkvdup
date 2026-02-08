@@ -19,6 +19,7 @@ type writeTestOptions struct {
 	sourceFiles      []source.File
 	result           *matcher.Result
 	esConverters     []source.ESRangeConverter
+	creatorVersion   string
 }
 
 // writeTestDedupFile creates a dedup file using the Writer API and returns the path.
@@ -32,6 +33,9 @@ func writeTestDedupFile(t *testing.T, dir string, opts writeTestOptions) string 
 	defer w.Close()
 
 	w.SetHeader(opts.originalSize, opts.originalChecksum, opts.sourceType)
+	if opts.creatorVersion != "" {
+		w.SetCreatorVersion(opts.creatorVersion)
+	}
 	if len(opts.sourceFiles) > 0 {
 		w.SetSourceFiles(opts.sourceFiles)
 	}
@@ -691,5 +695,168 @@ func TestWriter_ConvertESToRawOffsets_Error(t *testing.T) {
 	err = w.SetMatchResult(result, []source.ESRangeConverter{converter})
 	if err == nil {
 		t.Fatal("expected error from SetMatchResult, got nil")
+	}
+}
+
+func TestWriter_RoundTrip_V5_CreatorVersion(t *testing.T) {
+	dir := t.TempDir()
+	deltaData := bytes.Repeat([]byte{0xAB}, 100)
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0x1234,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "mkvdup 0.9.0-canary.13",
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+			},
+			DeltaData:      deltaData,
+			UnmatchedBytes: 100,
+			TotalPackets:   1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	info := r.Info()
+	if got := info["version"].(uint32); got != VersionCreator {
+		t.Errorf("version = %d, want %d", got, VersionCreator)
+	}
+	if got := info["creator_version"].(string); got != "mkvdup 0.9.0-canary.13" {
+		t.Errorf("creator_version = %q, want %q", got, "mkvdup 0.9.0-canary.13")
+	}
+	if got := info["entry_count"].(int); got != 1 {
+		t.Errorf("entry_count = %d, want 1", got)
+	}
+
+	// Verify entries are still readable
+	entry, ok := r.getEntry(0)
+	if !ok {
+		t.Fatal("getEntry(0) returned false")
+	}
+	if entry.MkvOffset != 0 || entry.Length != 100 || entry.Source != 0 {
+		t.Errorf("entry = %+v, want MkvOffset=0, Length=100, Source=0", entry)
+	}
+
+	// Verify integrity
+	if err := r.VerifyIntegrity(); err != nil {
+		t.Errorf("VerifyIntegrity failed: %v", err)
+	}
+}
+
+func TestWriter_RoundTrip_V3_NoCreatorVersion(t *testing.T) {
+	dir := t.TempDir()
+	deltaData := bytes.Repeat([]byte{0xAB}, 100)
+
+	// No creatorVersion set — should still produce V5 (writer always does)
+	// But the reader should handle V3 files with no creator version
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0x1234,
+		sourceType:       source.TypeDVD,
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+			},
+			DeltaData:      deltaData,
+			UnmatchedBytes: 100,
+			TotalPackets:   1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	info := r.Info()
+	// Writer without SetCreatorVersion still produces V5, but with empty string
+	if got := info["creator_version"].(string); got != "" {
+		t.Errorf("creator_version = %q, want empty", got)
+	}
+}
+
+func TestWriter_RoundTrip_V5_VerifyIntegrity(t *testing.T) {
+	dir := t.TempDir()
+	deltaData := bytes.Repeat([]byte{0xEF}, 256)
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     1000,
+		originalChecksum: 0xEEEE,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "mkvdup test-version",
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 256, Source: 0, SourceOffset: 0},
+				{MkvOffset: 256, Length: 744, Source: 1, SourceOffset: 0},
+			},
+			DeltaData:      deltaData,
+			MatchedBytes:   744,
+			UnmatchedBytes: 256,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	if err := r.VerifyIntegrity(); err != nil {
+		t.Errorf("VerifyIntegrity failed: %v", err)
+	}
+}
+
+func TestWriter_RoundTrip_V5_LargeEntryCount(t *testing.T) {
+	dir := t.TempDir()
+
+	const numEntries = 1000
+	entries := make([]matcher.Entry, numEntries)
+	for i := range numEntries {
+		entries[i] = matcher.Entry{
+			MkvOffset:    int64(i) * 100,
+			Length:       100,
+			Source:       1,
+			SourceOffset: int64(i) * 100,
+		}
+	}
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     int64(numEntries) * 100,
+		originalChecksum: 0xDDDD,
+		sourceType:       source.TypeBluray,
+		creatorVersion:   "mkvdup 1.0.0",
+		result: &matcher.Result{
+			Entries:      entries,
+			MatchedBytes: int64(numEntries) * 100,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	if got := r.EntryCount(); got != numEntries {
+		t.Errorf("EntryCount = %d, want %d", got, numEntries)
+	}
+
+	// Spot check a few entries
+	for _, idx := range []int{0, 500, 999} {
+		entry, ok := r.getEntry(idx)
+		if !ok {
+			t.Errorf("getEntry(%d) returned false", idx)
+			continue
+		}
+		if entry.MkvOffset != int64(idx)*100 {
+			t.Errorf("entry %d MkvOffset = %d, want %d", idx, entry.MkvOffset, int64(idx)*100)
+		}
 	}
 }

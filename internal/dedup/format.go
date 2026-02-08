@@ -15,6 +15,10 @@ const (
 	// VersionRangeMap is the version for files with embedded range maps.
 	// Entries use ES offsets; a range map section maps ES offsets to raw file offsets.
 	VersionRangeMap uint32 = 4
+	// VersionCreator is V3 with a creator version string after the header.
+	VersionCreator uint32 = 5
+	// VersionRangeMapCreator is V4 with a creator version string after the header.
+	VersionRangeMapCreator uint32 = 6
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
@@ -101,10 +105,20 @@ type Footer struct {
 // Note: Entries are accessed directly from mmap via Reader.getEntry(),
 // not stored in this struct, to avoid large memory allocation.
 type File struct {
-	Header        Header
-	SourceFiles   []SourceFile
-	DeltaOffset   int64 // Offset to delta section in file
-	UsesESOffsets bool
+	Header         Header
+	SourceFiles    []SourceFile
+	DeltaOffset    int64 // Offset to delta section in file
+	UsesESOffsets  bool
+	CreatorVersion string // Version of mkvdup that created this file (V5/V6 only)
+	headerSize     int64  // Effective header size (60 for V3/V4, 60+2+len for V5/V6)
+}
+
+// creatorVersionSize returns the on-disk size of the creator version field.
+func creatorVersionSize(v string) int64 {
+	if v == "" {
+		return 0
+	}
+	return 2 + int64(len(v))
 }
 
 // ToMatcherEntry converts a dedup Entry to a matcher Entry.

@@ -266,6 +266,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	defer writer.Close()
 
 	writer.SetHeader(parser.Size(), mkvChecksum, indexer.SourceType())
+	writer.SetCreatorVersion("mkvdup " + version)
 	writer.SetSourceFiles(index.Files)
 
 	// For sources with ES offsets, decide between V3 (convert to raw) and V4 (range maps).
@@ -661,6 +662,13 @@ func showInfo(dedupPath string) error {
 
 	fmt.Printf("Dedup file: %s\n", dedupPath)
 	fmt.Println()
+
+	creatorVersion := info["creator_version"].(string)
+	if creatorVersion != "" {
+		fmt.Printf("Created by:         %s\n", creatorVersion)
+	} else {
+		fmt.Printf("Created by:         unknown (pre-0.9.0)\n")
+	}
 	fmt.Printf("Format version:     %d\n", info["version"].(uint32))
 	fmt.Printf("Original MKV size:  %s bytes (%.2f MB)\n",
 		formatInt(info["original_size"].(int64)),

@@ -149,7 +149,7 @@ func (r *Reader) Close() error {
 func (r *Reader) initEntryAccess() error {
 	r.entriesOnce.Do(func() {
 		// Calculate index start offset
-		r.indexStart = int64(HeaderSize) + r.calculateSourceFilesSize()
+		r.indexStart = r.file.headerSize + r.calculateSourceFilesSize()
 		r.entryCount = int(r.file.Header.EntryCount)
 
 		// Validate mmap has enough data for all entries
@@ -163,8 +163,8 @@ func (r *Reader) initEntryAccess() error {
 		// Build block index for fast random access lookup
 		r.buildBlockIndex()
 
-		// V4: parse range map section
-		if r.file.Header.Version == VersionRangeMap {
+		// V4/V6: parse range map section
+		if r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator {
 			if err := r.initRangeMaps(); err != nil {
 				r.entriesErr = fmt.Errorf("init range maps: %w", err)
 				return
@@ -203,12 +203,12 @@ func (r *Reader) initRangeMaps() error {
 	return nil
 }
 
-// HasRangeMaps returns true if this dedup file uses V4 range maps.
+// HasRangeMaps returns true if this dedup file uses V4/V6 range maps.
 // This checks the header version (available immediately after NewReaderLazy)
 // rather than the lazily-loaded range map data, so it's safe to call
 // before the first ReadAt.
 func (r *Reader) HasRangeMaps() bool {
-	return r.file.Header.Version == VersionRangeMap
+	return r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator
 }
 
 // buildBlockIndex creates a mapping from block numbers to entry indices.
@@ -672,15 +672,16 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
-	// Support versions 3 and 4. Older versions must be recreated.
-	if file.Header.Version != Version && file.Header.Version != VersionRangeMap {
-		if file.Header.Version == 1 {
-			return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
-		}
-		if file.Header.Version == 2 {
-			return nil, fmt.Errorf("unsupported version 2 (uses uint8 source index); please recreate with 'mkvdup create'")
-		}
-		return nil, fmt.Errorf("unsupported version: %d (expected %d or %d)", file.Header.Version, Version, VersionRangeMap)
+	// Support versions 3-6. Older versions must be recreated.
+	switch file.Header.Version {
+	case Version, VersionRangeMap, VersionCreator, VersionRangeMapCreator:
+		// OK
+	case 1:
+		return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
+	case 2:
+		return nil, fmt.Errorf("unsupported version 2 (uses uint8 source index); please recreate with 'mkvdup create'")
+	default:
+		return nil, fmt.Errorf("unsupported version: %d (expected 3-6)", file.Header.Version)
 	}
 
 	// Read flags
@@ -730,6 +731,23 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 		return nil, fmt.Errorf("read delta size: %w", err)
 	}
 
+	// Read creator version string (V5/V6 only)
+	file.headerSize = int64(HeaderSize)
+	if file.Header.Version == VersionCreator || file.Header.Version == VersionRangeMapCreator {
+		var versionLen uint16
+		if err := binary.Read(r, binary.LittleEndian, &versionLen); err != nil {
+			return nil, fmt.Errorf("read creator version length: %w", err)
+		}
+		if versionLen > 0 {
+			versionBytes := make([]byte, versionLen)
+			if _, err := io.ReadFull(r, versionBytes); err != nil {
+				return nil, fmt.Errorf("read creator version: %w", err)
+			}
+			file.CreatorVersion = string(versionBytes)
+		}
+		file.headerSize = int64(HeaderSize) + 2 + int64(versionLen)
+	}
+
 	// Read source files
 	file.SourceFiles = make([]SourceFile, file.Header.SourceFileCount)
 	for i := range file.SourceFiles {
@@ -764,9 +782,9 @@ func (r *Reader) VerifyIntegrity() error {
 		return fmt.Errorf("init entry access: %w", err)
 	}
 
-	isV4 := r.file.Header.Version == VersionRangeMap
+	hasRangeMaps := r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator
 	footerSz := int64(FooterSize)
-	if isV4 {
+	if hasRangeMaps {
 		footerSz = int64(FooterV4Size)
 	}
 
@@ -785,7 +803,7 @@ func (r *Reader) VerifyIntegrity() error {
 	off += 8
 	footer.DeltaChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
 	off += 8
-	if isV4 {
+	if hasRangeMaps {
 		footer.RangeMapChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
 		off += 8
 	}
@@ -812,8 +830,8 @@ func (r *Reader) VerifyIntegrity() error {
 		return fmt.Errorf("delta checksum mismatch")
 	}
 
-	// V4: verify range map checksum
-	if isV4 {
+	// V4/V6: verify range map checksum
+	if hasRangeMaps {
 		rangeMapOffset := r.file.DeltaOffset + r.file.Header.DeltaSize
 		rangeMapSize := int(footerOffset - rangeMapOffset)
 		if rangeMapSize > 0 {
@@ -853,6 +871,7 @@ func (r *Reader) Info() map[string]any {
 		"source_file_count": len(r.file.SourceFiles),
 		"entry_count":       r.entryCount,
 		"delta_size":        r.file.Header.DeltaSize,
+		"creator_version":   r.file.CreatorVersion,
 	}
 	if err != nil {
 		info["error"] = err.Error()

@@ -563,6 +563,9 @@ func TestNewReader_InvalidVersion(t *testing.T) {
 	if err == nil {
 		t.Error("NewReader should fail for unsupported version")
 	}
+	if err != nil && !strings.Contains(err.Error(), "expected 3-6") {
+		t.Errorf("Error should mention expected versions 3-6: %v", err)
+	}
 }
 
 func TestNewReader_Version1Error(t *testing.T) {
@@ -879,6 +882,10 @@ func TestInfo(t *testing.T) {
 	}
 	if info["source_file_count"].(int) != 1 {
 		t.Errorf("info[source_file_count] = %v, want 1", info["source_file_count"])
+	}
+	// V3 file should have empty creator version
+	if info["creator_version"].(string) != "" {
+		t.Errorf("info[creator_version] = %v, want empty string", info["creator_version"])
 	}
 }
 
