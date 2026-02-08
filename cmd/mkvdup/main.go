@@ -362,7 +362,7 @@ belongs to (video, audio, or container overhead).
 For video delta, further classifies by H.264 NAL type (IDR/non-IDR slices,
 SEI, SPS, PPS, etc.) and shows size breakdown.
 
-Works with dedup file versions 3 through 6 (DVD, Blu-ray, and newer).
+Works with dedup file versions 3 through 8 (DVD, Blu-ray, and newer).
 
 Arguments:
     <dedup-file>  Path to the .mkvdup file

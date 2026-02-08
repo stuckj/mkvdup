@@ -563,8 +563,8 @@ func TestNewReader_InvalidVersion(t *testing.T) {
 	if err == nil {
 		t.Error("NewReader should fail for unsupported version")
 	}
-	if err != nil && !strings.Contains(err.Error(), "expected 3-6") {
-		t.Errorf("Error should mention expected versions 3-6: %v", err)
+	if err != nil && !strings.Contains(err.Error(), "expected 3-8") {
+		t.Errorf("Error should mention expected versions 3-8: %v", err)
 	}
 }
 

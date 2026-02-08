@@ -696,8 +696,13 @@ func showInfo(dedupPath string) error {
 
 	// Source files
 	fmt.Println("Source files:")
+	hasUsedFlags := reader.HasSourceUsedFlags()
 	for _, sf := range reader.SourceFiles() {
-		fmt.Printf("  %s (%s bytes)\n", sf.RelativePath, formatInt(sf.Size))
+		suffix := ""
+		if hasUsedFlags && !sf.Used {
+			suffix = " (unused)"
+		}
+		fmt.Printf("  %s (%s bytes)%s\n", sf.RelativePath, formatInt(sf.Size), suffix)
 	}
 
 	return nil

@@ -19,6 +19,10 @@ const (
 	VersionCreator uint32 = 5
 	// VersionRangeMapCreator is V4 with a creator version string after the header.
 	VersionRangeMapCreator uint32 = 6
+	// VersionUsed is V5 with a per-source-file Used byte after the checksum.
+	VersionUsed uint32 = 7
+	// VersionRangeMapUsed is V6 with a per-source-file Used byte after the checksum.
+	VersionRangeMapUsed uint32 = 8
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
@@ -57,6 +61,7 @@ type SourceFile struct {
 	RelativePath string // Path relative to source directory
 	Size         int64  // File size
 	Checksum     uint64 // xxhash of file
+	Used         bool   // Whether this source file is referenced by any entry (V7/V8 only)
 }
 
 // Entry represents an index entry in the dedup file.
@@ -111,7 +116,7 @@ type File struct {
 	DeltaOffset    int64 // Offset to delta section in file
 	UsesESOffsets  bool
 	CreatorVersion string // Version of mkvdup that created this file (V5/V6 only)
-	headerSize     int64  // Effective header size (60 for V3/V4, 60+2+len for V5/V6)
+	headerSize     int64  // Effective header size (60 for V3/V4, 60+2+len for V5-V8)
 }
 
 // creatorVersionSize returns the on-disk size of the creator version field.

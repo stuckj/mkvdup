@@ -698,7 +698,7 @@ func TestWriter_ConvertESToRawOffsets_Error(t *testing.T) {
 	}
 }
 
-func TestWriter_RoundTrip_V5_CreatorVersion(t *testing.T) {
+func TestWriter_RoundTrip_V7_CreatorVersion(t *testing.T) {
 	dir := t.TempDir()
 	deltaData := bytes.Repeat([]byte{0xAB}, 100)
 
@@ -724,8 +724,8 @@ func TestWriter_RoundTrip_V5_CreatorVersion(t *testing.T) {
 	defer r.Close()
 
 	info := r.Info()
-	if got := info["version"].(uint32); got != VersionCreator {
-		t.Errorf("version = %d, want %d", got, VersionCreator)
+	if got := info["version"].(uint32); got != VersionUsed {
+		t.Errorf("version = %d, want %d", got, VersionUsed)
 	}
 	if got := info["creator_version"].(string); got != "mkvdup 0.9.0-canary.13" {
 		t.Errorf("creator_version = %q, want %q", got, "mkvdup 0.9.0-canary.13")
@@ -858,5 +858,125 @@ func TestWriter_RoundTrip_V5_LargeEntryCount(t *testing.T) {
 		if entry.MkvOffset != int64(idx)*100 {
 			t.Errorf("entry %d MkvOffset = %d, want %d", idx, entry.MkvOffset, int64(idx)*100)
 		}
+	}
+}
+
+func TestWriter_UsedFlags_SomeUnused(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create source files: 3 files, but only files 0 and 2 are referenced
+	sourceFiles := []source.File{
+		{RelativePath: "VIDEO_TS/VTS_01_1.VOB", Size: 1000, Checksum: 0x111},
+		{RelativePath: "VIDEO_TS/VTS_02_1.VOB", Size: 2000, Checksum: 0x222},
+		{RelativePath: "VIDEO_TS/VTS_03_1.VOB", Size: 3000, Checksum: 0x333},
+	}
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     500,
+		originalChecksum: 0xABCD,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "mkvdup test",
+		sourceFiles:      sourceFiles,
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 200, Source: 1, SourceOffset: 0},   // file 0 (used)
+				{MkvOffset: 200, Length: 300, Source: 3, SourceOffset: 0}, // file 2 (used)
+			},
+			TotalPackets: 2,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	if !r.HasSourceUsedFlags() {
+		t.Fatal("HasSourceUsedFlags should be true for V7")
+	}
+
+	sfs := r.SourceFiles()
+	if len(sfs) != 3 {
+		t.Fatalf("SourceFiles count = %d, want 3", len(sfs))
+	}
+	if !sfs[0].Used {
+		t.Error("source file 0 should be used")
+	}
+	if sfs[1].Used {
+		t.Error("source file 1 should be unused")
+	}
+	if !sfs[2].Used {
+		t.Error("source file 2 should be used")
+	}
+
+	if err := r.VerifyIntegrity(); err != nil {
+		t.Errorf("VerifyIntegrity failed: %v", err)
+	}
+}
+
+func TestWriter_UsedFlags_AllDelta(t *testing.T) {
+	dir := t.TempDir()
+	deltaData := bytes.Repeat([]byte{0xCD}, 100)
+
+	sourceFiles := []source.File{
+		{RelativePath: "VIDEO_TS/VTS_01_1.VOB", Size: 1000, Checksum: 0x111},
+	}
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0x1234,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "mkvdup test",
+		sourceFiles:      sourceFiles,
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0}, // all delta
+			},
+			DeltaData:      deltaData,
+			UnmatchedBytes: 100,
+			TotalPackets:   1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	sfs := r.SourceFiles()
+	if sfs[0].Used {
+		t.Error("source file 0 should be unused (all delta)")
+	}
+}
+
+func TestWriter_UsedFlags_V3_NoFlags(t *testing.T) {
+	dir := t.TempDir()
+	deltaData := bytes.Repeat([]byte{0xAB}, 100)
+
+	// V3: no creator version
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0x1234,
+		sourceType:       source.TypeDVD,
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 100, Source: 0, SourceOffset: 0},
+			},
+			DeltaData:      deltaData,
+			UnmatchedBytes: 100,
+			TotalPackets:   1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	if r.HasSourceUsedFlags() {
+		t.Error("HasSourceUsedFlags should be false for V3")
 	}
 }

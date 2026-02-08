@@ -35,7 +35,7 @@ func NewWriter(path string) (*Writer, error) {
 }
 
 // SetCreatorVersion sets the version string to embed in the file.
-// When set, the writer produces V5 (or V6 if range maps are also set).
+// When set, the writer produces V7 (or V8 if range maps are also set).
 func (w *Writer) SetCreatorVersion(v string) {
 	if len(v) > MaxCreatorVersionLen {
 		v = v[:MaxCreatorVersionLen]
@@ -46,7 +46,7 @@ func (w *Writer) SetCreatorVersion(v string) {
 // SetHeader sets the header information.
 func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceType source.Type) {
 	copy(w.header.Magic[:], Magic)
-	w.header.Version = Version // Default V3; upgraded to V5/V6 in resolveVersion()
+	w.header.Version = Version // Default V3; upgraded to V7/V8 in resolveVersion()
 	w.header.Flags = 0
 	w.header.OriginalSize = originalSize
 	w.header.OriginalChecksum = originalChecksum
@@ -75,7 +75,7 @@ func (w *Writer) SetSourceFiles(files []source.File) {
 // raw file positions at read time.
 func (w *Writer) SetRangeMaps(rangeMaps []RangeMapData) {
 	w.rangeMaps = rangeMaps
-	w.header.Version = VersionRangeMap // Default V4; upgraded to V6 in resolveVersion()
+	w.header.Version = VersionRangeMap // Default V4; upgraded to V8 in resolveVersion()
 	w.header.UsesESOffsets = 1
 }
 
@@ -83,15 +83,30 @@ func (w *Writer) SetRangeMaps(rangeMaps []RangeMapData) {
 func (w *Writer) resolveVersion() {
 	if w.rangeMaps != nil {
 		if w.creatorVersion != "" {
-			w.header.Version = VersionRangeMapCreator // V6
+			w.header.Version = VersionRangeMapUsed // V8
 		} else {
 			w.header.Version = VersionRangeMap // V4
 		}
 	} else {
 		if w.creatorVersion != "" {
-			w.header.Version = VersionCreator // V5
+			w.header.Version = VersionUsed // V7
 		} else {
 			w.header.Version = Version // V3
+		}
+	}
+}
+
+// computeUsedFlags scans entries and marks which source files are referenced.
+func (w *Writer) computeUsedFlags() {
+	for i := range w.sourceFiles {
+		w.sourceFiles[i].Used = false
+	}
+	for _, e := range w.entries {
+		if e.Source > 0 {
+			idx := int(e.Source - 1)
+			if idx < len(w.sourceFiles) {
+				w.sourceFiles[idx].Used = true
+			}
 		}
 	}
 }
@@ -208,6 +223,7 @@ func (w *Writer) Write() error {
 func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
 	// Determine final file version based on configured features.
 	w.resolveVersion()
+	w.computeUsedFlags()
 
 	// Use pre-encoded range maps if available (from EncodeRangeMaps),
 	// otherwise encode now.
@@ -294,9 +310,13 @@ func (w *Writer) Close() error {
 
 func (w *Writer) calculateSourceFilesSize() int64 {
 	var size int64
+	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed
 	for _, sf := range w.sourceFiles {
-		// PathLen (2) + Path (variable) + Size (8) + Checksum (8)
+		// PathLen (2) + Path (variable) + Size (8) + Checksum (8) [+ Used (1)]
 		size += 2 + int64(len(sf.RelativePath)) + 8 + 8
+		if hasUsed {
+			size += 1
+		}
 	}
 	return size
 }
@@ -372,6 +392,7 @@ func (w *Writer) writeHeader() error {
 }
 
 func (w *Writer) writeSourceFiles() error {
+	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed
 	for _, sf := range w.sourceFiles {
 		// Write path length
 		pathLen := uint16(len(sf.RelativePath))
@@ -392,6 +413,17 @@ func (w *Writer) writeSourceFiles() error {
 		// Write checksum
 		if err := binary.Write(w.file, binary.LittleEndian, sf.Checksum); err != nil {
 			return err
+		}
+
+		// Write used flag (V7/V8)
+		if hasUsed {
+			var used uint8
+			if sf.Used {
+				used = 1
+			}
+			if err := binary.Write(w.file, binary.LittleEndian, used); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

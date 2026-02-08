@@ -12,14 +12,16 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 
 | Version | Description |
 |---------|-------------|
-| 6 (current) | V4 + embedded creator version string after the header. On-disk layout otherwise identical to V4. |
-| 5 (current) | V3 + embedded creator version string after the header. On-disk layout otherwise identical to V3. |
+| 8 (current) | V6 + per-source-file Used byte. On-disk layout otherwise identical to V6. |
+| 7 (current) | V5 + per-source-file Used byte. On-disk layout otherwise identical to V5. |
+| 6 | V4 + embedded creator version string after the header. On-disk layout otherwise identical to V4. |
+| 5 | V3 + embedded creator version string after the header. On-disk layout otherwise identical to V3. |
 | 4 | Adds embedded range map section for Blu-ray M2TS sources. Index entries use ES offsets; the range map translates ES offsets to raw file offsets at read time. Footer extended to 32 bytes with range map checksum. |
 | 3 | Source field expanded to uint16 (supports >256 source files). Entry size: 28 bytes. Index entries use raw file offsets directly. |
 | 2 (deprecated) | Raw file offsets stored directly. Source field was uint8 (max 256 files). No longer supported; files must be recreated. |
 | 1 (deprecated) | Used ES (elementary stream) offsets for DVD sources. No longer supported; files must be recreated. |
 
-The writer produces V5 (DVD) or V6 (Blu-ray) files. V3/V4 files are supported for reading. V5/V6 add a creator version string (uint16 length + UTF-8 string) immediately after the 60-byte header, shifting all subsequent sections by `2 + len(version_string)` bytes.
+The writer produces V7 (DVD) or V8 (Blu-ray) files. V3-V6 files are supported for reading. V5-V8 add a creator version string (uint16 length + UTF-8 string) immediately after the 60-byte header, shifting all subsequent sections by `2 + len(version_string)` bytes. V7/V8 additionally add a Used byte (uint8) per source file record, indicating whether the file is referenced by any index entry.
 
 ## Design Principles
 
@@ -53,6 +55,7 @@ The writer produces V5 (DVD) or V6 (Blu-ray) files. V3/V4 files are supported fo
 │    Path: []byte (PathLen bytes, UTF-8, relative)       │
 │    FileSize: int64 (8 bytes)                           │
 │    FileChecksum: uint64 (8 bytes)                      │
+│    Used: uint8 (1 byte, V7/V8 only; 1=used, 0=unused) │
 │                                                        │
 │  Note: Path is relative to source_dir in FUSE config   │
 │  Example: "VIDEO_TS/VTS_09_1.VOB"                      │
@@ -98,7 +101,7 @@ Version 4 adds a **range map section** between the delta section and footer. Thi
 ├────────────────────────────────────────────────────────┤
 │  Source Files Section (variable size)                  │
 ├────────────────────────────────────────────────────────┤
-│  (same format as V3)                                   │
+│  (same format as V3; V8 includes Used byte per file)   │
 │  Example: "BDMV/STREAM/00705.m2ts"                     │
 ├────────────────────────────────────────────────────────┤
 │  Index Entries Section (fixed 28 bytes per entry)      │
