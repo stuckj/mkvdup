@@ -1298,9 +1298,9 @@ func TestMPEGTSParser_MultiPacketPMT(t *testing.T) {
 		t.Fatalf("ParseWithProgress: %v", err)
 	}
 
-	// Verify video was detected
-	if parser.VideoPID() != 0x1011 {
-		// PID 0x101 was set as video
+	// Verify video was detected (PID 0x101 as set in the PMT section above)
+	if got := parser.VideoPID(); got != 0x0101 {
+		t.Fatalf("VideoPID() = 0x%x, want 0x0101", got)
 	}
 
 	// Verify all audio + subtitle sub-streams were detected

@@ -1850,7 +1850,11 @@ func deltadiag(dedupPath, mkvPath string) error {
 			continue // Skip matched entries
 		}
 
-		// Find which MKV packet contains this delta region
+		// Find which MKV packet contains this delta region.
+		// NOTE: Classification is approximate — a delta entry can span multiple
+		// packets or tracks, but we classify based on the single packet containing
+		// the start offset. This is usually accurate since matches expand to
+		// cover full NALs/frames, leaving delta gaps within a single packet.
 		pktIdx := deltadiagFindPacket(packets, ent.MkvOffset)
 		if pktIdx < 0 {
 			deltaContainer.bytes += ent.Length

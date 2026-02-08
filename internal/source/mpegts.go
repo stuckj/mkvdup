@@ -276,7 +276,7 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 	pmtPID := uint16(0)
 	if len(patSection) >= 8 {
 		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
-		progsEnd := 8 + sectionLen - 4
+		progsEnd := 3 + sectionLen - 4 // section_length counts from byte 3; subtract 4 for CRC
 		if progsEnd > len(patSection) {
 			progsEnd = len(patSection)
 		}
@@ -422,8 +422,8 @@ func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, target
 		}
 	}
 
-	if len(section) > 0 {
-		return section, nil
+	if collecting {
+		return nil, fmt.Errorf("truncated PSI section for table ID 0x%02X on PID 0x%04X: got %d of %d bytes", tableID, targetPID, len(section), sectionLen)
 	}
 	return nil, fmt.Errorf("PSI section with table ID 0x%02X not found on PID 0x%04X", tableID, targetPID)
 }
@@ -769,6 +769,9 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 	// We need bytes 0-1 (sync word 0B77) and byte 4 (fscod+frmsizecod).
 	var headerBuf [5]byte
 	headerBufLen := 0
+	// Ranges from intermediate short ranges that contributed to headerBuf
+	// but haven't been committed to either output yet.
+	var headerPendingRanges []PESPayloadRange
 
 	for _, r := range ranges {
 		endOffset := r.FileOffset + int64(r.Size)
@@ -785,17 +788,11 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 			need := 5 - headerBufLen
 			if need > len(data) {
 				// Still not enough data to complete header check.
-				// Classify buffered bytes as TrueHD and buffer the new bytes.
-				// (headerBufFileOffset already tracked the previous range's bytes;
-				// these new bytes are from the current range)
-				truehdRanges = append(truehdRanges, PESPayloadRange{
-					FileOffset: r.FileOffset,
-					Size:       len(data),
-					ESOffset:   truehdES,
-				})
-				truehdES += int64(len(data))
+				// Buffer the bytes without committing to either output —
+				// we can't classify until we have the full 5-byte header.
 				copy(headerBuf[headerBufLen:], data)
 				headerBufLen += len(data)
+				headerPendingRanges = append(headerPendingRanges, r)
 				continue
 			}
 			copy(headerBuf[headerBufLen:], data[:need])
@@ -805,8 +802,18 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 				frameSize := AC3FrameSize(fscod, frmsizecod)
 				if frameSize > 0 {
 					// Valid AC3 frame header spanning range boundary.
-					// The headerBufLen bytes from the previous range were already
-					// trimmed from TrueHD and added to AC3 when buffered.
+					// The initial bytes from the first range were already
+					// added to AC3 optimistically when buffered.
+					// Add any intermediate pending ranges to AC3 too.
+					for _, pr := range headerPendingRanges {
+						ac3Ranges = append(ac3Ranges, PESPayloadRange{
+							FileOffset: pr.FileOffset,
+							Size:       pr.Size,
+							ESOffset:   ac3ES,
+						})
+						ac3ES += int64(pr.Size)
+					}
+					headerPendingRanges = nil
 					// Now add the header-completion bytes from this range to AC3.
 					ac3Ranges = append(ac3Ranges, PESPayloadRange{
 						FileOffset: r.FileOffset,
@@ -821,8 +828,8 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 					goto scanLoop
 				}
 			}
-			// Not a valid AC3 header. The buffered bytes from the previous range
-			// were already added to AC3 ranges optimistically; re-attribute them
+			// Not a valid AC3 header. The buffered bytes from the first range
+			// were added to AC3 ranges optimistically; re-attribute them
 			// to TrueHD by adjusting ES offsets.
 			if len(ac3Ranges) > 0 {
 				last := ac3Ranges[len(ac3Ranges)-1]
@@ -835,6 +842,16 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 				})
 				truehdES += int64(last.Size)
 			}
+			// Re-attribute any intermediate pending ranges to TrueHD.
+			for _, pr := range headerPendingRanges {
+				truehdRanges = append(truehdRanges, PESPayloadRange{
+					FileOffset: pr.FileOffset,
+					Size:       pr.Size,
+					ESOffset:   truehdES,
+				})
+				truehdES += int64(pr.Size)
+			}
+			headerPendingRanges = nil
 			headerBufLen = 0
 			// Fall through to normal processing for the rest of this range
 		}
@@ -936,16 +953,26 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 	}
 
 	// If we ended with buffered bytes, they weren't AC3 — re-attribute to TrueHD
-	if headerBufLen > 0 && len(ac3Ranges) > 0 {
-		last := ac3Ranges[len(ac3Ranges)-1]
-		ac3Ranges = ac3Ranges[:len(ac3Ranges)-1]
-		ac3ES -= int64(last.Size)
-		truehdRanges = append(truehdRanges, PESPayloadRange{
-			FileOffset: last.FileOffset,
-			Size:       last.Size,
-			ESOffset:   truehdES,
-		})
-		truehdES += int64(last.Size)
+	if headerBufLen > 0 {
+		if len(ac3Ranges) > 0 {
+			last := ac3Ranges[len(ac3Ranges)-1]
+			ac3Ranges = ac3Ranges[:len(ac3Ranges)-1]
+			ac3ES -= int64(last.Size)
+			truehdRanges = append(truehdRanges, PESPayloadRange{
+				FileOffset: last.FileOffset,
+				Size:       last.Size,
+				ESOffset:   truehdES,
+			})
+			truehdES += int64(last.Size)
+		}
+		for _, pr := range headerPendingRanges {
+			truehdRanges = append(truehdRanges, PESPayloadRange{
+				FileOffset: pr.FileOffset,
+				Size:       pr.Size,
+				ESOffset:   truehdES,
+			})
+			truehdES += int64(pr.Size)
+		}
 	}
 
 	return ac3Ranges, truehdRanges
