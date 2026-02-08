@@ -197,7 +197,7 @@ type Matcher struct {
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
-	coverageMu    sync.Mutex
+	coverageMu    sync.RWMutex
 
 	// Locality hint: shared across workers. Workers process near-sequential
 	// packets so hints naturally stay roughly current. Stale values just mean
@@ -568,6 +568,12 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			continue
 		}
 
+		// Skip sync points whose chunk is already covered — the source data
+		// for this region has already been verified byte-for-byte by a prior match.
+		if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
+			continue
+		}
+
 		if isVideo {
 			m.diagVideoNALsTotal.Add(1)
 		}
@@ -610,6 +616,10 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			if syncOff+m.windowSize > len(fullData) {
 				continue
 			}
+			// Skip sync points whose chunk is already covered
+			if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
+				continue
+			}
 			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo) {
 				anyMatched = true
 				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
@@ -638,8 +648,8 @@ func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool {
 	startChunk := offset / coverageChunkSize
 	endChunk := (offset + size - 1) / coverageChunkSize
 
-	m.coverageMu.Lock()
-	defer m.coverageMu.Unlock()
+	m.coverageMu.RLock()
+	defer m.coverageMu.RUnlock()
 
 	// Check if all chunks in the range are covered
 	for chunk := startChunk; chunk <= endChunk; chunk++ {
@@ -653,6 +663,23 @@ func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool {
 		}
 	}
 	return true
+}
+
+// isChunkCoveredParallel checks if the chunk containing absOffset is already covered.
+// This is used to skip sync points that fall within already-matched regions,
+// avoiding redundant hash lookups and source reads.
+func (m *Matcher) isChunkCoveredParallel(absOffset int64) bool {
+	chunk := absOffset / coverageChunkSize
+	wordIdx := chunk / 64
+	bitIdx := uint(chunk % 64)
+
+	m.coverageMu.RLock()
+	defer m.coverageMu.RUnlock()
+
+	if wordIdx >= int64(len(m.coveredChunks)) {
+		return false
+	}
+	return m.coveredChunks[wordIdx]&(1<<bitIdx) != 0
 }
 
 // markChunksCovered marks the chunks fully contained within a region as covered.
