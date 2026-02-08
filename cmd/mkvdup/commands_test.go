@@ -1198,7 +1198,7 @@ func TestDeltadiagFindPacket(t *testing.T) {
 		{"start of fourth packet", 500, 3},
 		{"last byte of fourth packet", 649, 3},
 		{"gap between packets", 350, -1},
-		{"before all packets (negative-like)", 700, -1},
+		{"after all packets", 700, -1},
 	}
 
 	for _, tt := range tests {

@@ -284,6 +284,30 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	}
 	m.mkvData = m.mkvMmap.Data() // Store reference for zero-copy access
 
+	// Reset per-run state in case Match() is called multiple times
+	m.trackTypes = make(map[int]int)
+	m.trackCodecs = make(map[int]trackCodecInfo)
+	m.isAVCTrack = make(map[int]bool)
+	m.diagVideoPacketsTotal.Store(0)
+	m.diagVideoPacketsCoverage.Store(0)
+	m.diagVideoNALsTotal.Store(0)
+	m.diagVideoNALsTooSmall.Store(0)
+	m.diagVideoNALsHashNotFound.Store(0)
+	m.diagVideoNALsVerifyFailed.Store(0)
+	m.diagVideoNALsAllSkipped.Store(0)
+	m.diagVideoNALsMatched.Store(0)
+	m.diagVideoNALsMatchedBytes.Store(0)
+	m.diagVideoNALsSkippedIsVideo.Store(0)
+	for i := range m.diagNALTypeNotFound {
+		m.diagNALTypeNotFound[i].Store(0)
+		m.diagNALTypeMatched[i].Store(0)
+		m.diagNALTypeTotal[i].Store(0)
+	}
+	m.diagExamplesMu.Lock()
+	m.diagExamplesCount = 0
+	m.diagExamplesOutput = nil
+	m.diagExamplesMu.Unlock()
+
 	// Build track type and codec info maps
 	for _, t := range tracks {
 		m.trackTypes[int(t.Number)] = t.Type
