@@ -37,6 +37,9 @@ func NewWriter(path string) (*Writer, error) {
 // SetCreatorVersion sets the version string to embed in the file.
 // When set, the writer produces V5 (or V6 if range maps are also set).
 func (w *Writer) SetCreatorVersion(v string) {
+	if len(v) > 4096 {
+		v = v[:4096]
+	}
 	w.creatorVersion = v
 }
 
@@ -356,15 +359,11 @@ func (w *Writer) writeHeader() error {
 
 	// Write creator version string (V5/V6)
 	if w.creatorVersion != "" {
-		cv := w.creatorVersion
-		if len(cv) > 65535 {
-			cv = cv[:65535]
-		}
-		versionLen := uint16(len(cv))
+		versionLen := uint16(len(w.creatorVersion))
 		if err := binary.Write(w.file, binary.LittleEndian, versionLen); err != nil {
 			return err
 		}
-		if _, err := w.file.Write([]byte(cv)); err != nil {
+		if _, err := w.file.Write([]byte(w.creatorVersion)); err != nil {
 			return err
 		}
 	}
