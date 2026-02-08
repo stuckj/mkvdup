@@ -127,4 +127,4 @@ The performance stats in DESIGN.md and docs/MATCHING.md are measured using this 
 ## License
 
 Big Buck Bunny is licensed under Creative Commons Attribution 3.0.
-See: <https://peach.blender.org/>
+See: <https://studio.blender.org/films/big-buck-bunny/>
