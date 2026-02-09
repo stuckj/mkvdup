@@ -104,7 +104,7 @@ ES off:  0                  ~167                    ~351
 | Packet size | Variable | Fixed 192 bytes (M2TS) or 188 bytes (TS) |
 | Stream ID | Stream ID byte in PES header | PID (13-bit) per TS packet |
 | Audio framing | Private Stream 1 with 4-byte sub-headers | Separate PID per audio track, no sub-headers |
-| Audio sub-streams | Sub-stream IDs (0x80-0x87 = AC3, etc.) | PIDs mapped to sequential byte IDs (0, 1, 2...) |
+| Audio sub-streams | Sub-stream IDs (0x80-0x87 = AC3, etc.) | PIDs mapped to sequential byte IDs (0, 1, 2...) for audio and subtitle |
 | user_data filtering | Required (MPEG-2 video) | Not needed for H.264/H.265 (only for MPEG-2) |
 
 ### PAT/PMT Parsing
@@ -115,7 +115,40 @@ The parser identifies streams via MPEG-TS Program Specific Information:
 
 ### Audio PID Mapping
 
-Unlike DVDs where audio is multiplexed in Private Stream 1 with sub-stream IDs, Blu-ray audio tracks have individual PIDs. The parser assigns sequential byte sub-stream IDs (0, 1, 2, ...) to audio PIDs in PMT order, maintaining compatibility with the `Location.AudioSubStreamID` field used throughout the codebase.
+Unlike DVDs where audio is multiplexed in Private Stream 1 with sub-stream IDs, Blu-ray audio tracks have individual PIDs. The parser assigns sequential byte sub-stream IDs (0, 1, 2, ...) to audio and subtitle PIDs in PMT order, maintaining compatibility with the `Location.AudioSubStreamID` field used throughout the codebase. PGS subtitle PIDs (stream type 0x90) are included in the same sub-stream infrastructure as audio.
+
+## Blu-ray TrueHD+AC3 Stream Splitting
+
+**Problem:** On Blu-ray discs, TrueHD audio streams (PMT stream type 0x83) embed an AC3 compatibility core interleaved in the same PID. The raw PES payload data looks like:
+
+```
+PES payload: [AC3 frame][TrueHD frame(s)][AC3 frame][TrueHD frame(s)]...
+```
+
+MakeMKV (and other ripping tools) split these into separate MKV tracks: one for TrueHD-only data, one for the AC3 core. If we index them as a single combined sub-stream, the interleaved AC3+TrueHD bytes don't match either MKV track.
+
+**Solution:** After parsing all PES payloads, detect combined TrueHD+AC3 streams by scanning the first 16KB of ES data for both AC3 sync words (`0B 77`) and TrueHD major sync words (`F8 72 6F BA`). When both are found, split the ranges by walking through the payload and parsing AC3 frame headers to determine frame boundaries:
+
+1. **AC3 frame detection**: When `0B 77` is found, read byte 4 for `fscod` (2-bit sample rate code) and `frmsizecod` (6-bit frame size code). The frame size is deterministic from these values (ATSC A/52 Table 5.18).
+2. **Range assignment**: AC3 frame bytes go to the new AC3 sub-stream; all other bytes go to the TrueHD sub-stream.
+3. **Cross-range tracking**: AC3 frames may span TS payload chunks. The `ac3Remaining` counter tracks bytes still belonging to the current AC3 frame across range boundaries.
+4. **Range merging**: After splitting, merge adjacent ranges that are contiguous in both file offset and ES offset to reduce range count.
+
+The original sub-stream ID keeps the TrueHD-only ranges; a new sub-stream ID is assigned for the AC3 core.
+
+**Impact:** On a 40GB Blu-ray (MI7), audio delta dropped from 1.85 GB (42% of total delta) to near-zero after splitting. The matcher can now find TrueHD data in the TrueHD MKV track and AC3 data in the AC3 MKV track.
+
+## Blu-ray PGS Subtitle Matching
+
+PGS (Presentation Graphic Stream) subtitles are carried in MPEG-TS with stream type 0x90. MakeMKV extracts these as MKV tracks with codec ID `S_HDMV/PGS`. On a typical Blu-ray, PGS data is 10-50 MB.
+
+PGS subtitle streams are handled using the same sub-stream infrastructure as audio:
+
+1. **PMT parsing**: PGS PIDs are assigned sequential sub-stream IDs alongside audio PIDs. They share the same `audioBySubStream` ranges, `ReadAudioSubStreamData()`, and range map encoding.
+2. **Sync point detection**: PGS data uses a segment-based structure with 3-byte headers: `[type (1 byte)] [size (2 bytes BE)]`. Valid segment types are PDS (0x14), ODS (0x15), PCS (0x16), WDS (0x17), and END (0x80). Each segment start is a sync point, similar to how AVCC uses NAL unit boundaries.
+3. **Indexing and matching**: The indexer uses `FindPGSSyncPoints` for subtitle sub-streams instead of `FindAudioSyncPoints`. The matcher dispatches `TrackTypeSubtitle` MKV packets to `FindPGSSyncPoints`.
+
+No changes to the dedup file format, entry structure, or reader are needed — subtitle entries appear as non-video entries with their own sub-stream IDs, and the existing range map and reader infrastructure handles them transparently.
 
 ## Video user_data Filtering
 
@@ -295,7 +328,6 @@ With all filtering implemented (ES-aware, user_data, per-sub-stream audio):
 
 The remaining ~1.6% unmatched data consists of:
 - MKV container headers (EBML, cluster headers, block headers)
-- Subtitle data (not in video/audio ES)
 - Minor stream differences
 
 ## Related Documentation

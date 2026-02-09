@@ -563,6 +563,9 @@ func TestNewReader_InvalidVersion(t *testing.T) {
 	if err == nil {
 		t.Error("NewReader should fail for unsupported version")
 	}
+	if err != nil && !strings.Contains(err.Error(), "expected 3-8") {
+		t.Errorf("Error should mention expected versions 3-8: %v", err)
+	}
 }
 
 func TestNewReader_Version1Error(t *testing.T) {
@@ -880,6 +883,10 @@ func TestInfo(t *testing.T) {
 	if info["source_file_count"].(int) != 1 {
 		t.Errorf("info[source_file_count] = %v, want 1", info["source_file_count"])
 	}
+	// V3 file should have empty creator version
+	if info["creator_version"].(string) != "" {
+		t.Errorf("info[creator_version] = %v, want empty string", info["creator_version"])
+	}
 }
 
 // createTestDedupFileZeroEntries creates a valid dedup file with zero entries
@@ -1053,6 +1060,44 @@ func TestBlockIndex_SingleEntry(t *testing.T) {
 		if idx != 0 {
 			t.Errorf("blockIndex[%d] = %d, want 0", i, idx)
 		}
+	}
+}
+
+func TestGetEntry_PublicAPI(t *testing.T) {
+	tmpDir := t.TempDir()
+	numEntries := 5
+	dedupPath := createTestDedupFile(t, tmpDir, numEntries)
+
+	reader, err := NewReader(dedupPath, tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create reader: %v", err)
+	}
+	defer reader.Close()
+
+	// Valid index should return true
+	entry, ok := reader.GetEntry(0)
+	if !ok {
+		t.Fatal("GetEntry(0) returned false, want true")
+	}
+	if entry.MkvOffset < 0 {
+		t.Errorf("GetEntry(0).MkvOffset = %d, want >= 0", entry.MkvOffset)
+	}
+
+	// Last valid index
+	_, ok = reader.GetEntry(numEntries - 1)
+	if !ok {
+		t.Fatalf("GetEntry(%d) returned false, want true", numEntries-1)
+	}
+
+	// Out of range should return false
+	_, ok = reader.GetEntry(numEntries)
+	if ok {
+		t.Error("GetEntry(numEntries) returned true, want false")
+	}
+
+	_, ok = reader.GetEntry(-1)
+	if ok {
+		t.Error("GetEntry(-1) returned true, want false")
 	}
 }
 

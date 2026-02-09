@@ -32,9 +32,10 @@ type MPEGTSParser struct {
 	audioBySubStream    map[byte][]PESPayloadRange
 
 	// Audio PID → sub-stream ID mapping
-	audioSubStreams []byte          // sequential IDs: 0, 1, 2, ...
-	pidToSubStream  map[uint16]byte // PID → sub-stream ID
-	subStreamToPID  map[byte]uint16 // sub-stream ID → PID
+	audioSubStreams []byte             // sequential IDs: 0, 1, 2, ...
+	pidToSubStream  map[uint16]byte    // PID → sub-stream ID
+	subStreamToPID  map[byte]uint16    // sub-stream ID → PID
+	subStreamCodec  map[byte]CodecType // codec type per sub-stream
 
 	filterUserData bool
 }
@@ -47,6 +48,7 @@ func NewMPEGTSParser(data []byte) *MPEGTSParser {
 		audioBySubStream: make(map[byte][]PESPayloadRange),
 		pidToSubStream:   make(map[uint16]byte),
 		subStreamToPID:   make(map[byte]uint16),
+		subStreamCodec:   make(map[byte]CodecType),
 	}
 }
 
@@ -255,160 +257,75 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 
 	p.filterUserData = true
 
+	// Step 5: Split combined TrueHD+AC3 streams into separate sub-streams
+	p.splitTrueHDAC3Streams()
+
 	return nil
 }
 
 // parsePATandPMT finds the PAT and PMT in the first portion of the file
 // and extracts video/audio PIDs and stream types.
 func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
-	// Find PAT (PID 0) to get PMT PID
+	// Find PAT (PID 0) and extract PMT PID
+	patSection, err := p.reassemblePSISection(data, startOffset, 0, 0x00)
+	if err != nil {
+		return fmt.Errorf("reassemble PAT: %w", err)
+	}
+
 	pmtPID := uint16(0)
-	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
-		tsStart := i + p.tsOffset
-		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
-			continue
+	if len(patSection) >= 8 {
+		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
+		progsEnd := 3 + sectionLen - 4 // section_length counts from byte 3; subtract 4 for CRC
+		if progsEnd > len(patSection) {
+			progsEnd = len(patSection)
 		}
-
-		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
-		if pid != 0 {
-			continue
-		}
-
-		pusi := data[tsStart+1]&0x40 != 0
-		if !pusi {
-			continue
-		}
-
-		// Parse payload
-		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
-		hdrLen := 4
-		switch adaptFieldCtrl {
-		case 0x02, 0x03:
-			if tsStart+4 >= len(data) {
-				continue
-			}
-			adaptLen := int(data[tsStart+4])
-			hdrLen = 5 + adaptLen
-		case 0x01:
-		default:
-			continue
-		}
-		if tsStart+hdrLen >= tsStart+188 {
-			continue
-		}
-
-		// Skip pointer field
-		pointerField := int(data[tsStart+hdrLen])
-		hdrLen += 1 + pointerField
-		if tsStart+hdrLen+8 > tsStart+188 {
-			continue
-		}
-
-		payload := data[tsStart+hdrLen : tsStart+188]
-		if len(payload) < 12 || payload[0] != 0x00 {
-			continue
-		}
-
-		sectionLen := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLen < 9 {
-			continue
-		}
-
-		progsEnd := 8 + sectionLen - 4
-		if progsEnd > len(payload) {
-			progsEnd = len(payload) - 4
-		}
-
 		for j := 8; j+4 <= progsEnd; j += 4 {
-			progNum := uint16(payload[j])<<8 | uint16(payload[j+1])
+			progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
 			if progNum == 0 {
 				continue
 			}
-			pmtPID = uint16(payload[j+2]&0x1F)<<8 | uint16(payload[j+3])
+			pmtPID = uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
 			break
 		}
-		break
 	}
 
 	if pmtPID == 0 {
 		return fmt.Errorf("PMT PID not found in PAT")
 	}
 
-	// Find PMT and extract stream types
-	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
-		tsStart := i + p.tsOffset
-		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
-			continue
-		}
+	// Find PMT and extract stream types.
+	// PMT sections can span multiple TS packets, so we must reassemble.
+	pmtSection, err := p.reassemblePSISection(data, startOffset, pmtPID, 0x02)
+	if err != nil {
+		return fmt.Errorf("reassemble PMT: %w", err)
+	}
 
-		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
-		if pid != pmtPID {
-			continue
-		}
-
-		pusi := data[tsStart+1]&0x40 != 0
-		if !pusi {
-			continue
-		}
-
-		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
-		hdrLen := 4
-		switch adaptFieldCtrl {
-		case 0x02, 0x03:
-			if tsStart+4 >= len(data) {
-				continue
-			}
-			adaptLen := int(data[tsStart+4])
-			hdrLen = 5 + adaptLen
-		case 0x01:
-		default:
-			continue
-		}
-		if tsStart+hdrLen >= tsStart+188 {
-			continue
-		}
-
-		pointerField := int(data[tsStart+hdrLen])
-		hdrLen += 1 + pointerField
-		if tsStart+hdrLen+12 > tsStart+188 {
-			continue
-		}
-
-		payload := data[tsStart+hdrLen : tsStart+188]
-		if len(payload) < 12 || payload[0] != 0x02 {
-			continue
-		}
-
-		sectionLen := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLen < 13 {
-			continue
-		}
-
-		progInfoLen := int(payload[10]&0x0F)<<8 | int(payload[11])
+	if len(pmtSection) >= 12 {
+		progInfoLen := int(pmtSection[10]&0x0F)<<8 | int(pmtSection[11])
 		streamsStart := 12 + progInfoLen
-		streamsEnd := 3 + sectionLen - 4
-		if streamsEnd > len(payload) {
-			streamsEnd = len(payload) - 4
-		}
-		if streamsStart > streamsEnd {
-			continue
+		sectionLen := int(pmtSection[1]&0x0F)<<8 | int(pmtSection[2])
+		streamsEnd := 3 + sectionLen - 4 // exclude CRC32
+
+		if streamsEnd > len(pmtSection) {
+			streamsEnd = len(pmtSection)
 		}
 
 		var subStreamSeq byte
 		for j := streamsStart; j+5 <= streamsEnd; {
-			streamType := payload[j]
-			esPID := uint16(payload[j+1]&0x1F)<<8 | uint16(payload[j+2])
-			esInfoLen := int(payload[j+3]&0x0F)<<8 | int(payload[j+4])
+			streamType := pmtSection[j]
+			esPID := uint16(pmtSection[j+1]&0x1F)<<8 | uint16(pmtSection[j+2])
+			esInfoLen := int(pmtSection[j+3]&0x0F)<<8 | int(pmtSection[j+4])
 
 			ct := tsStreamTypeToCodecType(streamType)
 			if ct != CodecUnknown {
 				if IsVideoCodec(ct) && p.videoPID == 0 {
 					p.videoPID = esPID
 					p.videoCodec = ct
-				} else if IsAudioCodec(ct) {
+				} else if IsAudioCodec(ct) || IsSubtitleCodec(ct) {
 					p.audioPIDs = append(p.audioPIDs, esPID)
 					p.pidToSubStream[esPID] = subStreamSeq
 					p.subStreamToPID[subStreamSeq] = esPID
+					p.subStreamCodec[subStreamSeq] = ct
 					p.audioSubStreams = append(p.audioSubStreams, subStreamSeq)
 					subStreamSeq++
 				}
@@ -420,7 +337,6 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 			}
 			j = next
 		}
-		break
 	}
 
 	return nil
@@ -429,6 +345,88 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 // buildFilteredVideoRanges creates filtered video ranges.
 // For MPEG-2 video, this excludes user_data (00 00 01 B2) sections.
 // For H.264/H.265, filtered ranges are the same as raw ranges (no filtering needed).
+// reassemblePSISection collects a complete PSI section (PAT, PMT, etc.) from
+// one or more TS packets. PSI sections can span multiple TS packets when the
+// section is larger than a single TS payload (~170 bytes). This happens on
+// Blu-ray discs with many audio and subtitle streams in the PMT.
+func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, targetPID uint16, tableID byte) ([]byte, error) {
+	var section []byte
+	sectionLen := -1
+	collecting := false
+
+	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
+		tsStart := i + p.tsOffset
+		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
+			continue
+		}
+
+		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
+		if pid != targetPID {
+			continue
+		}
+
+		pusi := data[tsStart+1]&0x40 != 0
+		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
+		hdrLen := 4
+		switch adaptFieldCtrl {
+		case 0x02, 0x03:
+			if tsStart+4 >= len(data) {
+				continue
+			}
+			hdrLen = 5 + int(data[tsStart+4])
+		case 0x01:
+		default:
+			continue
+		}
+		if tsStart+hdrLen >= tsStart+188 {
+			continue
+		}
+
+		payload := data[tsStart+hdrLen : tsStart+188]
+
+		if pusi {
+			// PUSI packet: skip pointer field, find section start
+			pointerField := int(payload[0])
+			sectionStart := 1 + pointerField
+			if sectionStart >= len(payload) {
+				continue
+			}
+			payload = payload[sectionStart:]
+			if len(payload) < 3 || payload[0] != tableID {
+				continue
+			}
+
+			sectionLen = 3 + (int(payload[1]&0x0F)<<8 | int(payload[2]))
+			section = make([]byte, 0, sectionLen)
+			collecting = true
+
+			// Append what we have from this packet
+			n := len(payload)
+			if n > sectionLen {
+				n = sectionLen
+			}
+			section = append(section, payload[:n]...)
+		} else if collecting {
+			// Continuation packet
+			remaining := sectionLen - len(section)
+			n := len(payload)
+			if n > remaining {
+				n = remaining
+			}
+			section = append(section, payload[:n]...)
+		}
+
+		if collecting && len(section) >= sectionLen {
+			return section, nil
+		}
+	}
+
+	if collecting {
+		return nil, fmt.Errorf("truncated PSI section for table ID 0x%02X on PID 0x%04X: got %d of %d bytes", tableID, targetPID, len(section), sectionLen)
+	}
+	return nil, fmt.Errorf("PSI section with table ID 0x%02X not found on PID 0x%04X", tableID, targetPID)
+}
+
 func (p *MPEGTSParser) buildFilteredVideoRanges() error {
 	if len(p.videoRanges) == 0 {
 		return nil
@@ -559,6 +557,17 @@ func (p *MPEGTSParser) AudioSubStreams() []byte {
 	return p.audioSubStreams
 }
 
+// SubtitleSubStreams returns the sub-stream IDs that carry subtitle data (e.g., PGS).
+func (p *MPEGTSParser) SubtitleSubStreams() []byte {
+	var ids []byte
+	for _, id := range p.audioSubStreams {
+		if IsSubtitleCodec(p.subStreamCodec[id]) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // AudioSubStreamESSize returns the ES size for a specific audio sub-stream.
 func (p *MPEGTSParser) AudioSubStreamESSize(subStreamID byte) int64 {
 	return totalESSizeFromRanges(p.audioBySubStream[subStreamID])
@@ -663,6 +672,330 @@ func (p *MPEGTSParser) AudioPIDs() []uint16 {
 // VideoCodec returns the video codec type detected from the PMT.
 func (p *MPEGTSParser) VideoCodec() CodecType {
 	return p.videoCodec
+}
+
+// splitTrueHDAC3Streams detects combined TrueHD+AC3 audio streams and splits
+// them into separate sub-streams. On Blu-ray, TrueHD streams (PMT type 0x83)
+// interleave an AC3 compatibility core in the same PID. MakeMKV splits these
+// into separate MKV tracks, so we must split them here to match.
+func (p *MPEGTSParser) splitTrueHDAC3Streams() {
+	for _, subID := range p.audioSubStreams {
+		if p.subStreamCodec[subID] != CodecTrueHDAudio {
+			continue
+		}
+		ranges := p.audioBySubStream[subID]
+		if len(ranges) == 0 {
+			continue
+		}
+
+		// Check if this stream actually has interleaved AC3
+		if !p.detectCombinedTrueHDAC3(ranges) {
+			continue
+		}
+
+		// Split the combined ranges
+		ac3Ranges, truehdRanges := p.splitCombinedAudioRanges(ranges)
+		if len(ac3Ranges) == 0 {
+			continue
+		}
+
+		// Merge adjacent ranges to reduce count
+		ac3Ranges = mergeAdjacentRanges(ac3Ranges)
+		truehdRanges = mergeAdjacentRanges(truehdRanges)
+
+		// Replace original sub-stream with TrueHD-only ranges
+		p.audioBySubStream[subID] = truehdRanges
+
+		// Add AC3 as a new sub-stream
+		newSubID := byte(len(p.audioSubStreams))
+		p.audioBySubStream[newSubID] = ac3Ranges
+		p.subStreamCodec[newSubID] = CodecAC3Audio
+		p.audioSubStreams = append(p.audioSubStreams, newSubID)
+
+	}
+}
+
+// detectCombinedTrueHDAC3 checks if a TrueHD audio stream contains interleaved
+// AC3 frames by scanning the first few KB of ES data for both sync patterns.
+func (p *MPEGTSParser) detectCombinedTrueHDAC3(ranges []PESPayloadRange) bool {
+	// Read up to 16KB of ES data to check for both patterns
+	hasAC3 := false
+	hasTrueHD := false
+	bytesChecked := 0
+	const maxCheck = 16 * 1024
+
+	for _, r := range ranges {
+		if bytesChecked >= maxCheck {
+			break
+		}
+		endOffset := r.FileOffset + int64(r.Size)
+		if endOffset > p.size {
+			continue
+		}
+		data := p.data[r.FileOffset:endOffset]
+		// Clamp to remaining check budget
+		remaining := maxCheck - bytesChecked
+		if remaining < len(data) {
+			data = data[:remaining]
+		}
+		for i := 0; i < len(data)-1; i++ {
+			if data[i] == 0x0B && data[i+1] == 0x77 {
+				hasAC3 = true
+			}
+			if i+3 < len(data) &&
+				data[i] == 0xF8 && data[i+1] == 0x72 &&
+				data[i+2] == 0x6F && data[i+3] == 0xBA {
+				hasTrueHD = true
+			}
+			if hasAC3 && hasTrueHD {
+				return true
+			}
+		}
+		bytesChecked += len(data)
+	}
+	return false
+}
+
+// splitCombinedAudioRanges splits PES payload ranges of a combined TrueHD+AC3
+// stream into separate AC3 and TrueHD ranges. It walks through the ranges,
+// parsing AC3 frame headers to determine frame sizes, and assigns each byte
+// to either the AC3 or TrueHD output.
+func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ranges, truehdRanges []PESPayloadRange) {
+	var ac3ES, truehdES int64 // cumulative ES offsets for output streams
+	ac3Remaining := 0         // bytes remaining in current AC3 frame
+
+	// Buffer for AC3 header detection across range boundaries.
+	// We need bytes 0-1 (sync word 0B77) and byte 4 (fscod+frmsizecod).
+	var headerBuf [5]byte
+	headerBufLen := 0
+	// Ranges from intermediate short ranges that contributed to headerBuf
+	// but haven't been committed to either output yet.
+	var headerPendingRanges []PESPayloadRange
+
+	for _, r := range ranges {
+		endOffset := r.FileOffset + int64(r.Size)
+		if endOffset > p.size {
+			continue
+		}
+		data := p.data[r.FileOffset:endOffset]
+		pos := 0
+
+		// Handle header bytes buffered from previous range.
+		// The buffered bytes were trimmed from the previous range's TrueHD output,
+		// so we must classify them here (as AC3 or TrueHD).
+		if headerBufLen > 0 && ac3Remaining == 0 {
+			need := 5 - headerBufLen
+			if need > len(data) {
+				// Still not enough data to complete header check.
+				// Buffer the bytes without committing to either output —
+				// we can't classify until we have the full 5-byte header.
+				copy(headerBuf[headerBufLen:], data)
+				headerBufLen += len(data)
+				headerPendingRanges = append(headerPendingRanges, r)
+				continue
+			}
+			copy(headerBuf[headerBufLen:], data[:need])
+			if headerBuf[0] == 0x0B && headerBuf[1] == 0x77 {
+				fscod := (headerBuf[4] >> 6) & 0x03
+				frmsizecod := headerBuf[4] & 0x3F
+				frameSize := AC3FrameSize(fscod, frmsizecod)
+				if frameSize > 0 {
+					// Valid AC3 frame header spanning range boundary.
+					// The initial bytes from the first range were already
+					// added to AC3 optimistically when buffered.
+					// Add any intermediate pending ranges to AC3 too.
+					for _, pr := range headerPendingRanges {
+						ac3Ranges = append(ac3Ranges, PESPayloadRange{
+							FileOffset: pr.FileOffset,
+							Size:       pr.Size,
+							ESOffset:   ac3ES,
+						})
+						ac3ES += int64(pr.Size)
+					}
+					headerPendingRanges = nil
+					// Now add the header-completion bytes from this range to AC3.
+					ac3Ranges = append(ac3Ranges, PESPayloadRange{
+						FileOffset: r.FileOffset,
+						Size:       need,
+						ESOffset:   ac3ES,
+					})
+					ac3ES += int64(need)
+					ac3Remaining = frameSize - 5 // remaining frame bytes after 5-byte header
+					pos = need
+					headerBufLen = 0
+					// Fall through to normal scan which will consume ac3Remaining
+					goto scanLoop
+				}
+			}
+			// Not a valid AC3 header. The buffered bytes from the first range
+			// were added to AC3 ranges optimistically; re-attribute them
+			// to TrueHD by adjusting ES offsets.
+			if len(ac3Ranges) > 0 {
+				last := ac3Ranges[len(ac3Ranges)-1]
+				ac3Ranges = ac3Ranges[:len(ac3Ranges)-1]
+				ac3ES -= int64(last.Size)
+				truehdRanges = append(truehdRanges, PESPayloadRange{
+					FileOffset: last.FileOffset,
+					Size:       last.Size,
+					ESOffset:   truehdES,
+				})
+				truehdES += int64(last.Size)
+			}
+			// Re-attribute any intermediate pending ranges to TrueHD.
+			for _, pr := range headerPendingRanges {
+				truehdRanges = append(truehdRanges, PESPayloadRange{
+					FileOffset: pr.FileOffset,
+					Size:       pr.Size,
+					ESOffset:   truehdES,
+				})
+				truehdES += int64(pr.Size)
+			}
+			headerPendingRanges = nil
+			headerBufLen = 0
+			// Fall through to normal processing for the rest of this range
+		}
+
+	scanLoop:
+		for pos < len(data) {
+			if ac3Remaining > 0 {
+				// Inside an AC3 frame - consume bytes
+				consume := ac3Remaining
+				if consume > len(data)-pos {
+					consume = len(data) - pos
+				}
+				ac3Ranges = append(ac3Ranges, PESPayloadRange{
+					FileOffset: r.FileOffset + int64(pos),
+					Size:       consume,
+					ESOffset:   ac3ES,
+				})
+				ac3ES += int64(consume)
+				ac3Remaining -= consume
+				pos += consume
+				continue
+			}
+
+			// Look for AC3 sync word (need 5 bytes: 2-byte sync + byte 4 for frame size)
+			if pos+4 < len(data) && data[pos] == 0x0B && data[pos+1] == 0x77 {
+				fscod := (data[pos+4] >> 6) & 0x03
+				frmsizecod := data[pos+4] & 0x3F
+				frameSize := AC3FrameSize(fscod, frmsizecod)
+				if frameSize > 0 {
+					ac3Remaining = frameSize
+					continue // will be consumed in ac3Remaining branch
+				}
+			}
+
+			// TrueHD data - scan forward to next AC3 sync word or end of range
+			start := pos
+			pos++
+			for pos < len(data) {
+				if pos+4 < len(data) && data[pos] == 0x0B && data[pos+1] == 0x77 {
+					fscod := (data[pos+4] >> 6) & 0x03
+					frmsizecod := data[pos+4] & 0x3F
+					if AC3FrameSize(fscod, frmsizecod) > 0 {
+						break
+					}
+				}
+				pos++
+			}
+			if pos > start {
+				truehdRanges = append(truehdRanges, PESPayloadRange{
+					FileOffset: r.FileOffset + int64(start),
+					Size:       pos - start,
+					ESOffset:   truehdES,
+				})
+				truehdES += int64(pos - start)
+			}
+		}
+
+		// After processing all bytes in this range, check if trailing bytes
+		// could be a partial AC3 header for cross-range detection.
+		// Only relevant when not inside an AC3 frame.
+		if ac3Remaining == 0 && len(truehdRanges) > 0 {
+			last := &truehdRanges[len(truehdRanges)-1]
+			lastEnd := last.FileOffset + int64(last.Size)
+			rangeEnd := r.FileOffset + int64(r.Size)
+			if lastEnd == rangeEnd && last.Size > 0 {
+				// TrueHD range extends to end of PES range. Check if last
+				// 1-4 bytes could start an AC3 header (contain 0x0B).
+				checkStart := last.Size - 4
+				if checkStart < 0 {
+					checkStart = 0
+				}
+				tailData := p.data[last.FileOffset:lastEnd]
+				bufStart := -1
+				for j := len(tailData) - 1; j >= checkStart; j-- {
+					if tailData[j] == 0x0B {
+						bufStart = j
+						break
+					}
+				}
+				if bufStart >= 0 {
+					tailLen := len(tailData) - bufStart
+					copy(headerBuf[:], tailData[bufStart:])
+					headerBufLen = tailLen
+					// Trim TrueHD range and add trimmed bytes to AC3 optimistically
+					last.Size -= tailLen
+					truehdES -= int64(tailLen)
+					if last.Size == 0 {
+						truehdRanges = truehdRanges[:len(truehdRanges)-1]
+					}
+					ac3Ranges = append(ac3Ranges, PESPayloadRange{
+						FileOffset: rangeEnd - int64(tailLen),
+						Size:       tailLen,
+						ESOffset:   ac3ES,
+					})
+					ac3ES += int64(tailLen)
+				}
+			}
+		}
+	}
+
+	// If we ended with buffered bytes, they weren't AC3 — re-attribute to TrueHD
+	if headerBufLen > 0 {
+		if len(ac3Ranges) > 0 {
+			last := ac3Ranges[len(ac3Ranges)-1]
+			ac3Ranges = ac3Ranges[:len(ac3Ranges)-1]
+			ac3ES -= int64(last.Size)
+			truehdRanges = append(truehdRanges, PESPayloadRange{
+				FileOffset: last.FileOffset,
+				Size:       last.Size,
+				ESOffset:   truehdES,
+			})
+			truehdES += int64(last.Size)
+		}
+		for _, pr := range headerPendingRanges {
+			truehdRanges = append(truehdRanges, PESPayloadRange{
+				FileOffset: pr.FileOffset,
+				Size:       pr.Size,
+				ESOffset:   truehdES,
+			})
+			truehdES += int64(pr.Size)
+		}
+	}
+
+	return ac3Ranges, truehdRanges
+}
+
+// mergeAdjacentRanges merges consecutive PESPayloadRange entries that are
+// contiguous in both file offset and ES offset.
+func mergeAdjacentRanges(ranges []PESPayloadRange) []PESPayloadRange {
+	if len(ranges) <= 1 {
+		return ranges
+	}
+	merged := make([]PESPayloadRange, 0, len(ranges)/2)
+	merged = append(merged, ranges[0])
+	for i := 1; i < len(ranges); i++ {
+		last := &merged[len(merged)-1]
+		r := ranges[i]
+		if r.FileOffset == last.FileOffset+int64(last.Size) &&
+			r.ESOffset == last.ESOffset+int64(last.Size) {
+			last.Size += r.Size
+		} else {
+			merged = append(merged, r)
+		}
+	}
+	return merged
 }
 
 // Ensure MPEGTSParser implements the required interfaces at compile time.

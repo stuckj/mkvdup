@@ -2,6 +2,7 @@ package source
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/cespare/xxhash/v2"
@@ -27,6 +28,7 @@ type Indexer struct {
 	windowSize     int
 	index          *Index
 	useRawIndexing bool // Force raw file indexing even for DVDs
+	verbose        bool // Enable diagnostic output
 }
 
 // NewIndexer creates a new Indexer for the given source directory.
@@ -62,6 +64,11 @@ func NewIndexerWithOptions(sourceDir string, windowSize int, useRawIndexing bool
 // SourceType returns the detected source type.
 func (idx *Indexer) SourceType() Type {
 	return idx.sourceType
+}
+
+// SetVerbose enables or disables diagnostic output during indexing.
+func (idx *Indexer) SetVerbose(v bool) {
+	idx.verbose = v
 }
 
 // SourceDir returns the source directory path.
@@ -264,6 +271,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 
 	data := parser.Data() // Get mmap'd data for direct access
 	syncPointCount := 0
+	var indexFastPath, indexSlowPath, indexSkipped int
 
 	// Iterate through each PES payload range (zero-copy)
 	for rangeIdx, r := range ranges {
@@ -298,10 +306,12 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 					IsVideo:   isVideo,
 				})
 				syncPointCount++
+				indexFastPath++
 			} else {
 				// Window spans range boundary - use ReadESData (may copy)
 				window, err := parser.ReadESData(syncESOffset, idx.windowSize, isVideo)
 				if err != nil || len(window) < idx.windowSize {
+					indexSkipped++
 					continue
 				}
 				hash := xxhash.Sum64(window)
@@ -312,6 +322,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 					IsVideo:   isVideo,
 				})
 				syncPointCount++
+				indexSlowPath++
 			}
 		}
 
@@ -321,12 +332,25 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 		}
 	}
 
+	if idx.verbose {
+		fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
+			isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped)
+	}
+
 	return nil
 }
 
+// syncPointFinder is a function that returns sync point offsets within data.
+type syncPointFinder func(data []byte) []int
+
 // indexAudioSubStream indexes a specific audio sub-stream.
-// Uses zero-copy iteration through PES payload ranges.
 func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64) error {
+	return idx.indexSubStream(fileIndex, parser, subStreamID, esSize, FindAudioSyncPoints)
+}
+
+// indexSubStream indexes a specific sub-stream using the provided sync point finder.
+// Uses zero-copy iteration through PES payload ranges.
+func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64, findSyncPoints syncPointFinder) error {
 	ranges := parser.FilteredAudioRanges(subStreamID)
 	if len(ranges) == 0 {
 		return nil
@@ -343,8 +367,8 @@ func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider,
 		}
 		rangeData := data[r.FileOffset:endOffset]
 
-		// Find audio sync points in this range
-		syncPoints := FindAudioSyncPoints(rangeData)
+		// Find sync points in this range
+		syncPoints := findSyncPoints(rangeData)
 
 		// Add each sync point to the index
 		for _, offsetInRange := range syncPoints {
@@ -478,11 +502,29 @@ func (idx *Indexer) indexM2TSFile(fileIndex uint16, path string, size int64, pro
 	}
 
 	// Index each audio sub-stream separately
+	subtitleIDs := parser.SubtitleSubStreams()
+	subtitleSet := make(map[byte]bool, len(subtitleIDs))
+	for _, id := range subtitleIDs {
+		subtitleSet[id] = true
+	}
 	for _, subStreamID := range parser.AudioSubStreams() {
+		if subtitleSet[subStreamID] {
+			continue // indexed below with subtitle-specific sync points
+		}
 		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
 		if subStreamSize > 0 {
 			if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
 				return 0, fmt.Errorf("index audio sub-stream %d: %w", subStreamID, err)
+			}
+		}
+	}
+
+	// Index subtitle sub-streams with PGS sync point detection
+	for _, subStreamID := range subtitleIDs {
+		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
+		if subStreamSize > 0 {
+			if err := idx.indexSubStream(fileIndex, parser, subStreamID, subStreamSize, FindPGSSyncPoints); err != nil {
+				return 0, fmt.Errorf("index subtitle sub-stream %d: %w", subStreamID, err)
 			}
 		}
 	}
@@ -629,6 +671,31 @@ func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bo
 // ComputeHash calculates the xxhash of the given data.
 func ComputeHash(data []byte) uint64 {
 	return xxhash.Sum64(data)
+}
+
+// AdviseForMatching sets madvise hints on source mmap'd files before matching.
+// For raw-indexed sources (Blu-ray with raw offsets), sets MADV_SEQUENTIAL since
+// locality-aware matching produces largely sequential access.
+// For ES-indexed sources (DVD MPEG-PS, Blu-ray M2TS with ES offsets), the ES reader
+// translates ES offsets to scattered positions in the container file, so MADV_SEQUENTIAL
+// would hurt. Uses MADV_NORMAL (default adaptive readahead) instead.
+func (idx *Index) AdviseForMatching() {
+	if idx.UsesESOffsets {
+		// ES-based: access pattern in the raw file is not sequential
+		// (ES offsets map to scattered PES packets). Use normal adaptive readahead.
+		for _, mmapFile := range idx.MmapFiles {
+			if mmapFile != nil {
+				mmapFile.Advise(unix.MADV_NORMAL)
+			}
+		}
+	} else {
+		// Raw-indexed: locality-aware matching produces sequential access
+		for _, reader := range idx.RawReaders {
+			if rr, ok := reader.(*mmapRawReader); ok {
+				rr.mmapFile.Advise(unix.MADV_SEQUENTIAL)
+			}
+		}
+	}
 }
 
 // Close releases resources held by the index.

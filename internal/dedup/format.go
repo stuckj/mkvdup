@@ -15,15 +15,24 @@ const (
 	// VersionRangeMap is the version for files with embedded range maps.
 	// Entries use ES offsets; a range map section maps ES offsets to raw file offsets.
 	VersionRangeMap uint32 = 4
+	// VersionCreator is V3 with a creator version string after the header.
+	VersionCreator uint32 = 5
+	// VersionRangeMapCreator is V4 with a creator version string after the header.
+	VersionRangeMapCreator uint32 = 6
+	// VersionUsed is V7: V5 with a per-source-file Used byte after the checksum.
+	VersionUsed uint32 = 7
+	// VersionRangeMapUsed is V8: V6 with a per-source-file Used byte after the checksum.
+	VersionRangeMapUsed uint32 = 8
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
-	HeaderSize   = 60
-	EntrySize    = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
-	FooterSize   = 24
-	FooterV4Size = 32 // V4 footer adds RangeMapChecksum (8 bytes)
-	MagicSize    = 8
-	VersionSize  = 4
+	HeaderSize           = 60
+	EntrySize            = 28 // Fixed entry size: 8+8+2+8+1+1 = 28 bytes
+	FooterSize           = 24
+	FooterV4Size         = 32 // V4 footer adds RangeMapChecksum (8 bytes)
+	MagicSize            = 8
+	VersionSize          = 4
+	MaxCreatorVersionLen = 4096 // Max bytes for creator version string (writer truncates, reader rejects)
 )
 
 // Source types
@@ -52,6 +61,7 @@ type SourceFile struct {
 	RelativePath string // Path relative to source directory
 	Size         int64  // File size
 	Checksum     uint64 // xxhash of file
+	Used         bool   // Whether this source file is referenced by any entry (V7/V8 only)
 }
 
 // Entry represents an index entry in the dedup file.
@@ -101,10 +111,20 @@ type Footer struct {
 // Note: Entries are accessed directly from mmap via Reader.getEntry(),
 // not stored in this struct, to avoid large memory allocation.
 type File struct {
-	Header        Header
-	SourceFiles   []SourceFile
-	DeltaOffset   int64 // Offset to delta section in file
-	UsesESOffsets bool
+	Header         Header
+	SourceFiles    []SourceFile
+	DeltaOffset    int64 // Offset to delta section in file
+	UsesESOffsets  bool
+	CreatorVersion string // Version of mkvdup that created this file (V5+ only)
+	headerSize     int64  // Effective header size (60 for V3/V4, 60+2+len for V5-V8)
+}
+
+// creatorVersionSize returns the on-disk size of the creator version field.
+func creatorVersionSize(v string) int64 {
+	if v == "" {
+		return 0
+	}
+	return 2 + int64(len(v))
 }
 
 // ToMatcherEntry converts a dedup Entry to a matcher Entry.

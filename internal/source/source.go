@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/stuckj/mkvdup/internal/mmap"
 )
@@ -278,6 +280,9 @@ type Index struct {
 	// UsesESOffsets indicates whether Location.Offset values are ES offsets
 	// rather than raw file offsets. True for DVD (MPEG-PS) sources.
 	UsesESOffsets bool
+
+	// sortOnce ensures SortLocationsByOffset runs only once.
+	sortOnce sync.Once
 }
 
 // NewIndex creates a new empty Index for the given source directory.
@@ -288,6 +293,25 @@ func NewIndex(sourceDir string, sourceType Type, windowSize int) *Index {
 		SourceType:      sourceType,
 		WindowSize:      windowSize,
 	}
+}
+
+// SortLocationsByOffset sorts all location slices by (FileIndex, Offset).
+// This is a one-time cost at match setup time that enables binary search
+// for nearby locations during matching. Must be called before concurrent access.
+func (idx *Index) SortLocationsByOffset() {
+	idx.sortOnce.Do(func() {
+		for hash, locs := range idx.HashToLocations {
+			if len(locs) > 1 {
+				sort.Slice(locs, func(i, j int) bool {
+					if locs[i].FileIndex != locs[j].FileIndex {
+						return locs[i].FileIndex < locs[j].FileIndex
+					}
+					return locs[i].Offset < locs[j].Offset
+				})
+				idx.HashToLocations[hash] = locs
+			}
+		}
+	})
 }
 
 // EnumerateMediaFiles returns the list of media files to index based on source type.

@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create batch-create probe mount info verify check validate reload parse-mkv index-source match help"
+    local commands="create batch-create probe mount info verify check validate reload parse-mkv index-source match deltadiag help"
     local global_opts="-v --verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -75,8 +75,8 @@ _mkvdup() {
         return
     fi
 
-    # Global options available for all commands when typing -<TAB>
-    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" && "$cmd" != "reload" ]]; then
+    # Global options available for commands that don't define their own options
+    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" && "$cmd" != "reload" && "$cmd" != "info" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
@@ -155,8 +155,13 @@ _mkvdup() {
             ;;
 
         info)
-            # info <dedup-file>
-            _filedir '@(mkvdup)'
+            # info [--hide-unused-files] <dedup-file>
+            local info_opts="--hide-unused-files"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$info_opts $global_opts" -- "$cur"))
+            else
+                _filedir '@(mkvdup)'
+            fi
             ;;
 
         verify)
@@ -223,6 +228,11 @@ _mkvdup() {
 
         match)
             # match <mkv-file> <source-dir>
+            _filedir
+            ;;
+
+        deltadiag)
+            # deltadiag <dedup-file> <mkv-file>
             _filedir
             ;;
 

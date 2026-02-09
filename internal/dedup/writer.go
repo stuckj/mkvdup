@@ -14,14 +14,15 @@ import (
 
 // Writer creates .mkvdup files.
 type Writer struct {
-	file        *os.File
-	header      Header
-	sourceFiles []SourceFile
-	entries     []Entry
-	deltaData   []byte               // In-memory delta (for tests / small files)
-	deltaFile   *matcher.DeltaWriter // File-backed delta (for large files)
-	rangeMaps   []RangeMapData       // V4: per-source-file range maps (nil for V3)
-	rangeMapBuf []byte               // Pre-encoded range map section (set by EncodeRangeMaps)
+	file           *os.File
+	header         Header
+	sourceFiles    []SourceFile
+	entries        []Entry
+	deltaData      []byte               // In-memory delta (for tests / small files)
+	deltaFile      *matcher.DeltaWriter // File-backed delta (for large files)
+	rangeMaps      []RangeMapData       // V4/V6: per-source-file range maps (nil for V3/V5)
+	rangeMapBuf    []byte               // Pre-encoded range map section (set by EncodeRangeMaps)
+	creatorVersion string               // Version string to embed in the file
 }
 
 // NewWriter creates a new dedup file writer.
@@ -33,11 +34,19 @@ func NewWriter(path string) (*Writer, error) {
 	return &Writer{file: f}, nil
 }
 
+// SetCreatorVersion sets the version string to embed in the file.
+// When set, the writer produces V7 (or V8 if range maps are also set).
+func (w *Writer) SetCreatorVersion(v string) {
+	if len(v) > MaxCreatorVersionLen {
+		v = v[:MaxCreatorVersionLen]
+	}
+	w.creatorVersion = v
+}
+
 // SetHeader sets the header information.
-// In v2, UsesESOffsets is always 0 (raw offsets are stored instead).
 func (w *Writer) SetHeader(originalSize int64, originalChecksum uint64, sourceType source.Type) {
 	copy(w.header.Magic[:], Magic)
-	w.header.Version = Version
+	w.header.Version = Version // Default V3; upgraded to V7/V8 in resolveVersion()
 	w.header.Flags = 0
 	w.header.OriginalSize = originalSize
 	w.header.OriginalChecksum = originalChecksum
@@ -66,8 +75,40 @@ func (w *Writer) SetSourceFiles(files []source.File) {
 // raw file positions at read time.
 func (w *Writer) SetRangeMaps(rangeMaps []RangeMapData) {
 	w.rangeMaps = rangeMaps
-	w.header.Version = VersionRangeMap
+	w.header.Version = VersionRangeMap // Default V4; upgraded to V8 in resolveVersion()
 	w.header.UsesESOffsets = 1
+}
+
+// resolveVersion sets the final file version based on configured features.
+func (w *Writer) resolveVersion() {
+	if w.rangeMaps != nil {
+		if w.creatorVersion != "" {
+			w.header.Version = VersionRangeMapUsed // V8
+		} else {
+			w.header.Version = VersionRangeMap // V4
+		}
+	} else {
+		if w.creatorVersion != "" {
+			w.header.Version = VersionUsed // V7
+		} else {
+			w.header.Version = Version // V3
+		}
+	}
+}
+
+// computeUsedFlags scans entries and marks which source files are referenced.
+func (w *Writer) computeUsedFlags() {
+	for i := range w.sourceFiles {
+		w.sourceFiles[i].Used = false
+	}
+	for _, e := range w.entries {
+		if e.Source > 0 {
+			idx := int(e.Source - 1)
+			if idx < len(w.sourceFiles) {
+				w.sourceFiles[idx].Used = true
+			}
+		}
+	}
 }
 
 // EncodeRangeMaps pre-encodes the range map section. Call this before
@@ -180,6 +221,10 @@ func (w *Writer) Write() error {
 
 // WriteWithProgress writes the dedup file with progress reporting.
 func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
+	// Determine final file version based on configured features.
+	w.resolveVersion()
+	w.computeUsedFlags()
+
 	// Use pre-encoded range maps if available (from EncodeRangeMaps),
 	// otherwise encode now.
 	rangeMapBuf := w.rangeMapBuf
@@ -193,8 +238,9 @@ func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
 
 	// Calculate offsets and total size
 	sourceFilesSize := w.calculateSourceFilesSize()
+	cvSize := creatorVersionSize(w.creatorVersion)
 	indexSize := int64(len(w.entries)) * EntrySize
-	deltaOffset := int64(HeaderSize) + sourceFilesSize + indexSize
+	deltaOffset := int64(HeaderSize) + cvSize + sourceFilesSize + indexSize
 	w.header.DeltaOffset = deltaOffset
 
 	footerSize := int64(FooterSize)
@@ -205,11 +251,11 @@ func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
 	totalSize := deltaOffset + w.header.DeltaSize + int64(len(rangeMapBuf)) + footerSize
 	var written int64
 
-	// Write header
+	// Write header (includes creator version for V5/V6)
 	if err := w.writeHeader(); err != nil {
 		return fmt.Errorf("write header: %w", err)
 	}
-	written += HeaderSize
+	written += int64(HeaderSize) + cvSize
 
 	// Write source files section
 	if err := w.writeSourceFiles(); err != nil {
@@ -264,9 +310,13 @@ func (w *Writer) Close() error {
 
 func (w *Writer) calculateSourceFilesSize() int64 {
 	var size int64
+	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed
 	for _, sf := range w.sourceFiles {
-		// PathLen (2) + Path (variable) + Size (8) + Checksum (8)
+		// PathLen (2) + Path (variable) + Size (8) + Checksum (8) [+ Used (1)]
 		size += 2 + int64(len(sf.RelativePath)) + 8 + 8
+		if hasUsed {
+			size += 1
+		}
 	}
 	return size
 }
@@ -327,10 +377,22 @@ func (w *Writer) writeHeader() error {
 		return err
 	}
 
+	// Write creator version string (V5/V6)
+	if w.creatorVersion != "" {
+		versionLen := uint16(len(w.creatorVersion))
+		if err := binary.Write(w.file, binary.LittleEndian, versionLen); err != nil {
+			return err
+		}
+		if _, err := w.file.Write([]byte(w.creatorVersion)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (w *Writer) writeSourceFiles() error {
+	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed
 	for _, sf := range w.sourceFiles {
 		// Write path length
 		pathLen := uint16(len(sf.RelativePath))
@@ -351,6 +413,17 @@ func (w *Writer) writeSourceFiles() error {
 		// Write checksum
 		if err := binary.Write(w.file, binary.LittleEndian, sf.Checksum); err != nil {
 			return err
+		}
+
+		// Write used flag (V7/V8)
+		if hasUsed {
+			var used uint8
+			if sf.Used {
+				used = 1
+			}
+			if err := binary.Write(w.file, binary.LittleEndian, used); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
@@ -204,14 +205,18 @@ func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
 		}
 		f.MKV = resolveRelative(manifestDir, f.MKV)
 
-		// Apply defaults
 		if f.Output == "" {
-			f.Output = f.MKV + ".mkvdup"
-		} else {
-			f.Output = resolveRelative(manifestDir, f.Output)
+			return nil, fmt.Errorf("batch manifest %s: files[%d] missing required 'output' field", manifestPath, i)
 		}
+		f.Output = resolveRelative(manifestDir, f.Output)
+
+		// Default name to MKV basename
 		if f.Name == "" {
 			f.Name = filepath.Base(f.MKV)
+		}
+		// Ensure name has .mkv extension
+		if !strings.HasSuffix(strings.ToLower(f.Name), ".mkv") {
+			f.Name += ".mkv"
 		}
 	}
 

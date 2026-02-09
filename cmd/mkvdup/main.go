@@ -103,6 +103,9 @@ Commands:
   validate     Validate configuration files
   reload       Reload running daemon's configuration
 
+Analysis commands:
+  deltadiag    Analyze unmatched regions by stream type
+
 Debug commands:
   parse-mkv    Parse MKV and show packet info
   index-source Index source directory
@@ -122,17 +125,19 @@ See 'man mkvdup' for detailed documentation.
 func printCommandUsage(cmd string) {
 	switch cmd {
 	case "create":
-		fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> [output] [name]
+		fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> <output> [name]
 
 Create a dedup file from an MKV and its source media.
 
 Arguments:
     <mkv-file>    Path to the MKV file to deduplicate
     <source-dir>  Directory containing source media (ISO files or BDMV folders)
-    [output]      Output .mkvdup file (default: <mkv-file>.mkvdup)
-    [name]        Display name in FUSE mount (default: basename of mkv-file)
+    <output>      Output .mkvdup file path
+    [name]        Display name in FUSE mount (default: basename of mkv-file;
+                  .mkv extension auto-added if missing)
 
 Options:
+    -v, --verbose       Enable verbose/debug output
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --quiet             Suppress the space savings warning
     --non-interactive   Don't prompt on codec mismatch (show warning and continue)
@@ -142,11 +147,10 @@ If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
 will be prompted to continue. Use --non-interactive for scripted usage.
 
 Examples:
-    mkvdup create movie.mkv /media/dvd-backups
+    mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
-    mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
-    mkvdup create --quiet movie.mkv /media/dvd-backups
-    mkvdup create --non-interactive movie.mkv /media/dvd-backups
+    mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups movie.mkvdup
+    mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 `)
 	case "batch-create":
 		fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
@@ -161,6 +165,7 @@ Arguments:
     <manifest.yaml>  YAML manifest file specifying source and MKV files
 
 Options:
+    -v, --verbose       Enable verbose/debug output
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --quiet             Suppress the space savings warning
 
@@ -168,16 +173,18 @@ Manifest format:
     source_dir: /media/dvd-backups/disc1
     files:
       - mkv: episode1.mkv
-        output: episode1.mkvdup        # optional
-        name: "Show/S01/Episode 1.mkv" # optional
+        output: episode1.mkvdup
+        name: "Show/S01/Episode 1" # optional (.mkv auto-added)
       - mkv: episode2.mkv
+        output: episode2.mkvdup
 
 Fields:
     source_dir   Shared source directory (required)
     files        List of MKV files to process (required, at least one)
     mkv          Path to MKV file (required per entry)
-    output       Output .mkvdup file (default: <mkv>.mkvdup)
-    name         Display name in FUSE mount (default: basename of mkv)
+    output       Output .mkvdup file (required per entry)
+    name         Display name in FUSE mount (default: basename of mkv;
+                 .mkv extension auto-added if missing)
 
 Relative paths are resolved against the manifest file's directory.
 
@@ -239,15 +246,19 @@ Examples:
     mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
 `)
 	case "info":
-		fmt.Print(`Usage: mkvdup info <dedup-file>
+		fmt.Print(`Usage: mkvdup info [options] <dedup-file>
 
 Show information about a dedup file.
 
 Arguments:
     <dedup-file>  Path to the .mkvdup file
 
+Options:
+    --hide-unused-files  Hide source files not referenced by any index entry
+
 Examples:
     mkvdup info movie.mkvdup
+    mkvdup info --hide-unused-files movie.mkvdup
 `)
 	case "verify":
 		fmt.Print(`Usage: mkvdup verify <dedup-file> <source-dir> <original-mkv>
@@ -344,6 +355,25 @@ Examples:
     mkvdup reload --pid-file /run/mkvdup.pid config.yaml
     mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
     mkvdup reload --pid-file /run/mkvdup.pid
+`)
+	case "deltadiag":
+		fmt.Print(`Usage: mkvdup deltadiag <dedup-file> <mkv-file>
+
+Analyze unmatched (delta) regions in a dedup file by cross-referencing
+with the original MKV to determine what stream type each delta region
+belongs to (video, audio, or container overhead).
+
+For video delta, further classifies by H.264 NAL type (IDR/non-IDR slices,
+SEI, SPS, PPS, etc.) and shows size breakdown.
+
+Works with dedup file versions 3 through 8 (DVD, Blu-ray, and newer).
+
+Arguments:
+    <dedup-file>  Path to the .mkvdup file
+    <mkv-file>    Path to the original MKV file
+
+Examples:
+    mkvdup deltadiag movie.mkvdup movie.mkv
 `)
 	case "parse-mkv":
 		fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
@@ -448,15 +478,12 @@ func main() {
 				createArgs = append(createArgs, remaining[i])
 			}
 		}
-		if len(createArgs) < 2 {
+		if len(createArgs) < 3 {
 			printCommandUsage("create")
 			os.Exit(1)
 		}
-		output := ""
+		output := createArgs[2]
 		name := ""
-		if len(createArgs) >= 3 {
-			output = createArgs[2]
-		}
 		if len(createArgs) >= 4 {
 			name = createArgs[3]
 		}
@@ -600,11 +627,20 @@ func main() {
 		}
 
 	case "info":
-		if len(args) < 1 {
+		hideUnused := false
+		var infoArgs []string
+		for _, a := range args {
+			if a == "--hide-unused-files" {
+				hideUnused = true
+			} else {
+				infoArgs = append(infoArgs, a)
+			}
+		}
+		if len(infoArgs) < 1 {
 			printCommandUsage("info")
 			os.Exit(1)
 		}
-		if err := showInfo(args[0]); err != nil {
+		if err := showInfo(infoArgs[0], hideUnused); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
@@ -682,6 +718,15 @@ func main() {
 			log.Fatalf("Error: --pid-file is required for reload")
 		}
 		if err := reloadDaemon(pidFile, reloadArgs, configDir); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "deltadiag":
+		if len(args) < 2 {
+			printCommandUsage("deltadiag")
+			os.Exit(1)
+		}
+		if err := deltadiag(args[0], args[1]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

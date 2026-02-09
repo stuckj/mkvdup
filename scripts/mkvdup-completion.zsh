@@ -13,7 +13,7 @@ _mkvdup_create() {
         '--non-interactive[Do not prompt on codec mismatch]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
         '2:Source directory:_files -/' \
-        '3::Output file:_files -g "*.mkvdup(-.)"' \
+        '3:Output file:_files -g "*.mkvdup(-.)"' \
         '4::Display name'
 }
 
@@ -60,6 +60,7 @@ _mkvdup_info() {
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
+        '--hide-unused-files[Hide unused source files]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"'
 }
 
@@ -129,6 +130,15 @@ _mkvdup_match() {
         '2:Source directory:_files -/'
 }
 
+_mkvdup_deltadiag() {
+    _arguments -s \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
+        '1:Dedup file:_files -g "*.mkvdup(-.)"' \
+        '2:MKV file:_files -g "*.mkv(-.)"'
+}
+
 _mkvdup() {
     local curcontext="$curcontext" state line
     typeset -A opt_args
@@ -156,6 +166,7 @@ _mkvdup() {
                 'parse-mkv:Parse and display MKV structure (debug)'
                 'index-source:Index a source directory (debug)'
                 'match:Match packets between MKV and source (debug)'
+                'deltadiag:Analyze unmatched regions by stream type (debug)'
                 'help:Show help for a command'
             )
             _describe -t commands 'mkvdup command' subcommands
@@ -174,9 +185,10 @@ _mkvdup() {
                 parse-mkv)    _mkvdup_parse_mkv ;;
                 index-source) _mkvdup_index_source ;;
                 match)        _mkvdup_match ;;
+                deltadiag)    _mkvdup_deltadiag ;;
                 help)
                     local -a help_cmds
-                    help_cmds=(create batch-create probe mount info verify check validate reload parse-mkv index-source match)
+                    help_cmds=(create batch-create probe mount info verify check validate reload parse-mkv index-source match deltadiag)
                     _describe -t commands 'command' help_cmds
                     ;;
             esac

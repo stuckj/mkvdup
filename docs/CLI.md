@@ -29,22 +29,20 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 Create a dedup file from an MKV and its source directory.
 
 ```bash
-mkvdup create [options] <mkv-file> <source-dir> [output] [name]
+mkvdup create [options] <mkv-file> <source-dir> <output> [name]
 
 # Examples:
-mkvdup create movie.mkv /media/dvd-backups
 mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
-mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/movie.mkv"
-mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
-mkvdup create --quiet movie.mkv /media/dvd-backups
-mkvdup create --non-interactive movie.mkv /media/dvd-backups
+mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "Movies/Action/My Movie"
+mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups movie.mkvdup
+mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 ```
 
 **Arguments:**
 - `<mkv-file>` — Path to the MKV file to deduplicate
 - `<source-dir>` — Directory containing source media (ISO files or BDMV folders)
-- `[output]` — Output `.mkvdup` file (default: `<mkv-file>.mkvdup`)
-- `[name]` — Display name in FUSE mount (default: basename of mkv-file)
+- `<output>` — Output `.mkvdup` file path
+- `[name]` — Display name in FUSE mount (default: basename of mkv-file; `.mkv` extension auto-added if missing)
 
 **Options:**
 
@@ -93,10 +91,11 @@ source_dir: /media/dvd-backups/disc1
 
 files:
   - mkv: episode1.mkv
-    output: episode1.mkvdup        # optional (default: <mkv>.mkvdup)
-    name: "Show/S01/Episode 1.mkv" # optional (default: basename of mkv)
+    output: episode1.mkvdup
+    name: "Show/S01/Episode 1" # optional (.mkv auto-added)
 
   - mkv: episode2.mkv
+    output: episode2.mkvdup
 
   - mkv: /absolute/path/to/episode3.mkv
     output: /absolute/path/to/episode3.mkvdup
@@ -109,8 +108,8 @@ files:
 | `source_dir` | Yes | Shared source directory for all MKV files |
 | `files` | Yes | List of MKV files to process (at least one) |
 | `files[].mkv` | Yes | Path to the MKV file |
-| `files[].output` | No | Output `.mkvdup` file (default: `<mkv>.mkvdup`) |
-| `files[].name` | No | Display name in FUSE mount (default: basename of mkv) |
+| `files[].output` | Yes | Output `.mkvdup` file |
+| `files[].name` | No | Display name in FUSE mount (default: basename of mkv; `.mkv` auto-added if missing) |
 
 Relative paths are resolved against the manifest file's directory.
 
@@ -281,11 +280,18 @@ mkvdup validate --strict /etc/mkvdup.conf
 Show information about a dedup file.
 
 ```bash
-mkvdup info <dedup-file>
+mkvdup info [options] <dedup-file>
 
 # Example:
 mkvdup info movie.mkvdup
+mkvdup info --hide-unused-files movie.mkvdup
 ```
+
+| Option | Description |
+|--------|-------------|
+| `--hide-unused-files` | Hide source files not referenced by any index entry |
+
+Source files are listed with their sizes. For V7/V8 dedup files, unused source files are marked `(unused)`. Use `--hide-unused-files` to omit them entirely.
 
 ### extract *(planned — [#13](https://github.com/stuckj/mkvdup/issues/13))*
 
@@ -358,6 +364,29 @@ The daemon re-reads its original config paths on SIGHUP, expanding include globs
 ExecStart=/usr/bin/mkvdup mount --foreground --pid-file /run/mkvdup.pid /mnt/videos /etc/mkvdup.conf
 ExecReload=/usr/bin/mkvdup reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 ```
+
+### deltadiag
+
+Analyze unmatched (delta) regions in a dedup file by cross-referencing with the original MKV to classify what stream type each delta region belongs to.
+
+```bash
+mkvdup deltadiag <dedup-file> <mkv-file>
+
+# Example:
+mkvdup deltadiag movie.mkvdup movie.mkv
+```
+
+**Arguments:**
+- `<dedup-file>` -- Path to the .mkvdup file
+- `<mkv-file>` -- Path to the original MKV file
+
+**Output includes:**
+- Total delta breakdown by stream type (video, audio, container)
+- H.264 NAL type breakdown for video delta (SPS, PPS, SEI, slices, etc.)
+- Slice NAL size distribution (small vs large)
+- Summary with percentages of original file size
+
+**Use case:** After creating a dedup file, use deltadiag to understand where the unmatched bytes are. This helps identify matching issues (e.g., audio streams that should be matching but aren't) and validate that improvements to the matching algorithm are working.
 
 ### Debug Commands
 

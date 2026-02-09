@@ -98,9 +98,9 @@ func (p *Parser) Parse(progress ProgressFunc) error {
 	}
 
 	segmentDataStart := elem.DataOffset
-	segmentEnd := p.size
-	if elem.Size > 0 {
-		segmentEnd = elem.DataOffset + elem.Size
+	segmentEnd := elem.DataOffset + elem.Size
+	if elem.Size < 0 {
+		segmentEnd = p.size
 	}
 
 	// Parse segment contents
@@ -381,6 +381,62 @@ func isTopLevelElement(id uint64) bool {
 // Packets returns all parsed packets.
 func (p *Parser) Packets() []Packet {
 	return p.packets
+}
+
+// ParseTracksOnly parses only the track headers from the MKV file.
+// This is much faster than Parse() since it stops as soon as the Tracks
+// element is found, without scanning through clusters/packets.
+func (p *Parser) ParseTracksOnly() error {
+	offset := int64(0)
+
+	// Parse EBML header
+	elem, err := p.readElementAt(offset)
+	if err != nil {
+		return fmt.Errorf("read EBML header: %w", err)
+	}
+	if elem.ID != IDEBMLHeader {
+		return fmt.Errorf("expected EBML header, got 0x%X", elem.ID)
+	}
+	offset = elem.DataOffset + elem.Size
+
+	// Parse Segment
+	elem, err = p.readElementAt(offset)
+	if err != nil {
+		return fmt.Errorf("read Segment: %w", err)
+	}
+	if elem.ID != IDSegment {
+		return fmt.Errorf("expected Segment, got 0x%X", elem.ID)
+	}
+
+	segmentDataStart := elem.DataOffset
+	segmentEnd := elem.DataOffset + elem.Size
+	if elem.Size < 0 {
+		segmentEnd = p.size
+	}
+
+	// Scan segment children until we find Tracks
+	offset = segmentDataStart
+	for offset < segmentEnd {
+		elem, err = p.readElementAt(offset)
+		if err != nil {
+			return fmt.Errorf("read element at %d: %w", offset, err)
+		}
+
+		if elem.ID == IDTracks {
+			if err := p.parseTracks(elem); err != nil {
+				return fmt.Errorf("parse tracks: %w", err)
+			}
+			return nil
+		}
+
+		// Skip to next element
+		if elem.Size < 0 {
+			return fmt.Errorf("unsupported unknown-size element 0x%X before Tracks", elem.ID)
+		}
+		offset = elem.DataOffset + elem.Size
+	}
+
+	return fmt.Errorf("no Tracks element found")
 }
 
 // Tracks returns all parsed tracks.

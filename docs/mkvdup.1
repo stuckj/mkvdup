@@ -14,7 +14,7 @@ between an MKV and its source, we store only the unique MKV data plus an index
 mapping offsets. A 3.4GB MKV can be stored as approximately 50MB.
 .SH COMMANDS
 .TP
-.B create \fR[\fIoptions\fR] \fImkv-file\fR \fIsource-dir\fR [\fIoutput\fR] [\fIname\fR]
+.B create \fR[\fIoptions\fR] \fImkv-file\fR \fIsource-dir\fR \fIoutput\fR [\fIname\fR]
 Create a dedup file from an MKV and its source media.
 Before matching, codecs in the MKV are compared against the source media.
 If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
@@ -28,11 +28,12 @@ Path to the MKV file to deduplicate
 Directory containing source media (ISO files or BDMV folders)
 .TP
 .I output
-Output .mkvdup file (default: \fImkv-file\fR.mkvdup)
+Output .mkvdup file path.
 .TP
 .I name
-Display name in FUSE mount (default: basename of mkv-file).
-Supports directory paths (e.g., "Movies/Action/Video1.mkv").
+Display name in FUSE mount (default: basename of mkv-file;
+\fI.mkv\fR extension auto-added if missing).
+Supports directory paths (e.g., "Movies/Action/Video1").
 Directories are auto-created when mounted via FUSE.
 .TP
 .B \-\-warn\-threshold N
@@ -128,12 +129,17 @@ Path to permissions file (overrides default locations). See
 section for default search order.
 .RE
 .TP
-.B info \fIdedup-file\fR
+.B info \fR[\fIoptions\fR] \fIdedup-file\fR
 Show information about a dedup file.
 .RS
 .TP
 .I dedup-file
 Path to the .mkvdup file
+.TP
+.B \-\-hide\-unused\-files
+Hide source files not referenced by any index entry.
+For V7/V8 dedup files, unused source files are normally shown with
+an \fI(unused)\fR marker; this option omits them entirely.
 .RE
 .TP
 .B verify \fIdedup-file\fR \fIsource-dir\fR \fIoriginal-mkv\fR
@@ -199,6 +205,19 @@ Config files to validate (same as mount's config args)
 .TP
 .B \-\-config\-dir
 Treat config argument as directory of YAML files (.yaml, .yml)
+.RE
+.TP
+.B deltadiag \fIdedup-file\fR \fImkv-file\fR
+Analyze unmatched (delta) regions in a dedup file by cross-referencing with
+the original MKV. Classifies delta bytes by stream type (video, audio,
+container) and provides H.264 NAL type breakdown for video delta.
+.RS
+.TP
+.I dedup-file
+Path to the .mkvdup file
+.TP
+.I mkv-file
+Path to the original MKV file
 .RE
 .TP
 .B parse-mkv \fImkv-file\fR
@@ -287,6 +306,14 @@ Reload a running daemon's configuration:
 @PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
 .fi
 .RE
+.PP
+Analyze unmatched regions in a dedup file:
+.PP
+.RS
+.nf
+@PACKAGE_NAME@ deltadiag movie.mkvdup original.mkv
+.fi
+.RE
 .SH BATCH MANIFEST FORMAT
 The YAML manifest for
 .B batch-create
@@ -299,9 +326,10 @@ source_dir: /media/dvd-backups/disc1
 files:
   \- mkv: episode1.mkv
     output: episode1.mkvdup
-    name: "Show/S01/Episode 1.mkv"
+    name: "Show/S01/Episode 1"
 
   \- mkv: episode2.mkv
+    output: episode2.mkvdup
 
   \- mkv: /absolute/path/to/episode3.mkv
     output: /absolute/path/to/episode3.mkvdup
@@ -321,10 +349,11 @@ files:
 (Required) Path to the MKV file.
 .TP
 .B output
-(Optional) Output .mkvdup file. Default: \fImkv\fR.mkvdup.
+(Required) Output .mkvdup file path.
 .TP
 .B name
 (Optional) Display name in FUSE mount. Default: basename of \fImkv\fR.
+The \fI.mkv\fR extension is auto-added if missing.
 .RE
 .PP
 Relative paths are resolved against the manifest file's directory.
@@ -463,19 +492,39 @@ Dedup files containing the index and delta data
 .I *.mkvdup.yaml
 Config files for mounting dedup files
 .SH FILE FORMAT
-The .mkvdup file format is versioned. The current version is 3.
+The .mkvdup file format is versioned. The writer produces V7 (DVD) or V8
+(Blu-ray) files by default; older versions are supported for reading.
 .PP
-.B Version 3 (current):
-Adds source type awareness (DVD/Blu-ray) and multi-source-file support.
+.B Version 8 (current, Blu-ray):
+V6 with a per-source-file Used byte indicating whether each source file
+is referenced by any index entry.
+.PP
+.B Version 7 (current, DVD):
+V5 with a per-source-file Used byte indicating whether each source file
+is referenced by any index entry.
+.PP
+.B Version 6 (Blu-ray):
+V4 with an embedded creator version string after the header. The on-disk
+layout of index entries and range maps is identical to V4.
+.PP
+.B Version 5 (DVD):
+V3 with an embedded creator version string after the header. The on-disk
+layout of index entries and source references is identical to V3.
+.PP
+.B Version 4 (Blu-ray):
+Adds embedded range map section for Blu-ray M2TS sources.
+Index entries use ES offsets; the range map translates ES offsets to
+raw file offsets at read time.
+.PP
+.B Version 3 (DVD):
+Source type awareness and multi-source-file support.
 Stores raw file offsets for all source references.
 .PP
 .B Version 2 (deprecated):
-Stores raw file offsets for all source references. This provides faster
-FUSE read performance by eliminating offset translation overhead.
+Stores raw file offsets for all source references.
 .PP
 .B Version 1 (deprecated):
-Used elementary stream (ES) offsets for DVD sources, requiring translation
-during reads.
+Used elementary stream (ES) offsets for DVD sources.
 .PP
 Deprecated version files must be recreated using the
 .B create
