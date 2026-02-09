@@ -227,7 +227,7 @@ jobs:
         run: go install github.com/wadey/gocovmerge@latest
 
       - name: Download all coverage artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: '*-coverage'
           merge-multiple: true
@@ -308,7 +308,7 @@ jobs:
             }
 
       - name: Download test results
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: '*-results'
           merge-multiple: true
