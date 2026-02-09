@@ -217,6 +217,7 @@ type Matcher struct {
 	diagVideoNALsMatched        atomic.Int64 // NALs successfully matched
 	diagVideoNALsMatchedBytes   atomic.Int64 // Total bytes from matched video NALs
 	diagVideoNALsSkippedIsVideo atomic.Int64 // Locations skipped due to isVideo mismatch
+	diagVideoNALsSecondaryMatch atomic.Int64 // NALs matched via secondary hash (offset 64)
 
 	// Per-NAL-type diagnostics (H.264 NAL type = first byte & 0x1F)
 	diagNALTypeNotFound [32]atomic.Int64 // hash not found, by NAL type
@@ -298,6 +299,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.diagVideoNALsMatched.Store(0)
 	m.diagVideoNALsMatchedBytes.Store(0)
 	m.diagVideoNALsSkippedIsVideo.Store(0)
+	m.diagVideoNALsSecondaryMatch.Store(0)
 	for i := range m.diagNALTypeNotFound {
 		m.diagNALTypeNotFound[i].Store(0)
 		m.diagNALTypeMatched[i].Store(0)
@@ -366,6 +368,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		fmt.Fprintf(os.Stderr, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
 		fmt.Fprintf(os.Stderr, "Video NALs matched bytes:   %d (%.2f MB)\n",
 			m.diagVideoNALsMatchedBytes.Load(), float64(m.diagVideoNALsMatchedBytes.Load())/(1024*1024))
+		fmt.Fprintf(os.Stderr, "Video NALs secondary match: %d\n", m.diagVideoNALsSecondaryMatch.Load())
 		fmt.Fprintf(os.Stderr, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
 		if len(m.isAVCTrack) > 0 {
 			fmt.Fprintf(os.Stderr, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
@@ -823,24 +826,43 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	// Look up in source index (read-only, thread-safe)
 	locations := m.sourceIndex.Lookup(hash)
 	if len(locations) == 0 {
-		if isVideo {
-			m.diagVideoNALsHashNotFound.Add(1)
-			if len(nalType) > 0 {
-				m.diagNALTypeNotFound[nalType[0]].Add(1)
-			}
-			// Capture first 20 examples
-			if len(nalType) > 0 {
-				m.diagExamplesMu.Lock()
-				if m.diagExamplesCount < 20 {
-					m.diagExamplesCount++
-					example := fmt.Sprintf("  NAL type=%d, pktOff=%d, syncOff=%d, hash=%016x, first8bytes=%02x",
-						nalType[0], pkt.Offset, offsetInPacket, hash, data[:min(8, len(data))])
-					m.diagExamplesOutput = append(m.diagExamplesOutput, example)
-				}
-				m.diagExamplesMu.Unlock()
+		// Try secondary hash at offset windowSize (64) for large video NALs.
+		// This handles NALs whose first few bytes differ (e.g. H.264 slice headers
+		// modified during remux). The source indexer stores a secondary hash at
+		// offset windowSize for NALs >= 2*windowSize bytes.
+		if isVideo && len(data) >= 2*m.windowSize {
+			window2 := data[m.windowSize : 2*m.windowSize]
+			hash2 := xxhash.Sum64(window2)
+			locations = m.sourceIndex.Lookup(hash2)
+			if len(locations) > 0 {
+				// Adjust match point: start at offset windowSize within NAL.
+				// Backward expansion will recover matching bytes before this point.
+				offsetInPacket += int64(m.windowSize)
+				data = data[m.windowSize:]
+				m.diagVideoNALsSecondaryMatch.Add(1)
 			}
 		}
-		return false
+
+		if len(locations) == 0 {
+			if isVideo {
+				m.diagVideoNALsHashNotFound.Add(1)
+				if len(nalType) > 0 {
+					m.diagNALTypeNotFound[nalType[0]].Add(1)
+				}
+				// Capture first 20 examples
+				if len(nalType) > 0 {
+					m.diagExamplesMu.Lock()
+					if m.diagExamplesCount < 20 {
+						m.diagExamplesCount++
+						example := fmt.Sprintf("  NAL type=%d, pktOff=%d, syncOff=%d, hash=%016x, first8bytes=%02x",
+							nalType[0], pkt.Offset, offsetInPacket, hash, data[:min(8, len(data))])
+						m.diagExamplesOutput = append(m.diagExamplesOutput, example)
+					}
+					m.diagExamplesMu.Unlock()
+				}
+			}
+			return false
+		}
 	}
 
 	var bestMatch *matchedRegion
