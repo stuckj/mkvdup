@@ -271,7 +271,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 
 	data := parser.Data() // Get mmap'd data for direct access
 	syncPointCount := 0
-	var indexFastPath, indexSlowPath, indexSkipped, indexSecondary int
+	var indexFastPath, indexSlowPath, indexSkipped int
 
 	// Iterate through each PES payload range (zero-copy)
 	for rangeIdx, r := range ranges {
@@ -287,7 +287,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 		syncPoints := FindVideoNALStarts(rangeData)
 
 		// Add each sync point to the index
-		for i, offsetInRange := range syncPoints {
+		for _, offsetInRange := range syncPoints {
 			syncESOffset := r.ESOffset + int64(offsetInRange)
 
 			// Ensure we have enough data for the window
@@ -325,30 +325,6 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 				indexSlowPath++
 			}
 
-			// Secondary hash at offset windowSize for large video NALs.
-			// This enables matching NALs whose first few bytes (e.g. H.264 slice
-			// header) differ between source and MKV due to remuxing.
-			if isVideo {
-				var nalEnd int
-				if i+1 < len(syncPoints) {
-					nalEnd = syncPoints[i+1]
-				} else {
-					nalEnd = len(rangeData)
-				}
-				nalSize := nalEnd - offsetInRange
-				secondaryOffset := offsetInRange + idx.windowSize
-				if nalSize >= 2*idx.windowSize && secondaryOffset+idx.windowSize <= len(rangeData) {
-					window := rangeData[secondaryOffset : secondaryOffset+idx.windowSize]
-					hash := xxhash.Sum64(window)
-					secondaryESOffset := syncESOffset + int64(idx.windowSize)
-					idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
-						FileIndex: fileIndex,
-						Offset:    secondaryESOffset,
-						IsVideo:   isVideo,
-					})
-					indexSecondary++
-				}
-			}
 		}
 
 		// Report progress periodically
@@ -358,8 +334,8 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 	}
 
 	if idx.verbose {
-		fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d, secondary=%d)\n",
-			isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped, indexSecondary)
+		fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
+			isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped)
 	}
 
 	return nil

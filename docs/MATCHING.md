@@ -330,6 +330,58 @@ The remaining ~1.6% unmatched data consists of:
 - MKV container headers (EBML, cluster headers, block headers)
 - Minor stream differences
 
+## Known Limitation: H.264 Slice Header Modifications
+
+On Blu-ray H.264 content, approximately 1.3-1.5% of non-IDR slice NALs and IDR slice NALs cannot be matched to the source. This is caused by MakeMKV (and similar ripping tools) modifying H.264 slice header fields during remux.
+
+### Root Cause
+
+H.264 slice headers are bit-packed using Exp-Golomb coding. Fields like `first_mb_in_slice`, `slice_type`, and `frame_num` are encoded at the bit level, and there is **no byte-alignment boundary** between the slice header and the slice data that follows it. When MakeMKV modifies any of these fields:
+
+1. The modified field may encode to a different number of bits
+2. All subsequent bits in the NAL shift by a non-byte-aligned amount
+3. Every byte from the modified field onward differs from the source
+
+This means the slice data payload is identical between source and MKV, but shifted by N bits (where N is not a multiple of 8). No fixed byte-offset hash window can match, because every single byte in the NAL body is different.
+
+### Evidence
+
+Testing confirmed this with a full-NAL window scan diagnostic:
+- For large unmatched NALs (32KB-59KB), **zero out of 500-900+** 64-byte hash windows across the entire NAL matched anything in the source index
+- Both primary hash (bytes 0-63) and all subsequent windows failed
+- This affects ~1.4% of non-IDR slices and ~1.3% of IDR slices consistently across multiple discs
+
+### Why We Don't Handle This
+
+Recovering these NALs would require either:
+
+1. **Bit-level alignment**: Detect the bit shift and reconstruct the original byte boundaries. This would require H.264 slice header parsing and per-byte bit-shift operations during FUSE reads.
+
+2. **Store a transform**: Record the modified header bytes and bit-shift amount, then apply a per-byte transform during reconstruction.
+
+Both approaches would **break the zero-copy FUSE mount model**. Currently, the FUSE mount returns mmap'd slices directly from source files with no transformation. Adding per-byte bit-shift operations on ~1.4% of video data would add CPU overhead and latency to every read touching an affected NAL.
+
+The trade-off is not worthwhile: accepting the ~1.4% miss rate results in space savings of 93-97% on Blu-ray content, and the unmatched data is stored as delta (adding roughly 200-400 MB to a typical feature film's dedup file).
+
+### Diagnostic Output
+
+The `--verbose` flag reports per-NAL-type and per-NAL-size statistics that show the impact:
+
+```
+Per-NAL-type breakdown (H.264, type: total / matched / not_found / miss%):
+  type  1 ( non-IDR slice):   672740 /   663419 /     9321 (1.4% miss)
+  type  5 (     IDR slice):     8724 /     8611 /      113 (1.3% miss)
+
+Video NAL size distribution (matched / unmatched):
+       <64B:        3 matched,   367711 unmatched
+    64-127B:     7746 matched,        0 unmatched
+   128B-1KB:      321 matched,      179 unmatched
+   1KB-32KB:   299492 matched,     2526 unmatched
+      32KB+:   372194 matched,     5680 unmatched
+```
+
+The small (<64B) unmatched NALs are AUD, SEI, and SPS NALs which are inherently unmatchable (metadata that changes during remux). The large (1KB+) unmatched NALs are the slice header modification cases described above.
+
 ## Related Documentation
 
 - [File Format](FILE_FORMAT.md) - How matched entries are stored
