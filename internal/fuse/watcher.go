@@ -290,23 +290,58 @@ func (sw *SourceWatcher) pollLoop() {
 }
 
 // pollCheck stats all poll-monitored files and triggers handleChange for
-// any that have a different mtime than recorded.
+// any that have a different mtime than recorded. It snapshots the poll set
+// under a read lock, performs os.Stat calls without the lock (network FS
+// stats can block), then updates mtimes and processes changes.
 func (sw *SourceWatcher) pollCheck() {
-	sw.mu.Lock()
-	defer sw.mu.Unlock()
-
+	// Snapshot under read lock so os.Stat doesn't block event handling.
+	type polledFile struct {
+		path      string
+		lastMtime time.Time
+	}
+	sw.mu.RLock()
+	snapshot := make([]polledFile, 0, len(sw.pollFiles))
 	for absPath, lastMtime := range sw.pollFiles {
-		info, err := os.Stat(absPath)
+		snapshot = append(snapshot, polledFile{path: absPath, lastMtime: lastMtime})
+	}
+	sw.mu.RUnlock()
+
+	// Stat without holding the lock.
+	type mtimeUpdate struct {
+		path     string
+		newMtime time.Time
+	}
+	var (
+		updates      []mtimeUpdate
+		changedPaths []string
+	)
+	for _, pf := range snapshot {
+		info, err := os.Stat(pf.path)
 		if err != nil {
-			// File disappeared — treat as change
-			sw.logFn("source-watch: poll: cannot stat %s: %v", absPath, err)
-			sw.handleChangeLocked(absPath)
+			sw.logFn("source-watch: poll: cannot stat %s: %v", pf.path, err)
+			changedPaths = append(changedPaths, pf.path)
 			continue
 		}
-		if !info.ModTime().Equal(lastMtime) {
-			sw.pollFiles[absPath] = info.ModTime()
-			sw.handleChangeLocked(absPath)
+		if !info.ModTime().Equal(pf.lastMtime) {
+			updates = append(updates, mtimeUpdate{path: pf.path, newMtime: info.ModTime()})
+			changedPaths = append(changedPaths, pf.path)
 		}
+	}
+
+	// Update stored mtimes under the lock.
+	if len(updates) > 0 {
+		sw.mu.Lock()
+		for _, u := range updates {
+			if _, ok := sw.pollFiles[u.path]; ok {
+				sw.pollFiles[u.path] = u.newMtime
+			}
+		}
+		sw.mu.Unlock()
+	}
+
+	// Process changes — handleChange acquires the lock per-path.
+	for _, absPath := range changedPaths {
+		sw.handleChange(absPath)
 	}
 }
 
@@ -410,7 +445,7 @@ func (sw *SourceWatcher) checksumWorker() {
 			if stale {
 				continue // Config was reloaded; skip stale request
 			}
-			sw.verifyChecksum(req.absPath, req.expectedChecksum, req.expectedSize, req.affected)
+			sw.verifyChecksum(req.absPath, req.expectedChecksum, req.expectedSize, req.affected, req.gen)
 		case <-sw.stopCh:
 			return
 		}
@@ -420,28 +455,41 @@ func (sw *SourceWatcher) checksumWorker() {
 // verifyChecksum re-hashes a source file in the background. Files remain
 // accessible during verification. If the checksum mismatches, affected
 // virtual files are disabled (recoverable via SIGHUP reload). If it
-// matches, no action is taken.
-func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64, expectedSize int64, affected []*MKVFile) {
+// matches, no action is taken. The gen parameter is checked before
+// disabling so that a reload during verification prevents stale results
+// from disabling files that were just re-enabled.
+func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64, expectedSize int64, affected []*MKVFile, gen uint64) {
 	names := make([]string, len(affected))
 	for i, f := range affected {
 		names[i] = f.Name
+	}
+
+	// disableIfCurrent disables affected files only if the watcher
+	// generation hasn't changed (i.e., no reload occurred during verification).
+	disableIfCurrent := func() {
+		sw.mu.RLock()
+		stale := gen != sw.updateGen
+		sw.mu.RUnlock()
+		if stale {
+			sw.logFn("source-watch: checksum: skipping disable for %s (config reloaded during verification)", absPath)
+			return
+		}
+		for _, f := range affected {
+			f.Disable()
+		}
 	}
 
 	// Re-check size — it may have changed since the event was queued
 	info, err := os.Stat(absPath)
 	if err != nil {
 		sw.logFn("source-watch: checksum: cannot stat %s: %v — disabling %v", absPath, err, names)
-		for _, f := range affected {
-			f.Disable()
-		}
+		disableIfCurrent()
 		return
 	}
 	if info.Size() != expectedSize {
 		sw.logFn("source-watch: checksum: size changed for %s (%d → %d) — disabling %v",
 			absPath, expectedSize, info.Size(), names)
-		for _, f := range affected {
-			f.Disable()
-		}
+		disableIfCurrent()
 		return
 	}
 
@@ -449,9 +497,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 	f, err := os.Open(absPath)
 	if err != nil {
 		sw.logFn("source-watch: checksum: cannot open %s: %v — disabling %v", absPath, err, names)
-		for _, f := range affected {
-			f.Disable()
-		}
+		disableIfCurrent()
 		return
 	}
 	defer f.Close()
@@ -474,9 +520,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 		if readErr != nil {
 			if readErr != io.EOF {
 				sw.logFn("source-watch: checksum: read error for %s: %v — disabling %v", absPath, readErr, names)
-				for _, af := range affected {
-					af.Disable()
-				}
+				disableIfCurrent()
 				return
 			}
 			break
@@ -487,9 +531,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 	if actualChecksum != expectedChecksum {
 		sw.logFn("source-watch: checksum mismatch for %s (got %016x, expected %016x) — disabling %v",
 			absPath, actualChecksum, expectedChecksum, names)
-		for _, f := range affected {
-			f.Disable()
-		}
+		disableIfCurrent()
 	} else {
 		sw.logFn("source-watch: checksum verified OK for %s", absPath)
 	}
