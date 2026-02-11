@@ -134,7 +134,7 @@ files (DVD ISOs, Blu-ray M2TS) for changes using inotify (local) or polling
 (network filesystems).
 .TP
 .B \-\-on\-source\-change ACTION
-Action to take when a source file change is detected. Default: \fBwarn\fR.
+Action to take when a source file change is detected. Default: \fBchecksum\fR.
 .RS
 .TP
 .B warn
@@ -142,11 +142,14 @@ Log a warning with the source path and affected virtual files.
 .TP
 .B disable
 Disable affected virtual files; subsequent reads return EIO.
-Reversible via SIGHUP reload.
+Files remain visible in directory listings. Reversible via SIGHUP reload.
 .TP
 .B checksum
-Re-verify the source file's xxhash checksum. If the checksum matches,
-ignore the change. If it doesn't match, disable the affected virtual files.
+If the source file size changed, disable immediately (reads return EIO).
+If only the timestamp changed (e.g., touch), verify the source file's
+xxhash checksum in the background while the file remains accessible.
+Disable only on checksum mismatch. Checksum verifications run
+sequentially to avoid I/O storms.
 .RE
 .RE
 .TP

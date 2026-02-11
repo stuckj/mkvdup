@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -53,7 +54,7 @@ type MKVFSRoot struct {
 	// notifications (NotifyDelete, NotifyEntry, NotifyContent) are only
 	// safe to call when the filesystem is mounted — the go-fuse bridge
 	// is nil before mount, causing panics.
-	mounted bool
+	mounted atomic.Bool
 
 	// Factories for dependency injection (allows mocking in tests)
 	readerFactory ReaderFactory
@@ -558,25 +559,30 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	return nil
 }
 
-// Files returns the current file set. Used by SourceWatcher to build
-// reverse mappings from source files to virtual files.
+// Files returns a snapshot of the current file set. Used by SourceWatcher
+// to build reverse mappings from source files to virtual files. Returns a
+// defensive copy to avoid data races with concurrent Reload() calls.
 func (r *MKVFSRoot) Files() map[string]*MKVFile {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.files
+	out := make(map[string]*MKVFile, len(r.files))
+	for k, v := range r.files {
+		out[k] = v
+	}
+	return out
 }
 
 // SetMounted marks the filesystem as mounted, enabling FUSE kernel
 // notifications during config reload. Must be called after fs.Mount()
 // succeeds.
 func (r *MKVFSRoot) SetMounted() {
-	r.mounted = true
+	r.mounted.Store(true)
 }
 
 // emitReloadNotifications sends FUSE kernel notifications for files that
 // were added or removed during a config reload.
 func (r *MKVFSRoot) emitReloadNotifications(notifications []reloadNotification, changedDirs map[*fs.Inode]bool, logFn func(string, ...interface{})) {
-	if len(notifications) == 0 || !r.mounted {
+	if len(notifications) == 0 || !r.mounted.Load() {
 		return
 	}
 

@@ -370,8 +370,8 @@ Source file monitoring detects changes to the underlying source media (DVD ISOs,
 # Disable source file watching
 mkvdup mount --no-source-watch /mnt/videos config.yaml
 
-# Set action on source change (default: warn)
-mkvdup mount --on-source-change checksum /mnt/videos config.yaml
+# Set action on source change (default: checksum)
+mkvdup mount --on-source-change warn /mnt/videos config.yaml
 ```
 
 ### fstab Options
@@ -388,9 +388,9 @@ mkvdup mount --on-source-change checksum /mnt/videos config.yaml
 
 | Action | Behavior |
 |--------|----------|
-| `warn` (default) | Log a warning with the source path and affected virtual files |
-| `disable` | Disable affected virtual files (subsequent reads return `EIO`). Reversible via SIGHUP reload. |
-| `checksum` | Re-hash the changed source file (xxhash). If checksum matches, ignore. If mismatch, disable. |
+| `warn` | Log a warning with the source path and affected virtual files |
+| `disable` | Disable affected virtual files (subsequent reads return `EIO`). File remains visible in directory listings. Reversible via SIGHUP reload. |
+| `checksum` (default) | If the source file size changed, disable immediately. If only the timestamp changed (e.g., `touch`), verify the source checksum (xxhash) in the background while the file remains accessible. Disable only on checksum mismatch. Disabled files remain visible in directory listings and return `EIO` on read. Reversible via SIGHUP reload. |
 
 ### How It Works
 
@@ -402,7 +402,9 @@ At mount time, source file metadata (path, size, checksum) is read from each ded
 
 **On SIGHUP reload:** The watcher rebuilds its source file mappings to match the new configuration. Old watches are removed and new ones are set up.
 
-**Disabled files:** When a file is disabled (by `disable` or `checksum` action), its active reader is closed and subsequent `Open`/`Read` calls return `EIO`. The file remains visible in directory listings. Sending SIGHUP to reload the config resets the disabled state.
+**Disabled files:** When a file is disabled (by `disable` action, size change in `checksum` mode, or checksum mismatch), its active reader is closed and subsequent `Open`/`Read` calls return `EIO`. The file remains visible in directory listings. Sending SIGHUP to reload the config resets the disabled state.
+
+**Checksum queue:** Checksum verifications run sequentially in a single background worker to avoid I/O storms when many source files change at once. Duplicate events for the same source file are deduplicated.
 
 ## Error Handling
 

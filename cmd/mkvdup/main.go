@@ -231,10 +231,12 @@ Permission Options:
 
 Source Watch Options:
     --no-source-watch          Disable source file monitoring (enabled by default)
-    --on-source-change ACTION  Action on source change: warn (default), disable, checksum
+    --on-source-change ACTION  Action on source change: warn, disable, checksum (default)
                                warn     - log a warning
                                disable  - disable affected virtual files (reads return EIO)
-                               checksum - re-verify source checksum; disable on mismatch
+                               checksum - size change: disable immediately
+                                          timestamp-only: verify checksum in background,
+                                          disable only on mismatch
 
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
@@ -532,7 +534,7 @@ func main() {
 		defaultFileMode := uint32(0444)
 		defaultDirMode := uint32(0555)
 		noSourceWatch := false
-		onSourceChange := "warn"
+		onSourceChange := "checksum"
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {

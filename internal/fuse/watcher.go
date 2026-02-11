@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,6 +24,14 @@ const (
 
 // Default poll interval for network filesystems where inotify doesn't work.
 const defaultPollInterval = 60 * time.Second
+
+// checksumRequest is a queued checksum verification job.
+type checksumRequest struct {
+	absPath          string
+	expectedChecksum uint64
+	expectedSize     int64
+	affected         []*MKVFile
+}
 
 // SourceWatcher monitors source files for changes and takes action when
 // modifications are detected. It uses inotify for local filesystems and
@@ -47,6 +56,17 @@ type SourceWatcher struct {
 	logFn  func(string, ...interface{})
 	mu     sync.RWMutex
 
+	// checksumCh queues checksum verification requests so they run
+	// sequentially in a single worker goroutine, avoiding I/O storms
+	// when many source files change at once.
+	checksumCh chan checksumRequest
+
+	// checksumPending tracks source paths with a queued checksum request,
+	// preventing duplicate queue entries for the same file. The worker
+	// clears the flag when it starts processing, so new events that arrive
+	// during verification are still queued.
+	checksumPending map[string]bool
+
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 }
@@ -64,14 +84,16 @@ func NewSourceWatcher(action string, logFn func(string, ...interface{})) (*Sourc
 	}
 
 	return &SourceWatcher{
-		watcher:   watcher,
-		reverse:   make(map[string][]*MKVFile),
-		checksums: make(map[string]uint64),
-		sizes:     make(map[string]int64),
-		pollFiles: make(map[string]time.Time),
-		action:    action,
-		logFn:     logFn,
-		stopCh:    make(chan struct{}),
+		watcher:         watcher,
+		reverse:         make(map[string][]*MKVFile),
+		checksums:       make(map[string]uint64),
+		sizes:           make(map[string]int64),
+		pollFiles:       make(map[string]time.Time),
+		action:          action,
+		logFn:           logFn,
+		checksumCh:      make(chan checksumRequest, 256),
+		checksumPending: make(map[string]bool),
+		stopCh:          make(chan struct{}),
 	}, nil
 }
 
@@ -152,14 +174,17 @@ func (sw *SourceWatcher) Start() {
 	sw.wg.Add(1)
 	go sw.eventLoop()
 
-	// Start poller if there are any poll files
-	sw.mu.RLock()
-	hasPollFiles := len(sw.pollFiles) > 0
-	sw.mu.RUnlock()
-	if hasPollFiles {
+	// Start checksum worker (single goroutine processes queue sequentially)
+	if sw.action == "checksum" {
 		sw.wg.Add(1)
-		go sw.pollLoop()
+		go sw.checksumWorker()
 	}
+
+	// Always start poller — it no-ops when pollFiles is empty, but must
+	// be running so that network FS dirs added via Update() after reload
+	// are polled without requiring a restart.
+	sw.wg.Add(1)
+	go sw.pollLoop()
 }
 
 // Stop stops the watcher and waits for goroutines to exit.
@@ -237,8 +262,8 @@ func (sw *SourceWatcher) pollCheck() {
 
 // handleChange processes a source file change event.
 func (sw *SourceWatcher) handleChange(absPath string) {
-	sw.mu.RLock()
-	defer sw.mu.RUnlock()
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
 	sw.handleChangeLocked(absPath)
 }
 
@@ -265,24 +290,89 @@ func (sw *SourceWatcher) handleChangeLocked(absPath string) {
 		}
 
 	case "checksum":
-		// Run checksum verification in a goroutine to avoid blocking the watcher
-		expectedChecksum := sw.checksums[absPath]
+		// Stat the source file to distinguish size changes from
+		// timestamp-only changes (e.g., touch).
+		info, err := os.Stat(absPath)
+		if err != nil {
+			// File disappeared — disable immediately
+			sw.logFn("source-watch: source file missing, disabling: %s (affects: %v)", absPath, names)
+			for _, f := range affected {
+				f.Disable()
+			}
+			return
+		}
+
 		expectedSize := sw.sizes[absPath]
+		if info.Size() != expectedSize {
+			// Size changed — definitely corrupted, disable immediately
+			sw.logFn("source-watch: source file size changed (%d → %d), disabling: %s (affects: %v)",
+				expectedSize, info.Size(), absPath, names)
+			for _, f := range affected {
+				f.Disable()
+			}
+			return
+		}
+
+		// Size matches — verify checksum in background. File remains
+		// accessible during verification; only disabled on mismatch.
+		if sw.checksumPending[absPath] {
+			return // Already queued
+		}
+		sw.logFn("source-watch: source file modified, verifying checksum: %s (affects: %v)", absPath, names)
 		affectedCopy := make([]*MKVFile, len(affected))
 		copy(affectedCopy, affected)
-		go sw.verifyChecksum(absPath, expectedChecksum, expectedSize, affectedCopy)
+		select {
+		case sw.checksumCh <- checksumRequest{
+			absPath:          absPath,
+			expectedChecksum: sw.checksums[absPath],
+			expectedSize:     expectedSize,
+			affected:         affectedCopy,
+		}:
+			sw.checksumPending[absPath] = true
+		default:
+			// Queue full — disable as a safety measure
+			sw.logFn("source-watch: checksum queue full, disabling: %s (affects: %v)", absPath, names)
+			for _, f := range affected {
+				f.Disable()
+			}
+		}
 	}
 }
 
-// verifyChecksum re-hashes a source file and disables affected virtual files
-// if the checksum doesn't match.
+// checksumWorker processes checksum verification requests sequentially.
+// Only one goroutine runs this, ensuring that bulk source changes don't
+// spawn hundreds of parallel I/O-heavy hash operations.
+func (sw *SourceWatcher) checksumWorker() {
+	defer sw.wg.Done()
+
+	for {
+		select {
+		case req := <-sw.checksumCh:
+			// Clear pending flag so new events for this path get queued.
+			// This must happen before verification so that changes during
+			// hashing trigger a fresh verification.
+			sw.mu.Lock()
+			delete(sw.checksumPending, req.absPath)
+			sw.mu.Unlock()
+
+			sw.verifyChecksum(req.absPath, req.expectedChecksum, req.expectedSize, req.affected)
+		case <-sw.stopCh:
+			return
+		}
+	}
+}
+
+// verifyChecksum re-hashes a source file in the background. Files remain
+// accessible during verification. If the checksum mismatches, affected
+// virtual files are disabled (recoverable via SIGHUP reload). If it
+// matches, no action is taken.
 func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64, expectedSize int64, affected []*MKVFile) {
 	names := make([]string, len(affected))
 	for i, f := range affected {
 		names[i] = f.Name
 	}
 
-	// Quick size check first
+	// Re-check size — it may have changed since the event was queued
 	info, err := os.Stat(absPath)
 	if err != nil {
 		sw.logFn("source-watch: checksum: cannot stat %s: %v — disabling %v", absPath, err, names)
@@ -292,8 +382,8 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 		return
 	}
 	if info.Size() != expectedSize {
-		sw.logFn("source-watch: checksum: size mismatch for %s (got %d, expected %d) — disabling %v",
-			absPath, info.Size(), expectedSize, names)
+		sw.logFn("source-watch: checksum: size changed for %s (%d → %d) — disabling %v",
+			absPath, expectedSize, info.Size(), names)
 		for _, f := range affected {
 			f.Disable()
 		}
@@ -319,6 +409,13 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 			h.Write(buf[:n])
 		}
 		if readErr != nil {
+			if readErr != io.EOF {
+				sw.logFn("source-watch: checksum: read error for %s: %v — disabling %v", absPath, readErr, names)
+				for _, af := range affected {
+					af.Disable()
+				}
+				return
+			}
 			break
 		}
 	}
@@ -332,12 +429,6 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 		}
 	} else {
 		sw.logFn("source-watch: checksum verified OK for %s", absPath)
-		// Re-enable files that may have been disabled by a prior event
-		// (e.g., rapid modify-then-restore where the first event disabled
-		// due to size mismatch but the file is now back to its original state).
-		for _, f := range affected {
-			f.Enable()
-		}
 	}
 }
 
