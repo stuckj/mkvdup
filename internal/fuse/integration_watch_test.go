@@ -204,8 +204,8 @@ func startMount(t *testing.T, binary, mountPoint string, configs []string, extra
 		if _, err := os.Stat(virtualFile); err == nil {
 			return cmd
 		}
-		// Check if process exited prematurely
-		if cmd.ProcessState != nil {
+		// Check if process exited prematurely (Signal(0) fails if dead)
+		if cmd.Process.Signal(syscall.Signal(0)) != nil {
 			t.Fatalf("mkvdup mount exited prematurely")
 		}
 		time.Sleep(50 * time.Millisecond)

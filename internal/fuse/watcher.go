@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,23 +103,18 @@ func NewSourceWatcher(action string, logFn func(string, ...interface{})) (*Sourc
 //
 // For each MKVFile, the readerFactory is used to read the dedup file header
 // (lazy read, no full initialization) to get the source file list.
+//
+// The method minimizes lock hold time: maps are built without the lock,
+// swapped in briefly under the lock, and then inotify watches and os.Stat
+// calls happen without the lock.
 func (sw *SourceWatcher) Update(files map[string]*MKVFile, readerFactory ReaderFactory) {
-	sw.mu.Lock()
-	defer sw.mu.Unlock()
-
-	// Remove existing watches
-	for dir := range sw.watchedDirs() {
-		sw.watcher.Remove(dir)
-	}
-
-	// Reset mappings
-	sw.reverse = make(map[string][]*MKVFile)
-	sw.checksums = make(map[string]uint64)
-	sw.sizes = make(map[string]int64)
-	sw.pollFiles = make(map[string]time.Time)
-
-	// Build reverse mapping from source files to virtual files
+	// Phase 1: Build new maps without holding the lock. This involves
+	// I/O (reading dedup headers) that should not block event handling.
+	newReverse := make(map[string][]*MKVFile)
+	newChecksums := make(map[string]uint64)
+	newSizes := make(map[string]int64)
 	watchDirs := make(map[string]bool)
+
 	for _, file := range files {
 		reader, err := readerFactory.NewReaderLazy(file.DedupPath, file.SourceDir)
 		if err != nil {
@@ -128,24 +124,55 @@ func (sw *SourceWatcher) Update(files map[string]*MKVFile, readerFactory ReaderF
 		sourceFiles := reader.SourceFileInfo()
 		reader.Close()
 
+		cleanSourceDir := filepath.Clean(file.SourceDir) + string(filepath.Separator)
 		for _, sf := range sourceFiles {
 			absPath := filepath.Join(file.SourceDir, sf.RelativePath)
-			sw.reverse[absPath] = append(sw.reverse[absPath], file)
-			sw.checksums[absPath] = sf.Checksum
-			sw.sizes[absPath] = sf.Size
+			if !strings.HasPrefix(absPath, cleanSourceDir) {
+				sw.logFn("source-watch: warning: skipping source file with path traversal: %s", sf.RelativePath)
+				continue
+			}
+			newReverse[absPath] = append(newReverse[absPath], file)
+			newChecksums[absPath] = sf.Checksum
+			newSizes[absPath] = sf.Size
 			watchDirs[filepath.Dir(absPath)] = true
 		}
 	}
 
-	// Set up watches on source directories
+	// Phase 2: Swap maps and drain stale checksum queue under the lock.
+	sw.mu.Lock()
+	oldDirs := sw.watchedDirs()
+
+	// Drain any stale checksum requests from a previous configuration.
+drain:
+	for {
+		select {
+		case <-sw.checksumCh:
+		default:
+			break drain
+		}
+	}
+	sw.checksumPending = make(map[string]bool)
+
+	sw.reverse = newReverse
+	sw.checksums = newChecksums
+	sw.sizes = newSizes
+	sw.pollFiles = make(map[string]time.Time)
+	sw.mu.Unlock()
+
+	// Phase 3: Update inotify watches without the lock.
+	// fsnotify.Watcher methods are thread-safe.
+	for dir := range oldDirs {
+		sw.watcher.Remove(dir)
+	}
+
+	newPollFiles := make(map[string]time.Time)
 	for dir := range watchDirs {
 		if isNetworkFS(dir) {
 			sw.logFn("source-watch: %s is on a network filesystem, using polling", dir)
-			// Initialize poll state for files in this directory
-			for absPath := range sw.reverse {
+			for absPath := range newReverse {
 				if filepath.Dir(absPath) == dir {
 					if info, err := os.Stat(absPath); err == nil {
-						sw.pollFiles[absPath] = info.ModTime()
+						newPollFiles[absPath] = info.ModTime()
 					}
 				}
 			}
@@ -156,8 +183,15 @@ func (sw *SourceWatcher) Update(files map[string]*MKVFile, readerFactory ReaderF
 		}
 	}
 
+	// Phase 4: Set poll files under the lock.
+	if len(newPollFiles) > 0 {
+		sw.mu.Lock()
+		sw.pollFiles = newPollFiles
+		sw.mu.Unlock()
+	}
+
 	sw.logFn("source-watch: monitoring %d source files in %d directories (action=%s)",
-		len(sw.reverse), len(watchDirs), sw.action)
+		len(newReverse), len(watchDirs), sw.action)
 }
 
 // watchedDirs returns the set of currently watched directories.
@@ -204,8 +238,8 @@ func (sw *SourceWatcher) eventLoop() {
 			if !ok {
 				return
 			}
-			// Only react to writes, creates (overwrites), and renames
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+			// React to writes, creates (overwrites), renames, and removals
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
 				continue
 			}
 			sw.handleChange(event.Name)
@@ -404,6 +438,14 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 	h := xxhash.New()
 	buf := make([]byte, 1<<20) // 1MB buffer
 	for {
+		// Check for shutdown between reads so large-file hashing
+		// doesn't block Stop() indefinitely.
+		select {
+		case <-sw.stopCh:
+			return
+		default:
+		}
+
 		n, readErr := f.Read(buf)
 		if n > 0 {
 			h.Write(buf[:n])

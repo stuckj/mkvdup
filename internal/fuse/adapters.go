@@ -56,13 +56,17 @@ func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
 
 func (a *dedupReaderAdapter) SourceFileInfo() []SourceFileInfo {
 	sourceFiles := a.reader.SourceFiles()
-	infos := make([]SourceFileInfo, len(sourceFiles))
-	for i, sf := range sourceFiles {
-		infos[i] = SourceFileInfo{
+	hasUsedFlags := a.reader.HasSourceUsedFlags()
+	var infos []SourceFileInfo
+	for _, sf := range sourceFiles {
+		if hasUsedFlags && !sf.Used {
+			continue
+		}
+		infos = append(infos, SourceFileInfo{
 			RelativePath: sf.RelativePath,
 			Size:         sf.Size,
 			Checksum:     sf.Checksum,
-		}
+		})
 	}
 	return infos
 }
