@@ -71,12 +71,6 @@ func (lc *logCapture) contains(t *testing.T, substr string) bool {
 	return false
 }
 
-func (lc *logCapture) count() int {
-	lc.mu.Lock()
-	defer lc.mu.Unlock()
-	return len(lc.messages)
-}
-
 // isDisabled returns the disabled state of an MKVFile, thread-safely.
 func isDisabled(f *MKVFile) bool {
 	f.mu.RLock()
