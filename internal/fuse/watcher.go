@@ -32,6 +32,7 @@ type checksumRequest struct {
 	expectedChecksum uint64
 	expectedSize     int64
 	affected         []*MKVFile
+	gen              uint64 // generation stamp; stale requests are skipped
 }
 
 // SourceWatcher monitors source files for changes and takes action when
@@ -67,6 +68,12 @@ type SourceWatcher struct {
 	// clears the flag when it starts processing, so new events that arrive
 	// during verification are still queued.
 	checksumPending map[string]bool
+
+	// updateGen is incremented on each Update() call. Checksum requests
+	// carry the generation they were created in; the worker skips requests
+	// whose generation doesn't match, preventing stale verifications from
+	// a previous config from disabling files after a reload.
+	updateGen uint64
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -155,6 +162,7 @@ drain:
 		}
 	}
 	sw.checksumPending = make(map[string]bool)
+	sw.updateGen++
 
 	sw.reverse = newReverse
 	sw.checksums = newChecksums
@@ -369,6 +377,7 @@ func (sw *SourceWatcher) handleChangeLocked(absPath string) {
 			expectedChecksum: sw.checksums[absPath],
 			expectedSize:     expectedSize,
 			affected:         affectedCopy,
+			gen:              sw.updateGen,
 		}:
 			sw.checksumPending[absPath] = true
 		default:
@@ -395,8 +404,12 @@ func (sw *SourceWatcher) checksumWorker() {
 			// hashing trigger a fresh verification.
 			sw.mu.Lock()
 			delete(sw.checksumPending, req.absPath)
+			stale := req.gen != sw.updateGen
 			sw.mu.Unlock()
 
+			if stale {
+				continue // Config was reloaded; skip stale request
+			}
 			sw.verifyChecksum(req.absPath, req.expectedChecksum, req.expectedSize, req.affected)
 		case <-sw.stopCh:
 			return
