@@ -161,7 +161,7 @@ func TestSourceWatcher_ChecksumAction_SizeChanged(t *testing.T) {
 }
 
 func TestSourceWatcher_ChecksumAction_SizeMatch_ChecksumOK(t *testing.T) {
-	sw, _ := newTestWatcher(t, "checksum")
+	sw, lc := newTestWatcher(t, "checksum")
 
 	// Create a real temp file.
 	tmpDir := t.TempDir()
@@ -194,21 +194,22 @@ func TestSourceWatcher_ChecksumAction_SizeMatch_ChecksumOK(t *testing.T) {
 	sw.wg.Add(1)
 	go sw.checksumWorker()
 
-	// Wait for the worker to process the request.
-	// Poll for up to 5 seconds for the channel to drain.
+	// Wait for verification to complete by observing the expected log message.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(sw.checksumCh) == 0 {
+		if lc.contains(t, "checksum verified OK") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// Give the worker a moment to finish verifyChecksum.
-	time.Sleep(50 * time.Millisecond)
 
 	// Stop the worker.
 	close(sw.stopCh)
 	sw.wg.Wait()
+
+	if !lc.contains(t, "checksum verified OK") {
+		t.Fatal("timed out waiting for checksum verification")
+	}
 
 	// File should still NOT be disabled since checksum matched.
 	if isDisabled(file) {
@@ -246,28 +247,26 @@ func TestSourceWatcher_ChecksumAction_SizeMatch_ChecksumMismatch(t *testing.T) {
 	sw.wg.Add(1)
 	go sw.checksumWorker()
 
-	// Wait for the worker to process the request.
+	// Wait for verification to complete by observing the expected log message.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(sw.checksumCh) == 0 {
+		if lc.contains(t, "checksum mismatch") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// Give the worker a moment to finish verifyChecksum.
-	time.Sleep(50 * time.Millisecond)
 
 	// Stop the worker.
 	close(sw.stopCh)
 	sw.wg.Wait()
 
+	if !lc.contains(t, "checksum mismatch") {
+		t.Fatal("timed out waiting for checksum mismatch detection")
+	}
+
 	// File should be disabled due to checksum mismatch.
 	if !isDisabled(file) {
 		t.Error("file should be disabled when checksum mismatches")
-	}
-
-	if !lc.contains(t, "checksum mismatch") {
-		t.Error("expected log message about checksum mismatch")
 	}
 }
 

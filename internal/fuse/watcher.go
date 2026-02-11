@@ -190,6 +190,11 @@ drain:
 			for _, absPath := range pathsByDir[dir] {
 				if info, err := os.Stat(absPath); err == nil {
 					newPollFiles[absPath] = info.ModTime()
+				} else {
+					// File currently missing/unavailable — use zero mtime so
+					// pollCheck detects it appearing (or triggers handleChange
+					// via its stat-error path).
+					newPollFiles[absPath] = time.Time{}
 				}
 			}
 		} else {
@@ -533,7 +538,10 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 			absPath, actualChecksum, expectedChecksum, names)
 		disableIfCurrent()
 	} else {
-		sw.logFn("source-watch: checksum verified OK for %s", absPath)
+		sw.logFn("source-watch: checksum verified OK for %s — re-enabling %v", absPath, names)
+		for _, f := range affected {
+			f.Enable()
+		}
 	}
 }
 
