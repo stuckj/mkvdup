@@ -459,10 +459,10 @@ func (sw *SourceWatcher) checksumWorker() {
 
 // verifyChecksum re-hashes a source file in the background. Files remain
 // accessible during verification. If the checksum mismatches, affected
-// virtual files are disabled (recoverable via SIGHUP reload). If it
-// matches, no action is taken. The gen parameter is checked before
-// disabling so that a reload during verification prevents stale results
-// from disabling files that were just re-enabled.
+// virtual files are disabled (recoverable via SIGHUP reload or a
+// subsequent successful checksum). The gen parameter is checked before
+// disabling or enabling so that a reload during verification prevents
+// stale results from affecting files in the new configuration.
 func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64, expectedSize int64, affected []*MKVFile, gen uint64) {
 	names := make([]string, len(affected))
 	for i, f := range affected {
@@ -538,6 +538,21 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 			absPath, actualChecksum, expectedChecksum, names)
 		disableIfCurrent()
 	} else {
+		// Re-enable affected files so transient issues (e.g., network
+		// glitches) auto-recover without requiring admin SIGHUP.
+		//
+		// NOTE: a virtual file can depend on multiple source files. A
+		// passing checksum for one source could re-enable a file whose
+		// other source is still bad. This is a known limitation; the
+		// common case (single source per MKV) is handled correctly, and
+		// SIGHUP is available as a fallback for multi-source edge cases.
+		sw.mu.RLock()
+		stale := gen != sw.updateGen
+		sw.mu.RUnlock()
+		if stale {
+			sw.logFn("source-watch: checksum: skipping re-enable for %s (config reloaded during verification)", absPath)
+			return
+		}
 		sw.logFn("source-watch: checksum verified OK for %s — re-enabling %v", absPath, names)
 		for _, f := range affected {
 			f.Enable()
