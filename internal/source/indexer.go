@@ -324,6 +324,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 				syncPointCount++
 				indexSlowPath++
 			}
+
 		}
 
 		// Report progress periodically
