@@ -124,7 +124,10 @@ func (sw *SourceWatcher) Update(files map[string]*MKVFile, readerFactory ReaderF
 		sourceFiles := reader.SourceFileInfo()
 		reader.Close()
 
-		cleanSourceDir := filepath.Clean(file.SourceDir) + string(filepath.Separator)
+		cleanSourceDir := filepath.Clean(file.SourceDir)
+		if cleanSourceDir[len(cleanSourceDir)-1] != filepath.Separator {
+			cleanSourceDir += string(filepath.Separator)
+		}
 		for _, sf := range sourceFiles {
 			absPath := filepath.Join(file.SourceDir, sf.RelativePath)
 			if !strings.HasPrefix(absPath, cleanSourceDir) {
@@ -165,15 +168,20 @@ drain:
 		sw.watcher.Remove(dir)
 	}
 
+	// Precompute files per directory so polling setup is O(files), not O(dirs×files).
+	pathsByDir := make(map[string][]string)
+	for absPath := range newReverse {
+		dir := filepath.Dir(absPath)
+		pathsByDir[dir] = append(pathsByDir[dir], absPath)
+	}
+
 	newPollFiles := make(map[string]time.Time)
 	for dir := range watchDirs {
 		if isNetworkFS(dir) {
 			sw.logFn("source-watch: %s is on a network filesystem, using polling", dir)
-			for absPath := range newReverse {
-				if filepath.Dir(absPath) == dir {
-					if info, err := os.Stat(absPath); err == nil {
-						newPollFiles[absPath] = info.ModTime()
-					}
+			for _, absPath := range pathsByDir[dir] {
+				if info, err := os.Stat(absPath); err == nil {
+					newPollFiles[absPath] = info.ModTime()
 				}
 			}
 		} else {

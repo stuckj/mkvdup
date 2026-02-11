@@ -596,8 +596,9 @@ func (r *MKVFSRoot) emitReloadNotifications(notifications []reloadNotification, 
 				}
 			} else {
 				// Child inode was never cached by kernel — just invalidate entry
-				n.parent.NotifyEntry(n.name)
-				invalidated++
+				if errno := n.parent.NotifyEntry(n.name); errno == 0 {
+					invalidated++
+				}
 			}
 		} else {
 			// NotifyEntry invalidates the kernel's dentry cache so the
