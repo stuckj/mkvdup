@@ -54,6 +54,19 @@ func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
 	return nil
 }
 
+func (a *dedupReaderAdapter) SourceFileInfo() []SourceFileInfo {
+	sourceFiles := a.reader.SourceFiles()
+	infos := make([]SourceFileInfo, len(sourceFiles))
+	for i, sf := range sourceFiles {
+		infos[i] = SourceFileInfo{
+			RelativePath: sf.RelativePath,
+			Size:         sf.Size,
+			Checksum:     sf.Checksum,
+		}
+	}
+	return infos
+}
+
 func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) {
 	return a.reader.ReadAt(p, off)
 }

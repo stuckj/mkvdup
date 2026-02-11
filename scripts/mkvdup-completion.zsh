@@ -51,6 +51,8 @@ _mkvdup_mount() {
         '--default-file-mode=[Default mode for files (octal)]:mode' \
         '--default-dir-mode=[Default mode for directories (octal)]:mode' \
         '--permissions-file=[Path to permissions file]:permissions file:_files' \
+        '--no-source-watch[Disable source file monitoring]' \
+        '--on-source-change=[Action on source change]:action:(warn disable checksum)' \
         '1:Mount point:_files -/' \
         '*:Config files:_files -g "*.y(a|)ml(-.)"'
 }

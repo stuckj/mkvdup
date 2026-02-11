@@ -14,6 +14,14 @@ type DedupReader interface {
 	Close() error
 }
 
+// SourceFileInfo contains metadata about a source file referenced by a dedup file.
+// This is read from the dedup file header (available without full reader initialization).
+type SourceFileInfo struct {
+	RelativePath string // Path relative to source directory
+	Size         int64  // Expected file size
+	Checksum     uint64 // Expected xxhash checksum
+}
+
 // ReaderInitializer is an interface for initializing readers with source data.
 // This is separate from DedupReader to allow simpler mocking for basic read tests.
 type ReaderInitializer interface {
@@ -26,6 +34,10 @@ type ReaderInitializer interface {
 	// For ES-based sources, this sets up the ES reader.
 	// For raw sources, this loads source files.
 	InitializeForReading(sourceDir string) error
+
+	// SourceFileInfo returns metadata about source files referenced by the
+	// dedup file. Available from the header without full initialization.
+	SourceFileInfo() []SourceFileInfo
 }
 
 // ReaderFactory creates DedupReader instances.

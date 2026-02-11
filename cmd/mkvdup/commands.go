@@ -1325,6 +1325,28 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	// Wait for mount to be ready
 	server.WaitMount()
 
+	// Enable FUSE kernel notifications (NotifyDelete, NotifyEntry, etc.)
+	// now that the go-fuse bridge is initialized.
+	root.SetMounted()
+
+	// Set up source file watcher (monitors source files for changes)
+	var sourceWatcher *mkvfuse.SourceWatcher
+	if !opts.NoSourceWatch {
+		// logFn will be overwritten below after syslog setup; use a pointer
+		// indirection so the watcher picks up the final logger.
+		watchLogFn := func(format string, args ...interface{}) {
+			log.Printf(format, args...)
+		}
+		var err error
+		sourceWatcher, err = mkvfuse.NewSourceWatcher(opts.OnSourceChange, watchLogFn)
+		if err != nil {
+			log.Printf("source-watch: warning: failed to create watcher: %v", err)
+		} else {
+			sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{})
+			sourceWatcher.Start()
+		}
+	}
+
 	// If we're a daemon child, signal success and detach from terminal
 	if daemon.IsChild() {
 		if err := daemon.NotifyReady(); err != nil {
@@ -1404,6 +1426,11 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 					continue
 				}
 
+				// Update source watcher with new file set
+				if sourceWatcher != nil {
+					sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{})
+				}
+
 				logFn("config reloaded successfully")
 
 			case syscall.SIGINT, syscall.SIGTERM:
@@ -1418,6 +1445,11 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 
 	// Serve until unmounted
 	server.Wait()
+
+	// Stop source watcher
+	if sourceWatcher != nil {
+		sourceWatcher.Stop()
+	}
 
 	if !daemon.IsChild() {
 		fmt.Println("Unmounted")

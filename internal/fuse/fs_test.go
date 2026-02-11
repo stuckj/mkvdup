@@ -51,6 +51,10 @@ func (m *mockReader) ReadAt(p []byte, off int64) (n int, err error) {
 	return n, nil
 }
 
+func (m *mockReader) SourceFileInfo() []SourceFileInfo {
+	return nil
+}
+
 func (m *mockReader) Close() error {
 	m.closed = true
 	return nil
