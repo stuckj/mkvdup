@@ -42,12 +42,13 @@ const maxInflight = 16
 // filesystems (NFS, CIFS/SMB) where mmap is unsafe due to SIGBUS on
 // page fault failures.
 type PreadFile struct {
-	mu       sync.RWMutex // protects file; RLock for reads, Lock for reopen/close
-	file     *os.File
-	path     string
-	size     int64
-	timeout  time.Duration // 0 = no timeout
-	inflight chan struct{} // semaphore bounding concurrent timeout goroutines
+	mu         sync.Mutex // protects file and staleFiles
+	file       *os.File
+	path       string
+	size       int64
+	timeout    time.Duration // 0 = no timeout
+	inflight   chan struct{} // semaphore bounding concurrent timeout goroutines
+	staleFiles []*os.File    // old fds kept open until Close to avoid EBADF on in-flight reads
 }
 
 // OpenPread opens a file for pread-based access.
@@ -129,34 +130,42 @@ func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 }
 
 // readAtWithRetry performs a pread with one retry on retryable errors,
-// reopening the file descriptor if needed. The read lock is held across
-// each ReadAt call to prevent reopen/Close from closing the fd mid-read.
+// reopening the file descriptor if needed. The mutex is only held briefly
+// to copy the fd pointer — not during the pread syscall — so Close() and
+// reopen() are never blocked by a stalled network read. Old fds from
+// reopen are kept in staleFiles (not closed) to avoid EBADF on
+// concurrent in-flight reads; they are cleaned up on Close().
 func (p *PreadFile) readAtWithRetry(buf []byte, off int64) (int, error) {
-	n, err := p.lockedReadAt(buf, off)
+	p.mu.Lock()
+	f := p.file
+	p.mu.Unlock()
+
+	if f == nil {
+		return 0, os.ErrClosed
+	}
+
+	n, err := f.ReadAt(buf, off)
 	if err != nil && err != io.EOF && isRetryableError(err) {
 		if reopenErr := p.reopen(); reopenErr != nil {
 			return n, fmt.Errorf("pread retry failed (reopen: %w, original: %w)", reopenErr, err)
 		}
-		n, err = p.lockedReadAt(buf, off)
+
+		p.mu.Lock()
+		f = p.file
+		p.mu.Unlock()
+
+		if f == nil {
+			return 0, os.ErrClosed
+		}
+		n, err = f.ReadAt(buf, off)
 	}
 	return n, err
 }
 
-// lockedReadAt performs a single ReadAt under the read lock.
-func (p *PreadFile) lockedReadAt(buf []byte, off int64) (int, error) {
-	p.mu.RLock()
-	f := p.file
-	if f == nil {
-		p.mu.RUnlock()
-		return 0, os.ErrClosed
-	}
-	n, err := f.ReadAt(buf, off)
-	p.mu.RUnlock()
-	return n, err
-}
-
-// reopen closes the current fd and opens a new one.
-// The file size is verified to be unchanged.
+// reopen opens a new fd and swaps it in. The old fd is not closed
+// immediately because in-flight goroutines may still hold a reference
+// to it (copied under the mutex before the pread syscall). Old fds are
+// collected in staleFiles and cleaned up on Close().
 func (p *PreadFile) reopen() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -164,8 +173,6 @@ func (p *PreadFile) reopen() error {
 	if p.file == nil {
 		return os.ErrClosed
 	}
-
-	oldFile := p.file
 
 	newFile, err := os.Open(p.path)
 	if err != nil {
@@ -183,21 +190,28 @@ func (p *PreadFile) reopen() error {
 		return fmt.Errorf("reopen: size changed (%d → %d)", p.size, info.Size())
 	}
 
+	p.staleFiles = append(p.staleFiles, p.file)
 	p.file = newFile
-	oldFile.Close()
 	return nil
 }
 
-// Close closes the underlying file.
+// Close closes the current file and any stale fds from previous reopens.
 func (p *PreadFile) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	var firstErr error
 	if p.file != nil {
-		err := p.file.Close()
+		firstErr = p.file.Close()
 		p.file = nil
-		return err
 	}
-	return nil
+	for _, f := range p.staleFiles {
+		if err := f.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	p.staleFiles = nil
+	return firstErr
 }
 
 // isRetryableError checks if an error is a transient network FS error

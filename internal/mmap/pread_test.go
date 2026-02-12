@@ -53,16 +53,16 @@ func TestPreadFile_ReadAt(t *testing.T) {
 	defer pf.Close()
 
 	tests := []struct {
-		name   string
-		off    int64
-		size   int
-		wantN  int
-		wantOK bool
+		name    string
+		off     int64
+		size    int
+		wantN   int
+		wantErr error // nil means no error expected
 	}{
-		{"start", 0, 10, 10, true},
-		{"middle", 500, 20, 20, true},
-		{"end", 1020, 4, 4, true},
-		{"partial at end", 1020, 10, 4, false}, // partial read
+		{"start", 0, 10, 10, nil},
+		{"middle", 500, 20, 20, nil},
+		{"end", 1020, 4, 4, nil},
+		{"partial at end", 1020, 10, 4, io.EOF},
 	}
 
 	for _, tt := range tests {
@@ -72,8 +72,8 @@ func TestPreadFile_ReadAt(t *testing.T) {
 			if n != tt.wantN {
 				t.Errorf("n = %d, want %d", n, tt.wantN)
 			}
-			if tt.wantOK && err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if tt.wantErr != err {
+				t.Errorf("err = %v, want %v", err, tt.wantErr)
 			}
 			// Verify data correctness
 			for i := 0; i < n; i++ {
