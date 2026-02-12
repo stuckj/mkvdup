@@ -672,8 +672,16 @@ func (r *Reader) readSourceInto(fileIndex int, offset int64, dest []byte) error 
 	}
 
 	n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
-	if n == len(dest) && err == io.EOF {
-		return nil
+	if n == len(dest) {
+		if err == io.EOF {
+			return nil
+		}
+		return err
+	}
+	// Short read: surface as unexpected EOF so FUSE returns EIO
+	// instead of silently truncating.
+	if err == nil || err == io.EOF {
+		return io.ErrUnexpectedEOF
 	}
 	return err
 }

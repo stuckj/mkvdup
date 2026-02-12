@@ -42,7 +42,7 @@ const maxInflight = 16
 // filesystems (NFS, CIFS/SMB) where mmap is unsafe due to SIGBUS on
 // page fault failures.
 type PreadFile struct {
-	mu       sync.Mutex // protects file and reopen
+	mu       sync.RWMutex // protects file; RLock for reads, Lock for reopen/close
 	file     *os.File
 	path     string
 	size     int64
@@ -129,31 +129,29 @@ func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 }
 
 // readAtWithRetry performs a pread with one retry on retryable errors,
-// reopening the file descriptor if needed.
+// reopening the file descriptor if needed. The read lock is held across
+// each ReadAt call to prevent reopen/Close from closing the fd mid-read.
 func (p *PreadFile) readAtWithRetry(buf []byte, off int64) (int, error) {
-	p.mu.Lock()
-	f := p.file
-	p.mu.Unlock()
-
-	if f == nil {
-		return 0, os.ErrClosed
-	}
-
-	n, err := f.ReadAt(buf, off)
+	n, err := p.lockedReadAt(buf, off)
 	if err != nil && err != io.EOF && isRetryableError(err) {
 		if reopenErr := p.reopen(); reopenErr != nil {
 			return n, fmt.Errorf("pread retry failed (reopen: %w, original: %w)", reopenErr, err)
 		}
-
-		p.mu.Lock()
-		f = p.file
-		p.mu.Unlock()
-
-		if f == nil {
-			return 0, os.ErrClosed
-		}
-		n, err = f.ReadAt(buf, off)
+		n, err = p.lockedReadAt(buf, off)
 	}
+	return n, err
+}
+
+// lockedReadAt performs a single ReadAt under the read lock.
+func (p *PreadFile) lockedReadAt(buf []byte, off int64) (int, error) {
+	p.mu.RLock()
+	f := p.file
+	if f == nil {
+		p.mu.RUnlock()
+		return 0, os.ErrClosed
+	}
+	n, err := f.ReadAt(buf, off)
+	p.mu.RUnlock()
 	return n, err
 }
 
