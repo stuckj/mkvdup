@@ -52,6 +52,9 @@ func TestNFSPreadFallback_Integration(t *testing.T) {
 
 	// Export the directory via NFS
 	exportLine := exportDir + " localhost(ro,no_subtree_check,no_root_squash,insecure)"
+	if err := os.MkdirAll("/etc/exports.d", 0755); err != nil {
+		t.Fatalf("Failed to create exports.d directory: %v", err)
+	}
 	if err := os.WriteFile("/etc/exports.d/mkvdup-test.exports", []byte(exportLine+"\n"), 0644); err != nil {
 		t.Fatalf("Failed to write exports file: %v", err)
 	}
@@ -148,11 +151,18 @@ func copySourceDir(t *testing.T, src, dst string) {
 		if info.IsDir() {
 			return os.MkdirAll(target, info.Mode())
 		}
-		data, err := os.ReadFile(path)
+		srcFile, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(target, data, info.Mode())
+		defer srcFile.Close()
+		dstFile, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+		_, err = io.Copy(dstFile, srcFile)
+		return err
 	})
 	if err != nil {
 		t.Fatalf("Failed to copy source dir: %v", err)
