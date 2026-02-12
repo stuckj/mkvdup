@@ -126,5 +126,6 @@ func (m *File) Close() error {
 	}
 
 	m.data = nil
+	m.size = 0
 	return nil
 }

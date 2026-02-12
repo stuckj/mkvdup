@@ -658,6 +658,11 @@ func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, d
 					} else {
 						// Pread path: read the contiguous source region into a
 						// temp buffer, then strided-copy into dest.
+						// tmpSize is bounded by ~len(dest) * stride/defSz, which
+						// for Blu-ray M2TS (192/188) is ≈1.02× the dest buffer.
+						// Since dest comes from a FUSE read (typically 128KB, max
+						// ~1MB), this allocation is small and short-lived. If
+						// profiling shows GC pressure, consider a sync.Pool here.
 						tmpSize := int(lastSrcEnd - cur.fileOff)
 						tmp := make([]byte, tmpSize)
 						if n, err := source.ReadAt(tmp, cur.fileOff); err != nil && !(n == tmpSize && err == io.EOF) {

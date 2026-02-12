@@ -4,6 +4,7 @@ package fuse_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -50,16 +51,17 @@ func TestNFSPreadFallback_Integration(t *testing.T) {
 	// Copy source files to the export directory, preserving directory structure
 	copySourceDir(t, testPaths.ISODir, exportDir)
 
-	// Export the directory via NFS
+	// Export the directory via NFS (unique filename avoids collisions on dev machines)
 	exportLine := exportDir + " localhost(ro,no_subtree_check,no_root_squash,insecure)"
+	exportsFile := fmt.Sprintf("/etc/exports.d/mkvdup-test-%d.exports", os.Getpid())
 	if err := os.MkdirAll("/etc/exports.d", 0755); err != nil {
 		t.Fatalf("Failed to create exports.d directory: %v", err)
 	}
-	if err := os.WriteFile("/etc/exports.d/mkvdup-test.exports", []byte(exportLine+"\n"), 0644); err != nil {
+	if err := os.WriteFile(exportsFile, []byte(exportLine+"\n"), 0644); err != nil {
 		t.Fatalf("Failed to write exports file: %v", err)
 	}
 	t.Cleanup(func() {
-		os.Remove("/etc/exports.d/mkvdup-test.exports")
+		os.Remove(exportsFile)
 		exec.Command("exportfs", "-ra").Run()
 	})
 
@@ -151,18 +153,21 @@ func copySourceDir(t *testing.T, src, dst string) {
 		if info.IsDir() {
 			return os.MkdirAll(target, info.Mode())
 		}
-		srcFile, err := os.Open(path)
-		if err != nil {
+		// Inner function so defers run per-file, not at end of Walk.
+		return func() error {
+			srcFile, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer srcFile.Close()
+			dstFile, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+			if err != nil {
+				return err
+			}
+			defer dstFile.Close()
+			_, err = io.Copy(dstFile, srcFile)
 			return err
-		}
-		defer srcFile.Close()
-		dstFile, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
-		if err != nil {
-			return err
-		}
-		defer dstFile.Close()
-		_, err = io.Copy(dstFile, srcFile)
-		return err
+		}()
 	})
 	if err != nil {
 		t.Fatalf("Failed to copy source dir: %v", err)
