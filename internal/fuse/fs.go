@@ -5,9 +5,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,6 +28,11 @@ type MKVFile struct {
 	reader    DedupReader
 	mu        sync.RWMutex
 
+	// disabled is set when a source file change is detected and the
+	// configured action is "disable" or "checksum" (with mismatch).
+	// When true, Open/Read return EIO. Reset to false on reload.
+	disabled bool
+
 	// Factory for lazy initialization (injected from root)
 	readerFactory ReaderFactory
 }
@@ -41,6 +49,12 @@ type MKVFSRoot struct {
 
 	mu      sync.RWMutex
 	verbose bool
+
+	// mounted is set to true after fs.Mount() succeeds. FUSE kernel
+	// notifications (NotifyDelete, NotifyEntry, NotifyContent) are only
+	// safe to call when the filesystem is mounted — the go-fuse bridge
+	// is nil before mount, causing panics.
+	mounted atomic.Bool
 
 	// Factories for dependency injection (allows mocking in tests)
 	readerFactory ReaderFactory
@@ -344,10 +358,91 @@ func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory Rea
 	return root, nil
 }
 
+// reloadNotification captures a pending FUSE kernel notification to emit
+// after all locks are released (go-fuse notifications must not be called
+// while holding filesystem locks, as the kernel may call back into the FS).
+type reloadNotification struct {
+	parent   *fs.Inode
+	child    *fs.Inode // non-nil for deletions (if kernel had cached the inode)
+	name     string
+	isDelete bool
+}
+
+// findParentInode walks the directory tree to find the parent inode for a
+// given file path (e.g., "Movies/Action/film.mkv"). Returns the parent's
+// go-fuse Inode and the basename, or (nil, "") if the parent directory
+// doesn't exist in the tree.
+//
+// For root-level files (no directory component), returns r.Inode.
+// Caller must NOT hold directory locks — this method acquires them.
+func (r *MKVFSRoot) findParentInode(filePath string) (*fs.Inode, string) {
+	cleaned := path.Clean(filePath)
+	parts := strings.Split(cleaned, "/")
+	// Filter empty parts (handles leading slashes)
+	valid := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" && p != "." {
+			valid = append(valid, p)
+		}
+	}
+	if len(valid) == 0 {
+		return nil, ""
+	}
+
+	basename := valid[len(valid)-1]
+	dirParts := valid[:len(valid)-1]
+
+	if len(dirParts) == 0 {
+		// File is at root level — parent is the root inode
+		return &r.Inode, basename
+	}
+
+	// Walk directory tree to find parent
+	current := r.rootDir
+	for _, part := range dirParts {
+		current.mu.RLock()
+		subdir, ok := current.subdirs[part]
+		current.mu.RUnlock()
+		if !ok {
+			return nil, ""
+		}
+		current = subdir
+	}
+	return &current.Inode, basename
+}
+
+// markAncestorDirs walks from inode up to (and including) the root,
+// adding each ancestor to changedDirs so their readdir caches are
+// invalidated. This is necessary because a file addition or removal
+// in a deeply nested virtual directory may cause intermediate
+// directories to be created or removed by the tree merge.
+func markAncestorDirs(inode *fs.Inode, changedDirs map[*fs.Inode]bool) {
+	for node := inode; ; {
+		_, ancestor := node.Parent()
+		if ancestor == nil {
+			break
+		}
+		if changedDirs[ancestor] {
+			break // already marked — ancestors above must be too
+		}
+		changedDirs[ancestor] = true
+		node = ancestor
+	}
+}
+
 // Reload updates the filesystem with new configs. It updates existing MKVFile
 // objects in place to preserve pointer identity for cached FUSE inodes, and
 // merges the directory tree structure (required because go-fuse caches
 // persistent inode objects by inode number).
+//
+// After the merge, FUSE kernel notifications are emitted:
+//   - NotifyDelete for removed files (sends IN_DELETE to inotify watchers)
+//   - NotifyEntry for added files (invalidates kernel dentry cache)
+//   - NotifyContent on changed directories (invalidates readdir cache)
+//
+// Note: The FUSE protocol has no NOTIFY_CREATE, so added files don't
+// generate proactive inotify events. Media servers should use periodic
+// scanning in addition to inotify watching.
 //
 // Semantics:
 //   - New files become immediately visible
@@ -385,6 +480,36 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 		newFiles[config.Name] = mkvFile
 	}
 
+	// Snapshot old file names for change detection
+	r.mu.RLock()
+	oldFileNames := make(map[string]bool, len(r.files))
+	for name := range r.files {
+		oldFileNames[name] = true
+	}
+	r.mu.RUnlock()
+
+	// Before merge: capture removal notifications while old tree still has
+	// the child inodes cached. We need both parent and child Inodes for
+	// NotifyDelete, and the child will be unreachable after tree merge.
+	var notifications []reloadNotification
+	changedDirs := make(map[*fs.Inode]bool)
+	for name := range oldFileNames {
+		if _, inNew := newFiles[name]; !inNew {
+			parentInode, basename := r.findParentInode(name)
+			if parentInode != nil {
+				child := parentInode.GetChild(basename)
+				notifications = append(notifications, reloadNotification{
+					parent:   parentInode,
+					child:    child,
+					name:     basename,
+					isDelete: true,
+				})
+				changedDirs[parentInode] = true
+				markAncestorDirs(parentInode, changedDirs)
+			}
+		}
+	}
+
 	// Build new directory tree
 	fileList := make([]*MKVFile, 0, len(newFiles))
 	for _, f := range newFiles {
@@ -413,6 +538,22 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	// Merge new tree into existing tree in place
 	mergeDirectoryTree(r.rootDir, newTree)
 
+	// After merge: capture addition notifications (parent dirs now exist in tree)
+	for name := range newFiles {
+		if !oldFileNames[name] {
+			parentInode, basename := r.findParentInode(name)
+			if parentInode != nil {
+				notifications = append(notifications, reloadNotification{
+					parent:   parentInode,
+					name:     basename,
+					isDelete: false,
+				})
+				changedDirs[parentInode] = true
+				markAncestorDirs(parentInode, changedDirs)
+			}
+		}
+	}
+
 	// Reload permissions and clean up stale entries
 	if r.permStore != nil {
 		if err := r.permStore.Load(); err != nil {
@@ -430,7 +571,73 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	}
 
 	logFn("reload complete: %d files", len(newFiles))
+
+	// Emit FUSE kernel notifications. Must be called after all filesystem
+	// locks are released — go-fuse may call back into the FS during
+	// notification processing, which would deadlock if locks were held.
+	r.emitReloadNotifications(notifications, changedDirs, logFn)
+
 	return nil
+}
+
+// Files returns a snapshot of the current file set. Used by SourceWatcher
+// to build reverse mappings from source files to virtual files. Returns a
+// defensive copy to avoid data races with concurrent Reload() calls.
+func (r *MKVFSRoot) Files() map[string]*MKVFile {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]*MKVFile, len(r.files))
+	for k, v := range r.files {
+		out[k] = v
+	}
+	return out
+}
+
+// SetMounted marks the filesystem as mounted, enabling FUSE kernel
+// notifications during config reload. Must be called after fs.Mount()
+// succeeds.
+func (r *MKVFSRoot) SetMounted() {
+	r.mounted.Store(true)
+}
+
+// emitReloadNotifications sends FUSE kernel notifications for files that
+// were added or removed during a config reload.
+func (r *MKVFSRoot) emitReloadNotifications(notifications []reloadNotification, changedDirs map[*fs.Inode]bool, logFn func(string, ...interface{})) {
+	if len(notifications) == 0 || !r.mounted.Load() {
+		return
+	}
+
+	var deleted, invalidated int
+	for _, n := range notifications {
+		if n.isDelete {
+			if n.child != nil {
+				// NotifyDelete sends a real IN_DELETE inotify event
+				if errno := n.parent.NotifyDelete(n.name, n.child); errno == 0 {
+					deleted++
+				}
+			} else {
+				// Child inode was never cached by kernel — just invalidate entry
+				if errno := n.parent.NotifyEntry(n.name); errno == 0 {
+					invalidated++
+				}
+			}
+		} else {
+			// NotifyEntry invalidates the kernel's dentry cache so the
+			// new file is visible on next lookup/readdir.
+			if errno := n.parent.NotifyEntry(n.name); errno == 0 {
+				invalidated++
+			}
+		}
+	}
+
+	// Invalidate readdir cache for all directories that had changes
+	for dirInode := range changedDirs {
+		dirInode.NotifyContent(0, 0)
+	}
+
+	if deleted > 0 || invalidated > 0 {
+		logFn("kernel notifications: %d deleted, %d invalidated, %d dirs", deleted, invalidated, len(changedDirs))
+	}
 }
 
 // Getattr implements fs.NodeGetattrer - returns attributes for the root directory.
@@ -711,6 +918,17 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 
 	// Permission checks are handled by the kernel via default_permissions mount option.
 
+	// Check if file was disabled due to source file change
+	n.file.mu.RLock()
+	disabled := n.file.disabled
+	n.file.mu.RUnlock()
+	if disabled {
+		if n.verbose {
+			log.Printf("Open: %s: source file changed, file disabled", n.file.Name)
+		}
+		return nil, 0, syscall.EIO
+	}
+
 	if n.verbose {
 		log.Printf("Open: %s", n.file.Name)
 	}
@@ -730,6 +948,13 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
 
 	n.file.mu.RLock()
 	defer n.file.mu.RUnlock()
+
+	if n.file.disabled {
+		if n.verbose {
+			log.Printf("Read error: %s: source file changed, file disabled", n.file.Name)
+		}
+		return nil, syscall.EIO
+	}
 
 	if n.file.reader == nil {
 		// Reader not initialized
@@ -790,6 +1015,27 @@ func (n *MKVFSNode) ensureReader() error {
 	return nil
 }
 
+// Disable marks the file as disabled (source changed). Subsequent reads
+// return EIO. Closes any active reader. Thread-safe.
+func (f *MKVFile) Disable() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.disabled = true
+	if f.reader != nil {
+		f.reader.Close()
+		f.reader = nil
+	}
+}
+
+// Enable re-enables a previously disabled file (e.g., after checksum
+// verification confirms the source is OK). The reader will be lazily
+// re-initialized on next Open.
+func (f *MKVFile) Enable() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.disabled = false
+}
+
 // Close cleans up the file's resources.
 func (f *MKVFile) Close() {
 	f.mu.Lock()
@@ -815,6 +1061,8 @@ func (f *MKVFile) updateFrom(src *MKVFile) {
 	f.SourceDir = src.SourceDir
 	f.Size = src.Size
 	f.readerFactory = src.readerFactory
+	// Reset disabled flag — reload re-validates source files
+	f.disabled = false
 }
 
 // hashString creates a stable inode number from a string.

@@ -27,6 +27,8 @@ type MountOptions struct {
 	DefaultGID      uint32
 	DefaultFileMode uint32
 	DefaultDirMode  uint32
+	NoSourceWatch   bool   // Disable source file watching
+	OnSourceChange  string // Action on source change: "warn", "disable", "checksum"
 }
 
 // parseUint32 parses a string as uint32.
@@ -226,6 +228,15 @@ Permission Options:
     --default-file-mode MODE   Default mode for files (octal, default: 0444)
     --default-dir-mode MODE    Default mode for directories (octal, default: 0555)
     --permissions-file PATH    Path to permissions file (overrides default locations)
+
+Source Watch Options:
+    --no-source-watch          Disable source file monitoring (enabled by default)
+    --on-source-change ACTION  Action on source change: warn, disable, checksum (default)
+                               warn     - log a warning
+                               disable  - disable affected virtual files (reads return EIO)
+                               checksum - size change: disable immediately
+                                          timestamp-only: verify checksum in background,
+                                          disable on mismatch, re-enable on pass
 
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
@@ -522,6 +533,8 @@ func main() {
 		defaultGID := uint32(os.Getgid())
 		defaultFileMode := uint32(0444)
 		defaultDirMode := uint32(0555)
+		noSourceWatch := false
+		onSourceChange := "checksum"
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -600,6 +613,21 @@ func main() {
 				} else {
 					log.Fatalf("Error: --default-dir-mode requires an octal mode argument")
 				}
+			case "--no-source-watch":
+				noSourceWatch = true
+			case "--on-source-change":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					onSourceChange = args[i+1]
+					switch onSourceChange {
+					case "warn", "disable", "checksum":
+						// valid
+					default:
+						log.Fatalf("Error: --on-source-change must be warn, disable, or checksum")
+					}
+					i++
+				} else {
+					log.Fatalf("Error: --on-source-change requires an argument (warn, disable, or checksum)")
+				}
 			default:
 				mountArgs = append(mountArgs, args[i])
 			}
@@ -621,6 +649,8 @@ func main() {
 			DefaultGID:      defaultGID,
 			DefaultFileMode: defaultFileMode,
 			DefaultDirMode:  defaultDirMode,
+			NoSourceWatch:   noSourceWatch,
+			OnSourceChange:  onSourceChange,
 		}
 		if err := mountFuse(mountpoint, configPaths, mountOpts); err != nil {
 			log.Fatalf("Error: %v", err)

@@ -93,6 +93,8 @@ complete -c $cmd -n '__fish_mkvdup_using_command mount' -l default-gid -d 'Defau
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l default-file-mode -d 'Default mode for files (octal)' -x
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l default-dir-mode -d 'Default mode for directories (octal)' -x
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l permissions-file -d 'Path to permissions file' -r
+complete -c $cmd -n '__fish_mkvdup_using_command mount' -l no-source-watch -d 'Disable source file monitoring'
+complete -c $cmd -n '__fish_mkvdup_using_command mount' -l on-source-change -d 'Action on source change' -x -a 'warn disable checksum'
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -F -d 'Mount point or config files'
 
 # info options

@@ -94,6 +94,12 @@ for opt in "${OPTS[@]}"; do
         permissions_file=*)
             MKVDUP_ARGS+=("--permissions-file" "${opt#permissions_file=}")
             ;;
+        no_source_watch)
+            MKVDUP_ARGS+=("--no-source-watch")
+            ;;
+        on_source_change=*)
+            MKVDUP_ARGS+=("--on-source-change" "${opt#on_source_change=}")
+            ;;
         ro|rw|defaults|auto|noauto|user|nouser|exec|noexec|suid|nosuid|dev|nodev|_netdev)
             # Standard mount options - ignore (FUSE handles most of these)
             ;;

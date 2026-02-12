@@ -51,6 +51,10 @@ func (m *mockReader) ReadAt(p []byte, off int64) (n int, err error) {
 	return n, nil
 }
 
+func (m *mockReader) SourceFileInfo() []SourceFileInfo {
+	return nil
+}
+
 func (m *mockReader) Close() error {
 	m.closed = true
 	return nil
@@ -2380,5 +2384,196 @@ func TestMergeDirectoryTree_RecursiveMerge(t *testing.T) {
 	}
 	if _, ok := existingMovies.files["old.mkv"]; ok {
 		t.Error("old.mkv should have been removed from Movies")
+	}
+}
+
+// --- Disable/Enable Tests ---
+
+func TestMKVFile_Disable(t *testing.T) {
+	mockRdr := &mockReader{
+		data:         []byte("test data"),
+		originalSize: 9,
+	}
+	file := &MKVFile{
+		Name:   "test.mkv",
+		Size:   9,
+		reader: mockRdr,
+	}
+
+	file.Disable()
+
+	file.mu.RLock()
+	disabled := file.disabled
+	reader := file.reader
+	file.mu.RUnlock()
+
+	if !disabled {
+		t.Error("expected file to be disabled")
+	}
+	if reader != nil {
+		t.Error("expected reader to be nil after disable")
+	}
+	if !mockRdr.closed {
+		t.Error("expected reader to be closed after disable")
+	}
+}
+
+func TestMKVFile_Disable_NoReader(t *testing.T) {
+	file := &MKVFile{
+		Name: "test.mkv",
+		Size: 100,
+	}
+
+	// Should not panic
+	file.Disable()
+
+	file.mu.RLock()
+	disabled := file.disabled
+	file.mu.RUnlock()
+
+	if !disabled {
+		t.Error("expected file to be disabled")
+	}
+}
+
+func TestMKVFile_Enable(t *testing.T) {
+	file := &MKVFile{
+		Name:     "test.mkv",
+		Size:     100,
+		disabled: true,
+	}
+
+	file.Enable()
+
+	file.mu.RLock()
+	disabled := file.disabled
+	file.mu.RUnlock()
+
+	if disabled {
+		t.Error("expected file to be enabled")
+	}
+}
+
+func TestMKVFSNode_Open_Disabled(t *testing.T) {
+	file := &MKVFile{
+		Name:     "test.mkv",
+		Size:     100,
+		disabled: true,
+	}
+	node := &MKVFSNode{file: file}
+
+	ctx := ContextWithCaller(context.Background(), 0, 0)
+	_, _, errno := node.Open(ctx, 0)
+	if errno != syscall.EIO {
+		t.Errorf("expected EIO for disabled file, got %d", errno)
+	}
+}
+
+func TestMKVFSNode_Read_Disabled(t *testing.T) {
+	file := &MKVFile{
+		Name:     "test.mkv",
+		Size:     100,
+		disabled: true,
+		reader:   &mockReader{data: []byte("should not read")},
+	}
+	node := &MKVFSNode{file: file}
+
+	ctx := ContextWithCaller(context.Background(), 0, 0)
+	buf := make([]byte, 10)
+	_, errno := node.Read(ctx, nil, buf, 0)
+	if errno != syscall.EIO {
+		t.Errorf("expected EIO for disabled file, got %d", errno)
+	}
+}
+
+func TestMKVFile_DisableThenEnable_ReadsWork(t *testing.T) {
+	testData := []byte("Hello, FUSE!")
+	mockRdr := &mockReader{
+		data:         testData,
+		originalSize: int64(len(testData)),
+	}
+
+	readerFactory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/path/to/movie.dedup": {
+				data:         testData,
+				originalSize: int64(len(testData)),
+			},
+		},
+	}
+
+	file := &MKVFile{
+		Name:          "test.mkv",
+		DedupPath:     "/path/to/movie.dedup",
+		SourceDir:     "/path/to/source",
+		Size:          int64(len(testData)),
+		reader:        mockRdr,
+		readerFactory: readerFactory,
+	}
+	node := &MKVFSNode{file: file}
+
+	// Disable
+	file.Disable()
+	ctx := ContextWithCaller(context.Background(), 0, 0)
+	_, _, errno := node.Open(ctx, 0)
+	if errno != syscall.EIO {
+		t.Fatalf("expected EIO while disabled, got %d", errno)
+	}
+
+	// Enable
+	file.Enable()
+	_, _, errno = node.Open(ctx, 0)
+	if errno != 0 {
+		t.Fatalf("expected successful open after enable, got %d", errno)
+	}
+
+	// Read should work
+	buf := make([]byte, len(testData))
+	result, errno := node.Read(ctx, nil, buf, 0)
+	if errno != 0 {
+		t.Fatalf("expected successful read after enable, got %d", errno)
+	}
+	data, _ := result.Bytes(buf)
+	if string(data) != string(testData) {
+		t.Errorf("expected %q, got %q", testData, data)
+	}
+}
+
+func TestMKVFile_Reload_ClearsDisabled(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+		},
+	}
+
+	initial := []dedup.Config{
+		{Name: "movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Disable the file
+	file := root.files["movie.mkv"]
+	file.Disable()
+
+	file.mu.RLock()
+	if !file.disabled {
+		t.Fatal("expected file to be disabled")
+	}
+	file.mu.RUnlock()
+
+	// Reload with same config — should clear disabled
+	if err := root.Reload(initial, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	file.mu.RLock()
+	disabled := file.disabled
+	file.mu.RUnlock()
+
+	if disabled {
+		t.Error("expected disabled to be cleared after reload")
 	}
 }

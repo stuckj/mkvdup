@@ -360,24 +360,51 @@ health_check:
   on_error: warn         # warn, disable_file, or unmount
 ```
 
-## Source File Watching *(planned — [#11](https://github.com/stuckj/mkvdup/issues/11))*
+## Source File Watching
 
-> **Not yet implemented.** The following describes planned behavior.
+Source file monitoring detects changes to the underlying source media (DVD ISOs, Blu-ray M2TS files) and takes action to prevent serving corrupted data. Enabled by default.
 
-Optional inotify-based monitoring of source files:
+### CLI Options
 
-```yaml
-# In mount config
-source_watch:
-  enabled: true
-  on_change: checksum    # checksum, disable_file, or warn
-  checksum_threads: 2    # Parallel checksum workers
+```bash
+# Disable source file watching
+mkvdup mount --no-source-watch /mnt/videos config.yaml
+
+# Set action on source change (default: checksum)
+mkvdup mount --on-source-change warn /mnt/videos config.yaml
 ```
 
-**On source file change:**
-- `warn`: Log warning only
-- `disable_file`: Mark affected virtual files as unavailable
-- `checksum`: Verify source file checksum, disable if changed
+### fstab Options
+
+```
+# Disable source watching
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  no_source_watch  0  0
+
+# With checksum verification
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  on_source_change=checksum  0  0
+```
+
+### Actions
+
+| Action | Behavior |
+|--------|----------|
+| `warn` | Log a warning with the source path and affected virtual files |
+| `disable` | Disable affected virtual files (subsequent reads return `EIO`). File remains visible in directory listings. Reversible via SIGHUP reload. |
+| `checksum` (default) | If the source file size changed, disable immediately. If only the timestamp changed (e.g., `touch`), verify the source checksum (xxhash) in the background while the file remains accessible. Disable only on checksum mismatch. If a subsequent checksum verification passes, the file is automatically re-enabled (useful for transient network glitches). Disabled files remain visible in directory listings and return `EIO` on read. Also reversible via SIGHUP reload. |
+
+### How It Works
+
+At mount time, source file metadata (path, size, checksum) is read from each dedup file header. A reverse mapping is built from source files to the virtual files that depend on them.
+
+**Local filesystems:** Monitored via inotify (reacts to write, create, rename, and remove events).
+
+**Network filesystems (NFS, CIFS/SMB):** inotify does not work on network mounts. The watcher automatically falls back to polling (stat every 60 seconds, comparing mtime).
+
+**On SIGHUP reload:** The watcher rebuilds its source file mappings to match the new configuration. Old watches are removed and new ones are set up.
+
+**Disabled files:** When a file is disabled (by `disable` action, size change in `checksum` mode, or checksum mismatch), its active reader is closed and subsequent `Open`/`Read` calls return `EIO`. The file remains visible in directory listings. In `checksum` mode, a subsequent successful verification automatically re-enables the file. For all modes, sending SIGHUP to reload the config resets the disabled state.
+
+**Checksum queue:** Checksum verifications run sequentially in a single background worker to avoid I/O storms when many source files change at once. Duplicate events for the same source file are deduplicated.
 
 ## Error Handling
 
@@ -391,13 +418,19 @@ source_watch:
 
 When errors occur for a specific virtual file, other files remain accessible. Files with persistent errors automatically retry after a 5-minute cooldown period.
 
-## inotify Events
+## inotify Events on Config Reload
 
-The FUSE filesystem emits standard inotify events when the config is reloaded:
-- `IN_CREATE` for added files
-- `IN_DELETE` for removed files
+When config is reloaded via SIGHUP (or `mkvdup reload`), the filesystem emits FUSE kernel notifications:
 
-Applications watching the mountpoint (e.g., Jellyfin/Plex) will automatically detect changes.
+**Removed files:** `NotifyDelete` sends a real `IN_DELETE` inotify event. Applications watching the mountpoint (e.g., Jellyfin/Plex) will see the deletion immediately.
+
+**Added files:** `NotifyEntry` invalidates the kernel's dentry cache, and `NotifyContent` invalidates the parent directory's readdir cache. New files are visible on the next directory listing or file access.
+
+### FUSE protocol limitation
+
+The FUSE kernel module does not support pushing `IN_CREATE` inotify events. The protocol has `FUSE_NOTIFY_DELETE` (sends inotify event) but no `FUSE_NOTIFY_CREATE`. This is a [known limitation](https://github.com/libfuse/libfuse/wiki/Fsnotify-and-FUSE) of the FUSE protocol — an [RFC for `FUSE_NOTIFY_FSNOTIFY`](https://patchwork.kernel.org/project/linux-fsdevel/cover/20211025204634.2517-1-iangelak@redhat.com/) was proposed in 2021 but never merged into mainline Linux.
+
+**Recommendation:** Configure media servers to use periodic library scanning in addition to inotify watching. This ensures newly added files are detected even without a proactive `IN_CREATE` event.
 
 ## Related Documentation
 

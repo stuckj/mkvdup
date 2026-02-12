@@ -127,6 +127,31 @@ Default mode for directories in octal (default: 0555).
 Path to permissions file (overrides default locations). See
 .B FILES
 section for default search order.
+.TP
+.B \-\-no\-source\-watch
+Disable source file monitoring. By default, @PACKAGE_NAME@ monitors source
+files (DVD ISOs, Blu-ray M2TS) for changes using inotify (local) or polling
+(network filesystems).
+.TP
+.B \-\-on\-source\-change ACTION
+Action to take when a source file change is detected. Default: \fBchecksum\fR.
+.RS
+.TP
+.B warn
+Log a warning with the source path and affected virtual files.
+.TP
+.B disable
+Disable affected virtual files; subsequent reads return EIO.
+Files remain visible in directory listings. Reversible via SIGHUP reload.
+.TP
+.B checksum
+If the source file size changed, disable immediately (reads return EIO).
+If only the timestamp changed (e.g., touch), verify the source file's
+xxhash checksum in the background while the file remains accessible.
+Disable only on checksum mismatch. If a subsequent verification passes,
+the file is automatically re-enabled. Checksum verifications run
+sequentially to avoid I/O storms.
+.RE
 .RE
 .TP
 .B info \fR[\fIoptions\fR] \fIdedup-file\fR
@@ -441,6 +466,22 @@ Mount using a directory of config files:
 .RS
 .nf
 /etc/mkvdup.d  /mnt/videos  fuse.@PACKAGE_NAME@  config_dir  0  0
+.fi
+.RE
+.PP
+Mount with source file watching disabled:
+.PP
+.RS
+.nf
+/etc/mkvdup.conf  /mnt/videos  fuse.@PACKAGE_NAME@  no_source_watch  0  0
+.fi
+.RE
+.PP
+Mount with checksum verification on source change:
+.PP
+.RS
+.nf
+/etc/mkvdup.conf  /mnt/videos  fuse.@PACKAGE_NAME@  on_source_change=checksum  0  0
 .fi
 .RE
 .SS systemd mount unit
