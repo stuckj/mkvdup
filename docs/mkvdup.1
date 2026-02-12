@@ -148,7 +148,8 @@ Files remain visible in directory listings. Reversible via SIGHUP reload.
 If the source file size changed, disable immediately (reads return EIO).
 If only the timestamp changed (e.g., touch), verify the source file's
 xxhash checksum in the background while the file remains accessible.
-Disable only on checksum mismatch. Checksum verifications run
+Disable only on checksum mismatch. If a subsequent verification passes,
+the file is automatically re-enabled. Checksum verifications run
 sequentially to avoid I/O storms.
 .RE
 .RE

@@ -236,7 +236,7 @@ Source Watch Options:
                                disable  - disable affected virtual files (reads return EIO)
                                checksum - size change: disable immediately
                                           timestamp-only: verify checksum in background,
-                                          disable only on mismatch
+                                          disable on mismatch, re-enable on pass
 
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
