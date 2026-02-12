@@ -62,7 +62,9 @@ func (p *PreadFile) Size() int64 {
 // ReadAt reads len(buf) bytes from the file starting at byte offset off.
 // If timeout is configured and the read takes too long, it returns a
 // ReadTimeoutError. The underlying goroutine may continue until the kernel
-// completes the I/O, but the caller is unblocked.
+// completes the I/O, but the caller is unblocked. The goroutine reads into
+// a private buffer to prevent it from writing to buf after the caller has
+// moved on.
 func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 	if p.timeout <= 0 {
 		return p.readAtWithRetry(buf, off)
@@ -72,9 +74,12 @@ func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 		n   int
 		err error
 	}
+	// Read into a private buffer so an abandoned goroutine (after timeout)
+	// cannot write into buf while it is being reused by the caller.
+	tmp := make([]byte, len(buf))
 	ch := make(chan result, 1)
 	go func() {
-		n, err := p.readAtWithRetry(buf, off)
+		n, err := p.readAtWithRetry(tmp, off)
 		ch <- result{n, err}
 	}()
 
@@ -83,6 +88,7 @@ func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 
 	select {
 	case r := <-ch:
+		copy(buf[:r.n], tmp[:r.n])
 		return r.n, r.err
 	case <-timer.C:
 		return 0, &ReadTimeoutError{Path: p.path, Timeout: p.timeout}

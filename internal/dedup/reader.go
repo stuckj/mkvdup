@@ -671,7 +671,10 @@ func (r *Reader) readSourceInto(fileIndex int, offset int64, dest []byte) error 
 		return fmt.Errorf("source file %d not loaded", fileIndex)
 	}
 
-	_, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
+	n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
+	if n == len(dest) && err == io.EOF {
+		return nil
+	}
 	return err
 }
 
