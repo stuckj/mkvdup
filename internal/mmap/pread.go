@@ -21,16 +21,22 @@ func (e *ReadTimeoutError) Error() string {
 	return fmt.Sprintf("pread timeout after %s: %s", e.Timeout, e.Path)
 }
 
+// maxInflight is the maximum number of concurrent in-flight read goroutines
+// per PreadFile. This bounds memory/goroutine accumulation when an NFS mount
+// is stalled and reads are timing out repeatedly.
+const maxInflight = 16
+
 // PreadFile provides pread(2)-based read access to a source file, with retry
 // and stale handle recovery. This is used for source files on network
 // filesystems (NFS, CIFS/SMB) where mmap is unsafe due to SIGBUS on
 // page fault failures.
 type PreadFile struct {
-	mu      sync.Mutex // protects reopen only
-	file    *os.File
-	path    string
-	size    int64
-	timeout time.Duration // 0 = no timeout
+	mu       sync.Mutex // protects file and reopen
+	file     *os.File
+	path     string
+	size     int64
+	timeout  time.Duration // 0 = no timeout
+	inflight chan struct{} // semaphore bounding concurrent timeout goroutines
 }
 
 // OpenPread opens a file for pread-based access.
@@ -47,10 +53,11 @@ func OpenPread(path string, timeout time.Duration) (*PreadFile, error) {
 	}
 
 	return &PreadFile{
-		file:    f,
-		path:    path,
-		size:    info.Size(),
-		timeout: timeout,
+		file:     f,
+		path:     path,
+		size:     info.Size(),
+		timeout:  timeout,
+		inflight: make(chan struct{}, maxInflight),
 	}, nil
 }
 
@@ -64,10 +71,20 @@ func (p *PreadFile) Size() int64 {
 // ReadTimeoutError. The underlying goroutine may continue until the kernel
 // completes the I/O, but the caller is unblocked. The goroutine reads into
 // a private buffer to prevent it from writing to buf after the caller has
-// moved on.
+// moved on. A per-file semaphore bounds the number of in-flight goroutines
+// to prevent unbounded accumulation under a stalled NFS mount.
 func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 	if p.timeout <= 0 {
 		return p.readAtWithRetry(buf, off)
+	}
+
+	// Acquire an inflight slot (non-blocking). If all slots are occupied
+	// the NFS mount is likely stalled — fail fast instead of spawning
+	// more goroutines.
+	select {
+	case p.inflight <- struct{}{}:
+	default:
+		return 0, &ReadTimeoutError{Path: p.path, Timeout: p.timeout}
 	}
 
 	type result struct {
@@ -79,6 +96,7 @@ func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 	tmp := make([]byte, len(buf))
 	ch := make(chan result, 1)
 	go func() {
+		defer func() { <-p.inflight }()
 		n, err := p.readAtWithRetry(tmp, off)
 		ch <- result{n, err}
 	}()
@@ -102,6 +120,10 @@ func (p *PreadFile) readAtWithRetry(buf []byte, off int64) (int, error) {
 	f := p.file
 	p.mu.Unlock()
 
+	if f == nil {
+		return 0, os.ErrClosed
+	}
+
 	n, err := f.ReadAt(buf, off)
 	if err != nil && err != io.EOF && isRetryableError(err) {
 		if reopenErr := p.reopen(); reopenErr != nil {
@@ -112,6 +134,9 @@ func (p *PreadFile) readAtWithRetry(buf []byte, off int64) (int, error) {
 		f = p.file
 		p.mu.Unlock()
 
+		if f == nil {
+			return 0, os.ErrClosed
+		}
 		n, err = f.ReadAt(buf, off)
 	}
 	return n, err
@@ -122,6 +147,10 @@ func (p *PreadFile) readAtWithRetry(buf []byte, off int64) (int, error) {
 func (p *PreadFile) reopen() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if p.file == nil {
+		return os.ErrClosed
+	}
 
 	oldFile := p.file
 

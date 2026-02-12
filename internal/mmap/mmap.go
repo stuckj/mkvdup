@@ -99,6 +99,9 @@ func (m *File) Advise(advice int) error {
 
 // ReadAt implements io.ReaderAt by copying from the mmap'd data.
 func (m *File) ReadAt(p []byte, off int64) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	if off < 0 || off >= m.size {
 		return 0, io.EOF
 	}

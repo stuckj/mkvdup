@@ -30,7 +30,7 @@ type MountOptions struct {
 	NoSourceWatch           bool          // Disable source file watching
 	OnSourceChange          string        // Action on source change: "warn", "disable", "checksum"
 	SourceWatchPollInterval time.Duration // Poll interval for network FS source watching (0 = 60s default)
-	SourceReadTimeout       time.Duration // Pread timeout for network FS sources (0 = 30s default)
+	SourceReadTimeout       time.Duration // Pread timeout for network FS sources (0 = disabled; CLI default 30s)
 }
 
 // parseUint32 parses a string as uint32.

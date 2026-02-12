@@ -122,7 +122,8 @@ jobs:
         run: |
           # Run dedup DVD tests (skip Blu-ray) and all FUSE tests
           # FUSE tests use DVD testdata, so they run here
-          gotestsum --junitfile dvd-results.xml -- \
+          # sudo -E preserves MKVDUP_TESTDATA and enables NFS integration test
+          sudo -E gotestsum --junitfile dvd-results.xml -- \
             -tags=integration \
             -skip 'TestFullDedupCycle_Bluray' \
             -coverprofile=dvd-coverage.out \
