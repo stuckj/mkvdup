@@ -123,7 +123,8 @@ jobs:
           # Run dedup DVD tests (skip Blu-ray) and all FUSE tests
           # FUSE tests use DVD testdata, so they run here
           # sudo -E preserves MKVDUP_TESTDATA and enables NFS integration test
-          sudo -E gotestsum --junitfile dvd-results.xml -- \
+          GOTESTSUM=$(go env GOPATH)/bin/gotestsum
+          sudo -E "$GOTESTSUM" --junitfile dvd-results.xml -- \
             -tags=integration \
             -skip 'TestFullDedupCycle_Bluray' \
             -coverprofile=dvd-coverage.out \

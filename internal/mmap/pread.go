@@ -21,6 +21,17 @@ func (e *ReadTimeoutError) Error() string {
 	return fmt.Sprintf("pread timeout after %s: %s", e.Timeout, e.Path)
 }
 
+// ReadBackpressureError is returned when all inflight read slots are occupied,
+// indicating the network FS is likely stalled. This is distinct from
+// ReadTimeoutError, which indicates a single read exceeded its deadline.
+type ReadBackpressureError struct {
+	Path string
+}
+
+func (e *ReadBackpressureError) Error() string {
+	return fmt.Sprintf("pread backpressure: all %d inflight slots occupied: %s", maxInflight, e.Path)
+}
+
 // maxInflight is the maximum number of concurrent in-flight read goroutines
 // per PreadFile. This bounds memory/goroutine accumulation when an NFS mount
 // is stalled and reads are timing out repeatedly.
@@ -74,6 +85,10 @@ func (p *PreadFile) Size() int64 {
 // moved on. A per-file semaphore bounds the number of in-flight goroutines
 // to prevent unbounded accumulation under a stalled NFS mount.
 func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
+
 	if p.timeout <= 0 {
 		return p.readAtWithRetry(buf, off)
 	}
@@ -84,7 +99,7 @@ func (p *PreadFile) ReadAt(buf []byte, off int64) (int, error) {
 	select {
 	case p.inflight <- struct{}{}:
 	default:
-		return 0, &ReadTimeoutError{Path: p.path, Timeout: p.timeout}
+		return 0, &ReadBackpressureError{Path: p.path}
 	}
 
 	type result struct {

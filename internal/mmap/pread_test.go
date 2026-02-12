@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -143,6 +144,42 @@ func TestPreadFile_ReadTimeoutError(t *testing.T) {
 	err := &ReadTimeoutError{Path: "/mnt/nfs/test.dat", Timeout: 30 * time.Second}
 	if err.Error() == "" {
 		t.Error("expected non-empty error string")
+	}
+}
+
+func TestPreadFile_ReadBackpressureError(t *testing.T) {
+	err := &ReadBackpressureError{Path: "/mnt/nfs/test.dat"}
+	msg := err.Error()
+	if msg == "" {
+		t.Error("expected non-empty error string")
+	}
+	if !strings.Contains(msg, "backpressure") {
+		t.Errorf("error message should mention backpressure: %s", msg)
+	}
+}
+
+func TestPreadFile_ReadAt_ZeroLength(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.dat")
+	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Test with timeout path (would spawn goroutine without the early return)
+	pf, err := OpenPread(path, 5*time.Second)
+	if err != nil {
+		t.Fatalf("OpenPread: %v", err)
+	}
+	defer pf.Close()
+
+	n, err := pf.ReadAt(nil, 0)
+	if n != 0 || err != nil {
+		t.Errorf("zero-length ReadAt: n=%d, err=%v; want 0, nil", n, err)
+	}
+
+	n, err = pf.ReadAt([]byte{}, 0)
+	if n != 0 || err != nil {
+		t.Errorf("empty-buf ReadAt: n=%d, err=%v; want 0, nil", n, err)
 	}
 }
 

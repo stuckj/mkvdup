@@ -32,7 +32,10 @@ func (a *dedupReaderAdapter) UsesESOffsets() bool {
 
 func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
 	if a.reader.UsesESOffsets() && !a.reader.HasRangeMaps() {
-		// V1/V3: ES offsets without range maps — need full ES reader
+		// Legacy guard: ES offsets without range maps would need a full
+		// ES reader. No current format hits this path — DVD formats
+		// (V3/V5/V7) use raw file offsets, and Blu-ray formats (V4/V6/V8)
+		// always have range maps. Kept for safety against future formats.
 		indexer, err := source.NewIndexer(sourceDir, source.DefaultWindowSize)
 		if err != nil {
 			return fmt.Errorf("create indexer: %w", err)

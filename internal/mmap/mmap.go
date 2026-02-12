@@ -102,7 +102,10 @@ func (m *File) ReadAt(p []byte, off int64) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if off < 0 || off >= m.size {
+	if off < 0 {
+		return 0, os.ErrInvalid
+	}
+	if off >= m.size {
 		return 0, io.EOF
 	}
 	n := copy(p, m.data[off:])

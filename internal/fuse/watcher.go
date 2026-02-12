@@ -72,7 +72,7 @@ type SourceWatcher struct {
 }
 
 // NewSourceWatcher creates a new source file watcher with the given action.
-// If pollInterval is 0, defaultPollInterval is used.
+// If pollInterval <= 0, defaultPollInterval is used.
 // The watcher is not started until Start() is called.
 func NewSourceWatcher(action string, pollInterval time.Duration, logFn func(string, ...interface{})) (*SourceWatcher, error) {
 	watcher, err := fsnotify.NewWatcher()
