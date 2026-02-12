@@ -411,6 +411,25 @@ func (r *MKVFSRoot) findParentInode(filePath string) (*fs.Inode, string) {
 	return &current.Inode, basename
 }
 
+// markAncestorDirs walks from inode up to (and including) the root,
+// adding each ancestor to changedDirs so their readdir caches are
+// invalidated. This is necessary because a file addition or removal
+// in a deeply nested virtual directory may cause intermediate
+// directories to be created or removed by the tree merge.
+func markAncestorDirs(inode *fs.Inode, changedDirs map[*fs.Inode]bool) {
+	for node := inode; ; {
+		_, ancestor := node.Parent()
+		if ancestor == nil {
+			break
+		}
+		if changedDirs[ancestor] {
+			break // already marked — ancestors above must be too
+		}
+		changedDirs[ancestor] = true
+		node = ancestor
+	}
+}
+
 // Reload updates the filesystem with new configs. It updates existing MKVFile
 // objects in place to preserve pointer identity for cached FUSE inodes, and
 // merges the directory tree structure (required because go-fuse caches
@@ -486,6 +505,7 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 					isDelete: true,
 				})
 				changedDirs[parentInode] = true
+				markAncestorDirs(parentInode, changedDirs)
 			}
 		}
 	}
@@ -529,6 +549,7 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 					isDelete: false,
 				})
 				changedDirs[parentInode] = true
+				markAncestorDirs(parentInode, changedDirs)
 			}
 		}
 	}
