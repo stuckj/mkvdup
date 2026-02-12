@@ -152,6 +152,15 @@ Disable only on checksum mismatch. If a subsequent verification passes,
 the file is automatically re-enabled. Checksum verifications run
 sequentially to avoid I/O storms.
 .RE
+.TP
+.B \-\-source\-watch\-poll\-interval \fIDURATION\fR
+Polling interval for detecting source file changes on network filesystems.
+Accepts Go duration format (e.g., 10s, 1m, 5m). Default: 60s.
+.TP
+.B \-\-source\-read\-timeout \fIDURATION\fR
+Read timeout for source files on network filesystems (NFS, CIFS/SMB).
+When source media is on a network mount, individual read operations will
+time out after this duration. Accepts Go duration format. Default: 30s.
 .RE
 .TP
 .B info \fR[\fIoptions\fR] \fIdedup-file\fR

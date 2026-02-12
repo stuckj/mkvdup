@@ -75,7 +75,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse-dev fuse3
+          sudo apt-get install -y libfuse-dev fuse3 nfs-kernel-server nfs-common
+
+      - name: Start NFS services
+        run: |
+          sudo mkdir -p /etc/exports.d
+          sudo systemctl start rpcbind
+          sudo systemctl start nfs-server
 
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.12.0

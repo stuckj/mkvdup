@@ -17,18 +17,20 @@ import (
 
 // MountOptions holds all options for the mount command.
 type MountOptions struct {
-	AllowOther      bool
-	Foreground      bool
-	ConfigDir       bool
-	PidFile         string
-	DaemonTimeout   time.Duration
-	PermissionsFile string
-	DefaultUID      uint32
-	DefaultGID      uint32
-	DefaultFileMode uint32
-	DefaultDirMode  uint32
-	NoSourceWatch   bool   // Disable source file watching
-	OnSourceChange  string // Action on source change: "warn", "disable", "checksum"
+	AllowOther              bool
+	Foreground              bool
+	ConfigDir               bool
+	PidFile                 string
+	DaemonTimeout           time.Duration
+	PermissionsFile         string
+	DefaultUID              uint32
+	DefaultGID              uint32
+	DefaultFileMode         uint32
+	DefaultDirMode          uint32
+	NoSourceWatch           bool          // Disable source file watching
+	OnSourceChange          string        // Action on source change: "warn", "disable", "checksum"
+	SourceWatchPollInterval time.Duration // Poll interval for network FS source watching (0 = 60s default)
+	SourceReadTimeout       time.Duration // Pread timeout for network FS sources (0 = 30s default)
 }
 
 // parseUint32 parses a string as uint32.
@@ -230,13 +232,15 @@ Permission Options:
     --permissions-file PATH    Path to permissions file (overrides default locations)
 
 Source Watch Options:
-    --no-source-watch          Disable source file monitoring (enabled by default)
-    --on-source-change ACTION  Action on source change: warn, disable, checksum (default)
-                               warn     - log a warning
-                               disable  - disable affected virtual files (reads return EIO)
-                               checksum - size change: disable immediately
-                                          timestamp-only: verify checksum in background,
-                                          disable on mismatch, re-enable on pass
+    --no-source-watch                    Disable source file monitoring (enabled by default)
+    --on-source-change ACTION            Action on source change: warn, disable, checksum (default)
+                                         warn     - log a warning
+                                         disable  - disable affected virtual files (reads return EIO)
+                                         checksum - size change: disable immediately
+                                                    timestamp-only: verify checksum in background,
+                                                    disable on mismatch, re-enable on pass
+    --source-watch-poll-interval DUR     Poll interval for source file changes (default: 60s)
+    --source-read-timeout DUR            Read timeout for network FS sources (default: 30s)
 
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
@@ -255,6 +259,8 @@ Examples:
     mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
     mkvdup mount --foreground /mnt/videos config.yaml
     mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
+    mkvdup mount --source-watch-poll-interval 10s /mnt/videos config.yaml
+    mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 `)
 	case "info":
 		fmt.Print(`Usage: mkvdup info [options] <dedup-file>
@@ -535,6 +541,8 @@ func main() {
 		defaultDirMode := uint32(0555)
 		noSourceWatch := false
 		onSourceChange := "checksum"
+		sourceWatchPollInterval := time.Duration(0)
+		sourceReadTimeout := 30 * time.Second
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -628,6 +636,34 @@ func main() {
 				} else {
 					log.Fatalf("Error: --on-source-change requires an argument (warn, disable, or checksum)")
 				}
+			case "--source-watch-poll-interval":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --source-watch-poll-interval invalid duration: %v", err)
+					}
+					if d <= 0 {
+						log.Fatalf("Error: --source-watch-poll-interval must be positive")
+					}
+					sourceWatchPollInterval = d
+					i++
+				} else {
+					log.Fatalf("Error: --source-watch-poll-interval requires a duration argument (e.g., 10s, 5m)")
+				}
+			case "--source-read-timeout":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --source-read-timeout invalid duration: %v", err)
+					}
+					if d < 0 {
+						log.Fatalf("Error: --source-read-timeout must be non-negative")
+					}
+					sourceReadTimeout = d
+					i++
+				} else {
+					log.Fatalf("Error: --source-read-timeout requires a duration argument (e.g., 30s, 1m)")
+				}
 			default:
 				mountArgs = append(mountArgs, args[i])
 			}
@@ -639,18 +675,20 @@ func main() {
 		mountpoint := mountArgs[0]
 		configPaths := mountArgs[1:]
 		mountOpts := MountOptions{
-			AllowOther:      allowOther,
-			Foreground:      foreground,
-			ConfigDir:       configDir,
-			PidFile:         pidFile,
-			DaemonTimeout:   daemonTimeout,
-			PermissionsFile: permissionsFile,
-			DefaultUID:      defaultUID,
-			DefaultGID:      defaultGID,
-			DefaultFileMode: defaultFileMode,
-			DefaultDirMode:  defaultDirMode,
-			NoSourceWatch:   noSourceWatch,
-			OnSourceChange:  onSourceChange,
+			AllowOther:              allowOther,
+			Foreground:              foreground,
+			ConfigDir:               configDir,
+			PidFile:                 pidFile,
+			DaemonTimeout:           daemonTimeout,
+			PermissionsFile:         permissionsFile,
+			DefaultUID:              defaultUID,
+			DefaultGID:              defaultGID,
+			DefaultFileMode:         defaultFileMode,
+			DefaultDirMode:          defaultDirMode,
+			NoSourceWatch:           noSourceWatch,
+			OnSourceChange:          onSourceChange,
+			SourceWatchPollInterval: sourceWatchPollInterval,
+			SourceReadTimeout:       sourceReadTimeout,
 		}
 		if err := mountFuse(mountpoint, configPaths, mountOpts); err != nil {
 			log.Fatalf("Error: %v", err)

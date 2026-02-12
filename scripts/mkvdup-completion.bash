@@ -122,7 +122,7 @@ _mkvdup() {
 
         mount)
             # mount [options] <mountpoint> [config.yaml...]
-            local mount_opts="--allow-other --foreground -f --config-dir --pid-file --daemon-timeout --default-uid --default-gid --default-file-mode --default-dir-mode --permissions-file --no-source-watch --on-source-change"
+            local mount_opts="--allow-other --foreground -f --config-dir --pid-file --daemon-timeout --default-uid --default-gid --default-file-mode --default-dir-mode --permissions-file --no-source-watch --on-source-change --source-watch-poll-interval --source-read-timeout"
 
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$mount_opts $global_opts" -- "$cur"))
@@ -146,6 +146,10 @@ _mkvdup() {
                     ;;
                 --on-source-change)
                     COMPREPLY=($(compgen -W "warn disable checksum" -- "$cur"))
+                    return
+                    ;;
+                --source-watch-poll-interval|--source-read-timeout)
+                    COMPREPLY=($(compgen -W "10s 30s 60s 2m 5m" -- "$cur"))
                     return
                     ;;
             esac

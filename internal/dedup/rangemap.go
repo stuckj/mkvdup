@@ -566,9 +566,21 @@ func (sm *StreamRangeMap) ReadData(sourceData []byte, sourceSize int64, esOffset
 
 // ReadDataInto reads ES data at the given offset directly into dest, avoiding allocation.
 // Returns the number of bytes written. Uses cached cursor for sequential reads.
-func (sm *StreamRangeMap) ReadDataInto(sourceData []byte, sourceSize int64, esOffset int64, dest []byte) (int, error) {
+//
+// The source parameter provides read access to the source file. If source
+// implements MmapData, the mmap'd byte slice is used for zero-copy reads.
+// Otherwise, source.ReadAt is used (pread path for network filesystems).
+func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, dest []byte) (int, error) {
 	if sm.entryCount == 0 {
 		return 0, fmt.Errorf("empty range map")
+	}
+
+	sourceSize := source.Size()
+
+	// Resolve mmap data once for the zero-copy fast path.
+	var sourceData []byte
+	if md, ok := source.(mmap.MmapData); ok {
+		sourceData = md.Data()
 	}
 
 	cur, err := sm.seekTo(esOffset)
@@ -597,7 +609,13 @@ func (sm *StreamRangeMap) ReadDataInto(sourceData []byte, sourceSize int64, esOf
 		if srcEnd > sourceSize {
 			return written, fmt.Errorf("source read out of bounds: %d + %d > %d", srcStart, toRead, sourceSize)
 		}
-		copy(dest[written:], sourceData[srcStart:srcEnd])
+		if sourceData != nil {
+			copy(dest[written:], sourceData[srcStart:srcEnd])
+		} else {
+			if _, err := source.ReadAt(dest[written:written+int(toRead)], srcStart); err != nil {
+				return written, fmt.Errorf("pread at %d: %w", srcStart, err)
+			}
+		}
 
 		written += int(toRead)
 		remaining -= int(toRead)
@@ -631,11 +649,26 @@ func (sm *StreamRangeMap) ReadDataInto(sourceData []byte, sourceSize int64, esOf
 						return written, fmt.Errorf("source read out of bounds: %d > %d",
 							lastSrcEnd, sourceSize)
 					}
-					stridedCopy(
-						dest[written:written+batchCount*defSz],
-						sourceData[cur.fileOff:lastSrcEnd],
-						batchCount, defSz, int(stride),
-					)
+					if sourceData != nil {
+						stridedCopy(
+							dest[written:written+batchCount*defSz],
+							sourceData[cur.fileOff:lastSrcEnd],
+							batchCount, defSz, int(stride),
+						)
+					} else {
+						// Pread path: read the contiguous source region into a
+						// temp buffer, then strided-copy into dest.
+						tmpSize := int(lastSrcEnd - cur.fileOff)
+						tmp := make([]byte, tmpSize)
+						if _, err := source.ReadAt(tmp, cur.fileOff); err != nil {
+							return written, fmt.Errorf("pread batch at %d: %w", cur.fileOff, err)
+						}
+						stridedCopy(
+							dest[written:written+batchCount*defSz],
+							tmp,
+							batchCount, defSz, int(stride),
+						)
+					}
 					copied := batchCount * defSz
 					written += copied
 					remaining -= copied
@@ -664,71 +697,6 @@ func (sm *StreamRangeMap) ReadDataInto(sourceData []byte, sourceSize int64, esOf
 	sm.cursorMu.Unlock()
 
 	return written, nil
-}
-
-// RangeMapESReader implements the ESReader interface using range maps
-// and mmap'd source files. No per-read header parsing is needed.
-type RangeMapESReader struct {
-	sourceMmap *mmap.File
-	sourceData []byte
-	sourceSize int64
-	videoMap   *StreamRangeMap
-	audioMaps  map[byte]*StreamRangeMap // keyed by sub-stream ID
-}
-
-// NewRangeMapESReader creates an ES reader from range maps and a source file.
-func NewRangeMapESReader(sourceMmap *mmap.File, videoMap *StreamRangeMap, audioMaps map[byte]*StreamRangeMap) *RangeMapESReader {
-	return &RangeMapESReader{
-		sourceMmap: sourceMmap,
-		sourceData: sourceMmap.Data(),
-		sourceSize: int64(sourceMmap.Size()),
-		videoMap:   videoMap,
-		audioMaps:  audioMaps,
-	}
-}
-
-// ReadESData reads elementary stream data at the given ES offset.
-func (r *RangeMapESReader) ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error) {
-	if !isVideo {
-		return nil, fmt.Errorf("audio uses per-sub-stream methods")
-	}
-	if r.videoMap == nil {
-		return nil, fmt.Errorf("no video range map")
-	}
-	return r.videoMap.ReadData(r.sourceData, r.sourceSize, esOffset, size)
-}
-
-// ReadAudioSubStreamData reads audio data from a specific sub-stream.
-func (r *RangeMapESReader) ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error) {
-	audioMap, ok := r.audioMaps[subStreamID]
-	if !ok {
-		return nil, fmt.Errorf("audio sub-stream %d not found in range map", subStreamID)
-	}
-	return audioMap.ReadData(r.sourceData, r.sourceSize, esOffset, size)
-}
-
-// TotalESSize returns the total video ES size.
-func (r *RangeMapESReader) TotalESSize(isVideo bool) int64 {
-	if isVideo && r.videoMap != nil {
-		return r.videoMap.TotalESSize()
-	}
-	return 0
-}
-
-// AudioSubStreamESSize returns the ES size for a specific audio sub-stream.
-func (r *RangeMapESReader) AudioSubStreamESSize(subStreamID byte) int64 {
-	if m, ok := r.audioMaps[subStreamID]; ok {
-		return m.TotalESSize()
-	}
-	return 0
-}
-
-// Close releases the source mmap.
-func (r *RangeMapESReader) Close() {
-	if r.sourceMmap != nil {
-		r.sourceMmap.Close()
-		r.sourceMmap = nil
-	}
 }
 
 // --- Deserialization (for Reader) ---

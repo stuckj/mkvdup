@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/source"
@@ -14,7 +15,8 @@ var _ ConfigReader = (*DefaultConfigReader)(nil)
 
 // dedupReaderAdapter wraps dedup.Reader to implement ReaderInitializer interface.
 type dedupReaderAdapter struct {
-	reader *dedup.Reader
+	reader      *dedup.Reader
+	readTimeout time.Duration // pread timeout for network FS sources
 	// index stores the source index for cleanup when using ES offsets.
 	// This is nil when using raw source files.
 	index *source.Index
@@ -44,8 +46,13 @@ func (a *dedupReaderAdapter) InitializeForReading(sourceDir string) error {
 		}
 		// Store index for cleanup in Close()
 		a.index = index
+	} else if isNetworkFS(sourceDir) {
+		// Network FS: use pread with retry instead of mmap to avoid SIGBUS.
+		if err := a.reader.LoadSourceFilesPread(a.readTimeout); err != nil {
+			return fmt.Errorf("load source files (pread): %w", err)
+		}
 	} else {
-		// V4 range maps or raw offsets: just need source files mmap'd.
+		// Local FS: mmap for zero-copy performance.
 		// Range maps handle ES-to-raw translation at read time.
 		if err := a.reader.LoadSourceFiles(); err != nil {
 			return fmt.Errorf("load source files: %w", err)
@@ -92,14 +99,16 @@ func (a *dedupReaderAdapter) Close() error {
 }
 
 // DefaultReaderFactory is the default implementation of ReaderFactory.
-type DefaultReaderFactory struct{}
+type DefaultReaderFactory struct {
+	ReadTimeout time.Duration // pread timeout for network FS sources
+}
 
 func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (ReaderInitializer, error) {
 	reader, err := dedup.NewReaderLazy(dedupPath, sourceDir)
 	if err != nil {
 		return nil, err
 	}
-	return &dedupReaderAdapter{reader: reader}, nil
+	return &dedupReaderAdapter{reader: reader, readTimeout: f.ReadTimeout}, nil
 }
 
 // DefaultConfigReader is the default implementation of ConfigReader.
