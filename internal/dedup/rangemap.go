@@ -612,7 +612,7 @@ func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, d
 		if sourceData != nil {
 			copy(dest[written:], sourceData[srcStart:srcEnd])
 		} else {
-			if _, err := source.ReadAt(dest[written:written+int(toRead)], srcStart); err != nil {
+			if n, err := source.ReadAt(dest[written:written+int(toRead)], srcStart); err != nil && !(n == int(toRead) && err == io.EOF) {
 				return written, fmt.Errorf("pread at %d: %w", srcStart, err)
 			}
 		}
@@ -660,7 +660,7 @@ func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, d
 						// temp buffer, then strided-copy into dest.
 						tmpSize := int(lastSrcEnd - cur.fileOff)
 						tmp := make([]byte, tmpSize)
-						if _, err := source.ReadAt(tmp, cur.fileOff); err != nil {
+						if n, err := source.ReadAt(tmp, cur.fileOff); err != nil && !(n == tmpSize && err == io.EOF) {
 							return written, fmt.Errorf("pread batch at %d: %w", cur.fileOff, err)
 						}
 						stridedCopy(
