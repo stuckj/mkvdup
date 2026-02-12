@@ -136,7 +136,7 @@ func (sw *SourceWatcher) Update(files map[string]*MKVFile, readerFactory ReaderF
 			cleanSourceDir += string(filepath.Separator)
 		}
 		for _, sf := range sourceFiles {
-			absPath := filepath.Join(file.SourceDir, sf.RelativePath)
+			absPath := filepath.Clean(filepath.Join(file.SourceDir, sf.RelativePath))
 			if !strings.HasPrefix(absPath, cleanSourceDir) {
 				sw.logFn("source-watch: warning: skipping source file with path traversal: %s", sf.RelativePath)
 				continue
