@@ -1,6 +1,7 @@
 package mmap
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -247,6 +248,108 @@ func TestAdvise_EmptyFile(t *testing.T) {
 	// Advise on empty file should be a no-op and not error
 	if err := f.Advise(unix.MADV_SEQUENTIAL); err != nil {
 		t.Errorf("Advise on empty file should succeed, got: %v", err)
+	}
+}
+
+func TestReadAt(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.bin")
+
+	content := []byte("0123456789ABCDEF")
+	if err := os.WriteFile(testFile, content, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	f, err := Open(testFile)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer f.Close()
+
+	tests := []struct {
+		name    string
+		bufSize int
+		off     int64
+		wantN   int
+		wantErr error
+		wantStr string
+	}{
+		{
+			name:    "zero-length read",
+			bufSize: 0,
+			off:     0,
+			wantN:   0,
+			wantErr: nil,
+		},
+		{
+			name:    "negative offset",
+			bufSize: 4,
+			off:     -1,
+			wantN:   0,
+			wantErr: os.ErrInvalid,
+		},
+		{
+			name:    "offset at size (EOF)",
+			bufSize: 4,
+			off:     int64(len(content)),
+			wantN:   0,
+			wantErr: io.EOF,
+		},
+		{
+			name:    "offset beyond size (EOF)",
+			bufSize: 4,
+			off:     int64(len(content) + 100),
+			wantN:   0,
+			wantErr: io.EOF,
+		},
+		{
+			name:    "full read from start",
+			bufSize: 5,
+			off:     0,
+			wantN:   5,
+			wantErr: nil,
+			wantStr: "01234",
+		},
+		{
+			name:    "full read from middle",
+			bufSize: 4,
+			off:     10,
+			wantN:   4,
+			wantErr: nil,
+			wantStr: "ABCD",
+		},
+		{
+			name:    "partial read near end",
+			bufSize: 10,
+			off:     14,
+			wantN:   2,
+			wantErr: io.EOF,
+			wantStr: "EF",
+		},
+		{
+			name:    "single byte at last position",
+			bufSize: 1,
+			off:     15,
+			wantN:   1,
+			wantErr: nil,
+			wantStr: "F",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := make([]byte, tt.bufSize)
+			n, err := f.ReadAt(buf, tt.off)
+			if n != tt.wantN {
+				t.Errorf("ReadAt(%d, %d) n = %d, want %d", tt.bufSize, tt.off, n, tt.wantN)
+			}
+			if err != tt.wantErr {
+				t.Errorf("ReadAt(%d, %d) err = %v, want %v", tt.bufSize, tt.off, err, tt.wantErr)
+			}
+			if tt.wantStr != "" && string(buf[:n]) != tt.wantStr {
+				t.Errorf("ReadAt(%d, %d) data = %q, want %q", tt.bufSize, tt.off, string(buf[:n]), tt.wantStr)
+			}
+		})
 	}
 }
 
