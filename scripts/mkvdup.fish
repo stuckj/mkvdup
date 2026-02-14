@@ -57,6 +57,7 @@ complete -c $cmd -n __fish_mkvdup_needs_command -a probe -d 'Quick test if an MK
 complete -c $cmd -n __fish_mkvdup_needs_command -a mount -d 'Mount virtual filesystem from config files'
 complete -c $cmd -n __fish_mkvdup_needs_command -a info -d 'Show information about a dedup file'
 complete -c $cmd -n __fish_mkvdup_needs_command -a verify -d 'Verify a dedup file against the original MKV'
+complete -c $cmd -n __fish_mkvdup_needs_command -a extract -d 'Rebuild original MKV from dedup + source'
 complete -c $cmd -n __fish_mkvdup_needs_command -a check -d 'Check integrity of a dedup file and its source files'
 complete -c $cmd -n __fish_mkvdup_needs_command -a validate -d 'Validate configuration files for correctness'
 complete -c $cmd -n __fish_mkvdup_needs_command -a reload -d 'Reload a running daemon configuration'
@@ -105,6 +106,9 @@ complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Dedup file'
 
 # verify options
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -F -d 'Dedup file, source directory, or original MKV'
+
+# extract options
+complete -c $cmd -n '__fish_mkvdup_using_command extract' -F -d 'Dedup file, source directory, or output MKV'
 
 # check options
 complete -c $cmd -n '__fish_mkvdup_using_command check' -l source-checksums -d 'Verify source file checksums'

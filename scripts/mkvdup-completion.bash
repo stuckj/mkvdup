@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create batch-create probe mount info verify check validate reload parse-mkv index-source match deltadiag help"
+    local commands="create batch-create probe mount info verify extract check validate reload parse-mkv index-source match deltadiag help"
     local global_opts="-v --verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -174,6 +174,11 @@ _mkvdup() {
 
         verify)
             # verify <dedup-file> <source-dir> <original-mkv>
+            _filedir
+            ;;
+
+        extract)
+            # extract <dedup-file> <source-dir> <output-mkv>
             _filedir
             ;;
 

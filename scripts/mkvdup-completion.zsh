@@ -78,6 +78,16 @@ _mkvdup_verify() {
         '3:Original MKV:_files -g "*.mkv(-.)"'
 }
 
+_mkvdup_extract() {
+    _arguments -s \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
+        '1:Dedup file:_files -g "*.mkvdup(-.)"' \
+        '2:Source directory:_files -/' \
+        '3:Output MKV:_files -g "*.mkv(-.)"'
+}
+
 _mkvdup_check() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
@@ -165,6 +175,7 @@ _mkvdup() {
                 'mount:Mount virtual filesystem from config files'
                 'info:Show information about a dedup file'
                 'verify:Verify a dedup file against the original MKV'
+                'extract:Rebuild original MKV from dedup + source'
                 'check:Check integrity of a dedup file and its source files'
                 'validate:Validate configuration files for correctness'
                 'reload:Reload a running daemon configuration'
@@ -184,6 +195,7 @@ _mkvdup() {
                 mount)        _mkvdup_mount ;;
                 info)         _mkvdup_info ;;
                 verify)       _mkvdup_verify ;;
+                extract)      _mkvdup_extract ;;
                 check)        _mkvdup_check ;;
                 validate)     _mkvdup_validate ;;
                 reload)       _mkvdup_reload ;;
@@ -193,7 +205,7 @@ _mkvdup() {
                 deltadiag)    _mkvdup_deltadiag ;;
                 help)
                     local -a help_cmds
-                    help_cmds=(create batch-create probe mount info verify check validate reload parse-mkv index-source match deltadiag)
+                    help_cmds=(create batch-create probe mount info verify extract check validate reload parse-mkv index-source match deltadiag)
                     _describe -t commands 'command' help_cmds
                     ;;
             esac
