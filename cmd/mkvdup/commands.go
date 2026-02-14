@@ -829,7 +829,7 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 }
 
 // extractDedup rebuilds the original MKV from a dedup file and source.
-func extractDedup(dedupPath, sourceDir, outputPath string) error {
+func extractDedup(dedupPath, sourceDir, outputPath string) (retErr error) {
 	fmt.Printf("Dedup file:        %s\n", dedupPath)
 	fmt.Printf("Source directory:  %s\n", sourceDir)
 	fmt.Printf("Output MKV:        %s\n", outputPath)
@@ -845,10 +845,9 @@ func extractDedup(dedupPath, sourceDir, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
-	var success bool
 	defer func() {
 		out.Close()
-		if !success {
+		if retErr != nil {
 			os.Remove(outputPath)
 		}
 	}()
@@ -887,10 +886,13 @@ func extractDedup(dedupPath, sourceDir, outputPath string) error {
 		pct := float64(offset) / float64(totalSize) * 100
 		fmt.Printf("\rExtracting... %.1f%%", pct)
 	}
+	if err := out.Close(); err != nil {
+		fmt.Println(" FAILED")
+		return fmt.Errorf("close output: %w", err)
+	}
 	fmt.Println(" done")
 
 	fmt.Printf("\nExtracted %s bytes to %s\n", formatInt(totalSize), outputPath)
-	success = true
 	return nil
 }
 

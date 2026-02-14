@@ -140,4 +140,4 @@ complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -s v -l verbose -d '
 complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -F -d 'Dedup file or MKV file'
 
 # help - complete with subcommand names
-complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify check validate reload parse-mkv index-source match deltadiag' -d 'Command'
+complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify extract check validate reload parse-mkv index-source match deltadiag' -d 'Command'
