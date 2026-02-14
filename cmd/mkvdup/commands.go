@@ -845,6 +845,13 @@ func extractDedup(dedupPath, sourceDir, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
+	var success bool
+	defer func() {
+		out.Close()
+		if !success {
+			os.Remove(outputPath)
+		}
+	}()
 
 	fmt.Print("Extracting...")
 	const chunkSize = 4 * 1024 * 1024
@@ -861,15 +868,11 @@ func extractDedup(dedupPath, sourceDir, outputPath string) error {
 
 		n, err := reader.ReadAt(buf[:readSize], offset)
 		if err != nil && err != io.EOF {
-			out.Close()
-			os.Remove(outputPath)
 			fmt.Println(" FAILED")
 			return fmt.Errorf("read at offset %d: %w", offset, err)
 		}
 
 		if _, err := out.Write(buf[:n]); err != nil {
-			out.Close()
-			os.Remove(outputPath)
 			fmt.Println(" FAILED")
 			return fmt.Errorf("write at offset %d: %w", offset, err)
 		}
@@ -879,15 +882,10 @@ func extractDedup(dedupPath, sourceDir, outputPath string) error {
 		pct := float64(offset) / float64(totalSize) * 100
 		fmt.Printf("\rExtracting... %.1f%%", pct)
 	}
-
-	if err := out.Close(); err != nil {
-		os.Remove(outputPath)
-		fmt.Println(" FAILED")
-		return fmt.Errorf("close output: %w", err)
-	}
 	fmt.Println(" done")
 
 	fmt.Printf("\nExtracted %s bytes to %s\n", formatInt(totalSize), outputPath)
+	success = true
 	return nil
 }
 
