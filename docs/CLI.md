@@ -293,13 +293,24 @@ mkvdup info --hide-unused-files movie.mkvdup
 
 Source files are listed with their sizes. For V7/V8 dedup files, unused source files are marked `(unused)`. Use `--hide-unused-files` to omit them entirely.
 
-### extract *(planned — [#13](https://github.com/stuckj/mkvdup/issues/13))*
+### extract
 
-Rebuild/extract original MKV from dedup + source. **Not yet implemented.**
+Rebuild the original MKV from a dedup file and source media.
 
 ```bash
-# Planned syntax:
 mkvdup extract <dedup-file> <source-dir> <output-mkv>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `<dedup-file>` | Path to the `.mkvdup` file |
+| `<source-dir>` | Directory containing the source media |
+| `<output-mkv>` | Path for the reconstructed MKV file |
+
+Example:
+
+```bash
+mkvdup extract movie.mkvdup /media/dvd-backups restored-movie.mkv
 ```
 
 ### probe

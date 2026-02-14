@@ -711,6 +711,49 @@ func showInfo(dedupPath string, hideUnused bool) error {
 	return nil
 }
 
+// openDedupReader opens a dedup file with its source directory, verifies
+// integrity, loads source files, and checks source file sizes. This is the
+// shared preamble for verify, extract, and similar commands.
+func openDedupReader(dedupPath, sourceDir string) (*dedup.Reader, error) {
+	reader, err := dedup.NewReader(dedupPath, sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("open dedup file: %w", err)
+	}
+
+	fmt.Print("Verifying dedup file checksums...")
+	if err := reader.VerifyIntegrity(); err != nil {
+		fmt.Println(" FAILED")
+		reader.Close()
+		return nil, fmt.Errorf("integrity check: %w", err)
+	}
+	fmt.Println(" OK")
+
+	if err := reader.LoadSourceFiles(); err != nil {
+		reader.Close()
+		return nil, fmt.Errorf("load source files: %w", err)
+	}
+
+	fmt.Print("Verifying source files...")
+	for _, sf := range reader.SourceFiles() {
+		path := filepath.Join(sourceDir, sf.RelativePath)
+		stat, err := os.Stat(path)
+		if err != nil {
+			fmt.Println(" FAILED")
+			reader.Close()
+			return nil, fmt.Errorf("source file %s: %w", sf.RelativePath, err)
+		}
+		if stat.Size() != sf.Size {
+			fmt.Println(" FAILED")
+			reader.Close()
+			return nil, fmt.Errorf("source file %s size mismatch: expected %d, got %d",
+				sf.RelativePath, sf.Size, stat.Size())
+		}
+	}
+	fmt.Println(" OK")
+
+	return reader, nil
+}
+
 // verifyDedup verifies a dedup file against the original MKV.
 func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 	fmt.Printf("Verifying dedup file: %s\n", dedupPath)
@@ -718,41 +761,11 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 	fmt.Printf("Original MKV:         %s\n", originalPath)
 	fmt.Println()
 
-	// Open dedup file
-	reader, err := dedup.NewReader(dedupPath, sourceDir)
+	reader, err := openDedupReader(dedupPath, sourceDir)
 	if err != nil {
-		return fmt.Errorf("open dedup file: %w", err)
+		return err
 	}
 	defer reader.Close()
-
-	// Verify internal checksums
-	fmt.Print("Verifying dedup file checksums...")
-	if err := reader.VerifyIntegrity(); err != nil {
-		fmt.Println(" FAILED")
-		return fmt.Errorf("integrity check: %w", err)
-	}
-	fmt.Println(" OK")
-
-	if err := reader.LoadSourceFiles(); err != nil {
-		return fmt.Errorf("load source files: %w", err)
-	}
-
-	// Verify source file sizes
-	fmt.Print("Verifying source files...")
-	for _, sf := range reader.SourceFiles() {
-		path := filepath.Join(sourceDir, sf.RelativePath)
-		stat, err := os.Stat(path)
-		if err != nil {
-			fmt.Println(" FAILED")
-			return fmt.Errorf("source file %s: %w", sf.RelativePath, err)
-		}
-		if stat.Size() != sf.Size {
-			fmt.Println(" FAILED")
-			return fmt.Errorf("source file %s size mismatch: expected %d, got %d",
-				sf.RelativePath, sf.Size, stat.Size())
-		}
-	}
-	fmt.Println(" OK")
 
 	// Verify reconstruction matches original
 	fmt.Print("Verifying reconstruction...")
@@ -812,6 +825,74 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 
 	fmt.Println()
 	fmt.Println("Verification PASSED")
+	return nil
+}
+
+// extractDedup rebuilds the original MKV from a dedup file and source.
+func extractDedup(dedupPath, sourceDir, outputPath string) (retErr error) {
+	fmt.Printf("Dedup file:        %s\n", dedupPath)
+	fmt.Printf("Source directory:  %s\n", sourceDir)
+	fmt.Printf("Output MKV:        %s\n", outputPath)
+	fmt.Println()
+
+	reader, err := openDedupReader(dedupPath, sourceDir)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	out, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("create output file: %w", err)
+	}
+	defer func() {
+		out.Close()
+		if retErr != nil {
+			os.Remove(outputPath)
+		}
+	}()
+
+	fmt.Print("Extracting...")
+	const chunkSize = 4 * 1024 * 1024
+	buf := make([]byte, chunkSize)
+	var offset int64
+	totalSize := reader.OriginalSize()
+
+	for offset < totalSize {
+		remaining := totalSize - offset
+		readSize := int64(chunkSize)
+		if readSize > remaining {
+			readSize = remaining
+		}
+
+		n, err := reader.ReadAt(buf[:readSize], offset)
+		if err != nil && err != io.EOF {
+			fmt.Println(" FAILED")
+			return fmt.Errorf("read at offset %d: %w", offset, err)
+		}
+
+		if n == 0 {
+			fmt.Println(" FAILED")
+			return fmt.Errorf("unexpected EOF at offset %d (expected %d bytes)", offset, totalSize)
+		}
+
+		if _, err := out.Write(buf[:n]); err != nil {
+			fmt.Println(" FAILED")
+			return fmt.Errorf("write at offset %d: %w", offset, err)
+		}
+
+		offset += int64(n)
+
+		pct := float64(offset) / float64(totalSize) * 100
+		fmt.Printf("\rExtracting... %.1f%%", pct)
+	}
+	if err := out.Close(); err != nil {
+		fmt.Println(" FAILED")
+		return fmt.Errorf("close output: %w", err)
+	}
+	fmt.Println(" done")
+
+	fmt.Printf("\nExtracted %s bytes to %s\n", formatInt(totalSize), outputPath)
 	return nil
 }
 

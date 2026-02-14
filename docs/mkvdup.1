@@ -190,6 +190,20 @@ Directory containing the source media
 Path to the original MKV for comparison
 .RE
 .TP
+.B extract \fIdedup-file\fR \fIsource-dir\fR \fIoutput-mkv\fR
+Rebuild the original MKV from a dedup file and source media.
+.RS
+.TP
+.I dedup-file
+Path to the .mkvdup file
+.TP
+.I source-dir
+Directory containing the source media
+.TP
+.I output-mkv
+Path for the reconstructed MKV file
+.RE
+.TP
 .B check \fR[\fIoptions\fR] \fIdedup-file\fR \fIsource-dir\fR
 Check integrity of a dedup file and its source files without requiring
 the original MKV. Verifies the dedup file's internal checksums, then checks
@@ -313,6 +327,14 @@ Verify a dedup file:
 .RS
 .nf
 @PACKAGE_NAME@ verify movie.mkvdup /media/dvd-backups original.mkv
+.fi
+.RE
+.PP
+Extract/rebuild the original MKV:
+.PP
+.RS
+.nf
+@PACKAGE_NAME@ extract movie.mkvdup /media/dvd-backups restored-movie.mkv
 .fi
 .RE
 .PP

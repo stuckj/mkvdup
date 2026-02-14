@@ -104,6 +104,7 @@ Commands:
   mount        Mount dedup files as FUSE filesystem
   info         Show dedup file information
   verify       Verify dedup file against original MKV
+  extract      Rebuild original MKV from dedup + source
   check        Check dedup + source file integrity
   validate     Validate configuration files
   reload       Reload running daemon's configuration
@@ -290,6 +291,19 @@ Arguments:
 
 Examples:
     mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
+`)
+	case "extract":
+		fmt.Print(`Usage: mkvdup extract <dedup-file> <source-dir> <output-mkv>
+
+Rebuild the original MKV from a dedup file and source media.
+
+Arguments:
+    <dedup-file>    Path to the .mkvdup file
+    <source-dir>    Directory containing the source media
+    <output-mkv>    Path for the reconstructed MKV file
+
+Examples:
+    mkvdup extract movie.mkvdup /media/dvd-backups restored-movie.mkv
 `)
 	case "check":
 		fmt.Print(`Usage: mkvdup check <dedup-file> <source-dir> [options]
@@ -721,6 +735,15 @@ func main() {
 			os.Exit(1)
 		}
 		if err := verifyDedup(args[0], args[1], args[2]); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "extract":
+		if len(args) < 3 {
+			printCommandUsage("extract")
+			os.Exit(1)
+		}
+		if err := extractDedup(args[0], args[1], args[2]); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
