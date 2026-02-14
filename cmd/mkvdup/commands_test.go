@@ -993,6 +993,94 @@ func TestCheckDedup_SkipsChecksumOnSizeError(t *testing.T) {
 	}
 }
 
+// --- extract command tests ---
+
+// createExtractableDedup creates a dedup file where all data is in the delta
+// section, so extractDedup can reconstruct it without real source media.
+func createExtractableDedup(t *testing.T, dedupPath, sourceDir string, originalData []byte) {
+	t.Helper()
+
+	srcFile := filepath.Join(sourceDir, "test.vob")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	srcContent := []byte("source data")
+	if err := os.WriteFile(srcFile, srcContent, 0644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	writer, err := dedup.NewWriter(dedupPath)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+
+	checksum := xxhash.Sum64(originalData)
+	writer.SetHeader(int64(len(originalData)), checksum, source.TypeDVD)
+	writer.SetSourceFiles([]source.File{
+		{RelativePath: "test.vob", Size: int64(len(srcContent)), Checksum: xxhash.Sum64(srcContent)},
+	})
+
+	result := &matcher.Result{
+		Entries: []matcher.Entry{
+			{MkvOffset: 0, Length: int64(len(originalData)), Source: 0, SourceOffset: 0},
+		},
+		DeltaData:      originalData,
+		UnmatchedBytes: int64(len(originalData)),
+		TotalPackets:   1,
+	}
+	if err := writer.SetMatchResult(result, nil); err != nil {
+		writer.Close()
+		t.Fatalf("SetMatchResult: %v", err)
+	}
+	if err := writer.Write(); err != nil {
+		writer.Close()
+		t.Fatalf("Write: %v", err)
+	}
+	writer.Close()
+}
+
+func TestExtractDedup_Success(t *testing.T) {
+	dir := t.TempDir()
+	sourceDir := filepath.Join(dir, "source")
+	dedupPath := filepath.Join(dir, "movie.mkvdup")
+	outputPath := filepath.Join(dir, "output.mkv")
+	originalData := []byte("hello world this is test data for extraction")
+
+	createExtractableDedup(t, dedupPath, sourceDir, originalData)
+
+	if err := extractDedup(dedupPath, sourceDir, outputPath); err != nil {
+		t.Fatalf("extractDedup: %v", err)
+	}
+
+	got, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(got) != string(originalData) {
+		t.Errorf("extracted data = %q, want %q", got, originalData)
+	}
+}
+
+func TestExtractDedup_CleansUpOnError(t *testing.T) {
+	dir := t.TempDir()
+	sourceDir := filepath.Join(dir, "source")
+	dedupPath := filepath.Join(dir, "movie.mkvdup")
+	outputPath := filepath.Join(dir, "output.mkv")
+
+	// Use the basic helper which creates a dedup with OriginalSize=100
+	// but only 5 bytes of delta and no entries — ReadAt will fail.
+	createTestDedupFile(t, dedupPath, sourceDir)
+
+	err := extractDedup(dedupPath, sourceDir, outputPath)
+	if err == nil {
+		t.Fatal("expected error for unextractable dedup")
+	}
+
+	if _, statErr := os.Stat(outputPath); !os.IsNotExist(statErr) {
+		t.Error("expected output file to be cleaned up after error")
+	}
+}
+
 // --- batch-create command tests ---
 
 func TestCreateBatch_InvalidManifest(t *testing.T) {

@@ -100,7 +100,7 @@ func TestPrintUsage(t *testing.T) {
 	output := captureStdout(t, func() {
 		printUsage()
 	})
-	for _, want := range []string{"mkvdup", "create", "probe", "mount", "info", "verify", "reload"} {
+	for _, want := range []string{"mkvdup", "create", "probe", "mount", "info", "verify", "extract", "reload"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("printUsage() output missing %q", want)
 		}
@@ -117,6 +117,7 @@ func TestPrintCommandUsage(t *testing.T) {
 		{"mount", []string{"mountpoint", "--allow-other"}},
 		{"info", []string{"dedup-file"}},
 		{"verify", []string{"dedup-file", "original-mkv"}},
+		{"extract", []string{"dedup-file", "source-dir", "output-mkv"}},
 		{"parse-mkv", []string{"mkv-file"}},
 		{"index-source", []string{"source-dir"}},
 		{"match", []string{"mkv-file", "source-dir"}},

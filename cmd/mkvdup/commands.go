@@ -872,6 +872,11 @@ func extractDedup(dedupPath, sourceDir, outputPath string) error {
 			return fmt.Errorf("read at offset %d: %w", offset, err)
 		}
 
+		if n == 0 {
+			fmt.Println(" FAILED")
+			return fmt.Errorf("unexpected EOF at offset %d (expected %d bytes)", offset, totalSize)
+		}
+
 		if _, err := out.Write(buf[:n]); err != nil {
 			fmt.Println(" FAILED")
 			return fmt.Errorf("write at offset %d: %w", offset, err)
