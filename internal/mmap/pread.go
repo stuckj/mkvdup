@@ -166,6 +166,10 @@ func (p *PreadFile) readAtWithRetry(buf []byte, off int64) (int, error) {
 // immediately because in-flight goroutines may still hold a reference
 // to it (copied under the mutex before the pread syscall). Old fds are
 // collected in staleFiles and cleaned up on Close().
+//
+// Fd accumulation is bounded in practice: reopens only occur on transient
+// network errors (ESTALE, ETIMEDOUT, etc.), which are rare. Even under
+// a flaky mount, each reopen adds just one fd, well within default ulimits.
 func (p *PreadFile) reopen() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

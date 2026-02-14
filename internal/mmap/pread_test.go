@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestOpenPread(t *testing.T) {
@@ -266,12 +268,33 @@ func TestPreadFile_Close_Idempotent(t *testing.T) {
 }
 
 func TestIsRetryableError(t *testing.T) {
+	// Retryable errnos (bare)
+	for _, errno := range []unix.Errno{unix.ESTALE, unix.ETIMEDOUT, unix.ECONNRESET, unix.EIO} {
+		if !isRetryableError(errno) {
+			t.Errorf("%v should be retryable", errno)
+		}
+	}
+
+	// Retryable errnos wrapped in *os.PathError (as os.File.ReadAt returns)
+	for _, errno := range []unix.Errno{unix.ESTALE, unix.ETIMEDOUT, unix.ECONNRESET, unix.EIO} {
+		wrapped := &os.PathError{Op: "read", Path: "/test", Err: errno}
+		if !isRetryableError(wrapped) {
+			t.Errorf("*os.PathError{%v} should be retryable", errno)
+		}
+	}
+
 	// Non-retryable errors
 	if isRetryableError(io.EOF) {
 		t.Error("io.EOF should not be retryable")
 	}
 	if isRetryableError(os.ErrNotExist) {
 		t.Error("ErrNotExist should not be retryable")
+	}
+	if isRetryableError(unix.ENOENT) {
+		t.Error("ENOENT should not be retryable")
+	}
+	if isRetryableError(&os.PathError{Op: "read", Path: "/test", Err: unix.ENOENT}) {
+		t.Error("*os.PathError{ENOENT} should not be retryable")
 	}
 }
 
