@@ -33,7 +33,7 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 
 **Quiet mode (`-q`, `--quiet`):**
 - Suppresses all informational stdout (phase labels, progress bars, statistics)
-- Errors and warnings still go to stderr
+- Errors still go to stderr
 - Implies `--no-progress`
 
 **No-progress mode (`--no-progress`):**

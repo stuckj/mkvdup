@@ -65,6 +65,20 @@ func (p *progressBar) Update(processed int64) {
 	p.draw()
 }
 
+// Cancel cleans up a progress bar on error without printing "done".
+// It prints a newline to move past any partial bar line. Safe to call
+// after Finish() (no-op if already done).
+func (p *progressBar) Cancel() {
+	if p.done || quiet {
+		return
+	}
+	p.done = true
+	if showProgress {
+		// Clear partial bar line and move to next line
+		fmt.Print("\r" + strings.Repeat(" ", 120) + "\r\n")
+	}
+}
+
 // Finish completes the progress bar and prints the elapsed time.
 func (p *progressBar) Finish() {
 	if p.done || quiet {
