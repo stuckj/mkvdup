@@ -11,7 +11,7 @@
 mkvdup -v <command> [args...]
 mkvdup --verbose <command> [args...]
 
-# Suppress all informational output (errors still go to stderr)
+# Suppress informational progress output (errors still go to stderr)
 mkvdup -q <command> [args...]
 mkvdup --quiet <command> [args...]
 
@@ -32,8 +32,8 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 - Debug information for troubleshooting
 
 **Quiet mode (`-q`, `--quiet`):**
-- Suppresses all informational stdout (phase labels, progress bars, statistics)
-- Errors still go to stderr
+- Suppresses informational progress output during `create`, `batch-create`, `verify`, and `extract` (phase labels, progress bars, statistics)
+- Errors and warnings still go to stderr
 - Implies `--no-progress`
 
 **No-progress mode (`--no-progress`):**

@@ -71,12 +71,16 @@ complete -c $cmd -n __fish_mkvdup_needs_command -a help -d 'Show help for a comm
 
 # create options
 complete -c $cmd -n '__fish_mkvdup_using_command create' -s v -l verbose -d 'Enable verbose/debug output'
+complete -c $cmd -n '__fish_mkvdup_using_command create' -s q -l quiet -d 'Suppress all informational output'
+complete -c $cmd -n '__fish_mkvdup_using_command create' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l warn-threshold -d 'Minimum space savings percentage' -x
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l non-interactive -d 'Do not prompt on codec mismatch'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -F -d 'MKV file or source directory'
 
 # batch-create options
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -s v -l verbose -d 'Enable verbose/debug output'
+complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -s q -l quiet -d 'Suppress all informational output'
+complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l warn-threshold -d 'Minimum space savings percentage' -x
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -F -d 'Manifest file'
 
@@ -105,9 +109,13 @@ complete -c $cmd -n '__fish_mkvdup_using_command info' -l hide-unused-files -d '
 complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Dedup file'
 
 # verify options
+complete -c $cmd -n '__fish_mkvdup_using_command verify' -s q -l quiet -d 'Suppress all informational output'
+complete -c $cmd -n '__fish_mkvdup_using_command verify' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -F -d 'Dedup file, source directory, or original MKV'
 
 # extract options
+complete -c $cmd -n '__fish_mkvdup_using_command extract' -s q -l quiet -d 'Suppress all informational output'
+complete -c $cmd -n '__fish_mkvdup_using_command extract' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -F -d 'Dedup file, source directory, or output MKV'
 
 # check options

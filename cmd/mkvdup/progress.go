@@ -75,7 +75,7 @@ func (p *progressBar) Cancel() {
 	p.done = true
 	if showProgress {
 		// Clear partial bar line and move to next line
-		fmt.Print("\r" + strings.Repeat(" ", 120) + "\r\n")
+		fmt.Print("\r\033[2K\n")
 	}
 }
 
@@ -88,10 +88,8 @@ func (p *progressBar) Finish() {
 	elapsed := time.Since(p.startTime)
 
 	if showProgress {
-		// Clear the bar line
-		fmt.Print("\r" + strings.Repeat(" ", 120) + "\r")
-		// Move cursor up one line and overwrite the prefix line with completion
-		fmt.Printf("\033[A\r%s done (%s)\n", p.prefix, formatDuration(elapsed))
+		// Clear the bar line, move up, and overwrite the prefix line with completion
+		fmt.Printf("\r\033[2K\033[A\r\033[2K%s done (%s)\n", p.prefix, formatDuration(elapsed))
 	} else {
 		fmt.Printf("%s done (%s)\n", p.prefix, formatDuration(elapsed))
 	}
@@ -129,11 +127,7 @@ func (p *progressBar) draw() {
 
 	line := fmt.Sprintf("  [%s] %3.0f%%  %s  ETA: %s", bar, pct*100, stats, eta)
 
-	// Pad to clear any previous longer line
-	if len(line) < 120 {
-		line += strings.Repeat(" ", 120-len(line))
-	}
-	fmt.Printf("\r%s", line)
+	fmt.Printf("\r\033[2K%s", line)
 }
 
 // eta calculates the estimated time remaining.
