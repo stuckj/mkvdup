@@ -408,6 +408,15 @@ func (r *MKVFSRoot) findParentInode(filePath string) (*fs.Inode, string) {
 		}
 		current = subdir
 	}
+
+	// Newly created directories from mergeDirectoryTree have uninitialized
+	// fs.Inode (never registered with go-fuse via NewPersistentInode).
+	// The kernel doesn't know about them, so notifications would panic.
+	// Return nil — the kernel will discover the directory via Lookup.
+	if current.Inode.StableAttr().Ino == 0 {
+		return nil, ""
+	}
+
 	return &current.Inode, basename
 }
 
@@ -488,24 +497,19 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	}
 	r.mu.RUnlock()
 
-	// Before merge: capture removal notifications while old tree still has
-	// the child inodes cached. We need both parent and child Inodes for
-	// NotifyDelete, and the child will be unreachable after tree merge.
-	var notifications []reloadNotification
-	changedDirs := make(map[*fs.Inode]bool)
+	// Before merge: capture child inodes for files being removed. We need
+	// these for NotifyDelete (sends IN_DELETE inotify event), and the child
+	// inode won't be reachable after tree merge removes it. We do NOT
+	// capture parent inodes here because the merge may delete parent
+	// directories, leaving stale inode pointers that crash go-fuse.
+	deletedChildren := make(map[string]*fs.Inode) // filePath → child inode
 	for name := range oldFileNames {
 		if _, inNew := newFiles[name]; !inNew {
 			parentInode, basename := r.findParentInode(name)
 			if parentInode != nil {
-				child := parentInode.GetChild(basename)
-				notifications = append(notifications, reloadNotification{
-					parent:   parentInode,
-					child:    child,
-					name:     basename,
-					isDelete: true,
-				})
-				changedDirs[parentInode] = true
-				markAncestorDirs(parentInode, changedDirs)
+				if child := parentInode.GetChild(basename); child != nil {
+					deletedChildren[name] = child
+				}
 			}
 		}
 	}
@@ -538,7 +542,28 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 	// Merge new tree into existing tree in place
 	mergeDirectoryTree(r.rootDir, newTree)
 
-	// After merge: capture addition notifications (parent dirs now exist in tree)
+	// After merge: capture all notifications using the post-merge tree.
+	// Parent inodes are now resolved against the live tree, so we never
+	// reference deleted directory inodes. If a parent directory was removed
+	// by the merge, findParentInode returns nil and we skip the notification
+	// — the directory removal already invalidates its children in the kernel.
+	var notifications []reloadNotification
+	changedDirs := make(map[*fs.Inode]bool)
+	for name := range oldFileNames {
+		if _, inNew := newFiles[name]; !inNew {
+			parentInode, basename := r.findParentInode(name)
+			if parentInode != nil {
+				notifications = append(notifications, reloadNotification{
+					parent:   parentInode,
+					child:    deletedChildren[name],
+					name:     basename,
+					isDelete: true,
+				})
+				changedDirs[parentInode] = true
+				markAncestorDirs(parentInode, changedDirs)
+			}
+		}
+	}
 	for name := range newFiles {
 		if !oldFileNames[name] {
 			parentInode, basename := r.findParentInode(name)
@@ -630,9 +655,13 @@ func (r *MKVFSRoot) emitReloadNotifications(notifications []reloadNotification, 
 		}
 	}
 
-	// Invalidate readdir cache for all directories that had changes
+	// Invalidate readdir cache for all directories that had changes.
+	// Skip uninitialized inodes (Ino==0) as a safety net — these should
+	// not appear here after the findParentInode fix, but guard anyway.
 	for dirInode := range changedDirs {
-		dirInode.NotifyContent(0, 0)
+		if dirInode.StableAttr().Ino != 0 {
+			dirInode.NotifyContent(0, 0)
+		}
 	}
 
 	if deleted > 0 || invalidated > 0 {

@@ -39,7 +39,7 @@ func (f *mockReaderFactoryWithSources) NewReaderLazy(dedupPath, sourceDir string
 func newTestWatcher(t *testing.T, action string) (*SourceWatcher, *logCapture) {
 	t.Helper()
 	lc := &logCapture{}
-	sw, err := NewSourceWatcher(action, lc.logFn)
+	sw, err := NewSourceWatcher(action, 0, lc.logFn)
 	if err != nil {
 		t.Fatalf("NewSourceWatcher(%q): %v", action, err)
 	}

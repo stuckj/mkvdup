@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stuckj/mkvdup/internal/daemon"
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
 	"github.com/stuckj/mkvdup/internal/mkv"
@@ -17,18 +18,20 @@ import (
 
 // MountOptions holds all options for the mount command.
 type MountOptions struct {
-	AllowOther      bool
-	Foreground      bool
-	ConfigDir       bool
-	PidFile         string
-	DaemonTimeout   time.Duration
-	PermissionsFile string
-	DefaultUID      uint32
-	DefaultGID      uint32
-	DefaultFileMode uint32
-	DefaultDirMode  uint32
-	NoSourceWatch   bool   // Disable source file watching
-	OnSourceChange  string // Action on source change: "warn", "disable", "checksum"
+	AllowOther              bool
+	Foreground              bool
+	ConfigDir               bool
+	PidFile                 string
+	DaemonTimeout           time.Duration
+	PermissionsFile         string
+	DefaultUID              uint32
+	DefaultGID              uint32
+	DefaultFileMode         uint32
+	DefaultDirMode          uint32
+	NoSourceWatch           bool          // Disable source file watching
+	OnSourceChange          string        // Action on source change: "warn", "disable", "checksum"
+	SourceWatchPollInterval time.Duration // Poll interval for network FS source watching (0 = 60s default)
+	SourceReadTimeout       time.Duration // Pread timeout for network FS sources (0 = disabled; CLI default 30s)
 }
 
 // parseUint32 parses a string as uint32.
@@ -230,13 +233,15 @@ Permission Options:
     --permissions-file PATH    Path to permissions file (overrides default locations)
 
 Source Watch Options:
-    --no-source-watch          Disable source file monitoring (enabled by default)
-    --on-source-change ACTION  Action on source change: warn, disable, checksum (default)
-                               warn     - log a warning
-                               disable  - disable affected virtual files (reads return EIO)
-                               checksum - size change: disable immediately
-                                          timestamp-only: verify checksum in background,
-                                          disable on mismatch, re-enable on pass
+    --no-source-watch                    Disable source file monitoring (enabled by default)
+    --on-source-change ACTION            Action on source change: warn, disable, checksum (default)
+                                         warn     - log a warning
+                                         disable  - disable affected virtual files (reads return EIO)
+                                         checksum - size change: disable immediately
+                                                    timestamp-only: verify checksum in background,
+                                                    disable on mismatch, re-enable on pass
+    --source-watch-poll-interval DUR     Poll interval for source file changes (default: 60s)
+    --source-read-timeout DUR            Read timeout for network FS sources (default: 30s)
 
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
@@ -255,6 +260,8 @@ Examples:
     mkvdup mount --config-dir /mnt/videos /etc/mkvdup.d/
     mkvdup mount --foreground /mnt/videos config.yaml
     mkvdup mount --default-uid 1000 --default-gid 1000 /mnt/videos config.yaml
+    mkvdup mount --source-watch-poll-interval 10s /mnt/videos config.yaml
+    mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 `)
 	case "info":
 		fmt.Print(`Usage: mkvdup info [options] <dedup-file>
@@ -342,7 +349,7 @@ Examples:
     mkvdup validate --deep --strict /etc/mkvdup.conf
 `)
 	case "reload":
-		fmt.Print(`Usage: mkvdup reload --pid-file PATH [options] [config.yaml...]
+		fmt.Print(`Usage: mkvdup reload {--pid-file PATH | --pid PID} [options] [config.yaml...]
 
 Reload a running daemon's configuration by validating the config
 and sending SIGHUP to the daemon process.
@@ -356,8 +363,9 @@ pre-validation (the daemon validates internally on SIGHUP).
 Arguments:
     [config.yaml]  Config files to validate (same as mount's config args)
 
-Required Options:
+Required (one of):
     --pid-file PATH    PID file of running daemon (must match mount's --pid-file)
+    --pid PID          PID of the running daemon (e.g., for foreground mode)
 
 Options:
     --config-dir       Treat config argument as directory of YAML files
@@ -366,6 +374,7 @@ Examples:
     mkvdup reload --pid-file /run/mkvdup.pid config.yaml
     mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
     mkvdup reload --pid-file /run/mkvdup.pid
+    mkvdup reload --pid $(pidof mkvdup)
 `)
 	case "deltadiag":
 		fmt.Print(`Usage: mkvdup deltadiag <dedup-file> <mkv-file>
@@ -535,6 +544,8 @@ func main() {
 		defaultDirMode := uint32(0555)
 		noSourceWatch := false
 		onSourceChange := "checksum"
+		sourceWatchPollInterval := time.Duration(0)
+		sourceReadTimeout := 30 * time.Second
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -628,6 +639,34 @@ func main() {
 				} else {
 					log.Fatalf("Error: --on-source-change requires an argument (warn, disable, or checksum)")
 				}
+			case "--source-watch-poll-interval":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --source-watch-poll-interval invalid duration: %v", err)
+					}
+					if d <= 0 {
+						log.Fatalf("Error: --source-watch-poll-interval must be positive")
+					}
+					sourceWatchPollInterval = d
+					i++
+				} else {
+					log.Fatalf("Error: --source-watch-poll-interval requires a duration argument (e.g., 10s, 5m)")
+				}
+			case "--source-read-timeout":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					d, err := time.ParseDuration(args[i+1])
+					if err != nil {
+						log.Fatalf("Error: --source-read-timeout invalid duration: %v", err)
+					}
+					if d < 0 {
+						log.Fatalf("Error: --source-read-timeout must be non-negative")
+					}
+					sourceReadTimeout = d
+					i++
+				} else {
+					log.Fatalf("Error: --source-read-timeout requires a duration argument (e.g., 30s, 1m)")
+				}
 			default:
 				mountArgs = append(mountArgs, args[i])
 			}
@@ -639,18 +678,20 @@ func main() {
 		mountpoint := mountArgs[0]
 		configPaths := mountArgs[1:]
 		mountOpts := MountOptions{
-			AllowOther:      allowOther,
-			Foreground:      foreground,
-			ConfigDir:       configDir,
-			PidFile:         pidFile,
-			DaemonTimeout:   daemonTimeout,
-			PermissionsFile: permissionsFile,
-			DefaultUID:      defaultUID,
-			DefaultGID:      defaultGID,
-			DefaultFileMode: defaultFileMode,
-			DefaultDirMode:  defaultDirMode,
-			NoSourceWatch:   noSourceWatch,
-			OnSourceChange:  onSourceChange,
+			AllowOther:              allowOther,
+			Foreground:              foreground,
+			ConfigDir:               configDir,
+			PidFile:                 pidFile,
+			DaemonTimeout:           daemonTimeout,
+			PermissionsFile:         permissionsFile,
+			DefaultUID:              defaultUID,
+			DefaultGID:              defaultGID,
+			DefaultFileMode:         defaultFileMode,
+			DefaultDirMode:          defaultDirMode,
+			NoSourceWatch:           noSourceWatch,
+			OnSourceChange:          onSourceChange,
+			SourceWatchPollInterval: sourceWatchPollInterval,
+			SourceReadTimeout:       sourceReadTimeout,
 		}
 		if err := mountFuse(mountpoint, configPaths, mountOpts); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -726,7 +767,12 @@ func main() {
 		os.Exit(validateConfigs(valArgs, configDir, deep, strict))
 
 	case "reload":
+		if len(args) == 0 {
+			printCommandUsage("reload")
+			os.Exit(1)
+		}
 		pidFile := ""
+		pidDirect := 0
 		configDir := false
 		var reloadArgs []string
 		for i := 0; i < len(args); i++ {
@@ -738,16 +784,39 @@ func main() {
 				} else {
 					log.Fatalf("Error: --pid-file requires a path argument")
 				}
+			case "--pid":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					p, err := strconv.Atoi(args[i+1])
+					if err != nil || p <= 0 {
+						log.Fatalf("Error: --pid requires a positive integer argument")
+					}
+					pidDirect = p
+					i++
+				} else {
+					log.Fatalf("Error: --pid requires a PID argument")
+				}
 			case "--config-dir":
 				configDir = true
 			default:
 				reloadArgs = append(reloadArgs, args[i])
 			}
 		}
-		if pidFile == "" {
-			log.Fatalf("Error: --pid-file is required for reload")
+		if pidFile != "" && pidDirect != 0 {
+			log.Fatalf("Error: --pid-file and --pid are mutually exclusive")
 		}
-		if err := reloadDaemon(pidFile, reloadArgs, configDir); err != nil {
+		var pid int
+		if pidDirect != 0 {
+			pid = pidDirect
+		} else if pidFile != "" {
+			var err error
+			pid, err = daemon.ReadPidFile(pidFile)
+			if err != nil {
+				log.Fatalf("Error: %v", err)
+			}
+		} else {
+			log.Fatalf("Error: --pid-file or --pid is required for reload")
+		}
+		if err := reloadDaemon(pid, reloadArgs, configDir); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

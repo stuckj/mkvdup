@@ -95,6 +95,8 @@ complete -c $cmd -n '__fish_mkvdup_using_command mount' -l default-dir-mode -d '
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l permissions-file -d 'Path to permissions file' -r
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l no-source-watch -d 'Disable source file monitoring'
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l on-source-change -d 'Action on source change' -x -a 'warn disable checksum'
+complete -c $cmd -n '__fish_mkvdup_using_command mount' -l source-watch-poll-interval -d 'Polling interval for source file changes' -x
+complete -c $cmd -n '__fish_mkvdup_using_command mount' -l source-read-timeout -d 'Read timeout for network FS sources' -x
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -F -d 'Mount point or config files'
 
 # info options
@@ -116,6 +118,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command validate' -F -d 'Config files'
 
 # reload options
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -l pid-file -d 'PID file of the running daemon' -r
+complete -c $cmd -n '__fish_mkvdup_using_command reload' -l pid -d 'PID of the running daemon' -r
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -l config-dir -d 'Treat config argument as directory of YAML files'
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -F -d 'Config files'
 

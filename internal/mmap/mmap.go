@@ -3,10 +3,25 @@ package mmap
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
 )
+
+// SourceFile provides read access to a source file, either via mmap or pread.
+type SourceFile interface {
+	io.ReaderAt
+	Size() int64
+	Close() error
+}
+
+// MmapData provides zero-copy access to a memory-mapped file's data.
+// Types implementing this interface allow callers to use direct slice access
+// instead of copying through ReadAt.
+type MmapData interface {
+	Data() []byte
+}
 
 // File provides zero-copy access to a memory-mapped file.
 // Unlike golang.org/x/exp/mmap, this exposes the raw []byte slice
@@ -82,6 +97,24 @@ func (m *File) Advise(advice int) error {
 	return unix.Madvise(m.data, advice)
 }
 
+// ReadAt implements io.ReaderAt by copying from the mmap'd data.
+func (m *File) ReadAt(p []byte, off int64) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if off < 0 {
+		return 0, os.ErrInvalid
+	}
+	if off >= m.size {
+		return 0, io.EOF
+	}
+	n := copy(p, m.data[off:])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
 // Close unmaps the file from memory.
 func (m *File) Close() error {
 	if m.data == nil {
@@ -93,5 +126,6 @@ func (m *File) Close() error {
 	}
 
 	m.data = nil
+	m.size = 0
 	return nil
 }

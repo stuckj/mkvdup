@@ -2211,6 +2211,100 @@ func TestMKVFSRoot_Reload_RemoveDirectory(t *testing.T) {
 	}
 }
 
+func TestMKVFSRoot_Reload_MoveToSubdirAndBack(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+		},
+	}
+
+	// Start with file in subdirectory
+	initial := []dedup.Config{
+		{Name: "Zootopia/movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := root.rootDir.subdirs["Zootopia"]; !ok {
+		t.Fatal("expected Zootopia dir initially")
+	}
+
+	// First reload: move to root level (remove subdirectory)
+	reload1 := []dedup.Config{
+		{Name: "movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(reload1, nil); err != nil {
+		t.Fatalf("first reload: %v", err)
+	}
+	if _, ok := root.rootDir.subdirs["Zootopia"]; ok {
+		t.Error("Zootopia dir should be removed after first reload")
+	}
+	if _, ok := root.rootDir.files["movie.mkv"]; !ok {
+		t.Fatal("expected movie.mkv at root after first reload")
+	}
+
+	// Second reload: move back to subdirectory (re-add subdirectory).
+	// This is the crash scenario: mergeDirectoryTree inserts a new
+	// MKVFSDirNode with an uninitialized fs.Inode. findParentInode must
+	// return nil for the uninitialized parent to prevent notification panics.
+	reload2 := []dedup.Config{
+		{Name: "Zootopia/movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(reload2, nil); err != nil {
+		t.Fatalf("second reload: %v", err)
+	}
+	if _, ok := root.rootDir.subdirs["Zootopia"]; !ok {
+		t.Error("expected Zootopia dir after second reload")
+	}
+	if _, ok := root.rootDir.files["movie.mkv"]; ok {
+		t.Error("movie.mkv should not be at root after second reload")
+	}
+
+	// Verify findParentInode returns nil for the uninitialized Zootopia
+	// directory (its fs.Inode was never registered via NewPersistentInode)
+	parentInode, _ := root.findParentInode("Zootopia/movie.mkv")
+	if parentInode != nil {
+		t.Error("findParentInode should return nil for uninitialized parent dir")
+	}
+}
+
+func TestMKVFSRoot_FindParentInode_UninitializedDir(t *testing.T) {
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/m1.dedup": {data: []byte("m1"), originalSize: 100},
+		},
+	}
+
+	// Start with a file at root level
+	initial := []dedup.Config{
+		{Name: "movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reload to add a file in a new subdirectory
+	reload := []dedup.Config{
+		{Name: "Movies/Action/film.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+	}
+	if err := root.Reload(reload, nil); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	// Both "Movies" and "Action" are new directories with uninitialized inodes.
+	// findParentInode should return nil for paths under them.
+	parentInode, _ := root.findParentInode("Movies/Action/film.mkv")
+	if parentInode != nil {
+		t.Error("findParentInode should return nil for deeply nested uninitialized dirs")
+	}
+
+	// Root-level files should still resolve (root inode is always initialized
+	// by go-fuse during mount, but in tests the embedded Inode is a zero value
+	// too — this test verifies the directory tree walk, not root resolution)
+}
+
 func TestMKVFSRoot_Reload_SkipsBadConfigs(t *testing.T) {
 	factory := &mockReaderFactory{
 		readers: map[string]*mockReader{

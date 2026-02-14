@@ -156,6 +156,9 @@ The FUSE daemon supports live config reload without restart via SIGHUP:
 # Validates config before sending signal
 mkvdup reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+
+# Use --pid directly (e.g., foreground mode without a PID file)
+mkvdup reload --pid $(pidof mkvdup) /etc/mkvdup.conf
 ```
 
 **Using kill directly:**
@@ -344,22 +347,6 @@ go-fuse handles concurrent request processing automatically. Planned: configurab
 | NAS with many users | NumCPU * 2 | I/O bound |
 | Low-power device | 1-2 | Reduce CPU usage |
 
-## Health Checks *(planned — [#12](https://github.com/stuckj/mkvdup/issues/12))*
-
-> **Not yet implemented.** The following describes planned behavior.
-
-Optional background health monitoring:
-
-```yaml
-# In mount config
-health_check:
-  enabled: true
-  interval: 1h           # Check every hour
-  check_source_sizes: true
-  check_source_checksums: false  # Too slow for routine checks
-  on_error: warn         # warn, disable_file, or unmount
-```
-
 ## Source File Watching
 
 Source file monitoring detects changes to the underlying source media (DVD ISOs, Blu-ray M2TS files) and takes action to prevent serving corrupted data. Enabled by default.
@@ -372,6 +359,12 @@ mkvdup mount --no-source-watch /mnt/videos config.yaml
 
 # Set action on source change (default: checksum)
 mkvdup mount --on-source-change warn /mnt/videos config.yaml
+
+# Reduce poll interval for faster change detection on network FS
+mkvdup mount --source-watch-poll-interval 10s /mnt/videos config.yaml
+
+# Set a read timeout for slow network links
+mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 ```
 
 ### fstab Options
@@ -382,6 +375,12 @@ mkvdup mount --on-source-change warn /mnt/videos config.yaml
 
 # With checksum verification
 /etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  on_source_change=checksum  0  0
+
+# Network source options
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  source_watch_poll_interval=10s,source_read_timeout=30s  0  0
+
+# Write PID file (for use with mkvdup reload --pid-file)
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  pid_file=/run/mkvdup.pid  0  0
 ```
 
 ### Actions
@@ -398,13 +397,47 @@ At mount time, source file metadata (path, size, checksum) is read from each ded
 
 **Local filesystems:** Monitored via inotify (reacts to write, create, rename, and remove events).
 
-**Network filesystems (NFS, CIFS/SMB):** inotify does not work on network mounts. The watcher automatically falls back to polling (stat every 60 seconds, comparing mtime).
+**Network filesystems (NFS, CIFS/SMB):** inotify does not work on network mounts. The watcher automatically falls back to polling (stat at a configurable interval, default 60 seconds, comparing mtime). Source file reads on network filesystems use `pread(2)` instead of `mmap()` to avoid SIGBUS crashes, with automatic retry on transient errors (ESTALE, ETIMEDOUT, etc.) and stale file handle recovery.
 
 **On SIGHUP reload:** The watcher rebuilds its source file mappings to match the new configuration. Old watches are removed and new ones are set up.
 
 **Disabled files:** When a file is disabled (by `disable` action, size change in `checksum` mode, or checksum mismatch), its active reader is closed and subsequent `Open`/`Read` calls return `EIO`. The file remains visible in directory listings. In `checksum` mode, a subsequent successful verification automatically re-enables the file. For all modes, sending SIGHUP to reload the config resets the disabled state.
 
 **Checksum queue:** Checksum verifications run sequentially in a single background worker to avoid I/O storms when many source files change at once. Duplicate events for the same source file are deduplicated.
+
+## Network Source Support
+
+When source media is stored on network filesystems (NFS, CIFS/SMB), mkvdup automatically uses `pread(2)` instead of `mmap()` for source file access. This provides:
+
+- Graceful error handling instead of SIGBUS crashes
+- Automatic retry on transient errors (ESTALE, ETIMEDOUT, ECONNRESET, EIO)
+- Stale file handle recovery (automatic fd reopen)
+- Configurable read timeout
+
+Network filesystem detection is automatic — no configuration is needed. Local filesystems continue using `mmap()` for zero-copy performance.
+
+### Options
+
+| Flag | fstab Option | Default | Description |
+|------|-------------|---------|-------------|
+| `--source-read-timeout DUR` | `source_read_timeout=DUR` | 30s | Timeout for individual source file reads on network FS |
+| `--source-watch-poll-interval DUR` | `source_watch_poll_interval=DUR` | 60s | Polling interval for detecting source file changes |
+
+### Examples
+
+```bash
+# Mount with sources on NFS (pread auto-detected)
+mkvdup mount /mnt/videos config.yaml
+
+# Reduce poll interval for faster change detection on network FS
+mkvdup mount --source-watch-poll-interval 10s /mnt/videos config.yaml
+
+# Set a read timeout for slow network links
+mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
+
+# fstab with network source options
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  source_watch_poll_interval=10s,source_read_timeout=30s  0  0
+```
 
 ## Error Handling
 

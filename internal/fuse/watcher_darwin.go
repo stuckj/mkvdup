@@ -4,6 +4,12 @@ package fuse
 
 import "golang.org/x/sys/unix"
 
+// IsNetworkFS checks if the given path is on a network filesystem.
+// Exported for integration testing; internal callers use isNetworkFS.
+func IsNetworkFS(path string) bool {
+	return isNetworkFS(path)
+}
+
 // isNetworkFS checks if the given path is on a network filesystem.
 func isNetworkFS(path string) bool {
 	var stat unix.Statfs_t

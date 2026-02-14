@@ -7,6 +7,7 @@
 #   /path/to/config.yaml  /mnt/videos  fuse.mkvdup  defaults  0  0
 #   /etc/mkvdup.d         /mnt/videos  fuse.mkvdup  config_dir  0  0
 #   none                  /mnt/videos  fuse.mkvdup  defaults  0  0
+#   /etc/mkvdup.conf      /mnt/videos  fuse.mkvdup  pid_file=/run/mkvdup.pid  0  0
 #
 # systemd mount unit:
 #   [Mount]
@@ -99,6 +100,15 @@ for opt in "${OPTS[@]}"; do
             ;;
         on_source_change=*)
             MKVDUP_ARGS+=("--on-source-change" "${opt#on_source_change=}")
+            ;;
+        source_watch_poll_interval=*)
+            MKVDUP_ARGS+=("--source-watch-poll-interval" "${opt#source_watch_poll_interval=}")
+            ;;
+        source_read_timeout=*)
+            MKVDUP_ARGS+=("--source-read-timeout" "${opt#source_read_timeout=}")
+            ;;
+        pid_file=*)
+            MKVDUP_ARGS+=("--pid-file" "${opt#pid_file=}")
             ;;
         ro|rw|defaults|auto|noauto|user|nouser|exec|noexec|suid|nosuid|dev|nodev|_netdev)
             # Standard mount options - ignore (FUSE handles most of these)

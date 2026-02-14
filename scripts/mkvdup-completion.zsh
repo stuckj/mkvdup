@@ -53,6 +53,8 @@ _mkvdup_mount() {
         '--permissions-file=[Path to permissions file]:permissions file:_files' \
         '--no-source-watch[Disable source file monitoring]' \
         '--on-source-change=[Action on source change]:action:(warn disable checksum)' \
+        '--source-watch-poll-interval=[Polling interval for source file changes]:duration' \
+        '--source-read-timeout=[Read timeout for network FS sources]:duration' \
         '1:Mount point:_files -/' \
         '*:Config files:_files -g "*.y(a|)ml(-.)"'
 }
@@ -102,7 +104,8 @@ _mkvdup_reload() {
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
-        '--pid-file=[PID file of the running daemon]:PID file:_files' \
+        '(--pid)--pid-file=[PID file of the running daemon]:PID file:_files' \
+        '(--pid-file)--pid=[PID of the running daemon]' \
         '--config-dir[Treat config argument as directory of YAML files]' \
         '*:Config files:_files -g "*.y(a|)ml(-.)"'
 }

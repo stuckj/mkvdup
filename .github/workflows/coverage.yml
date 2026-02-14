@@ -75,7 +75,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse-dev fuse3
+          sudo apt-get install -y libfuse-dev fuse3 nfs-kernel-server nfs-common
+
+      - name: Start NFS services
+        run: |
+          sudo mkdir -p /etc/exports.d
+          sudo systemctl start rpcbind
+          sudo systemctl start nfs-server
 
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.12.0
@@ -116,7 +122,9 @@ jobs:
         run: |
           # Run dedup DVD tests (skip Blu-ray) and all FUSE tests
           # FUSE tests use DVD testdata, so they run here
-          gotestsum --junitfile dvd-results.xml -- \
+          # sudo -E preserves MKVDUP_TESTDATA and enables NFS integration test
+          GOTESTSUM=$(go env GOPATH)/bin/gotestsum
+          sudo -E "$GOTESTSUM" --junitfile dvd-results.xml -- \
             -tags=integration \
             -skip 'TestFullDedupCycle_Bluray' \
             -coverprofile=dvd-coverage.out \

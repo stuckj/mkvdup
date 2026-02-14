@@ -340,13 +340,15 @@ Reload a running daemon's configuration by validating the config and sending SIG
 mkvdup reload --pid-file /run/mkvdup.pid config.yaml
 mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
 mkvdup reload --pid-file /run/mkvdup.pid
+mkvdup reload --pid $(pidof mkvdup)
 ```
 
-**Required Options:**
+**Required (one of):**
 
 | Option | Description |
 |--------|-------------|
 | `--pid-file PATH` | PID file of the running daemon (must match mount's `--pid-file`) |
+| `--pid PID` | PID of the running daemon (e.g., for foreground mode) |
 
 **Options:**
 

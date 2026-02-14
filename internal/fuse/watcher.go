@@ -65,13 +65,16 @@ type SourceWatcher struct {
 	// a previous config from disabling files after a reload.
 	updateGen uint64
 
+	pollInterval time.Duration // interval for network FS polling (0 = defaultPollInterval)
+
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 }
 
 // NewSourceWatcher creates a new source file watcher with the given action.
+// If pollInterval <= 0, defaultPollInterval is used.
 // The watcher is not started until Start() is called.
-func NewSourceWatcher(action string, logFn func(string, ...interface{})) (*SourceWatcher, error) {
+func NewSourceWatcher(action string, pollInterval time.Duration, logFn func(string, ...interface{})) (*SourceWatcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("create fsnotify watcher: %w", err)
@@ -79,6 +82,10 @@ func NewSourceWatcher(action string, logFn func(string, ...interface{})) (*Sourc
 
 	if logFn == nil {
 		logFn = func(string, ...interface{}) {}
+	}
+
+	if pollInterval <= 0 {
+		pollInterval = defaultPollInterval
 	}
 
 	return &SourceWatcher{
@@ -91,6 +98,7 @@ func NewSourceWatcher(action string, logFn func(string, ...interface{})) (*Sourc
 		logFn:           logFn,
 		checksumCh:      make(chan checksumRequest, 256),
 		checksumPending: make(map[string]bool),
+		pollInterval:    pollInterval,
 		stopCh:          make(chan struct{}),
 	}, nil
 }
@@ -271,7 +279,7 @@ func (sw *SourceWatcher) eventLoop() {
 func (sw *SourceWatcher) pollLoop() {
 	defer sw.wg.Done()
 
-	ticker := time.NewTicker(defaultPollInterval)
+	ticker := time.NewTicker(sw.pollInterval)
 	defer ticker.Stop()
 
 	for {

@@ -1338,11 +1338,11 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 			log.Printf(format, args...)
 		}
 		var err error
-		sourceWatcher, err = mkvfuse.NewSourceWatcher(opts.OnSourceChange, watchLogFn)
+		sourceWatcher, err = mkvfuse.NewSourceWatcher(opts.OnSourceChange, opts.SourceWatchPollInterval, watchLogFn)
 		if err != nil {
 			log.Printf("source-watch: warning: failed to create watcher: %v", err)
 		} else {
-			sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{})
+			sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
 			sourceWatcher.Start()
 		}
 	}
@@ -1428,7 +1428,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 
 				// Update source watcher with new file set
 				if sourceWatcher != nil {
-					sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{})
+					sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
 				}
 
 				logFn("config reloaded successfully")
@@ -1459,13 +1459,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 }
 
 // reloadDaemon validates config files and sends SIGHUP to the running daemon.
-func reloadDaemon(pidFile string, configPaths []string, configDir bool) error {
-	// Read PID from file
-	pid, err := daemon.ReadPidFile(pidFile)
-	if err != nil {
-		return err
-	}
-
+func reloadDaemon(pid int, configPaths []string, configDir bool) error {
 	// Verify the process exists (on Unix, FindProcess always succeeds;
 	// send signal 0 to check if process is actually running)
 	process, err := os.FindProcess(pid)

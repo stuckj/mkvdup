@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
@@ -25,7 +26,7 @@ type Reader struct {
 	dedupMmap   *mmap.File
 	dedupPath   string
 	sourceDir   string
-	sourceMmaps []*mmap.File
+	sourceFiles []mmap.SourceFile
 	esReader    ESReader  // For ES-based sources (v1 only, deprecated in v2)
 	entriesOnce sync.Once // For lazy entry access initialization
 	entriesErr  error     // Error from entry access initialization
@@ -110,15 +111,15 @@ func (r *Reader) SetESReader(esReader ESReader) {
 
 // LoadSourceFiles memory-maps all source files.
 func (r *Reader) LoadSourceFiles() error {
-	r.sourceMmaps = make([]*mmap.File, len(r.file.SourceFiles))
+	r.sourceFiles = make([]mmap.SourceFile, len(r.file.SourceFiles))
 	for i, sf := range r.file.SourceFiles {
 		path := r.sourceDir + "/" + sf.RelativePath
 		m, err := mmap.Open(path)
 		if err != nil {
 			// Clean up already opened files
 			for j := 0; j < i; j++ {
-				if r.sourceMmaps[j] != nil {
-					r.sourceMmaps[j].Close()
+				if r.sourceFiles[j] != nil {
+					r.sourceFiles[j].Close()
 				}
 			}
 			return fmt.Errorf("mmap source file %s: %w", sf.RelativePath, err)
@@ -126,7 +127,28 @@ func (r *Reader) LoadSourceFiles() error {
 		// Hint sequential access so the kernel does aggressive readahead
 		// instead of handling individual 4KB page faults.
 		m.Advise(unix.MADV_SEQUENTIAL)
-		r.sourceMmaps[i] = m
+		r.sourceFiles[i] = m
+	}
+	return nil
+}
+
+// LoadSourceFilesPread opens all source files using pread(2) instead of mmap.
+// This is used for source files on network filesystems where mmap is unsafe.
+func (r *Reader) LoadSourceFilesPread(timeout time.Duration) error {
+	r.sourceFiles = make([]mmap.SourceFile, len(r.file.SourceFiles))
+	for i, sf := range r.file.SourceFiles {
+		path := r.sourceDir + "/" + sf.RelativePath
+		pf, err := mmap.OpenPread(path, timeout)
+		if err != nil {
+			// Clean up already opened files
+			for j := 0; j < i; j++ {
+				if r.sourceFiles[j] != nil {
+					r.sourceFiles[j].Close()
+				}
+			}
+			return fmt.Errorf("open source file %s: %w", sf.RelativePath, err)
+		}
+		r.sourceFiles[i] = pf
 	}
 	return nil
 }
@@ -136,9 +158,9 @@ func (r *Reader) Close() error {
 	if r.dedupMmap != nil {
 		r.dedupMmap.Close()
 	}
-	for _, m := range r.sourceMmaps {
-		if m != nil {
-			m.Close()
+	for _, sf := range r.sourceFiles {
+		if sf != nil {
+			sf.Close()
 		}
 	}
 	return nil
@@ -453,13 +475,11 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			}
 			copy(buf[bufOffset:], data)
 		} else {
-			// V3: Read from raw source file (zero-copy mmap slice)
+			// V3: Read from raw source file
 			fileIndex := int(entry.Source - 1)
-			data, err := r.readSource(fileIndex, sourceOffset, readLen)
-			if err != nil {
+			if err := r.readSourceInto(fileIndex, sourceOffset, buf[bufOffset:bufOffset+readLen]); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
-			copy(buf[bufOffset:], data)
 		}
 
 		totalRead += readLen
@@ -620,18 +640,17 @@ func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset in
 		return fmt.Errorf("no range map for source file %d", fileIndex)
 	}
 
-	if fileIndex < 0 || fileIndex >= len(r.sourceMmaps) || r.sourceMmaps[fileIndex] == nil {
+	if fileIndex < 0 || fileIndex >= len(r.sourceFiles) || r.sourceFiles[fileIndex] == nil {
 		return fmt.Errorf("source file %d not loaded for range map read", fileIndex)
 	}
 
-	sourceData := r.sourceMmaps[fileIndex].Data()
-	sourceSize := r.sourceMmaps[fileIndex].Size()
+	sf := r.sourceFiles[fileIndex]
 
 	if entry.IsVideo {
 		if src.VideoMap == nil {
 			return fmt.Errorf("no video range map for source file %d", fileIndex)
 		}
-		_, err := src.VideoMap.ReadDataInto(sourceData, sourceSize, sourceOffset, dest)
+		_, err := src.VideoMap.ReadDataInto(sf, sourceOffset, dest)
 		return err
 	}
 
@@ -639,24 +658,32 @@ func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset in
 	if !ok {
 		return fmt.Errorf("no audio sub-stream %d range map for source file %d", entry.AudioSubStreamID, fileIndex)
 	}
-	_, err := audioMap.ReadDataInto(sourceData, sourceSize, sourceOffset, dest)
+	_, err := audioMap.ReadDataInto(sf, sourceOffset, dest)
 	return err
 }
 
-func (r *Reader) readSource(fileIndex int, offset int64, size int) ([]byte, error) {
-	if fileIndex < 0 || fileIndex >= len(r.sourceMmaps) {
-		return nil, fmt.Errorf("invalid file index: %d", fileIndex)
+// readSourceInto reads source file data directly into dest.
+func (r *Reader) readSourceInto(fileIndex int, offset int64, dest []byte) error {
+	if fileIndex < 0 || fileIndex >= len(r.sourceFiles) {
+		return fmt.Errorf("invalid file index: %d", fileIndex)
 	}
-	if r.sourceMmaps[fileIndex] == nil {
-		return nil, fmt.Errorf("source file %d not loaded", fileIndex)
+	if r.sourceFiles[fileIndex] == nil {
+		return fmt.Errorf("source file %d not loaded", fileIndex)
 	}
 
-	// Zero-copy slice from mmap'd data
-	data := r.sourceMmaps[fileIndex].Slice(offset, size)
-	if data == nil {
-		return nil, fmt.Errorf("source offset out of range")
+	n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
+	if n == len(dest) {
+		if err == io.EOF {
+			return nil
+		}
+		return err
 	}
-	return data, nil
+	// Short read: surface as unexpected EOF so FUSE returns EIO
+	// instead of silently truncating.
+	if err == nil || err == io.EOF {
+		return io.ErrUnexpectedEOF
+	}
+	return err
 }
 
 // parseHeaderOnly parses just the header and source files (not entries) for fast initialization.
