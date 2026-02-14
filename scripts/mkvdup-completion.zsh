@@ -6,10 +6,11 @@
 _mkvdup_create() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
-        '--quiet[Suppress the space savings warning]' \
         '--non-interactive[Do not prompt on codec mismatch]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
         '2:Source directory:_files -/' \
@@ -20,16 +21,19 @@ _mkvdup_create() {
 _mkvdup_batch_create() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
-        '--quiet[Suppress the space savings warning]' \
         '1:Manifest file:_files -g "*.y(a|)ml(-.)"'
 }
 
 _mkvdup_probe() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
@@ -39,6 +43,8 @@ _mkvdup_probe() {
 _mkvdup_mount() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--allow-other[Allow other users to access the mount]' \
@@ -62,6 +68,8 @@ _mkvdup_mount() {
 _mkvdup_info() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--hide-unused-files[Hide unused source files]' \
@@ -71,6 +79,8 @@ _mkvdup_info() {
 _mkvdup_verify() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
@@ -81,6 +91,8 @@ _mkvdup_verify() {
 _mkvdup_extract() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
@@ -91,6 +103,8 @@ _mkvdup_extract() {
 _mkvdup_check() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--source-checksums[Verify source file checksums]' \
@@ -101,6 +115,8 @@ _mkvdup_check() {
 _mkvdup_validate() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--config-dir[Treat config argument as directory of YAML files]' \
@@ -112,6 +128,8 @@ _mkvdup_validate() {
 _mkvdup_reload() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '(--pid)--pid-file=[PID file of the running daemon]:PID file:_files' \
@@ -123,6 +141,8 @@ _mkvdup_reload() {
 _mkvdup_parse_mkv() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"'
@@ -131,6 +151,8 @@ _mkvdup_parse_mkv() {
 _mkvdup_index_source() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Source directory:_files -/'
@@ -139,6 +161,8 @@ _mkvdup_index_source() {
 _mkvdup_match() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
@@ -148,6 +172,8 @@ _mkvdup_match() {
 _mkvdup_deltadiag() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
@@ -160,6 +186,8 @@ _mkvdup() {
 
     _arguments -C \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:command:->command' \

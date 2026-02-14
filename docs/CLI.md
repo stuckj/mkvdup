@@ -11,8 +11,17 @@
 mkvdup -v <command> [args...]
 mkvdup --verbose <command> [args...]
 
+# Suppress all informational output (errors still go to stderr)
+mkvdup -q <command> [args...]
+mkvdup --quiet <command> [args...]
+
+# Disable progress bars (phase labels and completion times still shown)
+mkvdup --no-progress <command> [args...]
+
 # Examples:
 mkvdup -v create video.mkv /source/dir
+mkvdup -q create video.mkv /source/dir
+mkvdup --no-progress create video.mkv /source/dir
 mkvdup -v mount /mnt/media config1.yaml config2.yaml
 mkvdup -v verify video.mkvdup /source/dir video.mkv
 ```
@@ -21,6 +30,16 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 - FUSE operation logging (Open, Read, Lookup, Readdir)
 - Detailed verification output with byte comparisons
 - Debug information for troubleshooting
+
+**Quiet mode (`-q`, `--quiet`):**
+- Suppresses all informational stdout (phase labels, progress bars, statistics)
+- Errors and warnings still go to stderr
+- Implies `--no-progress`
+
+**No-progress mode (`--no-progress`):**
+- Disables visual progress bars
+- Phase labels and completion times are still printed
+- Automatically enabled when stdout is not a terminal (e.g., piped to a file)
 
 ## Commands
 
@@ -49,7 +68,6 @@ mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 | Option | Description |
 |--------|-------------|
 | `--warn-threshold N` | Minimum space savings percentage to avoid warning (default: `75`) |
-| `--quiet` | Suppress the space savings warning |
 | `--non-interactive` | Don't prompt on codec mismatch (show warning and continue) |
 
 **Codec check:** Before matching, codecs in the MKV are compared against the source media. If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you will be prompted to continue or abort. Use `--non-interactive` for scripted usage. When stdin is not a terminal, non-interactive mode is used automatically.
@@ -70,7 +88,6 @@ mkvdup batch-create [options] <manifest.yaml>
 
 # Examples:
 mkvdup batch-create episodes.yaml
-mkvdup batch-create --quiet episodes.yaml
 mkvdup batch-create --warn-threshold 50 episodes.yaml
 ```
 
@@ -82,7 +99,6 @@ mkvdup batch-create --warn-threshold 50 episodes.yaml
 | Option | Description |
 |--------|-------------|
 | `--warn-threshold N` | Minimum space savings percentage to avoid warning (default: `75`) |
-| `--quiet` | Suppress the space savings warning |
 
 **Manifest format:**
 
@@ -421,6 +437,34 @@ mkvdup match video.mkv /path/to/source_dir
 | 0 | Success |
 | 1 | General error (invalid arguments, file not found, verification failed, etc.) |
 
+## Progress Output
+
+Commands that perform long-running operations (`create`, `batch-create`, `verify`, `extract`) display progress bars with ETA estimates:
+
+```
+Phase 3/6: Parsing MKV file...
+  [████████████████████░░░░░░░░░░░░░░░░░░░░]  52%  2.3 GB / 4.5 GB  ETA: 00:00:14
+```
+
+After completion, the bar is replaced with:
+```
+Phase 3/6: Parsing MKV file... done (00:00:27)
+```
+
+Fast phases (codec checks, checksum calculations) display status lines without progress bars.
+
+**`batch-create`** indexes the source once, then shows per-file progress:
+```
+Indexing source directory...
+  [████████████████████████████████████████░░]  95%  4.2 GB / 4.5 GB  ETA: 00:00:01
+Indexing source directory... done (00:00:28)
+
+[1/3] episode1.mkv
+Phase 1/4: Parsing MKV file...
+```
+
+Progress bars are automatically disabled when stdout is not a terminal. Use `--no-progress` to disable them manually (phase labels and completion times are still shown). Use `--quiet` to suppress all informational output.
+
 ## Warning Threshold
 
 If space savings fall below the warning threshold (default: 75%), a warning is shown but the file is still created:
@@ -430,14 +474,11 @@ WARNING: Space savings (28.4%) below 75%
   This may indicate wrong source or transcoded MKV.
 ```
 
-Use `--warn-threshold N` to customize the percentage, or `--quiet` to suppress the warning entirely. These options are available on both `create` and `batch-create`.
+Use `--warn-threshold N` to customize the percentage. Use `--quiet` to suppress all informational output including warnings.
 
 ```bash
 # Lower the threshold to 50%
 mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups
-
-# Suppress warnings entirely
-mkvdup create --quiet movie.mkv /media/dvd-backups
 ```
 
 ## Statistics Output

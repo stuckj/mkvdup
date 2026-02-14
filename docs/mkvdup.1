@@ -41,9 +41,6 @@ Minimum space savings percentage to avoid a warning (default: 75).
 If the resulting dedup file achieves less than this percentage of savings,
 a warning is printed suggesting wrong source or transcoded MKV.
 .TP
-.B \-\-quiet
-Suppress the space savings warning entirely.
-.TP
 .B \-\-non\-interactive
 Don't prompt on codec mismatch; show warning and continue.
 Automatically enabled when stdin is not a terminal.
@@ -65,9 +62,6 @@ for details.
 .B \-\-warn\-threshold N
 Minimum space savings percentage to avoid a warning (default: 75).
 Files with savings below this threshold are listed in the batch summary.
-.TP
-.B \-\-quiet
-Suppress the space savings warning entirely.
 .RE
 .TP
 .B probe \fImkv-file\fR \fIsource-dir\fR...
@@ -283,6 +277,15 @@ Match MKV packets to source and show detailed results (debugging).
 .TP
 .BR \-v ", " \-\-verbose
 Enable verbose output
+.TP
+.BR \-q ", " \-\-quiet
+Suppress all informational output. Errors and warnings still go to stderr.
+Implies
+.BR \-\-no\-progress .
+.TP
+.B \-\-no\-progress
+Disable progress bars. Phase labels and completion times are still printed.
+Automatically enabled when stdout is not a terminal.
 .TP
 .BR \-h ", " \-\-help
 Show help message

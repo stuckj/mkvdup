@@ -53,9 +53,9 @@ func parseOctalMode(s string) (uint32, error) {
 	return uint32(v), nil
 }
 
-// parseWarnFlags extracts --warn-threshold and --quiet from args, returning the
-// parsed values and the remaining positional arguments.
-func parseWarnFlags(args []string) (warnThreshold float64, quiet bool, remaining []string) {
+// parseWarnFlags extracts --warn-threshold from args, returning the
+// parsed value and the remaining positional arguments.
+func parseWarnFlags(args []string) (warnThreshold float64, remaining []string) {
 	warnThreshold = 75.0
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -73,8 +73,6 @@ func parseWarnFlags(args []string) (warnThreshold float64, quiet bool, remaining
 			} else {
 				log.Fatalf("Error: --warn-threshold requires a numeric argument")
 			}
-		case "--quiet":
-			quiet = true
 		default:
 			remaining = append(remaining, args[i])
 		}
@@ -82,11 +80,27 @@ func parseWarnFlags(args []string) (warnThreshold float64, quiet bool, remaining
 	return
 }
 
+// isTerminalStdout returns true if stdout is a terminal (not piped/redirected).
+func isTerminalStdout() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
 // version is set at build time via -ldflags
 var version = "dev"
 
 // verbose is set to true when -v flag is passed
 var verbose bool
+
+// showProgress controls whether progress bars are rendered. Set to false by
+// --no-progress, --quiet, or when stdout is not a TTY.
+var showProgress = true
+
+// quiet suppresses all informational stdout output. Errors still go to stderr.
+var quiet bool
 
 func printVersion() {
 	fmt.Printf("mkvdup version %s\n", version)
@@ -118,9 +132,11 @@ Debug commands:
   match        Match MKV packets to source
 
 Options:
-  -v, --verbose   Enable verbose output
-  -h, --help      Show help
-  --version       Show version
+  -v, --verbose    Enable verbose output
+  -q, --quiet      Suppress all informational output
+  --no-progress    Disable progress bars (still show status messages)
+  -h, --help       Show help
+  --version        Show version
 `)
 	fmt.Print(debugOptionsHelp())
 	fmt.Print(`Run 'mkvdup <command> --help' for more information on a command.
@@ -145,7 +161,6 @@ Arguments:
 Options:
     -v, --verbose       Enable verbose/debug output
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
-    --quiet             Suppress the space savings warning
     --non-interactive   Don't prompt on codec mismatch (show warning and continue)
 
 Before matching, codecs in the MKV are compared against the source media.
@@ -173,7 +188,6 @@ Arguments:
 Options:
     -v, --verbose       Enable verbose/debug output
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
-    --quiet             Suppress the space savings warning
 
 Manifest format:
     source_dir: /media/dvd-backups/disc1
@@ -196,7 +210,7 @@ Relative paths are resolved against the manifest file's directory.
 
 Examples:
     mkvdup batch-create episodes.yaml
-    mkvdup batch-create --quiet episodes.yaml
+    mkvdup batch-create --warn-threshold 50 episodes.yaml
 `)
 	case "probe":
 		fmt.Print(`Usage: mkvdup probe <mkv-file> <source-dir>...
@@ -468,11 +482,21 @@ func main() {
 			showHelp = true
 		case arg == "--version":
 			showVersion = true
+		case arg == "--no-progress":
+			showProgress = false
+		case arg == "-q" || arg == "--quiet":
+			quiet = true
+			showProgress = false
 		default:
 			filteredArgs = append(filteredArgs, arg)
 		}
 	}
 	args = filteredArgs
+
+	// Auto-disable progress bars when stdout is not a TTY
+	if !isTerminalStdout() {
+		showProgress = false
+	}
 
 	// Handle --version (always top-level)
 	if showVersion {
@@ -501,7 +525,7 @@ func main() {
 
 	switch cmd {
 	case "create":
-		warnThreshold, quiet, remaining := parseWarnFlags(args)
+		warnThreshold, remaining := parseWarnFlags(args)
 		nonInteractive := false
 		var createArgs []string
 		for i := 0; i < len(remaining); i++ {
@@ -521,17 +545,17 @@ func main() {
 		if len(createArgs) >= 4 {
 			name = createArgs[3]
 		}
-		if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, quiet, nonInteractive); err != nil {
+		if err := createDedup(createArgs[0], createArgs[1], output, name, warnThreshold, nonInteractive); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
 	case "batch-create":
-		warnThreshold, quiet, batchArgs := parseWarnFlags(args)
+		warnThreshold, batchArgs := parseWarnFlags(args)
 		if len(batchArgs) < 1 {
 			printCommandUsage("batch-create")
 			os.Exit(1)
 		}
-		if err := createBatch(batchArgs[0], warnThreshold, quiet); err != nil {
+		if err := createBatch(batchArgs[0], warnThreshold); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
@@ -1034,8 +1058,7 @@ func matchMKV(mkvPath, sourceDir string) error {
 	defer parser.Close()
 
 	// Phase 2: Index source
-	fmt.Println("Phase 2/3: Indexing source...")
-	_, index, err := buildSourceIndex(sourceDir)
+	_, index, err := buildSourceIndex(sourceDir, "Phase 2/3: Indexing source...")
 	if err != nil {
 		return err
 	}

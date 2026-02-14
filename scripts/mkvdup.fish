@@ -16,7 +16,7 @@ function __fish_mkvdup_needs_command
     # Skip global options to find subcommand
     for i in $cmd[2..-1]
         switch $i
-            case '-v' '--verbose' '-h' '--help' '--version'
+            case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
                 continue
             case '-*'
                 continue
@@ -32,7 +32,7 @@ function __fish_mkvdup_using_command
     set -l target $argv[1]
     for i in $cmd[2..-1]
         switch $i
-            case '-v' '--verbose' '-h' '--help' '--version'
+            case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
                 continue
             case '-*'
                 continue
@@ -47,6 +47,8 @@ end
 
 # Global options
 complete -c $cmd -n __fish_mkvdup_needs_command -s v -l verbose -d 'Enable verbose/debug output'
+complete -c $cmd -n __fish_mkvdup_needs_command -s q -l quiet -d 'Suppress all informational output'
+complete -c $cmd -n __fish_mkvdup_needs_command -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n __fish_mkvdup_needs_command -s h -l help -d 'Show help'
 complete -c $cmd -n __fish_mkvdup_needs_command -l version -d 'Show version'
 
@@ -70,14 +72,12 @@ complete -c $cmd -n __fish_mkvdup_needs_command -a help -d 'Show help for a comm
 # create options
 complete -c $cmd -n '__fish_mkvdup_using_command create' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l warn-threshold -d 'Minimum space savings percentage' -x
-complete -c $cmd -n '__fish_mkvdup_using_command create' -l quiet -d 'Suppress the space savings warning'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -l non-interactive -d 'Do not prompt on codec mismatch'
 complete -c $cmd -n '__fish_mkvdup_using_command create' -F -d 'MKV file or source directory'
 
 # batch-create options
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l warn-threshold -d 'Minimum space savings percentage' -x
-complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l quiet -d 'Suppress the space savings warning'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -F -d 'Manifest file'
 
 # probe options
