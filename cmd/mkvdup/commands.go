@@ -1459,13 +1459,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 }
 
 // reloadDaemon validates config files and sends SIGHUP to the running daemon.
-func reloadDaemon(pidFile string, configPaths []string, configDir bool) error {
-	// Read PID from file
-	pid, err := daemon.ReadPidFile(pidFile)
-	if err != nil {
-		return err
-	}
-
+func reloadDaemon(pid int, configPaths []string, configDir bool) error {
 	// Verify the process exists (on Unix, FindProcess always succeeds;
 	// send signal 0 to check if process is actually running)
 	process, err := os.FindProcess(pid)

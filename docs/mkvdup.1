@@ -224,7 +224,7 @@ Verify dedup file headers and internal checksums
 Treat warnings as errors (exit code 1 on warnings)
 .RE
 .TP
-.B reload \fR[\fIoptions\fR] \fB\-\-pid\-file\fR \fIPATH\fR [\fIconfig.yaml\fR...]
+.B reload \fR[\fIoptions\fR] {\fB\-\-pid\-file\fR \fIPATH\fR | \fB\-\-pid\fR \fIPID\fR} [\fIconfig.yaml\fR...]
 Reload a running daemon's configuration. Validates the config files
 before sending SIGHUP to the daemon. If validation fails, the signal
 is not sent and errors are reported. If no config files are specified,
@@ -235,7 +235,10 @@ the signal is sent without pre-validation.
 Config files to validate (same as mount's config args)
 .TP
 .B \-\-pid\-file PATH
-(Required) PID file of the running daemon
+PID file of the running daemon (mutually exclusive with \fB\-\-pid\fR)
+.TP
+.B \-\-pid PID
+PID of the running daemon, e.g. for foreground mode (mutually exclusive with \fB\-\-pid\-file\fR)
 .TP
 .B \-\-config\-dir
 Treat config argument as directory of YAML files (.yaml, .yml)
@@ -338,6 +341,7 @@ Reload a running daemon's configuration:
 .nf
 @PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 @PACKAGE_NAME@ reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+@PACKAGE_NAME@ reload --pid $(pidof mkvdup)
 .fi
 .RE
 .PP
@@ -491,6 +495,14 @@ Mount with checksum verification on source change:
 .RS
 .nf
 /etc/mkvdup.conf  /mnt/videos  fuse.@PACKAGE_NAME@  on_source_change=checksum  0  0
+.fi
+.RE
+.PP
+Mount with a PID file (for use with \fBmkvdup reload\fR):
+.PP
+.RS
+.nf
+/etc/mkvdup.conf  /mnt/videos  fuse.@PACKAGE_NAME@  pid_file=/run/mkvdup.pid  0  0
 .fi
 .RE
 .SS systemd mount unit

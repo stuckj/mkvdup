@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stuckj/mkvdup/internal/daemon"
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
 	"github.com/stuckj/mkvdup/internal/mkv"
@@ -348,7 +349,7 @@ Examples:
     mkvdup validate --deep --strict /etc/mkvdup.conf
 `)
 	case "reload":
-		fmt.Print(`Usage: mkvdup reload --pid-file PATH [options] [config.yaml...]
+		fmt.Print(`Usage: mkvdup reload {--pid-file PATH | --pid PID} [options] [config.yaml...]
 
 Reload a running daemon's configuration by validating the config
 and sending SIGHUP to the daemon process.
@@ -362,8 +363,9 @@ pre-validation (the daemon validates internally on SIGHUP).
 Arguments:
     [config.yaml]  Config files to validate (same as mount's config args)
 
-Required Options:
+Required (one of):
     --pid-file PATH    PID file of running daemon (must match mount's --pid-file)
+    --pid PID          PID of the running daemon (e.g., for foreground mode)
 
 Options:
     --config-dir       Treat config argument as directory of YAML files
@@ -372,6 +374,7 @@ Examples:
     mkvdup reload --pid-file /run/mkvdup.pid config.yaml
     mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
     mkvdup reload --pid-file /run/mkvdup.pid
+    mkvdup reload --pid $(pidof mkvdup)
 `)
 	case "deltadiag":
 		fmt.Print(`Usage: mkvdup deltadiag <dedup-file> <mkv-file>
@@ -764,7 +767,12 @@ func main() {
 		os.Exit(validateConfigs(valArgs, configDir, deep, strict))
 
 	case "reload":
+		if len(args) == 0 {
+			printCommandUsage("reload")
+			os.Exit(1)
+		}
 		pidFile := ""
+		pidDirect := 0
 		configDir := false
 		var reloadArgs []string
 		for i := 0; i < len(args); i++ {
@@ -776,16 +784,39 @@ func main() {
 				} else {
 					log.Fatalf("Error: --pid-file requires a path argument")
 				}
+			case "--pid":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					p, err := strconv.Atoi(args[i+1])
+					if err != nil || p <= 0 {
+						log.Fatalf("Error: --pid requires a positive integer argument")
+					}
+					pidDirect = p
+					i++
+				} else {
+					log.Fatalf("Error: --pid requires a PID argument")
+				}
 			case "--config-dir":
 				configDir = true
 			default:
 				reloadArgs = append(reloadArgs, args[i])
 			}
 		}
-		if pidFile == "" {
-			log.Fatalf("Error: --pid-file is required for reload")
+		if pidFile != "" && pidDirect != 0 {
+			log.Fatalf("Error: --pid-file and --pid are mutually exclusive")
 		}
-		if err := reloadDaemon(pidFile, reloadArgs, configDir); err != nil {
+		var pid int
+		if pidDirect != 0 {
+			pid = pidDirect
+		} else if pidFile != "" {
+			var err error
+			pid, err = daemon.ReadPidFile(pidFile)
+			if err != nil {
+				log.Fatalf("Error: %v", err)
+			}
+		} else {
+			log.Fatalf("Error: --pid-file or --pid is required for reload")
+		}
+		if err := reloadDaemon(pid, reloadArgs, configDir); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

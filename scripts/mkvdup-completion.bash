@@ -209,8 +209,8 @@ _mkvdup() {
             ;;
 
         reload)
-            # reload --pid-file PATH [options] [config.yaml...]
-            local reload_opts="--pid-file --config-dir"
+            # reload {--pid-file PATH | --pid PID} [options] [config.yaml...]
+            local reload_opts="--pid-file --pid --config-dir"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$reload_opts $global_opts" -- "$cur"))
                 return
@@ -218,6 +218,10 @@ _mkvdup() {
             case "$prev" in
                 --pid-file)
                     _filedir
+                    return
+                    ;;
+                --pid)
+                    # PID argument — no file completion
                     return
                     ;;
             esac

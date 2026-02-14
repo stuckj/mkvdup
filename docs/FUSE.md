@@ -156,6 +156,9 @@ The FUSE daemon supports live config reload without restart via SIGHUP:
 # Validates config before sending signal
 mkvdup reload --pid-file /run/mkvdup.pid /etc/mkvdup.conf
 mkvdup reload --pid-file /run/mkvdup.pid --config-dir /etc/mkvdup.d/
+
+# Use --pid directly (e.g., foreground mode without a PID file)
+mkvdup reload --pid $(pidof mkvdup) /etc/mkvdup.conf
 ```
 
 **Using kill directly:**
@@ -375,6 +378,9 @@ mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 
 # Network source options
 /etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  source_watch_poll_interval=10s,source_read_timeout=30s  0  0
+
+# Write PID file (for use with mkvdup reload --pid-file)
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  pid_file=/run/mkvdup.pid  0  0
 ```
 
 ### Actions

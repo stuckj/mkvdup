@@ -118,6 +118,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command validate' -F -d 'Config files'
 
 # reload options
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -l pid-file -d 'PID file of the running daemon' -r
+complete -c $cmd -n '__fish_mkvdup_using_command reload' -l pid -d 'PID of the running daemon' -r
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -l config-dir -d 'Treat config argument as directory of YAML files'
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -F -d 'Config files'
 
