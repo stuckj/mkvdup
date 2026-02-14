@@ -830,9 +830,9 @@ func verifyDedup(dedupPath, sourceDir, originalPath string) error {
 
 // extractDedup rebuilds the original MKV from a dedup file and source.
 func extractDedup(dedupPath, sourceDir, outputPath string) error {
-	fmt.Printf("Dedup file:       %s\n", dedupPath)
+	fmt.Printf("Dedup file:        %s\n", dedupPath)
 	fmt.Printf("Source directory:  %s\n", sourceDir)
-	fmt.Printf("Output MKV:       %s\n", outputPath)
+	fmt.Printf("Output MKV:        %s\n", outputPath)
 	fmt.Println()
 
 	reader, err := openDedupReader(dedupPath, sourceDir)
