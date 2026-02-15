@@ -131,8 +131,8 @@ const (
 )
 
 // reportCodecMismatches prints codec mismatch warnings and handles the response
-// based on the action: prompt the user, continue silently, or signal a skip.
-// Returns an error if the user declines to continue (prompt mode only).
+// based on the action: prompt the user, continue without prompting (still logging to stderr),
+// or signal a skip. Returns an error if the user declines to continue (prompt mode only).
 func reportCodecMismatches(mismatches []source.CodecMismatch, action codecMismatchAction) error {
 	if len(mismatches) == 0 {
 		return nil
@@ -500,7 +500,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 
 	// Pre-check: detect source codecs and warn about any MKVs with incompatible codecs
 	// before the expensive indexing step. Parse each MKV and check codec compatibility.
-	skipSet := make(map[int]bool)
+	skipSet := make([]bool, len(manifest.Files))
 	sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(manifest.SourceDir)
 	if codecErr != nil {
 		if verbose {

@@ -113,6 +113,7 @@ func TestPrintCommandUsage(t *testing.T) {
 		contains []string
 	}{
 		{"create", []string{"mkv-file", "source-dir"}},
+		{"batch-create", []string{"manifest.yaml", "--warn-threshold", "--skip-codec-mismatch"}},
 		{"probe", []string{"mkv-file", "source-dir"}},
 		{"mount", []string{"mountpoint", "--allow-other"}},
 		{"info", []string{"dedup-file"}},
