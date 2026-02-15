@@ -532,6 +532,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 	results := make([]*createResult, len(manifest.Files))
 	skipSet := make([]bool, len(manifest.Files))
 	var totalIndexDuration time.Duration
+	processed := 0
 
 	for gi, g := range groups {
 		if multiSource {
@@ -550,7 +551,10 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 				f := manifest.Files[fi]
 				codecParser, err := mkv.NewParser(f.MKV)
 				if err != nil {
-					return fmt.Errorf("open %s: %w", filepath.Base(f.MKV), err)
+					if verbose {
+						printInfo("Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
+					}
+					continue
 				}
 				if err := codecParser.ParseTracksOnly(); err != nil {
 					codecParser.Close()
@@ -580,10 +584,12 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 		}
 		indexStart := time.Now()
 		indexer, index, err := buildSourceIndex(g.sourceDir, indexLabel)
+		totalIndexDuration += time.Since(indexStart)
 		if err != nil {
 			// Mark all files in this group as failed
 			for _, fi := range g.indices {
 				results[fi] = &createResult{MkvPath: manifest.Files[fi].MKV, Err: fmt.Errorf("index %s: %w", g.sourceDir, err)}
+				processed++
 			}
 			fmt.Fprintf(os.Stderr, "  ERROR indexing %s: %v\n", g.sourceDir, err)
 			if gi < len(groups)-1 {
@@ -591,12 +597,12 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 			}
 			continue
 		}
-		totalIndexDuration += time.Since(indexStart)
 
 		// Process files in this group
 		for _, fi := range g.indices {
+			processed++
 			f := manifest.Files[fi]
-			printInfo("\n[%d/%d] %s\n", fi+1, len(manifest.Files), filepath.Base(f.MKV))
+			printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), filepath.Base(f.MKV))
 			if skipSet[fi] {
 				results[fi] = &createResult{MkvPath: f.MKV, Skipped: true}
 				printInfo("  Skipping (codec mismatch)\n")
@@ -607,7 +613,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 				printInfo("  Skipping (codec mismatch)\n")
 			} else if results[fi].Err != nil {
 				fmt.Fprintf(os.Stderr, "  ERROR: %v\n", results[fi].Err)
-				if fi < len(manifest.Files)-1 {
+				if processed < len(manifest.Files) {
 					fmt.Fprintln(os.Stderr, "  Continuing with remaining files...")
 				}
 			}

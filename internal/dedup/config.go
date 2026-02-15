@@ -192,9 +192,9 @@ func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
 	}
 	manifestDir := filepath.Dir(absPath)
 
-	// Resolve top-level source_dir relative to manifest (if set)
+	// Resolve and normalize top-level source_dir relative to manifest (if set)
 	if manifest.SourceDir != "" {
-		manifest.SourceDir = resolveRelative(manifestDir, manifest.SourceDir)
+		manifest.SourceDir = filepath.Clean(resolveRelative(manifestDir, manifest.SourceDir))
 	}
 
 	// Validate and resolve each file entry
@@ -219,9 +219,9 @@ func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
 			f.Name += ".mkv"
 		}
 
-		// Resolve per-file source_dir, fall back to top-level default
+		// Resolve and normalize per-file source_dir, fall back to top-level default
 		if f.SourceDir != "" {
-			f.SourceDir = resolveRelative(manifestDir, f.SourceDir)
+			f.SourceDir = filepath.Clean(resolveRelative(manifestDir, f.SourceDir))
 		} else if manifest.SourceDir != "" {
 			f.SourceDir = manifest.SourceDir
 		} else {
