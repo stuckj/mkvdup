@@ -46,14 +46,14 @@ _mkvdup() {
     fi
 
     local commands="create batch-create probe mount info verify extract check validate reload parse-mkv index-source match deltadiag help"
-    local global_opts="-v --verbose -h --help --version"
+    local global_opts="-v --verbose -q --quiet --no-progress -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
     local cmd=""
     local i
     for ((i=1; i < cword; i++)); do
         case "${words[i]}" in
-            -v|--verbose|-h|--help|--version)
+            -v|--verbose|-q|--quiet|--no-progress|-h|--help|--version)
                 ;;
             -*)
                 # Skip unknown options and their potential arguments
@@ -85,7 +85,7 @@ _mkvdup() {
     case "$cmd" in
         create)
             # create [options] <mkv-file> <source-dir> [output] [name]
-            local create_opts="--warn-threshold --quiet --non-interactive"
+            local create_opts="--warn-threshold --non-interactive"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$create_opts $global_opts" -- "$cur"))
                 return
@@ -101,7 +101,7 @@ _mkvdup() {
 
         batch-create)
             # batch-create [options] <manifest.yaml>
-            local batch_create_opts="--warn-threshold --quiet"
+            local batch_create_opts="--warn-threshold"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$batch_create_opts $global_opts" -- "$cur"))
                 return

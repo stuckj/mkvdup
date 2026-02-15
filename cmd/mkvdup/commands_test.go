@@ -1084,7 +1084,7 @@ func TestExtractDedup_CleansUpOnError(t *testing.T) {
 // --- batch-create command tests ---
 
 func TestCreateBatch_InvalidManifest(t *testing.T) {
-	err := createBatch("/nonexistent/batch.yaml", 75.0, false)
+	err := createBatch("/nonexistent/batch.yaml", 75.0)
 	if err == nil {
 		t.Error("expected error for nonexistent manifest")
 	}
@@ -1098,7 +1098,7 @@ files:
   - mkv: /nonexistent/ep1.mkv
 `)
 
-	err := createBatch(manifestPath, 75.0, false)
+	err := createBatch(manifestPath, 75.0)
 	if err == nil {
 		t.Error("expected error for nonexistent source directory")
 	}
@@ -1111,7 +1111,7 @@ func TestCreateBatch_EmptyManifest(t *testing.T) {
 files: []
 `)
 
-	err := createBatch(manifestPath, 75.0, false)
+	err := createBatch(manifestPath, 75.0)
 	if err == nil {
 		t.Error("expected error for empty files list")
 	}
@@ -1136,7 +1136,7 @@ func TestPrintBatchSummary(t *testing.T) {
 	}
 
 	// Just verify it doesn't panic
-	printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
+	printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
 }
 
 func TestPrintBatchSummary_LowSavingsWarning(t *testing.T) {
@@ -1154,7 +1154,7 @@ func TestPrintBatchSummary_LowSavingsWarning(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
 	})
 
 	if !strings.Contains(output, "WARNING") {
@@ -1177,8 +1177,12 @@ func TestPrintBatchSummary_QuietSuppressesWarning(t *testing.T) {
 		},
 	}
 
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
 	output := captureStdout(t, func() {
-		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, true)
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
 	})
 
 	if strings.Contains(output, "WARNING") {
@@ -1197,7 +1201,7 @@ func TestPrintBatchSummary_CustomThreshold(t *testing.T) {
 
 	// With default threshold (75), no warning
 	output := captureStdout(t, func() {
-		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0, false)
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
 	})
 	if strings.Contains(output, "WARNING") {
 		t.Error("expected no WARNING with 80% savings and 75% threshold")
@@ -1205,7 +1209,7 @@ func TestPrintBatchSummary_CustomThreshold(t *testing.T) {
 
 	// With higher threshold (90), warning should appear
 	output = captureStdout(t, func() {
-		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 90.0, false)
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 90.0)
 	})
 	if !strings.Contains(output, "WARNING") {
 		t.Error("expected WARNING with 80% savings and 90% threshold")
