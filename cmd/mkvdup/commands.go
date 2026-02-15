@@ -121,9 +121,19 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 	return indexer, index, nil
 }
 
-// reportCodecMismatches prints codec mismatch warnings and handles user prompting.
-// Returns an error if the user declines to continue.
-func reportCodecMismatches(mismatches []source.CodecMismatch, nonInteractive bool) error {
+// codecMismatchAction controls how reportCodecMismatches handles a mismatch.
+type codecMismatchAction int
+
+const (
+	codecMismatchPrompt   codecMismatchAction = iota // interactive: prompt user
+	codecMismatchContinue                            // non-interactive: warn and continue
+	codecMismatchSkip                                // skip: warn and signal skip
+)
+
+// reportCodecMismatches prints codec mismatch warnings and handles the response
+// based on the action: prompt the user, continue silently, or signal a skip.
+// Returns an error if the user declines to continue (prompt mode only).
+func reportCodecMismatches(mismatches []source.CodecMismatch, action codecMismatchAction) error {
 	if len(mismatches) == 0 {
 		return nil
 	}
@@ -143,23 +153,32 @@ func reportCodecMismatches(mismatches []source.CodecMismatch, nonInteractive boo
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  Deduplication may produce poor results if the MKV was transcoded.")
 
-	// Determine if we should prompt
-	if nonInteractive || !isTerminal() {
+	switch action {
+	case codecMismatchSkip:
+		fmt.Fprintln(os.Stderr, "  Skipping (--skip-codec-mismatch)...")
+		fmt.Fprintln(os.Stderr)
+		return nil
+	case codecMismatchContinue:
 		fmt.Fprintln(os.Stderr, "  Continuing (non-interactive mode)...")
 		fmt.Fprintln(os.Stderr)
 		return nil
+	default:
+		// Interactive prompt — auto-continue if stdin is not a terminal
+		if !isTerminal() {
+			fmt.Fprintln(os.Stderr, "  Continuing (non-interactive mode)...")
+			fmt.Fprintln(os.Stderr)
+			return nil
+		}
+		fmt.Print("\n  Continue anyway? [y/N]: ")
+		var response string
+		fmt.Scanln(&response)
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("aborted due to codec mismatch")
+		}
+		fmt.Println()
+		return nil
 	}
-
-	// Interactive prompt (always shown, even in quiet mode)
-	fmt.Print("\n  Continue anyway? [y/N]: ")
-	var response string
-	fmt.Scanln(&response)
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "y" && response != "yes" {
-		return fmt.Errorf("aborted due to codec mismatch")
-	}
-	fmt.Println()
-	return nil
 }
 
 // checkCodecCompatibilityFromDir performs a lightweight codec check using only
@@ -174,7 +193,11 @@ func checkCodecCompatibilityFromDir(tracks []mkv.Track, sourceDir string, nonInt
 	}
 
 	mismatches := source.CheckCodecCompatibility(tracks, sourceCodecs)
-	return reportCodecMismatches(mismatches, nonInteractive)
+	action := codecMismatchPrompt
+	if nonInteractive {
+		action = codecMismatchContinue
+	}
+	return reportCodecMismatches(mismatches, action)
 }
 
 // isTerminal returns true if stdin is a terminal (not piped).
@@ -218,11 +241,15 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	if codecErr == nil {
 		mismatches := source.CheckCodecCompatibility(parser.Tracks(), sourceCodecs)
 		if skipCodecMismatch && len(mismatches) > 0 {
-			reportCodecMismatches(mismatches, true)
+			reportCodecMismatches(mismatches, codecMismatchSkip)
 			result.Skipped = true
 			return result
 		}
-		if err := reportCodecMismatches(mismatches, nonInteractive); err != nil {
+		action := codecMismatchPrompt
+		if nonInteractive {
+			action = codecMismatchContinue
+		}
+		if err := reportCodecMismatches(mismatches, action); err != nil {
 			result.Err = err
 			return result
 		}
@@ -495,11 +522,11 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 			mismatches := source.CheckCodecCompatibility(codecParser.Tracks(), sourceCodecs)
 			codecParser.Close()
 			if skipCodecMismatch && len(mismatches) > 0 {
-				reportCodecMismatches(mismatches, true)
+				reportCodecMismatches(mismatches, codecMismatchSkip)
 				skipSet[i] = true
 				continue
 			}
-			if err := reportCodecMismatches(mismatches, true); err != nil {
+			if err := reportCodecMismatches(mismatches, codecMismatchContinue); err != nil {
 				return err
 			}
 		}
