@@ -85,6 +85,7 @@ type createResult struct {
 	Savings        float64
 	Duration       time.Duration
 	Err            error
+	Skipped        bool // true when file was skipped (e.g., codec mismatch with --skip-codec-mismatch)
 }
 
 // buildSourceIndex indexes a source directory and returns the indexer and index.
@@ -120,9 +121,19 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 	return indexer, index, nil
 }
 
-// reportCodecMismatches prints codec mismatch warnings and handles user prompting.
-// Returns an error if the user declines to continue.
-func reportCodecMismatches(mismatches []source.CodecMismatch, nonInteractive bool) error {
+// codecMismatchAction controls how reportCodecMismatches handles a mismatch.
+type codecMismatchAction int
+
+const (
+	codecMismatchPrompt   codecMismatchAction = iota // interactive: prompt user
+	codecMismatchContinue                            // non-interactive: warn and continue
+	codecMismatchSkip                                // skip: warn and signal skip
+)
+
+// reportCodecMismatches prints codec mismatch warnings and handles the response
+// based on the action: prompt the user, continue without prompting (still logging to stderr),
+// or signal a skip. Returns an error if the user declines to continue (prompt mode only).
+func reportCodecMismatches(mismatches []source.CodecMismatch, action codecMismatchAction) error {
 	if len(mismatches) == 0 {
 		return nil
 	}
@@ -142,23 +153,32 @@ func reportCodecMismatches(mismatches []source.CodecMismatch, nonInteractive boo
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  Deduplication may produce poor results if the MKV was transcoded.")
 
-	// Determine if we should prompt
-	if nonInteractive || !isTerminal() {
+	switch action {
+	case codecMismatchSkip:
+		fmt.Fprintln(os.Stderr, "  Skipping (--skip-codec-mismatch)...")
+		fmt.Fprintln(os.Stderr)
+		return nil
+	case codecMismatchContinue:
 		fmt.Fprintln(os.Stderr, "  Continuing (non-interactive mode)...")
 		fmt.Fprintln(os.Stderr)
 		return nil
+	default:
+		// Interactive prompt — auto-continue if stdin is not a terminal
+		if !isTerminal() {
+			fmt.Fprintln(os.Stderr, "  Continuing (non-interactive mode)...")
+			fmt.Fprintln(os.Stderr)
+			return nil
+		}
+		fmt.Print("\n  Continue anyway? [y/N]: ")
+		var response string
+		fmt.Scanln(&response)
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("aborted due to codec mismatch")
+		}
+		fmt.Println()
+		return nil
 	}
-
-	// Interactive prompt (always shown, even in quiet mode)
-	fmt.Print("\n  Continue anyway? [y/N]: ")
-	var response string
-	fmt.Scanln(&response)
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "y" && response != "yes" {
-		return fmt.Errorf("aborted due to codec mismatch")
-	}
-	fmt.Println()
-	return nil
 }
 
 // checkCodecCompatibilityFromDir performs a lightweight codec check using only
@@ -173,7 +193,11 @@ func checkCodecCompatibilityFromDir(tracks []mkv.Track, sourceDir string, nonInt
 	}
 
 	mismatches := source.CheckCodecCompatibility(tracks, sourceCodecs)
-	return reportCodecMismatches(mismatches, nonInteractive)
+	action := codecMismatchPrompt
+	if nonInteractive {
+		action = codecMismatchContinue
+	}
+	return reportCodecMismatches(mismatches, action)
 }
 
 // isTerminal returns true if stdin is a terminal (not piped).
@@ -189,8 +213,9 @@ func isTerminal() bool {
 // It handles parsing, matching, writing, and verification.
 // phaseStart and phaseTotal control phase numbering (e.g., 3,6 for single create; 1,4 for batch).
 // If nonInteractive is true, codec mismatch warnings do not prompt the user.
+// If skipCodecMismatch is true, the result is marked as Skipped on codec mismatch instead of continuing.
 func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
-	indexer *source.Indexer, index *source.Index, phaseStart, phaseTotal int, nonInteractive bool) *createResult {
+	indexer *source.Indexer, index *source.Index, phaseStart, phaseTotal int, nonInteractive, skipCodecMismatch bool) *createResult {
 	start := time.Now()
 	result := &createResult{
 		MkvPath:     mkvPath,
@@ -215,7 +240,16 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	sourceCodecs, codecErr := source.DetectSourceCodecs(index)
 	if codecErr == nil {
 		mismatches := source.CheckCodecCompatibility(parser.Tracks(), sourceCodecs)
-		if err := reportCodecMismatches(mismatches, nonInteractive); err != nil {
+		if skipCodecMismatch && len(mismatches) > 0 {
+			reportCodecMismatches(mismatches, codecMismatchSkip)
+			result.Skipped = true
+			return result
+		}
+		action := codecMismatchPrompt
+		if nonInteractive {
+			action = codecMismatchContinue
+		}
+		if err := reportCodecMismatches(mismatches, action); err != nil {
 			result.Err = err
 			return result
 		}
@@ -413,7 +447,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	defer index.Close()
 
 	// Phase 3-6: Process MKV (re-parses MKV, but parsing is fast relative to indexing)
-	result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index, 3, 6, nonInteractive)
+	result := createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName, indexer, index, 3, 6, nonInteractive, false)
 	if result.Err != nil {
 		return result.Err
 	}
@@ -453,7 +487,8 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 }
 
 // createBatch processes multiple MKVs from a batch manifest, indexing the source once.
-func createBatch(manifestPath string, warnThreshold float64) error {
+// If skipCodecMismatch is true, MKVs with codec mismatches are skipped instead of processed.
+func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch bool) error {
 	totalStart := time.Now()
 
 	manifest, err := dedup.ReadBatchManifest(manifestPath)
@@ -465,13 +500,14 @@ func createBatch(manifestPath string, warnThreshold float64) error {
 
 	// Pre-check: detect source codecs and warn about any MKVs with incompatible codecs
 	// before the expensive indexing step. Parse each MKV and check codec compatibility.
+	skipSet := make([]bool, len(manifest.Files))
 	sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(manifest.SourceDir)
 	if codecErr != nil {
 		if verbose {
 			printInfo("Note: could not detect source codecs: %v\n", codecErr)
 		}
 	} else {
-		for _, f := range manifest.Files {
+		for i, f := range manifest.Files {
 			codecParser, err := mkv.NewParser(f.MKV)
 			if err != nil {
 				return fmt.Errorf("open %s: %w", filepath.Base(f.MKV), err)
@@ -485,7 +521,12 @@ func createBatch(manifestPath string, warnThreshold float64) error {
 			}
 			mismatches := source.CheckCodecCompatibility(codecParser.Tracks(), sourceCodecs)
 			codecParser.Close()
-			if err := reportCodecMismatches(mismatches, true); err != nil {
+			if skipCodecMismatch && len(mismatches) > 0 {
+				reportCodecMismatches(mismatches, codecMismatchSkip)
+				skipSet[i] = true
+				continue
+			}
+			if err := reportCodecMismatches(mismatches, codecMismatchContinue); err != nil {
 				return err
 			}
 		}
@@ -504,8 +545,15 @@ func createBatch(manifestPath string, warnThreshold float64) error {
 	results := make([]*createResult, len(manifest.Files))
 	for i, f := range manifest.Files {
 		printInfo("\n[%d/%d] %s\n", i+1, len(manifest.Files), filepath.Base(f.MKV))
-		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index, 1, 4, true)
-		if results[i].Err != nil {
+		if skipSet[i] {
+			results[i] = &createResult{MkvPath: f.MKV, Skipped: true}
+			printInfo("  Skipping (codec mismatch)\n")
+			continue
+		}
+		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index, 1, 4, true, skipCodecMismatch)
+		if results[i].Skipped {
+			printInfo("  Skipping (codec mismatch)\n")
+		} else if results[i].Err != nil {
 			fmt.Fprintf(os.Stderr, "  ERROR: %v\n", results[i].Err)
 			if i < len(manifest.Files)-1 {
 				fmt.Fprintln(os.Stderr, "  Continuing with remaining files...")
@@ -532,10 +580,14 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 	printInfo("Total time: %v (indexing: %v)\n\n", time.Since(totalStart), indexDuration)
 
 	succeeded := 0
+	skipped := 0
 	var lowSavings []string
 	for _, r := range results {
 		base := filepath.Base(r.MkvPath)
-		if r.Err != nil {
+		if r.Skipped {
+			printInfo("  SKIP  %s: codec mismatch\n", base)
+			skipped++
+		} else if r.Err != nil {
 			fmt.Fprintf(os.Stderr, "  FAIL  %s: %v\n", base, r.Err)
 		} else {
 			printInfo("  OK    %s -> %s (%.1f%% savings)\n", base, filepath.Base(r.OutputPath), r.Savings)
@@ -545,7 +597,11 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 			}
 		}
 	}
-	printInfo("\nSucceeded: %d/%d\n", succeeded, len(results))
+	if skipped > 0 {
+		printInfo("\nSucceeded: %d/%d (%d skipped)\n", succeeded, len(results), skipped)
+	} else {
+		printInfo("\nSucceeded: %d/%d\n", succeeded, len(results))
+	}
 
 	if !quiet && len(lowSavings) > 0 {
 		printInfo("\nWARNING: %d file(s) with space savings below %.0f%%:\n", len(lowSavings), warnThreshold)

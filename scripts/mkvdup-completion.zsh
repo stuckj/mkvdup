@@ -26,6 +26,7 @@ _mkvdup_batch_create() {
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
+        '--skip-codec-mismatch[Skip MKVs with codec mismatch instead of processing them]' \
         '1:Manifest file:_files -g "*.y(a|)ml(-.)"'
 }
 
