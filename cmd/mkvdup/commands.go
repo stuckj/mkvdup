@@ -386,7 +386,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	printInfoln()
 
 	// Phase 1: Quick codec compatibility check (only reads MKV track headers, not full file)
-	printInfoln("Phase 1/6: Checking codec compatibility...")
+	printInfo("Phase 1/6: Checking codec compatibility...")
 	codecParser, err := mkv.NewParser(mkvPath)
 	if err != nil {
 		return fmt.Errorf("open MKV: %w", err)
@@ -403,7 +403,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 		}
 		codecParser.Close()
 	}
-	printInfoln("Phase 1/6: Checking codec compatibility... done")
+	printInfoln(" done")
 
 	// Phase 2: Index source (expensive)
 	indexer, index, err := buildSourceIndex(sourceDir, "Phase 2/6: Building source index...")
