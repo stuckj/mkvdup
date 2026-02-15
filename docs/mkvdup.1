@@ -47,9 +47,9 @@ Automatically enabled when stdin is not a terminal.
 .RE
 .TP
 .B batch-create \fR[\fIoptions\fR] \fImanifest.yaml\fR
-Create multiple dedup files from MKVs sharing the same source directory.
-The source is indexed once and reused for all files. The YAML manifest
-specifies the shared source directory and a list of MKV files to process.
+Create multiple dedup files from a YAML manifest. Files sharing the same
+source directory are grouped and the source is indexed once per group.
+A single manifest can reference multiple source directories.
 Codec compatibility is checked for each file; if a mismatch is detected,
 a warning is printed but processing continues (always non-interactive).
 Use
@@ -58,7 +58,7 @@ to skip mismatched files instead.
 .RS
 .TP
 .I manifest.yaml
-YAML manifest file specifying source directory and MKV files. See
+YAML manifest file specifying source directory(ies) and MKV files. See
 .B BATCH MANIFEST FORMAT
 for details.
 .TP
@@ -387,11 +387,11 @@ Analyze unmatched regions in a dedup file:
 .SH BATCH MANIFEST FORMAT
 The YAML manifest for
 .B batch-create
-specifies a shared source directory and a list of MKV files to process:
+specifies source directory(ies) and a list of MKV files to process:
 .PP
 .RS
 .nf
-source_dir: /media/dvd-backups/disc1
+source_dir: /media/dvd-backups/disc1   # default for all files
 
 files:
   \- mkv: episode1.mkv
@@ -401,15 +401,18 @@ files:
   \- mkv: episode2.mkv
     output: episode2.mkvdup
 
-  \- mkv: /absolute/path/to/episode3.mkv
-    output: /absolute/path/to/episode3.mkvdup
+  \- mkv: movie.mkv
+    output: movie.mkvdup
+    source_dir: /media/dvd-backups/disc2  # per-file override
 .fi
 .RE
 .PP
 .B Fields:
 .TP
 .B source_dir
-(Required) Shared source directory for all MKV files.
+(Optional) Default source directory for files that don't specify their own.
+At least one of top-level \fBsource_dir\fR or per-file \fBsource_dir\fR
+must be set for every file entry.
 .TP
 .B files
 (Required) List of MKV files to process. Each entry supports:
@@ -421,15 +424,23 @@ files:
 .B output
 (Required) Output .mkvdup file path.
 .TP
+.B source_dir
+(Optional) Source directory for this file. Overrides the top-level default.
+.TP
 .B name
 (Optional) Display name in FUSE mount. Default: basename of \fImkv\fR.
 The \fI.mkv\fR extension is auto-added if missing.
 .RE
 .PP
+Files sharing the same source directory are grouped and the source is
+indexed once per group.
+.PP
 Relative paths are resolved against the manifest file's directory.
 .PP
-If any file fails, processing continues for remaining files. The exit code
-is 1 if any file failed, 0 if all succeeded.
+If any file fails, processing continues for remaining files. If indexing
+fails for one source, all files in that group are marked as failed and
+processing continues with the next source. The exit code is 1 if any
+file failed, 0 if all succeeded.
 .SH CONFIG FILE FORMAT
 The YAML config file for mounting specifies the dedup file, source directory,
 and virtual file name:

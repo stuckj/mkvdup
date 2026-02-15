@@ -162,9 +162,10 @@ type BatchManifest struct {
 
 // BatchManifestFile represents a single file entry in a batch manifest.
 type BatchManifestFile struct {
-	MKV    string `yaml:"mkv"`
-	Output string `yaml:"output"`
-	Name   string `yaml:"name"`
+	MKV       string `yaml:"mkv"`
+	Output    string `yaml:"output"`
+	Name      string `yaml:"name"`
+	SourceDir string `yaml:"source_dir"`
 }
 
 // ReadBatchManifest reads and validates a batch manifest file.
@@ -181,9 +182,6 @@ func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
 		return nil, fmt.Errorf("parse batch manifest %s: %w", manifestPath, err)
 	}
 
-	if manifest.SourceDir == "" {
-		return nil, fmt.Errorf("batch manifest %s: source_dir is required", manifestPath)
-	}
 	if len(manifest.Files) == 0 {
 		return nil, fmt.Errorf("batch manifest %s: files list is empty", manifestPath)
 	}
@@ -194,8 +192,10 @@ func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
 	}
 	manifestDir := filepath.Dir(absPath)
 
-	// Resolve source_dir relative to manifest
-	manifest.SourceDir = resolveRelative(manifestDir, manifest.SourceDir)
+	// Resolve and normalize top-level source_dir relative to manifest (if set)
+	if manifest.SourceDir != "" {
+		manifest.SourceDir = filepath.Clean(resolveRelative(manifestDir, manifest.SourceDir))
+	}
 
 	// Validate and resolve each file entry
 	for i := range manifest.Files {
@@ -217,6 +217,15 @@ func ReadBatchManifest(manifestPath string) (*BatchManifest, error) {
 		// Ensure name has .mkv extension
 		if !strings.HasSuffix(strings.ToLower(f.Name), ".mkv") {
 			f.Name += ".mkv"
+		}
+
+		// Resolve and normalize per-file source_dir, fall back to top-level default
+		if f.SourceDir != "" {
+			f.SourceDir = filepath.Clean(resolveRelative(manifestDir, f.SourceDir))
+		} else if manifest.SourceDir != "" {
+			f.SourceDir = manifest.SourceDir
+		} else {
+			return nil, fmt.Errorf("batch manifest %s: files[%d] has no source_dir (set per-file or top-level default)", manifestPath, i)
 		}
 	}
 

@@ -735,13 +735,122 @@ files:
 func TestReadBatchManifest_MissingSourceDir(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "batch.yaml")
+	// No top-level source_dir and no per-file source_dir
 	writeYAML(t, manifestPath, `files:
   - mkv: /data/ep1.mkv
+    output: /data/ep1.mkvdup
 `)
 
 	_, err := ReadBatchManifest(manifestPath)
 	if err == nil {
 		t.Fatal("expected error for missing source_dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "source_dir") {
+		t.Errorf("error = %q, want mention of source_dir", err.Error())
+	}
+}
+
+func TestReadBatchManifest_PerFileSourceDir(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	// No top-level source_dir; each file has its own
+	writeYAML(t, manifestPath, `files:
+  - mkv: /data/ep1.mkv
+    output: /data/ep1.mkvdup
+    source_dir: /source/disc1
+  - mkv: /data/ep2.mkv
+    output: /data/ep2.mkvdup
+    source_dir: /source/disc2
+`)
+
+	m, err := ReadBatchManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadBatchManifest: %v", err)
+	}
+	if m.SourceDir != "" {
+		t.Errorf("SourceDir = %q, want empty", m.SourceDir)
+	}
+	if m.Files[0].SourceDir != "/source/disc1" {
+		t.Errorf("Files[0].SourceDir = %q, want %q", m.Files[0].SourceDir, "/source/disc1")
+	}
+	if m.Files[1].SourceDir != "/source/disc2" {
+		t.Errorf("Files[1].SourceDir = %q, want %q", m.Files[1].SourceDir, "/source/disc2")
+	}
+}
+
+func TestReadBatchManifest_MixedSourceDir(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	// Top-level default; one file overrides
+	writeYAML(t, manifestPath, `source_dir: /source/default
+files:
+  - mkv: /data/ep1.mkv
+    output: /data/ep1.mkvdup
+  - mkv: /data/ep2.mkv
+    output: /data/ep2.mkvdup
+    source_dir: /source/override
+`)
+
+	m, err := ReadBatchManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadBatchManifest: %v", err)
+	}
+	// File without per-file source_dir inherits top-level
+	if m.Files[0].SourceDir != "/source/default" {
+		t.Errorf("Files[0].SourceDir = %q, want %q", m.Files[0].SourceDir, "/source/default")
+	}
+	// File with per-file source_dir overrides top-level
+	if m.Files[1].SourceDir != "/source/override" {
+		t.Errorf("Files[1].SourceDir = %q, want %q", m.Files[1].SourceDir, "/source/override")
+	}
+}
+
+func TestReadBatchManifest_PerFileSourceDir_Relative(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "manifests")
+	manifestPath := filepath.Join(subDir, "batch.yaml")
+	writeYAML(t, manifestPath, `files:
+  - mkv: /data/ep1.mkv
+    output: /data/ep1.mkvdup
+    source_dir: ../sources/disc1
+  - mkv: /data/ep2.mkv
+    output: /data/ep2.mkvdup
+    source_dir: ../sources/disc2
+`)
+
+	m, err := ReadBatchManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadBatchManifest: %v", err)
+	}
+
+	wantSource1 := filepath.Join(dir, "sources", "disc1")
+	wantSource2 := filepath.Join(dir, "sources", "disc2")
+	if m.Files[0].SourceDir != wantSource1 {
+		t.Errorf("Files[0].SourceDir = %q, want %q", m.Files[0].SourceDir, wantSource1)
+	}
+	if m.Files[1].SourceDir != wantSource2 {
+		t.Errorf("Files[1].SourceDir = %q, want %q", m.Files[1].SourceDir, wantSource2)
+	}
+}
+
+func TestReadBatchManifest_NoSourceDir_PartialFiles(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	// No top-level; first file has source_dir, second doesn't
+	writeYAML(t, manifestPath, `files:
+  - mkv: /data/ep1.mkv
+    output: /data/ep1.mkvdup
+    source_dir: /source/disc1
+  - mkv: /data/ep2.mkv
+    output: /data/ep2.mkvdup
+`)
+
+	_, err := ReadBatchManifest(manifestPath)
+	if err == nil {
+		t.Fatal("expected error for file without source_dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "files[1]") {
+		t.Errorf("error = %q, want mention of files[1]", err.Error())
 	}
 	if !strings.Contains(err.Error(), "source_dir") {
 		t.Errorf("error = %q, want mention of source_dir", err.Error())

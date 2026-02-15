@@ -81,7 +81,7 @@ The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`
 
 ### batch-create
 
-Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file. Codec compatibility is checked for each file; if a mismatch is detected, a warning is printed but processing continues (always non-interactive). Use `--skip-codec-mismatch` to skip mismatched files instead.
+Create multiple dedup files from a YAML manifest. Files sharing the same source directory are grouped and the source is indexed once per group, which is significantly faster than running `create` separately for each file. A single manifest can reference multiple source directories. Codec compatibility is checked for each file; if a mismatch is detected, a warning is printed but processing continues (always non-interactive). Use `--skip-codec-mismatch` to skip mismatched files instead.
 
 ```bash
 mkvdup batch-create [options] <manifest.yaml>
@@ -93,7 +93,7 @@ mkvdup batch-create --skip-codec-mismatch episodes.yaml
 ```
 
 **Arguments:**
-- `<manifest.yaml>` — YAML manifest specifying the shared source directory and MKV files
+- `<manifest.yaml>` — YAML manifest specifying source directory(ies) and MKV files
 
 **Options:**
 
@@ -105,6 +105,7 @@ mkvdup batch-create --skip-codec-mismatch episodes.yaml
 **Manifest format:**
 
 ```yaml
+# Single source (all files share the same source):
 source_dir: /media/dvd-backups/disc1
 
 files:
@@ -114,25 +115,40 @@ files:
 
   - mkv: episode2.mkv
     output: episode2.mkvdup
+```
 
-  - mkv: /absolute/path/to/episode3.mkv
-    output: /absolute/path/to/episode3.mkvdup
+```yaml
+# Multiple sources (per-file source_dir with optional top-level default):
+source_dir: /media/dvd-backups/disc1   # default for files without source_dir
+
+files:
+  - mkv: episode1.mkv
+    output: episode1.mkvdup
+    # uses top-level source_dir
+
+  - mkv: movie.mkv
+    output: movie.mkvdup
+    source_dir: /media/dvd-backups/disc2   # per-file override
 ```
 
 **Manifest fields:**
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `source_dir` | Yes | Shared source directory for all MKV files |
+| `source_dir` | No* | Default source directory for files that don't specify their own |
 | `files` | Yes | List of MKV files to process (at least one) |
 | `files[].mkv` | Yes | Path to the MKV file |
 | `files[].output` | Yes | Output `.mkvdup` file |
+| `files[].source_dir` | No* | Source directory for this file (overrides top-level default) |
 | `files[].name` | No | Display name in FUSE mount (default: basename of mkv; `.mkv` auto-added if missing) |
+
+\* At least one of top-level `source_dir` or per-file `source_dir` must be set for every file entry.
 
 Relative paths are resolved against the manifest file's directory.
 
 **Partial failure handling:**
 - If one file fails, processing continues for the remaining files
+- If indexing fails for one source, all files in that group are marked as failed and processing continues with the next source
 - A summary at the end shows OK/FAIL status for each file
 - Exit code is 1 if any file failed, 0 if all succeeded
 
@@ -455,7 +471,7 @@ Phase 3/6: Parsing MKV file... done (00:00:27)
 
 Fast phases (codec checks, checksum calculations) display status lines without progress bars.
 
-**`batch-create`** indexes the source once, then shows per-file progress:
+**`batch-create`** indexes each source once, then shows per-file progress:
 ```
 Indexing source directory...
   [████████████████████████████████████████░░]  95%  4.2 GB / 4.5 GB  ETA: 00:00:01
@@ -463,6 +479,13 @@ Indexing source directory... done (00:00:28)
 
 [1/3] episode1.mkv
 Phase 1/4: Parsing MKV file...
+```
+
+When multiple source directories are used, source group headers are shown:
+```
+--- Source 1/2: /media/dvd-backups/disc1 (2 files) ---
+
+Indexing source 1/2...
 ```
 
 Progress bars are automatically disabled when stdout is not a terminal. Use `--no-progress` to disable them manually (phase labels and completion times are still shown). Use `--quiet` to suppress all informational output.
