@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -1466,5 +1467,93 @@ func TestPrintBatchSummary_NoSkippedFiles(t *testing.T) {
 	}
 	if !strings.Contains(output, "Succeeded: 1/1") {
 		t.Errorf("expected 'Succeeded: 1/1' in output, got:\n%s", output)
+	}
+}
+
+// captureStderr captures stderr output from f.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { os.Stderr = old }()
+	os.Stderr = w
+	f()
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func TestReportCodecMismatches_SkipAction(t *testing.T) {
+	mismatches := []source.CodecMismatch{
+		{
+			TrackType:    "video",
+			MKVCodecID:   "V_MPEG4/ISO/AVC",
+			MKVCodecType: source.CodecH264Video,
+			SourceCodecs: []source.CodecType{source.CodecMPEG2Video},
+		},
+	}
+
+	stderr := captureStderr(t, func() {
+		err := reportCodecMismatches(mismatches, codecMismatchSkip)
+		if err != nil {
+			t.Errorf("expected no error for skip action, got: %v", err)
+		}
+	})
+
+	if !strings.Contains(stderr, "WARNING: Codec mismatch detected") {
+		t.Error("expected mismatch warning in stderr")
+	}
+	if !strings.Contains(stderr, "Skipping (--skip-codec-mismatch)") {
+		t.Errorf("expected skip message in stderr, got:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "Continuing") {
+		t.Error("skip action should not print 'Continuing'")
+	}
+}
+
+func TestReportCodecMismatches_ContinueAction(t *testing.T) {
+	mismatches := []source.CodecMismatch{
+		{
+			TrackType:    "video",
+			MKVCodecID:   "V_MPEG4/ISO/AVC",
+			MKVCodecType: source.CodecH264Video,
+			SourceCodecs: []source.CodecType{source.CodecMPEG2Video},
+		},
+	}
+
+	stderr := captureStderr(t, func() {
+		err := reportCodecMismatches(mismatches, codecMismatchContinue)
+		if err != nil {
+			t.Errorf("expected no error for continue action, got: %v", err)
+		}
+	})
+
+	if !strings.Contains(stderr, "WARNING: Codec mismatch detected") {
+		t.Error("expected mismatch warning in stderr")
+	}
+	if !strings.Contains(stderr, "Continuing (non-interactive mode)") {
+		t.Errorf("expected continue message in stderr, got:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "Skipping") {
+		t.Error("continue action should not print 'Skipping'")
+	}
+}
+
+func TestReportCodecMismatches_NoMismatches(t *testing.T) {
+	stderr := captureStderr(t, func() {
+		err := reportCodecMismatches(nil, codecMismatchSkip)
+		if err != nil {
+			t.Errorf("expected no error for empty mismatches, got: %v", err)
+		}
+	})
+
+	if stderr != "" {
+		t.Errorf("expected no output for empty mismatches, got: %q", stderr)
 	}
 }
