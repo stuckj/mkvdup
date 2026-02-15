@@ -88,6 +88,29 @@ type createResult struct {
 	Skipped        bool // true when file was skipped (e.g., codec mismatch with --skip-codec-mismatch)
 }
 
+// sourceGroup represents a set of files sharing the same source directory.
+type sourceGroup struct {
+	sourceDir string
+	indices   []int // indices into the manifest Files slice
+}
+
+// groupBySource groups batch manifest files by their SourceDir.
+// Groups are returned in first-seen order, and file indices within each group
+// preserve their original manifest order.
+func groupBySource(files []dedup.BatchManifestFile) []sourceGroup {
+	var groups []sourceGroup
+	seen := map[string]int{} // sourceDir -> index in groups
+	for i, f := range files {
+		if gi, ok := seen[f.SourceDir]; ok {
+			groups[gi].indices = append(groups[gi].indices, i)
+		} else {
+			seen[f.SourceDir] = len(groups)
+			groups = append(groups, sourceGroup{sourceDir: f.SourceDir, indices: []int{i}})
+		}
+	}
+	return groups
+}
+
 // buildSourceIndex indexes a source directory and returns the indexer and index.
 // This is the expensive step that should only happen once in batch mode.
 // The phasePrefix is shown on the progress bar (e.g., "Phase 2/6: Building source index...").
@@ -486,7 +509,8 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	return nil
 }
 
-// createBatch processes multiple MKVs from a batch manifest, indexing the source once.
+// createBatch processes multiple MKVs from a batch manifest.
+// Files are grouped by source directory so each source is indexed once.
 // If skipCodecMismatch is true, MKVs with codec mismatches are skipped instead of processed.
 func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch bool) error {
 	totalStart := time.Now()
@@ -496,73 +520,103 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 		return err
 	}
 
-	printInfo("Batch create: %d files from %s\n\n", len(manifest.Files), manifest.SourceDir)
+	groups := groupBySource(manifest.Files)
+	multiSource := len(groups) > 1
 
-	// Pre-check: detect source codecs and warn about any MKVs with incompatible codecs
-	// before the expensive indexing step. Parse each MKV and check codec compatibility.
-	skipSet := make([]bool, len(manifest.Files))
-	sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(manifest.SourceDir)
-	if codecErr != nil {
-		if verbose {
-			printInfo("Note: could not detect source codecs: %v\n", codecErr)
-		}
+	if multiSource {
+		printInfo("Batch create: %d files from %d sources\n\n", len(manifest.Files), len(groups))
 	} else {
-		for i, f := range manifest.Files {
-			codecParser, err := mkv.NewParser(f.MKV)
-			if err != nil {
-				return fmt.Errorf("open %s: %w", filepath.Base(f.MKV), err)
-			}
-			if err := codecParser.ParseTracksOnly(); err != nil {
-				codecParser.Close()
-				if verbose {
-					printInfo("Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
-				}
-				continue
-			}
-			mismatches := source.CheckCodecCompatibility(codecParser.Tracks(), sourceCodecs)
-			codecParser.Close()
-			if skipCodecMismatch && len(mismatches) > 0 {
-				reportCodecMismatches(mismatches, codecMismatchSkip)
-				skipSet[i] = true
-				continue
-			}
-			if err := reportCodecMismatches(mismatches, codecMismatchContinue); err != nil {
-				return err
-			}
-		}
-		printInfoln()
+		printInfo("Batch create: %d files from %s\n\n", len(manifest.Files), groups[0].sourceDir)
 	}
 
-	// Index source once
-	indexer, index, err := buildSourceIndex(manifest.SourceDir, "Indexing source directory...")
-	if err != nil {
-		return err
-	}
-	defer index.Close()
-	indexDuration := time.Since(totalStart)
-
-	// Process each file
 	results := make([]*createResult, len(manifest.Files))
-	for i, f := range manifest.Files {
-		printInfo("\n[%d/%d] %s\n", i+1, len(manifest.Files), filepath.Base(f.MKV))
-		if skipSet[i] {
-			results[i] = &createResult{MkvPath: f.MKV, Skipped: true}
-			printInfo("  Skipping (codec mismatch)\n")
+	skipSet := make([]bool, len(manifest.Files))
+	var totalIndexDuration time.Duration
+
+	for gi, g := range groups {
+		if multiSource {
+			printInfo("--- Source %d/%d: %s (%d files) ---\n\n", gi+1, len(groups), g.sourceDir, len(g.indices))
+		}
+
+		// Pre-check: detect source codecs and warn about incompatible MKVs
+		// before the expensive indexing step.
+		sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(g.sourceDir)
+		if codecErr != nil {
+			if verbose {
+				printInfo("Note: could not detect source codecs for %s: %v\n", g.sourceDir, codecErr)
+			}
+		} else {
+			for _, fi := range g.indices {
+				f := manifest.Files[fi]
+				codecParser, err := mkv.NewParser(f.MKV)
+				if err != nil {
+					return fmt.Errorf("open %s: %w", filepath.Base(f.MKV), err)
+				}
+				if err := codecParser.ParseTracksOnly(); err != nil {
+					codecParser.Close()
+					if verbose {
+						printInfo("Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
+					}
+					continue
+				}
+				mismatches := source.CheckCodecCompatibility(codecParser.Tracks(), sourceCodecs)
+				codecParser.Close()
+				if skipCodecMismatch && len(mismatches) > 0 {
+					reportCodecMismatches(mismatches, codecMismatchSkip)
+					skipSet[fi] = true
+					continue
+				}
+				if err := reportCodecMismatches(mismatches, codecMismatchContinue); err != nil {
+					return err
+				}
+			}
+			printInfoln()
+		}
+
+		// Index this source directory
+		indexLabel := "Indexing source directory..."
+		if multiSource {
+			indexLabel = fmt.Sprintf("Indexing source %d/%d...", gi+1, len(groups))
+		}
+		indexStart := time.Now()
+		indexer, index, err := buildSourceIndex(g.sourceDir, indexLabel)
+		if err != nil {
+			// Mark all files in this group as failed
+			for _, fi := range g.indices {
+				results[fi] = &createResult{MkvPath: manifest.Files[fi].MKV, Err: fmt.Errorf("index %s: %w", g.sourceDir, err)}
+			}
+			fmt.Fprintf(os.Stderr, "  ERROR indexing %s: %v\n", g.sourceDir, err)
+			if gi < len(groups)-1 {
+				fmt.Fprintln(os.Stderr, "  Continuing with remaining sources...")
+			}
 			continue
 		}
-		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index, 1, 4, true, skipCodecMismatch)
-		if results[i].Skipped {
-			printInfo("  Skipping (codec mismatch)\n")
-		} else if results[i].Err != nil {
-			fmt.Fprintf(os.Stderr, "  ERROR: %v\n", results[i].Err)
-			if i < len(manifest.Files)-1 {
-				fmt.Fprintln(os.Stderr, "  Continuing with remaining files...")
+		totalIndexDuration += time.Since(indexStart)
+
+		// Process files in this group
+		for _, fi := range g.indices {
+			f := manifest.Files[fi]
+			printInfo("\n[%d/%d] %s\n", fi+1, len(manifest.Files), filepath.Base(f.MKV))
+			if skipSet[fi] {
+				results[fi] = &createResult{MkvPath: f.MKV, Skipped: true}
+				printInfo("  Skipping (codec mismatch)\n")
+				continue
+			}
+			results[fi] = createDedupWithIndex(f.MKV, f.SourceDir, f.Output, f.Name, indexer, index, 1, 4, true, skipCodecMismatch)
+			if results[fi].Skipped {
+				printInfo("  Skipping (codec mismatch)\n")
+			} else if results[fi].Err != nil {
+				fmt.Fprintf(os.Stderr, "  ERROR: %v\n", results[fi].Err)
+				if fi < len(manifest.Files)-1 {
+					fmt.Fprintln(os.Stderr, "  Continuing with remaining files...")
+				}
 			}
 		}
+		index.Close()
 	}
 
 	// Print summary
-	printBatchSummary(results, indexDuration, totalStart, warnThreshold)
+	printBatchSummary(results, totalIndexDuration, totalStart, warnThreshold)
 
 	// Return error if any file failed
 	for _, r := range results {

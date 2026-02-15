@@ -176,15 +176,15 @@ Examples:
 	case "batch-create":
 		fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
 
-Create multiple dedup files from MKVs sharing the same source directory.
-The source is indexed once and reused for all files.
+Create multiple dedup files from a YAML manifest. Files sharing the same
+source directory are grouped and the source is indexed once per group.
 
 Codec compatibility is checked for each file. If a mismatch is detected,
 a warning is printed but processing continues (non-interactive mode).
 Use --skip-codec-mismatch to skip mismatched files instead.
 
 Arguments:
-    <manifest.yaml>  YAML manifest file specifying source and MKV files
+    <manifest.yaml>  YAML manifest file specifying source(s) and MKV files
 
 Options:
     -v, --verbose          Enable verbose/debug output
@@ -192,21 +192,25 @@ Options:
     --skip-codec-mismatch  Skip MKVs with codec mismatch instead of processing them
 
 Manifest format:
-    source_dir: /media/dvd-backups/disc1
+    source_dir: /media/dvd-backups/disc1   # default for all files (optional)
     files:
       - mkv: episode1.mkv
         output: episode1.mkvdup
-        name: "Show/S01/Episode 1" # optional (.mkv auto-added)
+        name: "Show/S01/Episode 1"         # optional (.mkv auto-added)
       - mkv: episode2.mkv
         output: episode2.mkvdup
+      - mkv: movie.mkv
+        output: movie.mkvdup
+        source_dir: /media/dvd-backups/disc2  # per-file override
 
 Fields:
-    source_dir   Shared source directory (required)
-    files        List of MKV files to process (required, at least one)
-    mkv          Path to MKV file (required per entry)
-    output       Output .mkvdup file (required per entry)
-    name         Display name in FUSE mount (default: basename of mkv;
-                 .mkv extension auto-added if missing)
+    source_dir          Default source directory (optional if all files specify their own)
+    files               List of MKV files to process (required, at least one)
+    files[].mkv         Path to MKV file (required)
+    files[].output      Output .mkvdup file (required)
+    files[].source_dir  Source directory for this file (overrides top-level default)
+    files[].name        Display name in FUSE mount (default: basename of mkv;
+                        .mkv extension auto-added if missing)
 
 Relative paths are resolved against the manifest file's directory.
 
