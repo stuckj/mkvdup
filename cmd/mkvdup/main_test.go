@@ -122,6 +122,7 @@ func TestPrintCommandUsage(t *testing.T) {
 		{"parse-mkv", []string{"mkv-file"}},
 		{"index-source", []string{"source-dir"}},
 		{"match", []string{"mkv-file", "source-dir"}},
+		{"stats", []string{"config.yaml", "--config-dir"}},
 		{"reload", []string{"pid-file", "SIGHUP"}},
 	}
 

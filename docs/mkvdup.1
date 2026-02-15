@@ -222,6 +222,21 @@ Directory containing the source media
 Verify source file checksums (reads entire source files)
 .RE
 .TP
+.B stats \fR[\fIoptions\fR] \fIconfig.yaml\fR...
+Show space savings and file statistics for mkvdup-managed files.
+Reads config files (same format as mount/validate) and reports per-file
+statistics including original MKV size, dedup file size, space savings,
+source type, and source directory. When multiple files are present, a
+rollup summary shows aggregate totals.
+.RS
+.TP
+.I config.yaml
+YAML config files to analyze
+.TP
+.B \-\-config\-dir
+Treat config argument as directory of YAML files (.yaml, .yml)
+.RE
+.TP
 .B validate \fR[\fIoptions\fR] \fIconfig.yaml\fR...
 Validate configuration files for correctness before mounting.
 .RS
