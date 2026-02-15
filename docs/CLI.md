@@ -81,7 +81,7 @@ The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`
 
 ### batch-create
 
-Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file. Codec compatibility is checked for each file; if a mismatch is detected, a warning is printed but processing continues (always non-interactive).
+Create multiple dedup files from MKVs sharing the same source directory. The source is indexed once and reused for all files, which is significantly faster than running `create` separately for each file. Codec compatibility is checked for each file; if a mismatch is detected, a warning is printed but processing continues (always non-interactive). Use `--skip-codec-mismatch` to skip mismatched files instead.
 
 ```bash
 mkvdup batch-create [options] <manifest.yaml>
@@ -89,6 +89,7 @@ mkvdup batch-create [options] <manifest.yaml>
 # Examples:
 mkvdup batch-create episodes.yaml
 mkvdup batch-create --warn-threshold 50 episodes.yaml
+mkvdup batch-create --skip-codec-mismatch episodes.yaml
 ```
 
 **Arguments:**
@@ -99,6 +100,7 @@ mkvdup batch-create --warn-threshold 50 episodes.yaml
 | Option | Description |
 |--------|-------------|
 | `--warn-threshold N` | Minimum space savings percentage to avoid warning (default: `75`) |
+| `--skip-codec-mismatch` | Skip MKVs with codec mismatch instead of processing them |
 
 **Manifest format:**
 

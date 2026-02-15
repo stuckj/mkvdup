@@ -52,6 +52,9 @@ The source is indexed once and reused for all files. The YAML manifest
 specifies the shared source directory and a list of MKV files to process.
 Codec compatibility is checked for each file; if a mismatch is detected,
 a warning is printed but processing continues (always non-interactive).
+Use
+.B \-\-skip\-codec\-mismatch
+to skip mismatched files instead.
 .RS
 .TP
 .I manifest.yaml
@@ -62,6 +65,10 @@ for details.
 .B \-\-warn\-threshold N
 Minimum space savings percentage to avoid a warning (default: 75).
 Files with savings below this threshold are listed in the batch summary.
+.TP
+.B \-\-skip\-codec\-mismatch
+Skip MKVs with codec mismatch instead of processing them.
+Mismatched files are reported as SKIP in the batch summary.
 .RE
 .TP
 .B probe \fImkv-file\fR \fIsource-dir\fR...

@@ -181,13 +181,15 @@ The source is indexed once and reused for all files.
 
 Codec compatibility is checked for each file. If a mismatch is detected,
 a warning is printed but processing continues (non-interactive mode).
+Use --skip-codec-mismatch to skip mismatched files instead.
 
 Arguments:
     <manifest.yaml>  YAML manifest file specifying source and MKV files
 
 Options:
-    -v, --verbose       Enable verbose/debug output
-    --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
+    -v, --verbose          Enable verbose/debug output
+    --warn-threshold N     Minimum space savings percentage to avoid warning (default: 75)
+    --skip-codec-mismatch  Skip MKVs with codec mismatch instead of processing them
 
 Manifest format:
     source_dir: /media/dvd-backups/disc1
@@ -211,6 +213,7 @@ Relative paths are resolved against the manifest file's directory.
 Examples:
     mkvdup batch-create episodes.yaml
     mkvdup batch-create --warn-threshold 50 episodes.yaml
+    mkvdup batch-create --skip-codec-mismatch episodes.yaml
 `)
 	case "probe":
 		fmt.Print(`Usage: mkvdup probe <mkv-file> <source-dir>...
@@ -550,12 +553,21 @@ func main() {
 		}
 
 	case "batch-create":
-		warnThreshold, batchArgs := parseWarnFlags(args)
+		warnThreshold, remaining := parseWarnFlags(args)
+		skipCodecMismatch := false
+		var batchArgs []string
+		for _, arg := range remaining {
+			if arg == "--skip-codec-mismatch" {
+				skipCodecMismatch = true
+			} else {
+				batchArgs = append(batchArgs, arg)
+			}
+		}
 		if len(batchArgs) < 1 {
 			printCommandUsage("batch-create")
 			os.Exit(1)
 		}
-		if err := createBatch(batchArgs[0], warnThreshold); err != nil {
+		if err := createBatch(batchArgs[0], warnThreshold, skipCodecMismatch); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

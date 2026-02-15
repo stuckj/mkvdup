@@ -1084,7 +1084,7 @@ func TestExtractDedup_CleansUpOnError(t *testing.T) {
 // --- batch-create command tests ---
 
 func TestCreateBatch_InvalidManifest(t *testing.T) {
-	err := createBatch("/nonexistent/batch.yaml", 75.0)
+	err := createBatch("/nonexistent/batch.yaml", 75.0, false)
 	if err == nil {
 		t.Error("expected error for nonexistent manifest")
 	}
@@ -1098,7 +1098,7 @@ files:
   - mkv: /nonexistent/ep1.mkv
 `)
 
-	err := createBatch(manifestPath, 75.0)
+	err := createBatch(manifestPath, 75.0, false)
 	if err == nil {
 		t.Error("expected error for nonexistent source directory")
 	}
@@ -1111,7 +1111,7 @@ func TestCreateBatch_EmptyManifest(t *testing.T) {
 files: []
 `)
 
-	err := createBatch(manifestPath, 75.0)
+	err := createBatch(manifestPath, 75.0, false)
 	if err == nil {
 		t.Error("expected error for empty files list")
 	}
@@ -1405,5 +1405,66 @@ func TestDeltadiagClassifyAVCC_PartialOverlap(t *testing.T) {
 	}
 	if byNAL[1].count != 1 {
 		t.Errorf("partial overlap count = %d, want 1", byNAL[1].count)
+	}
+}
+
+func TestPrintBatchSummary_SkippedFiles(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+		{
+			MkvPath: "/data/ep2.mkv",
+			Skipped: true,
+		},
+		{
+			MkvPath: "/data/ep3.mkv",
+			Err:     fmt.Errorf("write failed"),
+		},
+		{
+			MkvPath:    "/data/ep4.mkv",
+			OutputPath: "/data/ep4.mkvdup",
+			Savings:    96.0,
+		},
+	}
+
+	output := captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
+	})
+
+	if !strings.Contains(output, "SKIP  ep2.mkv: codec mismatch") {
+		t.Error("expected SKIP line for ep2.mkv")
+	}
+	if !strings.Contains(output, "OK    ep1.mkv") {
+		t.Error("expected OK line for ep1.mkv")
+	}
+	if !strings.Contains(output, "OK    ep4.mkv") {
+		t.Error("expected OK line for ep4.mkv")
+	}
+	if !strings.Contains(output, "Succeeded: 2/4 (1 skipped)") {
+		t.Errorf("expected 'Succeeded: 2/4 (1 skipped)' in output, got:\n%s", output)
+	}
+}
+
+func TestPrintBatchSummary_NoSkippedFiles(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+	}
+
+	output := captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
+	})
+
+	if strings.Contains(output, "skipped") {
+		t.Error("expected no 'skipped' in output when no files were skipped")
+	}
+	if !strings.Contains(output, "Succeeded: 1/1") {
+		t.Errorf("expected 'Succeeded: 1/1' in output, got:\n%s", output)
 	}
 }

@@ -101,7 +101,7 @@ _mkvdup() {
 
         batch-create)
             # batch-create [options] <manifest.yaml>
-            local batch_create_opts="--warn-threshold"
+            local batch_create_opts="--warn-threshold --skip-codec-mismatch"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$batch_create_opts $global_opts" -- "$cur"))
                 return

@@ -82,6 +82,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -s v -l verbose -
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l warn-threshold -d 'Minimum space savings percentage' -x
+complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l skip-codec-mismatch -d 'Skip MKVs with codec mismatch'
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -F -d 'Manifest file'
 
 # probe options
