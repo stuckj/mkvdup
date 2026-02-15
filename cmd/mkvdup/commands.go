@@ -506,9 +506,9 @@ func createBatch(manifestPath string, warnThreshold float64) error {
 		printInfo("\n[%d/%d] %s\n", i+1, len(manifest.Files), filepath.Base(f.MKV))
 		results[i] = createDedupWithIndex(f.MKV, manifest.SourceDir, f.Output, f.Name, indexer, index, 1, 4, true)
 		if results[i].Err != nil {
-			printInfo("  ERROR: %v\n", results[i].Err)
+			fmt.Fprintf(os.Stderr, "  ERROR: %v\n", results[i].Err)
 			if i < len(manifest.Files)-1 {
-				printInfoln("  Continuing with remaining files...")
+				fmt.Fprintln(os.Stderr, "  Continuing with remaining files...")
 			}
 		}
 	}
@@ -536,7 +536,7 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 	for _, r := range results {
 		base := filepath.Base(r.MkvPath)
 		if r.Err != nil {
-			printInfo("  FAIL  %s: %v\n", base, r.Err)
+			fmt.Fprintf(os.Stderr, "  FAIL  %s: %v\n", base, r.Err)
 		} else {
 			printInfo("  OK    %s -> %s (%.1f%% savings)\n", base, filepath.Base(r.OutputPath), r.Savings)
 			succeeded++

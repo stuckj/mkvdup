@@ -6,7 +6,7 @@
 _mkvdup_create() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -21,7 +21,7 @@ _mkvdup_create() {
 _mkvdup_batch_create() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -32,7 +32,7 @@ _mkvdup_batch_create() {
 _mkvdup_probe() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -43,7 +43,7 @@ _mkvdup_probe() {
 _mkvdup_mount() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -68,7 +68,7 @@ _mkvdup_mount() {
 _mkvdup_info() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -79,7 +79,7 @@ _mkvdup_info() {
 _mkvdup_verify() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -91,7 +91,7 @@ _mkvdup_verify() {
 _mkvdup_extract() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -103,7 +103,7 @@ _mkvdup_extract() {
 _mkvdup_check() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -115,7 +115,7 @@ _mkvdup_check() {
 _mkvdup_validate() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -128,7 +128,7 @@ _mkvdup_validate() {
 _mkvdup_reload() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -141,7 +141,7 @@ _mkvdup_reload() {
 _mkvdup_parse_mkv() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -151,7 +151,7 @@ _mkvdup_parse_mkv() {
 _mkvdup_index_source() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -161,7 +161,7 @@ _mkvdup_index_source() {
 _mkvdup_match() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -172,7 +172,7 @@ _mkvdup_match() {
 _mkvdup_deltadiag() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
@@ -186,7 +186,7 @@ _mkvdup() {
 
     _arguments -C \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
-        '(-q --quiet)'{-q,--quiet}'[Suppress all informational output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \

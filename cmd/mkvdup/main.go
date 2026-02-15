@@ -133,7 +133,7 @@ Debug commands:
 
 Options:
   -v, --verbose    Enable verbose output
-  -q, --quiet      Suppress all informational output
+  -q, --quiet      Suppress informational progress output
   --no-progress    Disable progress bars (still show status messages)
   -h, --help       Show help
   --version        Show version
