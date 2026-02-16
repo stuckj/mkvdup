@@ -200,6 +200,17 @@ Config files support `includes` (glob patterns referencing other configs, includ
 | `--default-dir-mode MODE` | Default mode for directories, in octal (default: `0555`) |
 | `--permissions-file PATH` | Explicit path to permissions file |
 
+**Source Watch Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--no-source-watch` | Disable source file watching |
+| `--on-source-change ACTION` | Action on source change: `warn`, `disable`, `checksum` (default: `checksum`) |
+| `--source-watch-poll-interval DUR` | Polling interval for network FS (default: `60s`) |
+| `--source-read-timeout DUR` | Timeout for source file reads on network FS (default: `30s`) |
+
+Error notification on source integrity issues is configured via `on_error_command` in a YAML config file rather than CLI flags. See [Error Notification](FUSE.md#error-notification) for details.
+
 **Permissions file search order:**
 1. `--permissions-file PATH` (if specified)
 2. `~/.config/mkvdup/permissions.yaml` (if exists)

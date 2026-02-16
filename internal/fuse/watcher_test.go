@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
 // mockReaderWithSources extends mockReader with SourceFileInfo support.
@@ -39,7 +40,7 @@ func (f *mockReaderFactoryWithSources) NewReaderLazy(dedupPath, sourceDir string
 func newTestWatcher(t *testing.T, action string) (*SourceWatcher, *logCapture) {
 	t.Helper()
 	lc := &logCapture{}
-	sw, err := NewSourceWatcher(action, 0, lc.logFn)
+	sw, err := NewSourceWatcher(action, 0, nil, lc.logFn)
 	if err != nil {
 		t.Fatalf("NewSourceWatcher(%q): %v", action, err)
 	}
@@ -419,5 +420,71 @@ func TestSourceWatcher_Update(t *testing.T) {
 	}
 	if sw.sizes[absPath] != 5 {
 		t.Errorf("expected size 5, got %d", sw.sizes[absPath])
+	}
+}
+
+func TestSourceWatcher_DisableAction_WithNotifier(t *testing.T) {
+	tmpDir := t.TempDir()
+	marker := filepath.Join(tmpDir, "notifier-marker.txt")
+
+	errCmd := &dedup.ErrorCommandConfig{
+		Command: dedup.CommandValue{
+			IsShell: true,
+			Args:    []string{"printf '%s %s' %source% %event% > " + marker},
+		},
+		Timeout:       5 * time.Second,
+		BatchInterval: 50 * time.Millisecond,
+	}
+
+	lc := &logCapture{}
+	sw, err := NewSourceWatcher("disable", 0, errCmd, lc.logFn)
+	if err != nil {
+		t.Fatalf("NewSourceWatcher: %v", err)
+	}
+	t.Cleanup(func() {
+		sw.notifier.Stop()
+		sw.watcher.Close()
+	})
+
+	file := &MKVFile{Name: "movie.mkv"}
+	srcPath := "/some/source/VIDEO_TS/VTS_01_1.VOB"
+
+	sw.mu.Lock()
+	sw.reverse[srcPath] = []*MKVFile{file}
+	sw.checksums[srcPath] = 0xdeadbeef
+	sw.sizes[srcPath] = 1024
+	sw.handleChangeLocked(srcPath)
+	sw.mu.Unlock()
+
+	// File should be disabled.
+	if !isDisabled(file) {
+		t.Error("file should be disabled with 'disable' action")
+	}
+
+	// Wait for the notifier batch interval to flush and the command to execute
+	// by polling for the marker file with a deadline to avoid flakiness on slow CI.
+	var data []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var readErr error
+		data, readErr = os.ReadFile(marker)
+		if readErr == nil {
+			break
+		}
+		if !os.IsNotExist(readErr) {
+			t.Fatalf("error reading notifier marker file: %v", readErr)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for notifier marker file to be created")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	content := strings.TrimSpace(string(data))
+	if !strings.Contains(content, srcPath) {
+		t.Errorf("marker missing source path, got: %q", content)
+	}
+	if !strings.Contains(content, "changed") {
+		t.Errorf("marker missing event type, got: %q", content)
 	}
 }

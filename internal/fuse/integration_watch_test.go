@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -495,5 +496,94 @@ func TestSourceWatch_Reload_Recovery(t *testing.T) {
 	data = readVirtualFile(t, virtualPath)
 	if !bytes.Equal(data, fix.MKVData) {
 		t.Fatal("Virtual file content doesn't match after reload recovery")
+	}
+}
+
+// TestSourceWatch_ErrorCommand verifies that the on_error_command config
+// option causes an external script to be executed with the correct
+// placeholder values when a source integrity issue is detected.
+func TestSourceWatch_ErrorCommand(t *testing.T) {
+	skipIfFUSEUnavailable(t)
+	binary := getWatchTestBinary(t)
+	fix := createWatchFixture(t)
+
+	// Marker file where the notification script writes its output.
+	markerPath := filepath.Join(fix.TmpDir, "notify-output.txt")
+
+	// Create a notification script that writes placeholder values to the marker file.
+	scriptPath := filepath.Join(fix.TmpDir, "notify.sh")
+	scriptContent := fmt.Sprintf(`#!/bin/sh
+echo "source=$1" > %q
+echo "event=$2" >> %q
+echo "files=$3" >> %q
+`, markerPath, markerPath, markerPath)
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		t.Fatalf("Failed to write notification script: %v", err)
+	}
+
+	// Write a custom config with on_error_command (dedup.WriteConfig doesn't
+	// support this field, so we write the YAML directly).
+	configContent := fmt.Sprintf(`name: "test.mkv"
+dedup_file: %q
+source_dir: %q
+on_error_command:
+  command: [%q, "%%source%%", "%%event%%", "%%files%%"]
+  timeout: 10s
+  batch_interval: 1s
+`, fix.DedupPath, fix.SourceDir, scriptPath)
+	if err := os.WriteFile(fix.ConfigPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write custom config: %v", err)
+	}
+
+	startMount(t, binary, fix.MountPoint, []string{fix.ConfigPath}, "--on-source-change", "disable")
+
+	virtualPath := filepath.Join(fix.MountPoint, "test.mkv")
+
+	// Verify file is readable before triggering the change.
+	data := readVirtualFile(t, virtualPath)
+	if !bytes.Equal(data, fix.MKVData) {
+		t.Fatal("Virtual file content doesn't match expected data")
+	}
+
+	// Truncate source file to trigger a source change.
+	if err := os.Truncate(fix.SourcePath, 0); err != nil {
+		t.Fatalf("Failed to truncate source file: %v", err)
+	}
+
+	// Wait for EIO — confirms the watcher detected the change.
+	if !waitForEIO(virtualPath, 5*time.Second) {
+		t.Fatal("Expected EIO after source file truncation in disable mode")
+	}
+
+	// Poll for the marker file to appear. The total delay includes
+	// inotify detection + batch_interval (1s) + command execution.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(markerPath); err == nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	markerData, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatalf("Marker file was not created within timeout: %v", err)
+	}
+
+	markerContent := string(markerData)
+
+	// Verify the script received the correct source path.
+	if !strings.Contains(markerContent, fmt.Sprintf("source=%s", fix.SourcePath)) {
+		t.Fatalf("Marker file does not contain expected source path.\nExpected substring: source=%s\nGot:\n%s", fix.SourcePath, markerContent)
+	}
+
+	// Verify the event type is "changed" (disable mode emits this).
+	if !strings.Contains(markerContent, "event=changed") {
+		t.Fatalf("Marker file does not contain expected event type.\nExpected substring: event=changed\nGot:\n%s", markerContent)
+	}
+
+	// Verify the affected file name.
+	if !strings.Contains(markerContent, "files=test.mkv") {
+		t.Fatalf("Marker file does not contain expected file name.\nExpected substring: files=test.mkv\nGot:\n%s", markerContent)
 	}
 }
