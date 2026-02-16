@@ -467,6 +467,8 @@ on_error_command:
 
 **Batching behavior:** Events are collected for the configured `batch_interval`. Each new event resets the timer. When the timer expires, the command is executed once with all accumulated events. This prevents notification storms when a single change affects many virtual files.
 
+**Shell safety:** When using string-form commands (`command: "..."`), placeholders are substituted directly into the shell command string without escaping. Source paths containing shell metacharacters (spaces, quotes, `$`, etc.) may break the command or cause unexpected behavior. Use list form (`command: ["...", "%source%"]`) when including placeholders — list form passes arguments directly to the program without shell interpretation.
+
 **Error handling:** Command failures are logged but do not affect mount operation. The command runs asynchronously and does not block the watcher.
 
 **Examples:**
