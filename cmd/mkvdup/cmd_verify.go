@@ -60,6 +60,9 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 	var offset int64
 	for {
 		n1, err1 := original.Read(originalBuf)
+		if n1 == 0 && err1 == io.EOF {
+			break
+		}
 		n2, err2 := reader.ReadAt(reconstructedBuf[:n1], offset)
 
 		if verbose && offset == 0 {
@@ -87,16 +90,10 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 			bar.Update(offset)
 		}
 
-		if err1 == io.EOF && err2 == io.EOF {
-			break
-		}
-		if err1 == io.EOF || err2 == io.EOF {
-			return fmt.Errorf("EOF mismatch at offset %d", offset)
-		}
-		if err1 != nil {
+		if err1 != nil && err1 != io.EOF {
 			return fmt.Errorf("read original at %d: %w", offset, err1)
 		}
-		if err2 != nil {
+		if err2 != nil && err2 != io.EOF {
 			return fmt.Errorf("read reconstructed at %d: %w", offset, err2)
 		}
 	}

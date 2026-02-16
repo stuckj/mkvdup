@@ -6,6 +6,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestReloadDaemon_DeadProcess(t *testing.T) {
@@ -31,5 +32,9 @@ func TestReloadDaemon_SendsSignal(t *testing.T) {
 	}
 
 	// Drain the signal we sent to ourselves
-	<-sigCh
+	select {
+	case <-sigCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SIGHUP signal")
+	}
 }

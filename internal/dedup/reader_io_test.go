@@ -91,14 +91,26 @@ func TestVerifyIntegrity_CorruptedIndex(t *testing.T) {
 		t.Fatalf("Failed to open file: %v", err)
 	}
 
-	// Corrupt a byte in the index section (after header and source files)
-	// Header is 56 bytes, source file section is ~30 bytes, so corrupt around offset 100
-	_, err = f.Seek(100, 0)
+	// Corrupt bytes near the end of the file to reliably hit the index section
+	// regardless of header/source-file section sizes
+	fi, err := f.Stat()
+	if err != nil {
+		t.Fatalf("Failed to stat file: %v", err)
+	}
+	corruptionOffset := fi.Size() - 4
+	if corruptionOffset < 0 {
+		t.Fatal("File too small to corrupt")
+	}
+	_, err = f.Seek(corruptionOffset, 0)
 	if err != nil {
 		t.Fatalf("Failed to seek: %v", err)
 	}
-	f.Write([]byte{0xFF, 0xFF, 0xFF, 0xFF}) // Corrupt 4 bytes
-	f.Close()
+	if _, err := f.Write([]byte{0xFF, 0xFF, 0xFF, 0xFF}); err != nil {
+		t.Fatalf("Failed to write corruption bytes: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Failed to close file: %v", err)
+	}
 
 	reader, err := NewReader(dedupPath, tmpDir)
 	if err != nil {
