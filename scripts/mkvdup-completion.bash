@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create batch-create probe mount info verify extract check validate reload parse-mkv index-source match deltadiag help"
+    local commands="create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag help"
     local global_opts="-v --verbose -q --quiet --no-progress -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -76,7 +76,7 @@ _mkvdup() {
     fi
 
     # Global options available for commands that don't define their own options
-    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "validate" && "$cmd" != "reload" && "$cmd" != "info" ]]; then
+    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "stats" && "$cmd" != "validate" && "$cmd" != "reload" && "$cmd" != "info" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
@@ -190,6 +190,20 @@ _mkvdup() {
                 return
             fi
             _filedir
+            ;;
+
+        stats)
+            # stats [options] <config.yaml...>
+            local stats_opts="--config-dir"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$stats_opts $global_opts" -- "$cur"))
+                return
+            fi
+            if [[ "$cur" == *.yaml || "$cur" == *.yml ]]; then
+                _filedir '@(yaml|yml)'
+            else
+                _filedir
+            fi
             ;;
 
         validate)

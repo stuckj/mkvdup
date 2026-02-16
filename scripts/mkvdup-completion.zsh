@@ -113,6 +113,17 @@ _mkvdup_check() {
         '2:Source directory:_files -/'
 }
 
+_mkvdup_stats() {
+    _arguments -s \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
+        '--no-progress[Disable progress bars]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
+        '--config-dir[Treat config argument as directory of YAML files]' \
+        '*:Config files:_files -g "*.y(a|)ml(-.)"'
+}
+
 _mkvdup_validate() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
@@ -206,6 +217,7 @@ _mkvdup() {
                 'verify:Verify a dedup file against the original MKV'
                 'extract:Rebuild original MKV from dedup + source'
                 'check:Check integrity of a dedup file and its source files'
+                'stats:Show space savings and file statistics'
                 'validate:Validate configuration files for correctness'
                 'reload:Reload a running daemon configuration'
                 'parse-mkv:Parse and display MKV structure (debug)'
@@ -226,6 +238,7 @@ _mkvdup() {
                 verify)       _mkvdup_verify ;;
                 extract)      _mkvdup_extract ;;
                 check)        _mkvdup_check ;;
+                stats)        _mkvdup_stats ;;
                 validate)     _mkvdup_validate ;;
                 reload)       _mkvdup_reload ;;
                 parse-mkv)    _mkvdup_parse_mkv ;;
@@ -234,7 +247,7 @@ _mkvdup() {
                 deltadiag)    _mkvdup_deltadiag ;;
                 help)
                     local -a help_cmds
-                    help_cmds=(create batch-create probe mount info verify extract check validate reload parse-mkv index-source match deltadiag)
+                    help_cmds=(create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag)
                     _describe -t commands 'command' help_cmds
                     ;;
             esac

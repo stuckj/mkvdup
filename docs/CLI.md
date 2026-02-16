@@ -268,6 +268,50 @@ mkvdup check movie.mkvdup /media/dvd-backups
 mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
 ```
 
+### stats
+
+Show space savings and file statistics for mkvdup-managed files.
+
+```bash
+mkvdup stats <config.yaml...>
+mkvdup stats --config-dir /etc/mkvdup.d/
+```
+
+**Arguments:**
+- `<config.yaml...>` — YAML config files (same format as mount/validate)
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--config-dir` | Treat config argument as directory of YAML files (`.yaml`, `.yml`) |
+
+**Output:**
+
+Per-file statistics:
+- Original MKV size
+- Dedup file size on disk
+- Space savings (absolute and percentage)
+- Source type (DVD or Blu-ray)
+- Source directory
+- Source file count
+- Index entry count
+
+When multiple files are present, a rollup summary shows totals across all files including the number of unique source directories.
+
+**Examples:**
+
+```bash
+# Stats for a single config
+mkvdup stats movie.yaml
+
+# Stats for all configs in a directory
+mkvdup stats --config-dir /etc/mkvdup.d/
+
+# Stats for multiple configs
+mkvdup stats movie1.yaml movie2.yaml
+```
+
 ### validate
 
 Validate configuration files for correctness before mounting.

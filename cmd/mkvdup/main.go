@@ -121,6 +121,7 @@ Commands:
   verify       Verify dedup file against original MKV
   extract      Rebuild original MKV from dedup + source
   check        Check dedup + source file integrity
+  stats        Show space savings and file statistics
   validate     Validate configuration files
   reload       Reload running daemon's configuration
 
@@ -358,6 +359,25 @@ Checks performed:
 Examples:
     mkvdup check movie.mkvdup /media/dvd-backups
     mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
+`)
+	case "stats":
+		fmt.Print(`Usage: mkvdup stats [options] <config.yaml...>
+
+Show space savings and file statistics for mkvdup-managed files.
+
+Arguments:
+    <config.yaml>  YAML config files (same format as mount/validate)
+
+Options:
+    --config-dir   Treat config argument as directory of YAML files (.yaml, .yml)
+
+Output includes per-file statistics (original size, dedup file size, space
+savings, source type) and a rollup summary when multiple files are present.
+
+Examples:
+    mkvdup stats config.yaml
+    mkvdup stats --config-dir /etc/mkvdup.d/
+    mkvdup stats movie1.yaml movie2.yaml
 `)
 	case "validate":
 		fmt.Print(`Usage: mkvdup validate [options] <config.yaml...>
@@ -813,6 +833,24 @@ func main() {
 			os.Exit(1)
 		}
 		if err := checkDedup(checkArgs[0], checkArgs[1], sourceChecksums); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+	case "stats":
+		configDir := false
+		var statsArgs []string
+		for _, arg := range args {
+			if arg == "--config-dir" {
+				configDir = true
+			} else {
+				statsArgs = append(statsArgs, arg)
+			}
+		}
+		if len(statsArgs) < 1 {
+			printCommandUsage("stats")
+			os.Exit(1)
+		}
+		if err := showStats(statsArgs, configDir); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
