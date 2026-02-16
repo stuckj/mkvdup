@@ -2281,7 +2281,6 @@ type fileStats struct {
 	sourceDir   string
 	origSize    int64
 	dedupSize   int64
-	deltaSize   int64
 	sourceType  string
 	sourceFiles int
 	entryCount  int
@@ -2347,7 +2346,6 @@ func collectFileStats(cfg dedup.Config) fileStats {
 	}
 
 	fs.origSize = info["original_size"].(int64)
-	fs.deltaSize = info["delta_size"].(int64)
 	fs.sourceFiles = info["source_file_count"].(int)
 	fs.entryCount = info["entry_count"].(int)
 
