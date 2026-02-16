@@ -76,7 +76,7 @@ on_error_command:
 Or string form (executed via `sh -c`):
 ```yaml
 on_error_command:
-  command: "curl -d 'Source issue: %source%' https://ntfy.sh/mkvdup"
+  command: "curl -d %source% https://ntfy.sh/mkvdup"
 ```
 
 See [Error Notification](#error-notification) for full details on placeholders and behavior.
@@ -467,7 +467,7 @@ on_error_command:
 
 **Batching behavior:** Events are collected for the configured `batch_interval`. Each new event resets the timer. When the timer expires, the command is executed once with all accumulated events. This prevents notification storms when a single change affects many virtual files.
 
-**Shell safety:** When using string-form commands (`command: "..."`), placeholders are substituted directly into the shell command string without escaping. Source paths containing shell metacharacters (spaces, quotes, `$`, etc.) may break the command or cause unexpected behavior. Use list form (`command: ["...", "%source%"]`) when including placeholders — list form passes arguments directly to the program without shell interpretation.
+**Shell safety:** When using string-form commands (`command: "..."`), placeholder values are automatically shell-escaped (single-quoted) before substitution to prevent shell injection. Do not add your own quotes around placeholders — they are already escaped. For example, use `echo %source%` not `echo '%source%'`.
 
 **Error handling:** Command failures are logged but do not affect mount operation. The command runs asynchronously and does not block the watcher.
 
@@ -476,7 +476,7 @@ on_error_command:
 ```yaml
 # Send a push notification via ntfy.sh
 on_error_command:
-  command: "curl -d '%event%: %source%' https://ntfy.sh/mkvdup-alerts"
+  command: ["curl", "-d", "%event%: %source%", "https://ntfy.sh/mkvdup-alerts"]
 
 # Run a custom notification script
 on_error_command:
@@ -486,7 +486,7 @@ on_error_command:
 
 # Send email via mailx
 on_error_command:
-  command: "echo 'Source integrity issue:\n%source%\n\nEvent: %event%\nAffected files: %files%' | mailx -s 'mkvdup alert' admin@example.com"
+  command: ["sh", "-c", "echo Source integrity issue: $1 Event: $2 Files: $3 | mailx -s 'mkvdup alert' admin@example.com", "--", "%source%", "%event%", "%files%"]
   batch_interval: 30s
 ```
 

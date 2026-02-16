@@ -19,7 +19,7 @@ func TestSubstitutePlaceholders_SingleEvent(t *testing.T) {
 		},
 	}
 
-	result := substitutePlaceholders("src=%source% files=%files% event=%event%", events)
+	result := substitutePlaceholders("src=%source% files=%files% event=%event%", events, false)
 
 	if !strings.Contains(result, "src=/data/source/VIDEO_TS/VTS_01_1.VOB") {
 		t.Errorf("expected %%source%% to be replaced, got: %s", result)
@@ -46,7 +46,7 @@ func TestSubstitutePlaceholders_BatchedEvents(t *testing.T) {
 		},
 	}
 
-	result := substitutePlaceholders("src=%source% files=%files% event=%event%", events)
+	result := substitutePlaceholders("src=%source% files=%files% event=%event%", events, false)
 
 	// Sources should be newline-separated, deduplicated
 	wantSource := "/data/source/VTS_01_1.VOB\n/data/source/VTS_01_2.VOB"
@@ -69,14 +69,54 @@ func TestSubstitutePlaceholders_BatchedEvents(t *testing.T) {
 	}
 }
 
+func TestSubstitutePlaceholders_ShellEscape(t *testing.T) {
+	events := []ErrorEvent{
+		{
+			SourcePath:    "/data/path with spaces/file$(evil).vob",
+			AffectedFiles: []string{"movie's file.mkv"},
+			Event:         "changed",
+		},
+	}
+
+	result := substitutePlaceholders("echo %source% %files% %event%", events, true)
+
+	// Escaped values should be single-quoted
+	if !strings.Contains(result, "'/data/path with spaces/file$(evil).vob'") {
+		t.Errorf("expected shell-escaped source, got: %s", result)
+	}
+	if !strings.Contains(result, "'movie'\"'\"'s file.mkv'") {
+		t.Errorf("expected shell-escaped files with escaped single quote, got: %s", result)
+	}
+	// "changed" has no special chars, so shellescape leaves it unquoted
+	if !strings.Contains(result, " changed") {
+		t.Errorf("expected event value in result, got: %s", result)
+	}
+}
+
+func TestSubstitutePlaceholders_ShellEscape_CleanPath(t *testing.T) {
+	events := []ErrorEvent{
+		{
+			SourcePath:    "/data/source/VIDEO_TS/VTS_01_1.VOB",
+			AffectedFiles: []string{"movie.mkv"},
+			Event:         "changed",
+		},
+	}
+
+	// Clean paths should pass through unmodified even with shell escaping
+	result := substitutePlaceholders("echo %source% %files% %event%", events, true)
+	want := "echo /data/source/VIDEO_TS/VTS_01_1.VOB movie.mkv changed"
+	if result != want {
+		t.Errorf("clean paths should not be quoted\ngot:  %s\nwant: %s", result, want)
+	}
+}
+
 func TestErrorNotifier_ExecutesCommand(t *testing.T) {
 	tmpDir := t.TempDir()
 	marker := filepath.Join(tmpDir, "marker.txt")
 
 	config := dedup.ErrorCommandConfig{
 		Command: dedup.CommandValue{
-			IsShell: false,
-			Args:    []string{"sh", "-c", "echo %source% > " + marker},
+			Args: []string{"sh", "-c", "echo %source% > " + marker},
 		},
 		Timeout:       5 * time.Second,
 		BatchInterval: 50 * time.Millisecond,
@@ -111,7 +151,7 @@ func TestErrorNotifier_ShellCommand(t *testing.T) {
 	config := dedup.ErrorCommandConfig{
 		Command: dedup.CommandValue{
 			IsShell: true,
-			Args:    []string{"echo %source% > " + marker},
+			Args:    []string{"printf '%s' %source% > " + marker},
 		},
 		Timeout:       5 * time.Second,
 		BatchInterval: 50 * time.Millisecond,
@@ -138,6 +178,41 @@ func TestErrorNotifier_ShellCommand(t *testing.T) {
 	}
 }
 
+func TestErrorNotifier_ShellCommand_EscapesSpecialChars(t *testing.T) {
+	tmpDir := t.TempDir()
+	marker := filepath.Join(tmpDir, "marker.txt")
+
+	config := dedup.ErrorCommandConfig{
+		Command: dedup.CommandValue{
+			IsShell: true,
+			Args:    []string{"printf '%s' %source% > " + marker},
+		},
+		Timeout:       5 * time.Second,
+		BatchInterval: 50 * time.Millisecond,
+	}
+
+	lc := &logCapture{}
+	n := NewErrorNotifier(config, lc.logFn)
+
+	n.Notify(ErrorEvent{
+		SourcePath:    "/data/path with spaces/file$(whoami).vob",
+		AffectedFiles: []string{"movie.mkv"},
+		Event:         "changed",
+	})
+
+	time.Sleep(300 * time.Millisecond)
+
+	data, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("marker file not created: %v", err)
+	}
+	content := strings.TrimSpace(string(data))
+	// The source path should be preserved literally, not interpreted by the shell
+	if content != "/data/path with spaces/file$(whoami).vob" {
+		t.Errorf("marker content = %q, want literal source path", content)
+	}
+}
+
 func TestErrorNotifier_BatchesEvents(t *testing.T) {
 	tmpDir := t.TempDir()
 	marker := filepath.Join(tmpDir, "marker.txt")
@@ -145,7 +220,7 @@ func TestErrorNotifier_BatchesEvents(t *testing.T) {
 	config := dedup.ErrorCommandConfig{
 		Command: dedup.CommandValue{
 			IsShell: true,
-			Args:    []string{"echo '%source%' > " + marker},
+			Args:    []string{"printf '%s' %source% > " + marker},
 		},
 		Timeout:       5 * time.Second,
 		BatchInterval: 100 * time.Millisecond,
@@ -190,7 +265,7 @@ func TestErrorNotifier_StopFlushes(t *testing.T) {
 	config := dedup.ErrorCommandConfig{
 		Command: dedup.CommandValue{
 			IsShell: true,
-			Args:    []string{"echo %source% > " + marker},
+			Args:    []string{"printf '%s' %source% > " + marker},
 		},
 		Timeout:       5 * time.Second,
 		BatchInterval: 10 * time.Second, // very long — won't fire naturally

@@ -15,3 +15,5 @@ require gopkg.in/yaml.v3 v3.0.1
 require github.com/bmatcuk/doublestar/v4 v4.10.0
 
 require github.com/fsnotify/fsnotify v1.9.0
+
+require al.essio.dev/pkg/shellescape v1.6.0 // indirect

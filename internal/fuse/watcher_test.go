@@ -430,7 +430,7 @@ func TestSourceWatcher_DisableAction_WithNotifier(t *testing.T) {
 	errCmd := &dedup.ErrorCommandConfig{
 		Command: dedup.CommandValue{
 			IsShell: true,
-			Args:    []string{"echo '%source% %event%' > " + marker},
+			Args:    []string{"printf '%s %s' %source% %event% > " + marker},
 		},
 		Timeout:       5 * time.Second,
 		BatchInterval: 50 * time.Millisecond,

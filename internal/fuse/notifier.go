@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
@@ -108,14 +109,14 @@ func (n *ErrorNotifier) executeCommand(events []ErrorEvent) {
 
 	var cmd *exec.Cmd
 	if n.config.Command.IsShell {
-		// String form: run via sh -c
-		cmdStr := substitutePlaceholders(n.config.Command.Args[0], events)
+		// String form: run via sh -c with shell-escaped placeholder values
+		cmdStr := substitutePlaceholders(n.config.Command.Args[0], events, true)
 		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	} else {
-		// List form: substitute placeholders in each argument
+		// List form: substitute placeholders in each argument (no escaping needed)
 		args := make([]string, len(n.config.Command.Args))
 		for i, arg := range n.config.Command.Args {
-			args[i] = substitutePlaceholders(arg, events)
+			args[i] = substitutePlaceholders(arg, events, false)
 		}
 		cmd = exec.CommandContext(ctx, args[0], args[1:]...)
 	}
@@ -127,8 +128,9 @@ func (n *ErrorNotifier) executeCommand(events []ErrorEvent) {
 }
 
 // substitutePlaceholders replaces %source%, %files%, and %event% in s
-// with values derived from the batched events.
-func substitutePlaceholders(s string, events []ErrorEvent) string {
+// with values derived from the batched events. When shellEscape is true,
+// placeholder values are shell-escaped for safe use in sh -c commands.
+func substitutePlaceholders(s string, events []ErrorEvent, shellEscape bool) string {
 	// Build source list (newline-separated, deduplicated)
 	sourceSet := make(map[string]bool)
 	var sources []string
@@ -161,8 +163,18 @@ func substitutePlaceholders(s string, events []ErrorEvent) string {
 		}
 	}
 
-	s = strings.ReplaceAll(s, "%source%", strings.Join(sources, "\n"))
-	s = strings.ReplaceAll(s, "%files%", strings.Join(files, ", "))
-	s = strings.ReplaceAll(s, "%event%", strings.Join(eventStrs, "\n"))
+	sourceVal := strings.Join(sources, "\n")
+	filesVal := strings.Join(files, ", ")
+	eventVal := strings.Join(eventStrs, "\n")
+
+	if shellEscape {
+		sourceVal = shellescape.Quote(sourceVal)
+		filesVal = shellescape.Quote(filesVal)
+		eventVal = shellescape.Quote(eventVal)
+	}
+
+	s = strings.ReplaceAll(s, "%source%", sourceVal)
+	s = strings.ReplaceAll(s, "%files%", filesVal)
+	s = strings.ReplaceAll(s, "%event%", eventVal)
 	return s
 }

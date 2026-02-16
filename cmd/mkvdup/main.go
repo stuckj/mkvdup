@@ -272,6 +272,7 @@ Error Notification (configured in YAML config, not CLI):
       timeout: 30s          # command timeout (default: 30s)
       batch_interval: 5s    # debounce window for batching events (default: 5s)
     Placeholders: %source% (path), %files% (affected files), %event% (error type)
+    String form (sh -c) auto-escapes placeholders; do not add your own quotes.
     See docs/FUSE.md for details.
 
 By default, mkvdup daemonizes after the mount is ready and returns.
