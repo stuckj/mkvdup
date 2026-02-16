@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteConfig(t *testing.T) {
@@ -203,7 +204,7 @@ dedup_file: "/data/movie.mkvdup"
 source_dir: "/data/source"
 `)
 
-	configs, err := ResolveConfigs([]string{cfgPath})
+	configs, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -241,7 +242,7 @@ source_dir: "/data/source"
   - "%s/*.mkvdup.yaml"
 `, subDir))
 
-	configs, err := ResolveConfigs([]string{mainPath})
+	configs, _, err := ResolveConfigs([]string{mainPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -269,7 +270,7 @@ source_dir: "/data/source"
   - "%s/**/*.mkvdup.yaml"
 `, dir))
 
-	configs, err := ResolveConfigs([]string{mainPath})
+	configs, _, err := ResolveConfigs([]string{mainPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestResolveConfigs_VirtualFiles(t *testing.T) {
     source_dir: "/data/source2"
 `)
 
-	configs, err := ResolveConfigs([]string{cfgPath})
+	configs, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -331,7 +332,7 @@ virtual_files:
     source_dir: "/data/source"
 `, subDir))
 
-	configs, err := ResolveConfigs([]string{mainPath})
+	configs, _, err := ResolveConfigs([]string{mainPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -370,7 +371,7 @@ includes:
   - "%s"
 `, aPath))
 
-	configs, err := ResolveConfigs([]string{aPath})
+	configs, _, err := ResolveConfigs([]string{aPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -390,7 +391,7 @@ dedup_file: "../data/rel.mkvdup"
 source_dir: "../sources/dvd"
 `)
 
-	configs, err := ResolveConfigs([]string{cfgPath})
+	configs, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -421,7 +422,7 @@ source_dir: "/data/source"
   - "sub/*.mkvdup.yaml"
 `)
 
-	configs, err := ResolveConfigs([]string{filepath.Join(dir, "parent.yaml")})
+	configs, _, err := ResolveConfigs([]string{filepath.Join(dir, "parent.yaml")})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -440,7 +441,7 @@ func TestResolveConfigs_NoMatchesNotError(t *testing.T) {
   - "/nonexistent/path/*.mkvdup.yaml"
 `)
 
-	configs, err := ResolveConfigs([]string{cfgPath})
+	configs, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -460,7 +461,7 @@ func TestResolveConfigs_InvalidIncludedConfig(t *testing.T) {
   - "%s/*.mkvdup.yaml"
 `, dir))
 
-	_, err := ResolveConfigs([]string{mainPath})
+	_, _, err := ResolveConfigs([]string{mainPath})
 	if err == nil {
 		t.Fatal("expected error for invalid included config, got nil")
 	}
@@ -474,7 +475,7 @@ func TestResolveConfigs_PartialTopLevelFields(t *testing.T) {
 	writeYAML(t, cfgPath, `name: "movie.mkv"
 `)
 
-	_, err := ResolveConfigs([]string{cfgPath})
+	_, _, err := ResolveConfigs([]string{cfgPath})
 	if err == nil {
 		t.Fatal("expected error for partial top-level fields, got nil")
 	}
@@ -490,7 +491,7 @@ func TestResolveConfigs_VirtualFilesMissingFields(t *testing.T) {
   - name: "movie.mkv"
 `)
 
-	_, err := ResolveConfigs([]string{cfgPath})
+	_, _, err := ResolveConfigs([]string{cfgPath})
 	if err == nil {
 		t.Fatal("expected error for virtual_files with missing fields, got nil")
 	}
@@ -504,7 +505,7 @@ func TestResolveConfigs_EmptyConfig(t *testing.T) {
 	cfgPath := filepath.Join(dir, "empty.yaml")
 	writeYAML(t, cfgPath, "# just a comment\n")
 
-	configs, err := ResolveConfigs([]string{cfgPath})
+	configs, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -522,7 +523,7 @@ func TestResolveConfigs_VirtualFilesRelativePaths(t *testing.T) {
     source_dir: "../sources/dvd"
 `)
 
-	configs, err := ResolveConfigs([]string{cfgPath})
+	configs, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -554,7 +555,7 @@ dedup_file: "/data/b.mkvdup"
 source_dir: "/data/source"
 `)
 
-	configs, err := ResolveConfigs([]string{aPath, bPath})
+	configs, _, err := ResolveConfigs([]string{aPath, bPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -567,7 +568,7 @@ source_dir: "/data/source"
 }
 
 func TestResolveConfigs_FileNotFound(t *testing.T) {
-	_, err := ResolveConfigs([]string{"/nonexistent/config.yaml"})
+	_, _, err := ResolveConfigs([]string{"/nonexistent/config.yaml"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent file, got nil")
 	}
@@ -894,5 +895,190 @@ func TestReadBatchManifest_FileNotFound(t *testing.T) {
 	_, err := ReadBatchManifest("/nonexistent/batch.yaml")
 	if err == nil {
 		t.Fatal("expected error for nonexistent manifest, got nil")
+	}
+}
+
+// --- on_error_command tests ---
+
+func TestResolveConfigs_OnErrorCommand_ListForm(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	writeYAML(t, cfgPath, `on_error_command:
+  command: ["echo", "%source%", "%event%"]
+`)
+
+	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if errCmd == nil {
+		t.Fatal("expected non-nil ErrorCommandConfig")
+	}
+	if errCmd.Command.IsShell {
+		t.Error("expected IsShell=false for list form")
+	}
+	if len(errCmd.Command.Args) != 3 {
+		t.Fatalf("expected 3 args, got %d", len(errCmd.Command.Args))
+	}
+	if errCmd.Command.Args[0] != "echo" || errCmd.Command.Args[1] != "%source%" || errCmd.Command.Args[2] != "%event%" {
+		t.Errorf("Args = %v, want [echo %%source%% %%event%%]", errCmd.Command.Args)
+	}
+	// Defaults should be applied
+	if errCmd.Timeout != 30*time.Second {
+		t.Errorf("Timeout = %v, want 30s", errCmd.Timeout)
+	}
+	if errCmd.BatchInterval != 5*time.Second {
+		t.Errorf("BatchInterval = %v, want 5s", errCmd.BatchInterval)
+	}
+}
+
+func TestResolveConfigs_OnErrorCommand_StringForm(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	writeYAML(t, cfgPath, `on_error_command:
+  command: "echo %source% %event%"
+`)
+
+	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if errCmd == nil {
+		t.Fatal("expected non-nil ErrorCommandConfig")
+	}
+	if !errCmd.Command.IsShell {
+		t.Error("expected IsShell=true for string form")
+	}
+	if len(errCmd.Command.Args) != 1 {
+		t.Fatalf("expected 1 arg, got %d", len(errCmd.Command.Args))
+	}
+	if errCmd.Command.Args[0] != "echo %source% %event%" {
+		t.Errorf("Args[0] = %q, want %q", errCmd.Command.Args[0], "echo %source% %event%")
+	}
+}
+
+func TestResolveConfigs_OnErrorCommand_CustomTimeouts(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	writeYAML(t, cfgPath, `on_error_command:
+  command: ["echo", "test"]
+  timeout: 10s
+  batch_interval: 2s
+`)
+
+	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if errCmd == nil {
+		t.Fatal("expected non-nil ErrorCommandConfig")
+	}
+	if errCmd.Timeout != 10*time.Second {
+		t.Errorf("Timeout = %v, want 10s", errCmd.Timeout)
+	}
+	if errCmd.BatchInterval != 2*time.Second {
+		t.Errorf("BatchInterval = %v, want 2s", errCmd.BatchInterval)
+	}
+}
+
+func TestResolveConfigs_OnErrorCommand_FirstWins(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg1Path := filepath.Join(dir, "first.yaml")
+	writeYAML(t, cfg1Path, `on_error_command:
+  command: ["first-cmd"]
+  timeout: 10s
+`)
+
+	cfg2Path := filepath.Join(dir, "second.yaml")
+	writeYAML(t, cfg2Path, `on_error_command:
+  command: ["second-cmd"]
+  timeout: 20s
+`)
+
+	_, errCmd, err := ResolveConfigs([]string{cfg1Path, cfg2Path})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if errCmd == nil {
+		t.Fatal("expected non-nil ErrorCommandConfig")
+	}
+	// First config should win
+	if errCmd.Command.Args[0] != "first-cmd" {
+		t.Errorf("Command.Args[0] = %q, want %q", errCmd.Command.Args[0], "first-cmd")
+	}
+	if errCmd.Timeout != 10*time.Second {
+		t.Errorf("Timeout = %v, want 10s (from first config)", errCmd.Timeout)
+	}
+}
+
+func TestResolveConfigs_OnErrorCommand_FirstWins_ViaInclude(t *testing.T) {
+	dir := t.TempDir()
+
+	// Child config with its own on_error_command
+	childPath := filepath.Join(dir, "child.yaml")
+	writeYAML(t, childPath, `on_error_command:
+  command: ["child-cmd"]
+  timeout: 20s
+`)
+
+	// Parent config with on_error_command AND an include of the child
+	parentPath := filepath.Join(dir, "parent.yaml")
+	writeYAML(t, parentPath, fmt.Sprintf(`on_error_command:
+  command: ["parent-cmd"]
+  timeout: 10s
+includes:
+  - "%s"
+`, childPath))
+
+	_, errCmd, err := ResolveConfigs([]string{parentPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if errCmd == nil {
+		t.Fatal("expected non-nil ErrorCommandConfig")
+	}
+	// Parent's on_error_command is encountered first (depth-first), so it wins
+	if errCmd.Command.Args[0] != "parent-cmd" {
+		t.Errorf("Command.Args[0] = %q, want %q", errCmd.Command.Args[0], "parent-cmd")
+	}
+	if errCmd.Timeout != 10*time.Second {
+		t.Errorf("Timeout = %v, want 10s (from parent config)", errCmd.Timeout)
+	}
+}
+
+func TestResolveConfigs_OnErrorCommand_NilWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
+`)
+
+	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if errCmd != nil {
+		t.Errorf("expected nil ErrorCommandConfig, got %+v", errCmd)
+	}
+}
+
+func TestResolveConfigs_OnErrorCommand_MissingCommand(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
+on_error_command:
+  timeout: 10s
+`)
+
+	_, _, err := ResolveConfigs([]string{cfgPath})
+	if err == nil {
+		t.Fatal("expected error for on_error_command with missing command")
+	}
+	if !strings.Contains(err.Error(), "missing command") {
+		t.Errorf("error = %q, want it to contain 'missing command'", err)
 	}
 }

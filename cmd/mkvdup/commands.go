@@ -1480,8 +1480,20 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		return fmt.Errorf("load permissions: %w", err)
 	}
 
+	// Resolve configs (expands includes, globs, virtual_files) and extract
+	// on_error_command (first-wins across all config files).
+	configs, errorCmdConfig, err := dedup.ResolveConfigs(configPaths)
+	if err != nil {
+		err = fmt.Errorf("resolve configs: %w", err)
+		if daemon.IsChild() {
+			daemon.NotifyError(err)
+		}
+		return err
+	}
+	opts.OnErrorCommand = errorCmdConfig
+
 	// Create the root filesystem
-	root, err := mkvfuse.NewMKVFSWithPermissions(configPaths, verbose, permStore)
+	root, err := mkvfuse.NewMKVFSFromConfigs(configs, verbose, &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout}, permStore)
 	if err != nil {
 		err = fmt.Errorf("create filesystem: %w", err)
 		if daemon.IsChild() {
@@ -1529,7 +1541,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 			log.Printf(format, args...)
 		}
 		var err error
-		sourceWatcher, err = mkvfuse.NewSourceWatcher(opts.OnSourceChange, opts.SourceWatchPollInterval, watchLogFn)
+		sourceWatcher, err = mkvfuse.NewSourceWatcher(opts.OnSourceChange, opts.SourceWatchPollInterval, opts.OnErrorCommand, watchLogFn)
 		if err != nil {
 			log.Printf("source-watch: warning: failed to create watcher: %v", err)
 		} else {
@@ -1605,7 +1617,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 				}
 
 				// Resolve configs (expands includes, globs, virtual_files)
-				configs, err := dedup.ResolveConfigs(reloadPaths)
+				configs, _, err := dedup.ResolveConfigs(reloadPaths)
 				if err != nil {
 					logFn("reload failed: resolve configs: %v", err)
 					continue
@@ -1726,7 +1738,7 @@ func validateConfigEntries(configPaths []string) ([]validationEntry, []dedup.Con
 	for _, configPath := range configPaths {
 		fmt.Printf("Validating %s...\n", filepath.Base(configPath))
 
-		configs, err := dedup.ResolveConfigs([]string{configPath})
+		configs, _, err := dedup.ResolveConfigs([]string{configPath})
 		if err != nil {
 			fmt.Printf("  ERR  %s\n", err)
 			allEntries = append(allEntries, validationEntry{

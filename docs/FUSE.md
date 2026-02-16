@@ -59,6 +59,28 @@ A config file can have any combination of:
 - **No matches** for a glob pattern is not an error (silently skipped)
 - **Invalid included configs** produce an error
 
+### Mount-Level Settings
+
+Some settings apply to the entire mount rather than individual virtual files. These are configured in YAML config files and use **first-wins** semantics — if multiple config files (including via `includes`) specify the same mount-level setting, the first one encountered during depth-first resolution is used.
+
+**Error notification (`on_error_command`):**
+
+```yaml
+# In any .mkvdup.yaml config file
+on_error_command:
+  command: ["curl", "-d", "Source: %source% Event: %event% Files: %files%", "https://ntfy.sh/mkvdup"]
+  timeout: 30s         # default: 30s
+  batch_interval: 5s   # default: 5s; collect events before firing
+```
+
+Or string form (executed via `sh -c`):
+```yaml
+on_error_command:
+  command: "curl -d %source% https://ntfy.sh/mkvdup"
+```
+
+See [Error Notification](#error-notification) for full details on placeholders and behavior.
+
 ## Directory Structure
 
 The FUSE filesystem presents a virtual directory tree. Directories are **auto-created** from path components in the `name` field of config files.
@@ -404,6 +426,69 @@ At mount time, source file metadata (path, size, checksum) is read from each ded
 **Disabled files:** When a file is disabled (by `disable` action, size change in `checksum` mode, or checksum mismatch), its active reader is closed and subsequent `Open`/`Read` calls return `EIO`. The file remains visible in directory listings. In `checksum` mode, a subsequent successful verification automatically re-enables the file. For all modes, sending SIGHUP to reload the config resets the disabled state.
 
 **Checksum queue:** Checksum verifications run sequentially in a single background worker to avoid I/O storms when many source files change at once. Duplicate events for the same source file are deduplicated.
+
+### Error Notification
+
+When the source watcher detects an integrity issue, it can execute an external command to send notifications (webhooks, emails, scripts, etc.). This is configured via `on_error_command` in a YAML config file (see [Mount-Level Settings](#mount-level-settings)).
+
+**Configuration:**
+
+```yaml
+on_error_command:
+  command: ["curl", "-X", "POST", "-d", "Source: %source%\nEvent: %event%\nFiles: %files%", "https://ntfy.sh/mkvdup"]
+  timeout: 30s         # max execution time (default: 30s)
+  batch_interval: 5s   # event collection window (default: 5s)
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `command` | *(required)* | Command to execute. String (runs via `sh -c`) or list of strings (exec directly). |
+| `timeout` | `30s` | Maximum time the command may run before being killed. |
+| `batch_interval` | `5s` | Time window to collect events before firing the command. Resets on each new event. |
+
+**Placeholders:**
+
+| Placeholder | Single Event | Batched Events |
+|-------------|-------------|----------------|
+| `%source%` | Absolute path of the changed source file | Newline-separated list of source paths (deduplicated) |
+| `%files%` | Comma-separated list of affected virtual file names | Comma-separated list (deduplicated across all events) |
+| `%event%` | Event type (see below) | Newline-separated list of `source_path: event_type` pairs |
+
+**Event types:**
+
+| Event | Trigger |
+|-------|---------|
+| `changed` | Source file modified (warn/disable mode) |
+| `missing` | Source file no longer exists |
+| `size_changed` | Source file size differs from expected |
+| `checksum_mismatch` | Source file checksum differs from expected |
+| `read_error` | Source file could not be read during checksum verification |
+| `checksum_queue_full` | Too many pending checksum verifications |
+
+**Batching behavior:** Events are collected for the configured `batch_interval`. Each new event resets the timer. When the timer expires, the command is executed once with all accumulated events. This prevents notification storms when a single change affects many virtual files.
+
+**Shell safety:** When using string-form commands (`command: "..."`), placeholder values are automatically shell-escaped (single-quoted) before substitution to prevent shell injection. Do not add your own quotes around placeholders — they are already escaped. For example, use `echo %source%` not `echo '%source%'`.
+
+**Error handling:** Command failures are logged but do not affect mount operation. The command runs asynchronously and does not block the watcher.
+
+**Examples:**
+
+```yaml
+# Send a push notification via ntfy.sh
+on_error_command:
+  command: ["curl", "-d", "%event%: %source%", "https://ntfy.sh/mkvdup-alerts"]
+
+# Run a custom notification script
+on_error_command:
+  command: ["/usr/local/bin/mkvdup-notify.sh", "%source%", "%event%", "%files%"]
+  timeout: 10s
+  batch_interval: 10s
+
+# Send email via mailx
+on_error_command:
+  command: ["sh", "-c", "echo Source integrity issue: $1 Event: $2 Files: $3 | mailx -s 'mkvdup alert' admin@example.com", "--", "%source%", "%event%", "%files%"]
+  batch_interval: 30s
+```
 
 ## Network Source Support
 
