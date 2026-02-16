@@ -82,7 +82,7 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 	index := indexer.Index()
 	printInfo("  Indexed %d hashes\n", len(index.HashToLocations))
 	if index.UsesESOffsets {
-		printInfoln("  (Using ES-aware indexing for MPEG-PS)")
+		printInfo("  (Using ES-aware indexing for %v)\n", indexer.SourceType())
 	}
 
 	return indexer, index, nil

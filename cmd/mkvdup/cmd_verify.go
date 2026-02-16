@@ -233,8 +233,10 @@ func extractDedup(dedupPath, sourceDir, outputPath string) (retErr error) {
 		return fmt.Errorf("create output file: %w", err)
 	}
 	defer func() {
-		out.Close()
+		// Only close if not already closed by the success path below.
+		// On error, clean up the partial output file.
 		if retErr != nil {
+			out.Close()
 			os.Remove(outputPath)
 		}
 	}()

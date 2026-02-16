@@ -79,7 +79,7 @@ func collectFileStats(cfg dedup.Config) fileStats {
 
 	info := reader.Info()
 	if errMsg, ok := info["error"]; ok {
-		fs.err = fmt.Errorf("read dedup file: %s", errMsg)
+		fs.err = fmt.Errorf("read dedup file: %v", errMsg)
 		return fs
 	}
 
