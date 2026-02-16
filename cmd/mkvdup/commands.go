@@ -2324,9 +2324,7 @@ func showStats(configPaths []string, configDir bool) error {
 		printFileStats(fs)
 	}
 
-	if len(stats) >= 2 {
-		printRollupStats(stats)
-	}
+	printRollupStats(stats)
 
 	return nil
 }
