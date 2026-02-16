@@ -2382,7 +2382,7 @@ func printFileStats(fs fileStats) {
 	printInfo("  Dedup file size:   %s bytes (%s)\n", formatInt(fs.dedupSize), formatSize(fs.dedupSize))
 	printInfo("  Space savings:     %s bytes (%.2f%%)\n", formatInt(fs.origSize-fs.dedupSize), savings)
 	printInfo("  Source type:       %s\n", fs.sourceType)
-	printInfo("  Source directory:   %s\n", fs.sourceDir)
+	printInfo("  Source directory:  %s\n", fs.sourceDir)
 	printInfo("  Source files:      %d\n", fs.sourceFiles)
 	printInfo("  Index entries:     %s\n", formatInt(int64(fs.entryCount)))
 	printInfoln()
