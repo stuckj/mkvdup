@@ -2294,9 +2294,16 @@ func showStats(configPaths []string, configDir bool) error {
 		return err
 	}
 
-	configs, err := dedup.ResolveConfigs(resolved)
-	if err != nil {
-		return err
+	// Resolve each config independently so a single bad config doesn't
+	// abort the entire stats run.
+	var configs []dedup.Config
+	for _, cfgPath := range resolved {
+		cfgs, cfgErr := dedup.ResolveConfigs([]string{cfgPath})
+		if cfgErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load config %s: %v\n", cfgPath, cfgErr)
+			continue
+		}
+		configs = append(configs, cfgs...)
 	}
 
 	if len(configs) == 0 {
