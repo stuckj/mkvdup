@@ -1063,3 +1063,22 @@ source_dir: "/data/source"
 		t.Errorf("expected nil ErrorCommandConfig, got %+v", errCmd)
 	}
 }
+
+func TestResolveConfigs_OnErrorCommand_MissingCommand(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
+on_error_command:
+  timeout: 10s
+`)
+
+	_, _, err := ResolveConfigs([]string{cfgPath})
+	if err == nil {
+		t.Fatal("expected error for on_error_command with missing command")
+	}
+	if !strings.Contains(err.Error(), "missing command") {
+		t.Errorf("error = %q, want it to contain 'missing command'", err)
+	}
+}

@@ -142,6 +142,9 @@ func ResolveConfigs(configPaths []string) ([]Config, *ErrorCommandConfig, error)
 		}
 	}
 	if errorCmd != nil {
+		if len(errorCmd.Command.Args) == 0 {
+			return nil, nil, fmt.Errorf("invalid on_error_command: missing command")
+		}
 		errorCmd.applyDefaults()
 	}
 	return all, errorCmd, nil

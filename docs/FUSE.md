@@ -462,6 +462,7 @@ on_error_command:
 | `missing` | Source file no longer exists |
 | `size_changed` | Source file size differs from expected |
 | `checksum_mismatch` | Source file checksum differs from expected |
+| `read_error` | Source file could not be read during checksum verification |
 | `checksum_queue_full` | Too many pending checksum verifications |
 
 **Batching behavior:** Events are collected for the configured `batch_interval`. Each new event resets the timer. When the timer expires, the command is executed once with all accumulated events. This prevents notification storms when a single change affects many virtual files.

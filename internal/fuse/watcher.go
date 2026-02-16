@@ -558,7 +558,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 			if readErr != io.EOF {
 				sw.logFn("source-watch: checksum: read error for %s: %v — disabling %v", absPath, readErr, names)
 				disableIfCurrent()
-				sw.notify(absPath, "checksum_mismatch", names)
+				sw.notify(absPath, "read_error", names)
 				return
 			}
 			break

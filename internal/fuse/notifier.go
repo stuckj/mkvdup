@@ -15,7 +15,7 @@ import (
 type ErrorEvent struct {
 	SourcePath    string   // absolute path of the changed source file
 	AffectedFiles []string // virtual file names affected
-	Event         string   // "changed", "missing", "size_changed", "checksum_mismatch", "checksum_queue_full"
+	Event         string   // "changed", "missing", "size_changed", "checksum_mismatch", "read_error", "checksum_queue_full"
 }
 
 // ErrorNotifier batches integrity error events and executes an external
@@ -98,6 +98,11 @@ func (n *ErrorNotifier) flush() {
 // substituted from the batched events. The command runs with a timeout
 // and its output is logged on failure.
 func (n *ErrorNotifier) executeCommand(events []ErrorEvent) {
+	if len(n.config.Command.Args) == 0 {
+		n.logFn("source-watch: on_error_command: no command configured, skipping")
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), n.config.Timeout)
 	defer cancel()
 

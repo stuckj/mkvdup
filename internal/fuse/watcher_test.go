@@ -441,7 +441,10 @@ func TestSourceWatcher_DisableAction_WithNotifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSourceWatcher: %v", err)
 	}
-	t.Cleanup(func() { sw.watcher.Close() })
+	t.Cleanup(func() {
+		sw.notifier.Stop()
+		sw.watcher.Close()
+	})
 
 	file := &MKVFile{Name: "movie.mkv"}
 	srcPath := "/some/source/VIDEO_TS/VTS_01_1.VOB"
@@ -458,13 +461,25 @@ func TestSourceWatcher_DisableAction_WithNotifier(t *testing.T) {
 		t.Error("file should be disabled with 'disable' action")
 	}
 
-	// Wait for the notifier batch interval to flush and the command to execute.
-	time.Sleep(400 * time.Millisecond)
-
-	data, err := os.ReadFile(marker)
-	if err != nil {
-		t.Fatalf("notifier marker file not created: %v", err)
+	// Wait for the notifier batch interval to flush and the command to execute
+	// by polling for the marker file with a deadline to avoid flakiness on slow CI.
+	var data []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var readErr error
+		data, readErr = os.ReadFile(marker)
+		if readErr == nil {
+			break
+		}
+		if !os.IsNotExist(readErr) {
+			t.Fatalf("error reading notifier marker file: %v", readErr)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for notifier marker file to be created")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+
 	content := strings.TrimSpace(string(data))
 	if !strings.Contains(content, srcPath) {
 		t.Errorf("marker missing source path, got: %q", content)
@@ -472,7 +487,4 @@ func TestSourceWatcher_DisableAction_WithNotifier(t *testing.T) {
 	if !strings.Contains(content, "changed") {
 		t.Errorf("marker missing event type, got: %q", content)
 	}
-
-	// Clean up the notifier
-	sw.notifier.Stop()
 }
