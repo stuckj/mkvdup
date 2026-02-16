@@ -111,11 +111,13 @@ complete -c $cmd -n '__fish_mkvdup_using_command info' -l hide-unused-files -d '
 complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Dedup file'
 
 # verify options
+complete -c $cmd -n '__fish_mkvdup_using_command verify' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -F -d 'Dedup file, source directory, or original MKV'
 
 # extract options
+complete -c $cmd -n '__fish_mkvdup_using_command extract' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -F -d 'Dedup file, source directory, or output MKV'
