@@ -85,6 +85,10 @@ func (n *ErrorNotifier) Stop() {
 // flush is called when the debounce timer fires.
 func (n *ErrorNotifier) flush() {
 	n.mu.Lock()
+	if n.stopped {
+		n.mu.Unlock()
+		return
+	}
 	events := n.pending
 	n.pending = nil
 	n.timer = nil
