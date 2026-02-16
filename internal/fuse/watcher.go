@@ -11,6 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/fsnotify/fsnotify"
+	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
 // Default poll interval for network filesystems where inotify doesn't work.
@@ -67,14 +68,18 @@ type SourceWatcher struct {
 
 	pollInterval time.Duration // interval for network FS polling (0 = defaultPollInterval)
 
+	notifier *ErrorNotifier // optional external command notifier
+
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 }
 
 // NewSourceWatcher creates a new source file watcher with the given action.
 // If pollInterval <= 0, defaultPollInterval is used.
+// If onErrorCommand is non-nil, an ErrorNotifier is created to execute the
+// configured command when integrity issues are detected.
 // The watcher is not started until Start() is called.
-func NewSourceWatcher(action string, pollInterval time.Duration, logFn func(string, ...interface{})) (*SourceWatcher, error) {
+func NewSourceWatcher(action string, pollInterval time.Duration, onErrorCommand *dedup.ErrorCommandConfig, logFn func(string, ...interface{})) (*SourceWatcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("create fsnotify watcher: %w", err)
@@ -88,6 +93,11 @@ func NewSourceWatcher(action string, pollInterval time.Duration, logFn func(stri
 		pollInterval = defaultPollInterval
 	}
 
+	var notifier *ErrorNotifier
+	if onErrorCommand != nil {
+		notifier = NewErrorNotifier(*onErrorCommand, logFn)
+	}
+
 	return &SourceWatcher{
 		watcher:         watcher,
 		reverse:         make(map[string][]*MKVFile),
@@ -99,6 +109,7 @@ func NewSourceWatcher(action string, pollInterval time.Duration, logFn func(stri
 		checksumCh:      make(chan checksumRequest, 256),
 		checksumPending: make(map[string]bool),
 		pollInterval:    pollInterval,
+		notifier:        notifier,
 		stopCh:          make(chan struct{}),
 	}, nil
 }
@@ -241,10 +252,25 @@ func (sw *SourceWatcher) Start() {
 }
 
 // Stop stops the watcher and waits for goroutines to exit.
+// If a notifier is configured, it is stopped (flushing any pending events).
 func (sw *SourceWatcher) Stop() {
 	close(sw.stopCh)
 	sw.watcher.Close()
 	sw.wg.Wait()
+	if sw.notifier != nil {
+		sw.notifier.Stop()
+	}
+}
+
+// notify sends an error event to the notifier, if configured.
+func (sw *SourceWatcher) notify(sourcePath, event string, names []string) {
+	if sw.notifier != nil {
+		sw.notifier.Notify(ErrorEvent{
+			SourcePath:    sourcePath,
+			AffectedFiles: names,
+			Event:         event,
+		})
+	}
 }
 
 // eventLoop processes fsnotify events.
@@ -370,12 +396,14 @@ func (sw *SourceWatcher) handleChangeLocked(absPath string) {
 	switch sw.action {
 	case "warn":
 		sw.logFn("source-watch: WARNING: source file changed: %s (affects: %v)", absPath, names)
+		sw.notify(absPath, "changed", names)
 
 	case "disable":
 		sw.logFn("source-watch: source file changed, disabling: %s (affects: %v)", absPath, names)
 		for _, f := range affected {
 			f.Disable()
 		}
+		sw.notify(absPath, "changed", names)
 
 	case "checksum":
 		// Stat the source file to distinguish size changes from
@@ -387,6 +415,7 @@ func (sw *SourceWatcher) handleChangeLocked(absPath string) {
 			for _, f := range affected {
 				f.Disable()
 			}
+			sw.notify(absPath, "missing", names)
 			return
 		}
 
@@ -398,6 +427,7 @@ func (sw *SourceWatcher) handleChangeLocked(absPath string) {
 			for _, f := range affected {
 				f.Disable()
 			}
+			sw.notify(absPath, "size_changed", names)
 			return
 		}
 
@@ -424,6 +454,7 @@ func (sw *SourceWatcher) handleChangeLocked(absPath string) {
 			for _, f := range affected {
 				f.Disable()
 			}
+			sw.notify(absPath, "checksum_queue_full", names)
 		}
 	}
 }
@@ -487,12 +518,14 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 	if err != nil {
 		sw.logFn("source-watch: checksum: cannot stat %s: %v — disabling %v", absPath, err, names)
 		disableIfCurrent()
+		sw.notify(absPath, "missing", names)
 		return
 	}
 	if info.Size() != expectedSize {
 		sw.logFn("source-watch: checksum: size changed for %s (%d → %d) — disabling %v",
 			absPath, expectedSize, info.Size(), names)
 		disableIfCurrent()
+		sw.notify(absPath, "size_changed", names)
 		return
 	}
 
@@ -501,6 +534,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 	if err != nil {
 		sw.logFn("source-watch: checksum: cannot open %s: %v — disabling %v", absPath, err, names)
 		disableIfCurrent()
+		sw.notify(absPath, "missing", names)
 		return
 	}
 	defer f.Close()
@@ -524,6 +558,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 			if readErr != io.EOF {
 				sw.logFn("source-watch: checksum: read error for %s: %v — disabling %v", absPath, readErr, names)
 				disableIfCurrent()
+				sw.notify(absPath, "checksum_mismatch", names)
 				return
 			}
 			break
@@ -535,6 +570,7 @@ func (sw *SourceWatcher) verifyChecksum(absPath string, expectedChecksum uint64,
 		sw.logFn("source-watch: checksum mismatch for %s (got %016x, expected %016x) — disabling %v",
 			absPath, actualChecksum, expectedChecksum, names)
 		disableIfCurrent()
+		sw.notify(absPath, "checksum_mismatch", names)
 	} else {
 		// Re-enable affected files so transient issues (e.g., network
 		// glitches) auto-recover without requiring admin SIGHUP.

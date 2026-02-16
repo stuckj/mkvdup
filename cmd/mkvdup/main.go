@@ -28,10 +28,11 @@ type MountOptions struct {
 	DefaultGID              uint32
 	DefaultFileMode         uint32
 	DefaultDirMode          uint32
-	NoSourceWatch           bool          // Disable source file watching
-	OnSourceChange          string        // Action on source change: "warn", "disable", "checksum"
-	SourceWatchPollInterval time.Duration // Poll interval for network FS source watching (0 = 60s default)
-	SourceReadTimeout       time.Duration // Pread timeout for network FS sources (0 = disabled; CLI default 30s)
+	NoSourceWatch           bool                      // Disable source file watching
+	OnSourceChange          string                    // Action on source change: "warn", "disable", "checksum"
+	SourceWatchPollInterval time.Duration             // Poll interval for network FS source watching (0 = 60s default)
+	SourceReadTimeout       time.Duration             // Pread timeout for network FS sources (0 = disabled; CLI default 30s)
+	OnErrorCommand          *dedup.ErrorCommandConfig // External command to run on source integrity error (from YAML config)
 }
 
 // parseUint32 parses a string as uint32.
@@ -232,7 +233,7 @@ Examples:
     mkvdup probe movie.mkv /media/disc1 /media/disc2 /media/disc3
 `)
 	case "mount":
-		fmt.Print(`Usage: mkvdup mount [options] <mountpoint> [config.yaml...]
+		os.Stdout.WriteString(`Usage: mkvdup mount [options] <mountpoint> [config.yaml...]
 
 Mount dedup files as a FUSE filesystem.
 
@@ -264,6 +265,14 @@ Source Watch Options:
                                                     disable on mismatch, re-enable on pass
     --source-watch-poll-interval DUR     Poll interval for source file changes (default: 60s)
     --source-read-timeout DUR            Read timeout for network FS sources (default: 30s)
+
+Error Notification (configured in YAML config, not CLI):
+    on_error_command:
+      command: ["/path/to/script", "%source%", "%event%", "%files%"]
+      timeout: 30s          # command timeout (default: 30s)
+      batch_interval: 5s    # debounce window for batching events (default: 5s)
+    Placeholders: %source% (path), %files% (affected files), %event% (error type)
+    See docs/FUSE.md for details.
 
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.

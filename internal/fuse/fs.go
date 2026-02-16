@@ -130,7 +130,7 @@ func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) {
 // Config files are resolved recursively (includes and virtual_files are expanded).
 // Set verbose=true to enable debug logging.
 func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
-	configs, err := dedup.ResolveConfigs(configPaths)
+	configs, _, err := dedup.ResolveConfigs(configPaths)
 	if err != nil {
 		return nil, fmt.Errorf("resolve configs: %w", err)
 	}
@@ -140,7 +140,7 @@ func NewMKVFS(configPaths []string, verbose bool) (*MKVFSRoot, error) {
 // NewMKVFSWithPermissions creates a new MKVFS root with a permission store.
 // Config files are resolved recursively (includes and virtual_files are expanded).
 func NewMKVFSWithPermissions(configPaths []string, verbose bool, permStore *PermissionStore) (*MKVFSRoot, error) {
-	configs, err := dedup.ResolveConfigs(configPaths)
+	configs, _, err := dedup.ResolveConfigs(configPaths)
 	if err != nil {
 		return nil, fmt.Errorf("resolve configs: %w", err)
 	}
@@ -172,7 +172,7 @@ func NewMKVFSWithOptions(configPaths []string, opts MKVFSOptions) (*MKVFSRoot, e
 			return nil, fmt.Errorf("load permissions: %w", err)
 		}
 	}
-	configs, err := dedup.ResolveConfigs(configPaths)
+	configs, _, err := dedup.ResolveConfigs(configPaths)
 	if err != nil {
 		return nil, fmt.Errorf("resolve configs: %w", err)
 	}

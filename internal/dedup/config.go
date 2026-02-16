@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
@@ -22,11 +23,71 @@ type Config struct {
 // configFile is the internal YAML representation that supports includes
 // and virtual_files in addition to the standard Config fields.
 type configFile struct {
-	Name         string   `yaml:"name"`
-	DedupFile    string   `yaml:"dedup_file"`
-	SourceDir    string   `yaml:"source_dir"`
-	Includes     []string `yaml:"includes"`
-	VirtualFiles []Config `yaml:"virtual_files"`
+	Name           string              `yaml:"name"`
+	DedupFile      string              `yaml:"dedup_file"`
+	SourceDir      string              `yaml:"source_dir"`
+	Includes       []string            `yaml:"includes"`
+	VirtualFiles   []Config            `yaml:"virtual_files"`
+	OnErrorCommand *ErrorCommandConfig `yaml:"on_error_command"`
+}
+
+// ErrorCommandConfig configures an external command to run when a source
+// integrity issue is detected. Placeholders in command arguments (%source%,
+// %files%, %event%) are substituted at runtime.
+type ErrorCommandConfig struct {
+	Command       CommandValue  `yaml:"command"`
+	Timeout       time.Duration `yaml:"timeout"`
+	BatchInterval time.Duration `yaml:"batch_interval"`
+}
+
+// applyDefaults fills in zero-value fields with sensible defaults.
+func (c *ErrorCommandConfig) applyDefaults() {
+	if c.Timeout <= 0 {
+		c.Timeout = 30 * time.Second
+	}
+	if c.BatchInterval <= 0 {
+		c.BatchInterval = 5 * time.Second
+	}
+}
+
+// CommandValue supports both string and []string YAML formats.
+// A string value is executed via "sh -c"; a list is executed directly.
+type CommandValue struct {
+	IsShell bool     // true if the original YAML was a string (run via sh -c)
+	Args    []string // for shell: single element with the command string; for list: the arg list
+}
+
+// UnmarshalYAML implements custom unmarshaling for CommandValue.
+func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
+	// Try string first
+	if value.Kind == yaml.ScalarNode {
+		var s string
+		if err := value.Decode(&s); err != nil {
+			return err
+		}
+		if s == "" {
+			return fmt.Errorf("on_error_command: command must not be empty")
+		}
+		c.IsShell = true
+		c.Args = []string{s}
+		return nil
+	}
+
+	// Try list
+	if value.Kind == yaml.SequenceNode {
+		var list []string
+		if err := value.Decode(&list); err != nil {
+			return err
+		}
+		if len(list) == 0 {
+			return fmt.Errorf("on_error_command: command list must not be empty")
+		}
+		c.IsShell = false
+		c.Args = list
+		return nil
+	}
+
+	return fmt.Errorf("on_error_command: command must be a string or list of strings")
 }
 
 // WriteConfig writes the .mkvdup.yaml config file.
@@ -62,50 +123,68 @@ func ReadConfig(configPath string) (*Config, error) {
 // ResolveConfigs reads config files and recursively expands includes and
 // virtual_files into a flat list of Config entries. Cycle detection prevents
 // infinite recursion from circular includes.
-func ResolveConfigs(configPaths []string) ([]Config, error) {
+//
+// If any config file contains an on_error_command block, the first one
+// encountered (depth-first, in file order) is returned. Defaults are applied
+// for omitted timeout and batch_interval fields.
+func ResolveConfigs(configPaths []string) ([]Config, *ErrorCommandConfig, error) {
 	seen := make(map[string]bool)
 	var all []Config
+	var errorCmd *ErrorCommandConfig
 	for _, p := range configPaths {
-		configs, err := resolveConfig(p, seen)
+		configs, cmd, err := resolveConfig(p, seen)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		all = append(all, configs...)
+		if errorCmd == nil && cmd != nil {
+			errorCmd = cmd
+		}
 	}
-	return all, nil
+	if errorCmd != nil {
+		errorCmd.applyDefaults()
+	}
+	return all, errorCmd, nil
 }
 
 // resolveConfig recursively resolves a single config file.
-func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) {
+// Returns the file configs and the first on_error_command encountered (or nil).
+func resolveConfig(configPath string, seen map[string]bool) ([]Config, *ErrorCommandConfig, error) {
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve path %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("resolve path %s: %w", configPath, err)
 	}
 
 	// Resolve symlinks for reliable cycle detection.
 	realPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+		return nil, nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
 	}
 
 	if seen[realPath] {
 		log.Printf("warning: skipping already-seen config %s (cycle detection)", realPath)
-		return nil, nil
+		return nil, nil, nil
 	}
 	seen[realPath] = true
 
 	data, err := os.ReadFile(realPath)
 	if err != nil {
-		return nil, fmt.Errorf("read config file %s: %w", realPath, err)
+		return nil, nil, fmt.Errorf("read config file %s: %w", realPath, err)
 	}
 
 	var cf configFile
 	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", realPath, err)
+		return nil, nil, fmt.Errorf("parse config %s: %w", realPath, err)
 	}
 
 	configDir := filepath.Dir(realPath)
 	var configs []Config
+	var errorCmd *ErrorCommandConfig
+
+	// Capture on_error_command from this file (first-wins across resolution).
+	if cf.OnErrorCommand != nil {
+		errorCmd = cf.OnErrorCommand
+	}
 
 	// If top-level name/dedup_file/source_dir are set, add as a Config entry.
 	hasName := cf.Name != ""
@@ -113,7 +192,7 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) {
 	hasSource := cf.SourceDir != ""
 	if hasName || hasDedup || hasSource {
 		if !hasName || !hasDedup || !hasSource {
-			return nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+			return nil, nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
 		}
 		configs = append(configs, Config{
 			Name:      cf.Name,
@@ -127,22 +206,25 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) {
 		pattern = resolveRelative(configDir, pattern)
 		matches, err := doublestar.FilepathGlob(pattern)
 		if err != nil {
-			return nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
+			return nil, nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
 		}
 		sort.Strings(matches)
 		for _, match := range matches {
-			sub, err := resolveConfig(match, seen)
+			sub, cmd, err := resolveConfig(match, seen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			configs = append(configs, sub...)
+			if errorCmd == nil && cmd != nil {
+				errorCmd = cmd
+			}
 		}
 	}
 
 	// Process virtual_files.
 	for _, vf := range cf.VirtualFiles {
 		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
-			return nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
+			return nil, nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
 		}
 		configs = append(configs, Config{
 			Name:      vf.Name,
@@ -151,7 +233,7 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, error) {
 		})
 	}
 
-	return configs, nil
+	return configs, errorCmd, nil
 }
 
 // BatchManifest represents the batch create manifest file format.
