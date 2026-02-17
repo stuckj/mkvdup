@@ -13,56 +13,222 @@ import (
 
 // ProbeResult represents the result of probing a source against an MKV.
 type ProbeResult struct {
+	MKVPath      string
 	SourcePath   string
 	MatchCount   int
 	TotalSamples int
 	MatchPercent float64
 }
 
-// probe tests if an MKV likely matches one or more source directories.
-// This is a fast test (targeting <30 seconds) for quickly identifying which
-// source directory an MKV came from, useful for multi-disc sets.
-func probe(mkvPath string, sourceDirs []string) error {
-	fmt.Printf("Probing %s against %d source(s)...\n", filepath.Base(mkvPath), len(sourceDirs))
+// mkvProbeData holds the pre-computed probe hashes for a single MKV file.
+type mkvProbeData struct {
+	Path        string
+	HashCount   int
+	ProbeHashes []matcher.ProbeHash
+	Error       string // non-empty if MKV could not be parsed
+}
+
+// probe tests if one or more MKV files match one or more source directories.
+// When multiple MKVs are provided, each source is indexed only once and all
+// MKV hash sets are checked against it, making multi-MKV probing much faster.
+func probe(mkvPaths []string, sourceDirs []string) error {
+	fmt.Printf("Probing %d MKV(s) against %d source(s)...\n", len(mkvPaths), len(sourceDirs))
 	fmt.Println()
 
-	// Phase 1: Parse MKV and sample packets
-	parser, _, err := parseMKVWithProgress(mkvPath, "Parsing MKV...")
+	windowSize := source.DefaultWindowSize
+
+	// Phase 1: Parse all MKVs and compute probe hashes
+	mkvData := make([]mkvProbeData, 0, len(mkvPaths))
+	for i, mkvPath := range mkvPaths {
+		if len(mkvPaths) > 1 {
+			fmt.Printf("[%d/%d] Parsing %s...\n", i+1, len(mkvPaths), filepath.Base(mkvPath))
+		} else {
+			fmt.Printf("Parsing %s...\n", filepath.Base(mkvPath))
+		}
+
+		hashes, err := computeProbeHashes(mkvPath, windowSize)
+		if err != nil {
+			fmt.Printf("  Error: %v\n", err)
+			mkvData = append(mkvData, mkvProbeData{
+				Path:  mkvPath,
+				Error: err.Error(),
+			})
+			continue
+		}
+
+		fmt.Printf("  Computed %d probe hashes\n", len(hashes))
+		mkvData = append(mkvData, mkvProbeData{
+			Path:        mkvPath,
+			HashCount:   len(hashes),
+			ProbeHashes: hashes,
+		})
+	}
+	fmt.Println()
+
+	// Phase 2: For each source, index once and check all MKV hash sets
+	// results[mkvIdx] = []ProbeResult for that MKV
+	results := make([][]ProbeResult, len(mkvData))
+	for i := range results {
+		results[i] = make([]ProbeResult, 0, len(sourceDirs))
+	}
+
+	for _, sourceDir := range sourceDirs {
+		fmt.Printf("Indexing source: %s...\n", sourceDir)
+
+		indexer, err := source.NewIndexer(sourceDir, windowSize)
+		if err != nil {
+			fmt.Printf("  Error: %v\n", err)
+			for i, md := range mkvData {
+				if md.Error != "" {
+					continue
+				}
+				results[i] = append(results[i], ProbeResult{
+					MKVPath:      md.Path,
+					SourcePath:   sourceDir,
+					TotalSamples: md.HashCount,
+				})
+			}
+			continue
+		}
+		indexer.SetVerbose(verbose)
+
+		if err := indexer.Build(nil); err != nil {
+			fmt.Printf("  Error building index: %v\n", err)
+			for i, md := range mkvData {
+				if md.Error != "" {
+					continue
+				}
+				results[i] = append(results[i], ProbeResult{
+					MKVPath:      md.Path,
+					SourcePath:   sourceDir,
+					TotalSamples: md.HashCount,
+				})
+			}
+			continue
+		}
+
+		index := indexer.Index()
+
+		// Check each MKV's hashes against this source
+		for i, md := range mkvData {
+			if md.Error != "" {
+				continue
+			}
+
+			matchCount := 0
+			for _, ph := range md.ProbeHashes {
+				if locs, ok := index.HashToLocations[ph.Hash]; ok {
+					if index.UsesESOffsets {
+						for _, loc := range locs {
+							if loc.IsVideo == ph.IsVideo {
+								matchCount++
+								break
+							}
+						}
+					} else if len(locs) > 0 {
+						matchCount++
+					}
+				}
+			}
+
+			matchPercent := float64(matchCount) / float64(md.HashCount) * 100
+			results[i] = append(results[i], ProbeResult{
+				MKVPath:      md.Path,
+				SourcePath:   sourceDir,
+				MatchCount:   matchCount,
+				TotalSamples: md.HashCount,
+				MatchPercent: matchPercent,
+			})
+
+			if len(mkvPaths) > 1 {
+				fmt.Printf("  %s: %d/%d (%.0f%%)\n",
+					filepath.Base(md.Path), matchCount, md.HashCount, matchPercent)
+			} else {
+				fmt.Printf("  Matched %d/%d hashes (%.0f%%)\n",
+					matchCount, md.HashCount, matchPercent)
+			}
+		}
+
+		index.Close()
+	}
+
+	// Phase 3: Print results
+	fmt.Println()
+	fmt.Println("=== Results ===")
+
+	for i, md := range mkvData {
+		if md.Error != "" {
+			fmt.Printf("\n  %s: ERROR: %s\n", filepath.Base(md.Path), md.Error)
+			continue
+		}
+
+		if len(mkvPaths) > 1 {
+			fmt.Printf("\n  %s:\n", filepath.Base(md.Path))
+		} else {
+			fmt.Println()
+		}
+
+		// Sort this MKV's results by match percentage
+		sort.Slice(results[i], func(a, b int) bool {
+			return results[i][a].MatchPercent > results[i][b].MatchPercent
+		})
+
+		for _, r := range results[i] {
+			indicator := ""
+			if r.MatchPercent >= 80 {
+				indicator = " ← likely match"
+			} else if r.MatchPercent >= 40 {
+				indicator = " ← possible match"
+			}
+			if len(mkvPaths) > 1 {
+				fmt.Printf("    %s  %d/%d matches (%.0f%%)%s\n",
+					r.SourcePath, r.MatchCount, r.TotalSamples, r.MatchPercent, indicator)
+			} else {
+				fmt.Printf("  %s  %d/%d matches (%.0f%%)%s\n",
+					r.SourcePath, r.MatchCount, r.TotalSamples, r.MatchPercent, indicator)
+			}
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Interpretation:")
+	fmt.Println("  80-100%: Very likely the correct source")
+	fmt.Println("  40-80%:  Possible match (may be partial content)")
+	fmt.Println("  <40%:    Unlikely to be the source")
+
+	return nil
+}
+
+// computeProbeHashes parses an MKV and returns its probe hashes.
+func computeProbeHashes(mkvPath string, windowSize int) ([]matcher.ProbeHash, error) {
+	parser, _, err := parseMKVWithProgress(mkvPath, "")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer parser.Close()
 
 	packets := parser.Packets()
 	if len(packets) == 0 {
-		return fmt.Errorf("no packets found in MKV")
+		return nil, fmt.Errorf("no packets found in MKV")
 	}
 
-	// Build track type and codec maps
 	trackTypes := make(map[int]int)
-	trackNALLengthSize := make(map[int]int) // 0 = Annex B, 1/2/4 = AVCC/HVCC
+	trackNALLengthSize := make(map[int]int)
 	for _, t := range parser.Tracks() {
 		trackTypes[int(t.Number)] = t.Type
 		trackNALLengthSize[int(t.Number)] = matcher.NALLengthSizeForTrack(t.CodecID, t.CodecPrivate)
 	}
 
-	// Sample packets from different positions
-	// 5 from first 10%, 10 from middle 80%, 5 from last 10%
 	samples := samplePackets(packets, 20)
-	fmt.Printf("  Sampled %d packets from %d total\n", len(samples), len(packets))
 
-	// Read packet data and compute hashes using the shared sync point detection
 	mkvFile, err := os.Open(mkvPath)
 	if err != nil {
-		return fmt.Errorf("open MKV: %w", err)
+		return nil, fmt.Errorf("open MKV: %w", err)
 	}
 	defer mkvFile.Close()
 
-	windowSize := source.DefaultWindowSize
 	var probeHashes []matcher.ProbeHash
-
 	for _, pkt := range samples {
-		// Read packet data (up to 4096 bytes like the matcher)
 		readSize := pkt.Size
 		if readSize > 4096 {
 			readSize = 4096
@@ -77,117 +243,21 @@ func probe(mkvPath string, sourceDirs []string) error {
 			continue
 		}
 
-		// Determine if this is video or audio
 		trackType := trackTypes[int(pkt.TrackNum)]
 		isVideo := trackType == mkv.TrackTypeVideo
 		nalLenSize := trackNALLengthSize[int(pkt.TrackNum)]
 
-		// Use shared function to extract probe hashes
 		hashes := matcher.ExtractProbeHashes(data[:n], isVideo, windowSize, nalLenSize)
 		if len(hashes) > 0 {
-			// Only need one hash per packet for probing
 			probeHashes = append(probeHashes, hashes[0])
 		}
 	}
 
-	fmt.Printf("  Computed %d probe hashes\n", len(probeHashes))
-	fmt.Println()
-
 	if len(probeHashes) == 0 {
-		return fmt.Errorf("no valid hashes computed from sampled packets")
+		return nil, fmt.Errorf("no valid hashes computed from sampled packets")
 	}
 
-	// Phase 2: Test each source directory
-	results := make([]ProbeResult, 0, len(sourceDirs))
-
-	for _, sourceDir := range sourceDirs {
-		fmt.Printf("Indexing source: %s...\n", sourceDir)
-
-		indexer, err := source.NewIndexer(sourceDir, windowSize)
-		if err != nil {
-			fmt.Printf("  Error: %v\n", err)
-			results = append(results, ProbeResult{
-				SourcePath:   sourceDir,
-				MatchCount:   0,
-				TotalSamples: len(probeHashes),
-				MatchPercent: 0,
-			})
-			continue
-		}
-		indexer.SetVerbose(verbose)
-
-		if err := indexer.Build(nil); err != nil {
-			fmt.Printf("  Error building index: %v\n", err)
-			results = append(results, ProbeResult{
-				SourcePath:   sourceDir,
-				MatchCount:   0,
-				TotalSamples: len(probeHashes),
-				MatchPercent: 0,
-			})
-			continue
-		}
-
-		index := indexer.Index()
-
-		// Count matches, respecting video/audio stream type
-		matchCount := 0
-		for _, ph := range probeHashes {
-			if locs, ok := index.HashToLocations[ph.Hash]; ok {
-				// For ES-based indexes, check stream type matches
-				if index.UsesESOffsets {
-					for _, loc := range locs {
-						if loc.IsVideo == ph.IsVideo {
-							matchCount++
-							break
-						}
-					}
-				} else if len(locs) > 0 {
-					matchCount++
-				}
-			}
-		}
-
-		index.Close()
-
-		matchPercent := float64(matchCount) / float64(len(probeHashes)) * 100
-		results = append(results, ProbeResult{
-			SourcePath:   sourceDir,
-			MatchCount:   matchCount,
-			TotalSamples: len(probeHashes),
-			MatchPercent: matchPercent,
-		})
-
-		fmt.Printf("  Matched %d/%d hashes (%.0f%%)\n", matchCount, len(probeHashes), matchPercent)
-	}
-
-	// Sort results by match percentage (descending)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].MatchPercent > results[j].MatchPercent
-	})
-
-	// Print summary
-	fmt.Println()
-	fmt.Println("=== Results ===")
-	fmt.Println()
-
-	for _, r := range results {
-		indicator := ""
-		if r.MatchPercent >= 80 {
-			indicator = " ← likely match"
-		} else if r.MatchPercent >= 40 {
-			indicator = " ← possible match"
-		}
-		fmt.Printf("  %s  %d/%d matches (%.0f%%)%s\n",
-			r.SourcePath, r.MatchCount, r.TotalSamples, r.MatchPercent, indicator)
-	}
-
-	fmt.Println()
-	fmt.Println("Interpretation:")
-	fmt.Println("  80-100%: Very likely the correct source")
-	fmt.Println("  40-80%:  Possible match (may be partial content)")
-	fmt.Println("  <40%:    Unlikely to be the source")
-
-	return nil
+	return probeHashes, nil
 }
 
 // samplePackets selects N packets distributed across the file:

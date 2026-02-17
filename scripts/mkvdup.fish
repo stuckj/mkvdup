@@ -55,7 +55,7 @@ complete -c $cmd -n __fish_mkvdup_needs_command -l version -d 'Show version'
 # Subcommands
 complete -c $cmd -n __fish_mkvdup_needs_command -a create -d 'Create a dedup file from an MKV and its source directory'
 complete -c $cmd -n __fish_mkvdup_needs_command -a batch-create -d 'Create multiple dedup files from a manifest'
-complete -c $cmd -n __fish_mkvdup_needs_command -a probe -d 'Quick test if an MKV likely matches a source'
+complete -c $cmd -n __fish_mkvdup_needs_command -a probe -d 'Quick test if MKV file(s) likely match source(s)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a mount -d 'Mount virtual filesystem from config files'
 complete -c $cmd -n __fish_mkvdup_needs_command -a info -d 'Show information about a dedup file'
 complete -c $cmd -n __fish_mkvdup_needs_command -a verify -d 'Verify a dedup file against the original MKV'
@@ -87,7 +87,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l skip-codec-mis
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -F -d 'Manifest file'
 
 # probe options
-complete -c $cmd -n '__fish_mkvdup_using_command probe' -F -d 'MKV file or source directories'
+complete -c $cmd -n '__fish_mkvdup_using_command probe' -F -d 'MKV files, --, and source directories'
 
 # mount options
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l allow-other -d 'Allow other users to access the mount'

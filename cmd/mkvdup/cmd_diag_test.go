@@ -9,12 +9,16 @@ import (
 func TestProbeResult(t *testing.T) {
 	// Test that ProbeResult struct has expected fields and behavior
 	result := ProbeResult{
+		MKVPath:      "/path/to/movie.mkv",
 		SourcePath:   "/path/to/source",
 		MatchCount:   85,
 		TotalSamples: 100,
 		MatchPercent: 85.0,
 	}
 
+	if result.MKVPath != "/path/to/movie.mkv" {
+		t.Errorf("MKVPath = %q, want %q", result.MKVPath, "/path/to/movie.mkv")
+	}
 	if result.SourcePath != "/path/to/source" {
 		t.Errorf("SourcePath = %q, want %q", result.SourcePath, "/path/to/source")
 	}
@@ -33,6 +37,9 @@ func TestProbeResult_ZeroValues(t *testing.T) {
 	// Test zero value behavior
 	var result ProbeResult
 
+	if result.MKVPath != "" {
+		t.Errorf("Zero MKVPath = %q, want empty", result.MKVPath)
+	}
 	if result.SourcePath != "" {
 		t.Errorf("Zero SourcePath = %q, want empty", result.SourcePath)
 	}

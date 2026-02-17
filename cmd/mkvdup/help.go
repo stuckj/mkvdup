@@ -120,16 +120,22 @@ Examples:
     mkvdup batch-create --skip-codec-mismatch episodes.yaml
 `)
 	case "probe":
-		fmt.Print(`Usage: mkvdup probe <mkv-file> <source-dir>...
+		fmt.Print(`Usage: mkvdup probe <mkv-file>... -- <source-dir>...
 
-Quick test to check if an MKV matches one or more source directories.
+Quick test to check if MKV file(s) match one or more source directories.
+When multiple MKVs are provided, each source is indexed only once.
 
 Arguments:
-    <mkv-file>    Path to the MKV file to test
-    <source-dir>  One or more directories to test against
+    <mkv-file>    One or more MKV files to test (before --)
+    --            Separator between MKV files and source directories
+    <source-dir>  One or more directories to test against (after --)
+
+For backward compatibility, a single MKV without -- is also supported:
+    mkvdup probe movie.mkv /media/disc1 /media/disc2
 
 Examples:
-    mkvdup probe movie.mkv /media/disc1 /media/disc2 /media/disc3
+    mkvdup probe movie.mkv /media/disc1 /media/disc2
+    mkvdup probe ep1.mkv ep2.mkv ep3.mkv -- /media/disc1 /media/disc2
 `)
 	case "mount":
 		os.Stdout.WriteString(`Usage: mkvdup mount [options] <mountpoint> [config.yaml...]

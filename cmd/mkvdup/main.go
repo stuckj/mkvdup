@@ -215,7 +215,28 @@ func main() {
 			printCommandUsage("probe")
 			os.Exit(1)
 		}
-		if err := probe(args[0], args[1:]); err != nil {
+		// Split on "--": MKVs before, sources after
+		// For backward compat: if no "--", first arg is MKV, rest are sources
+		var mkvPaths, sourceDirs []string
+		sepIdx := -1
+		for i, a := range args {
+			if a == "--" {
+				sepIdx = i
+				break
+			}
+		}
+		if sepIdx >= 0 {
+			mkvPaths = args[:sepIdx]
+			sourceDirs = args[sepIdx+1:]
+		} else {
+			mkvPaths = args[:1]
+			sourceDirs = args[1:]
+		}
+		if len(mkvPaths) == 0 || len(sourceDirs) == 0 {
+			printCommandUsage("probe")
+			os.Exit(1)
+		}
+		if err := probe(mkvPaths, sourceDirs); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
