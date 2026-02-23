@@ -149,7 +149,7 @@ func printRollupStats(stats []fileStats) {
 		savings = float64(totalOrig-totalDedup) / float64(totalOrig) * 100
 	}
 
-	printInfo("Totals (%d files):\n", succeeded)
+	printInfo("Totals (%d %s):\n", succeeded, plural(succeeded, "file", "files"))
 	printInfo("  Original size:     %s bytes (%s)\n", formatInt(totalOrig), formatSize(totalOrig))
 	printInfo("  Dedup file size:   %s bytes (%s)\n", formatInt(totalDedup), formatSize(totalDedup))
 	printInfo("  Space savings:     %s bytes (%.2f%%)\n", formatInt(totalOrig-totalDedup), savings)

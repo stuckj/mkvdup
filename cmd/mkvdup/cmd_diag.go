@@ -32,8 +32,8 @@ func deltadiag(dedupPath, mkvPath string) error {
 
 	entryCount := reader.EntryCount()
 	origSize := reader.OriginalSize()
-	fmt.Fprintf(os.Stderr, "Dedup file: %d entries, original size %s bytes (%.2f MB)\n",
-		entryCount, formatInt(origSize), float64(origSize)/(1024*1024))
+	fmt.Fprintf(os.Stderr, "Dedup file: %d %s, original size %s bytes (%.2f MB)\n",
+		entryCount, plural(entryCount, "entry", "entries"), formatInt(origSize), float64(origSize)/(1024*1024))
 
 	// Parse MKV to get packet boundaries
 	fmt.Fprintf(os.Stderr, "Parsing MKV file...\n")

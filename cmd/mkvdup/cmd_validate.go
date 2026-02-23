@@ -273,8 +273,11 @@ func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 	}
 
 	fmt.Println()
-	fmt.Printf("Summary: %d entries, %d valid, %d warnings, %d errors\n",
-		len(allEntries), okCount, warnCount, errCount)
+	fmt.Printf("Summary: %d %s, %d valid, %d %s, %d %s\n",
+		len(allEntries), plural(len(allEntries), "entry", "entries"),
+		okCount,
+		warnCount, plural(warnCount, "warning", "warnings"),
+		errCount, plural(errCount, "error", "errors"))
 
 	if hasErrors {
 		return 1

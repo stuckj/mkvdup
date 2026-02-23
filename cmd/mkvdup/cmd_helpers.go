@@ -22,6 +22,15 @@ func formatInt(n int64) string {
 	return string(result)
 }
 
+// plural returns singular when n == 1, plural otherwise.
+// Example: plural(n, "file", "files")
+func plural(n int, singular, pl string) string {
+	if n == 1 {
+		return singular
+	}
+	return pl
+}
+
 // isTerminal returns true if stdin is a terminal (not piped).
 func isTerminal() bool {
 	fi, err := os.Stdin.Stat()

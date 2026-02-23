@@ -153,7 +153,7 @@ func checkDedup(dedupPath, sourceDir string, sourceChecksums bool) error {
 
 	// Phase 2: Check source files exist with correct sizes
 	sourceFiles := reader.SourceFiles()
-	fmt.Printf("\nChecking source files (%d files)...\n", len(sourceFiles))
+	fmt.Printf("\nChecking source files (%d %s)...\n", len(sourceFiles), plural(len(sourceFiles), "file", "files"))
 
 	errCount := 0
 	for _, sf := range sourceFiles {
@@ -202,7 +202,7 @@ func checkDedup(dedupPath, sourceDir string, sourceChecksums bool) error {
 	// Final summary
 	fmt.Println()
 	if errCount > 0 {
-		return fmt.Errorf("check FAILED: %d error(s) found", errCount)
+		return fmt.Errorf("check FAILED: %d %s found", errCount, plural(errCount, "error", "errors"))
 	}
 	fmt.Println("Check PASSED")
 	return nil

@@ -52,7 +52,8 @@ type createResult struct {
 	Savings        float64
 	Duration       time.Duration
 	Err            error
-	Skipped        bool // true when file was skipped (e.g., codec mismatch with --skip-codec-mismatch)
+	Skipped        bool   // true when file was skipped (e.g., codec mismatch, output exists)
+	SkipReason     string // reason for skipping (shown in summary)
 }
 
 // buildSourceIndex indexes a source directory and returns the indexer and index.
@@ -141,6 +142,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		if skipCodecMismatch && len(mismatches) > 0 {
 			reportCodecMismatches(mismatches, codecMismatchSkip)
 			result.Skipped = true
+			result.SkipReason = "codec mismatch"
 			return result
 		}
 		action := codecMismatchPrompt

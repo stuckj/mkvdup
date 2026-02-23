@@ -277,8 +277,8 @@ func TestPrintBatchSummary_LowSavingsWarning(t *testing.T) {
 	if !strings.Contains(output, "ep2.mkv") {
 		t.Error("expected ep2.mkv listed in low savings warning")
 	}
-	if !strings.Contains(output, "1 file(s)") {
-		t.Error("expected '1 file(s)' in warning count")
+	if !strings.Contains(output, "1 file") {
+		t.Error("expected '1 file' in warning count")
 	}
 }
 
@@ -341,8 +341,9 @@ func TestPrintBatchSummary_SkippedFiles(t *testing.T) {
 			Savings:    98.5,
 		},
 		{
-			MkvPath: "/data/ep2.mkv",
-			Skipped: true,
+			MkvPath:    "/data/ep2.mkv",
+			Skipped:    true,
+			SkipReason: "codec mismatch",
 		},
 		{
 			MkvPath: "/data/ep3.mkv",
@@ -391,5 +392,126 @@ func TestPrintBatchSummary_NoSkippedFiles(t *testing.T) {
 	}
 	if !strings.Contains(output, "Succeeded: 1/1") {
 		t.Errorf("expected 'Succeeded: 1/1' in output, got:\n%s", output)
+	}
+}
+
+func TestCreateBatch_SkipsExistingOutput(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create source directory (empty — indexing would fail, but ep1 should be skipped)
+	os.MkdirAll(filepath.Join(dir, "source"), 0755)
+
+	// Pre-create output for ep1 only to simulate a previously completed file
+	ep1Output := filepath.Join(dir, "ep1.mkvdup")
+	os.WriteFile(ep1Output, []byte("existing output"), 0644)
+
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	writeTestYAML(t, manifestPath, fmt.Sprintf(`source_dir: %s/source
+files:
+  - mkv: %s/ep1.mkv
+    output: %s
+  - mkv: %s/ep2.mkv
+    output: %s/ep2.mkvdup
+`, dir, dir, ep1Output, dir, dir))
+
+	// Capture both stdout and stderr (ep2 will fail indexing since source is empty)
+	var output string
+	captureStderr(t, func() {
+		output = captureStdout(t, func() {
+			createBatch(manifestPath, 75.0, false)
+		})
+	})
+
+	// ep1 should be skipped because output exists
+	if !strings.Contains(output, "Skipping (output exists)") {
+		t.Errorf("expected 'Skipping (output exists)' in output, got:\n%s", output)
+	}
+
+	// Summary should show as cached (OK with [cached] tag)
+	if !strings.Contains(output, "[cached]") {
+		t.Errorf("expected '[cached]' in summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "1 cached") {
+		t.Errorf("expected '1 cached' in summary, got:\n%s", output)
+	}
+}
+
+func TestCreateBatch_SkipsAllExistingInGroup(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create source directory
+	os.MkdirAll(filepath.Join(dir, "source"), 0755)
+
+	// Pre-create output for both files
+	ep1Output := filepath.Join(dir, "ep1.mkvdup")
+	ep2Output := filepath.Join(dir, "ep2.mkvdup")
+	os.WriteFile(ep1Output, []byte("existing"), 0644)
+	os.WriteFile(ep2Output, []byte("existing"), 0644)
+
+	manifestPath := filepath.Join(dir, "batch.yaml")
+	writeTestYAML(t, manifestPath, fmt.Sprintf(`source_dir: %s/source
+files:
+  - mkv: %s/ep1.mkv
+    output: %s
+  - mkv: %s/ep2.mkv
+    output: %s
+`, dir, dir, ep1Output, dir, ep2Output))
+
+	output := captureStdout(t, func() {
+		err := createBatch(manifestPath, 75.0, false)
+		// Should succeed (all files skipped, no errors)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	// Both should be skipped
+	if count := strings.Count(output, "Skipping (output exists)"); count != 2 {
+		t.Errorf("expected 2 'Skipping (output exists)' messages, got %d in:\n%s", count, output)
+	}
+
+	// Should NOT contain any indexing message (entire group skipped)
+	if strings.Contains(output, "Indexing") {
+		t.Errorf("expected no indexing when all files in group already exist, got:\n%s", output)
+	}
+
+	// Summary should show both cached
+	if !strings.Contains(output, "2 cached") {
+		t.Errorf("expected '2 cached' in summary, got:\n%s", output)
+	}
+}
+
+func TestPrintBatchSummary_MixedSkipReasons(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+		{
+			MkvPath:    "/data/ep2.mkv",
+			Skipped:    true,
+			SkipReason: "codec mismatch",
+		},
+		{
+			MkvPath:    "/data/ep3.mkv",
+			Skipped:    true,
+			SkipReason: "output exists",
+		},
+	}
+
+	output := captureStdout(t, func() {
+		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
+	})
+
+	if !strings.Contains(output, "SKIP  ep2.mkv: codec mismatch") {
+		t.Errorf("expected 'SKIP  ep2.mkv: codec mismatch', got:\n%s", output)
+	}
+	// output-exists shows as OK [cached], not SKIP
+	if !strings.Contains(output, "OK    ep3.mkv [cached]") {
+		t.Errorf("expected 'OK    ep3.mkv [cached]', got:\n%s", output)
+	}
+	if !strings.Contains(output, "Succeeded: 2/3 (1 cached, 1 skipped)") {
+		t.Errorf("expected 'Succeeded: 2/3 (1 cached, 1 skipped)', got:\n%s", output)
 	}
 }

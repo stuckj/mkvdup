@@ -37,8 +37,7 @@ _mkvdup_probe() {
         '--no-progress[Disable progress bars]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
-        '1:MKV file:_files -g "*.mkv(-.)"' \
-        '*:Source directories:_files -/'
+        '*:MKV files and source directories:_files'
 }
 
 _mkvdup_mount() {
@@ -211,7 +210,7 @@ _mkvdup() {
             subcommands=(
                 'create:Create a dedup file from an MKV and its source directory'
                 'batch-create:Create multiple dedup files from a manifest'
-                'probe:Quick test if an MKV likely matches a source'
+                'probe:Quick test if MKV file(s) likely match source(s)'
                 'mount:Mount virtual filesystem from config files'
                 'info:Show information about a dedup file'
                 'verify:Verify a dedup file against the original MKV'
