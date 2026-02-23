@@ -335,12 +335,28 @@ func EnumerateMediaFiles(dir string, sourceType Type) ([]string, error) {
 		files = append(files, isos...)
 
 	case TypeBluray:
-		// Look for m2ts files in BDMV/STREAM
+		// Look for m2ts files in BDMV/STREAM (extracted Blu-ray)
 		m2ts, err := filepath.Glob(filepath.Join(dir, "BDMV", "STREAM", "*.m2ts"))
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, m2ts...)
+
+		// If no extracted M2TS files, look for Blu-ray ISOs
+		if len(files) == 0 {
+			isos, err := filepath.Glob(filepath.Join(dir, "*.iso"))
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, isos...)
+
+			// Also check subdirectory (same pattern as DVD)
+			isos, err = filepath.Glob(filepath.Join(dir, "*", "*.iso"))
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, isos...)
+		}
 	}
 
 	// Convert to relative paths

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // detectBlurayCodecs performs a lightweight scan of the first M2TS file
@@ -31,26 +32,48 @@ func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 	return detectBlurayCodecsFromFile(fullPath)
 }
 
-// detectBlurayCodecsFromFile parses the PMT from an M2TS file to detect codecs.
+// detectBlurayCodecsFromFile parses the PMT from an M2TS file (or Blu-ray ISO)
+// to detect codecs. For ISOs, it finds the largest M2TS file within the ISO
+// and reads from that region.
 func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open M2TS file: %w", err)
+		return nil, fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
 
-	// Read first 2MB — enough to find PAT + PMT
+	// Determine read offset: for ISOs, find the largest M2TS within
+	readOffset := int64(0)
+	if strings.HasSuffix(strings.ToLower(path), ".iso") {
+		m2tsFiles, err := findBlurayM2TSInISO(path)
+		if err != nil {
+			return nil, fmt.Errorf("find M2TS in ISO: %w", err)
+		}
+		// Find the largest M2TS (most likely the main feature)
+		var largest isoFileExtent
+		for _, m := range m2tsFiles {
+			if m.Size > largest.Size {
+				largest = m
+			}
+		}
+		if largest.Size == 0 {
+			return nil, fmt.Errorf("no M2TS files found in Blu-ray ISO")
+		}
+		readOffset = largest.Offset
+	}
+
+	// Read 2MB from the M2TS data — enough to find PAT + PMT
 	const scanSize = 2 * 1024 * 1024
 	buf := make([]byte, scanSize)
-	n, err := f.Read(buf)
+	n, err := f.ReadAt(buf, readOffset)
 	if err != nil && n == 0 {
-		return nil, fmt.Errorf("read M2TS file: %w", err)
+		return nil, fmt.Errorf("read M2TS data: %w", err)
 	}
 	buf = buf[:n]
 
 	// Need at least enough data for TS packet size detection (4 sync bytes at regular intervals)
 	if len(buf) < 192*4 {
-		return nil, fmt.Errorf("M2TS file too small to detect TS structure (%d bytes)", len(buf))
+		return nil, fmt.Errorf("M2TS data too small to detect TS structure (%d bytes)", len(buf))
 	}
 
 	return parseTSCodecs(buf)
