@@ -146,7 +146,7 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 			// Blu-ray ISO: one ISO may contain multiple M2TS regions,
 			// each producing a separate source file entry.
 			var n int
-			n, checksum, err = idx.indexBlurayISOFile(uint16(fileIndex), fullPath, relPath, size, func(fileProcessed int64) {
+			n, _, err = idx.indexBlurayISOFile(uint16(fileIndex), fullPath, relPath, size, func(fileProcessed int64) {
 				if progress != nil {
 					progress(processedSize+fileProcessed, totalSize)
 				}
