@@ -42,8 +42,8 @@ func TestMain(m *testing.M) {
 	}
 
 	// Check FUSE availability
-	if _, err := os.Stat("/dev/fuse"); os.IsNotExist(err) {
-		skipReason = "FUSE not available: /dev/fuse does not exist"
+	if reason := checkFUSEAvailability(); reason != "" {
+		skipReason = reason
 		log.Printf("WARNING: %s - tests will be skipped", skipReason)
 		os.Exit(m.Run()) // Run tests so they show as skipped
 	}
@@ -197,18 +197,24 @@ func copyConfigWithName(t *testing.T, tmpDir, virtualName string) string {
 	return configPath
 }
 
-// skipIfFUSEUnavailable skips the test if FUSE is not available.
-func skipIfFUSEUnavailable(t *testing.T) {
-	// Check if /dev/fuse exists
+// checkFUSEAvailability checks whether FUSE is available on the system.
+// Returns a non-empty reason string if FUSE is unavailable, or empty string if available.
+func checkFUSEAvailability() string {
 	if _, err := os.Stat("/dev/fuse"); os.IsNotExist(err) {
-		t.Skip("FUSE not available: /dev/fuse does not exist")
+		return "FUSE not available: /dev/fuse does not exist"
 	}
-
-	// Check if fusermount is available in PATH (more portable than hardcoded paths)
 	if _, err := exec.LookPath("fusermount"); err != nil {
 		if _, err := exec.LookPath("fusermount3"); err != nil {
-			t.Skip("FUSE not available: fusermount not found in PATH")
+			return "FUSE not available: fusermount not found in PATH"
 		}
+	}
+	return ""
+}
+
+// skipIfFUSEUnavailable skips the test if FUSE is not available.
+func skipIfFUSEUnavailable(t *testing.T) {
+	if reason := checkFUSEAvailability(); reason != "" {
+		t.Skip(reason)
 	}
 }
 

@@ -47,7 +47,42 @@ See 'man mkvdup' for detailed documentation.
 func printCommandUsage(cmd string) {
 	switch cmd {
 	case "create":
-		fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> <output> [name]
+		printCreateUsage()
+	case "batch-create":
+		printBatchCreateUsage()
+	case "probe":
+		printProbeUsage()
+	case "mount":
+		printMountUsage()
+	case "info":
+		printInfoUsage()
+	case "verify":
+		printVerifyUsage()
+	case "extract":
+		printExtractUsage()
+	case "check":
+		printCheckUsage()
+	case "stats":
+		printStatsUsage()
+	case "validate":
+		printValidateUsage()
+	case "reload":
+		printReloadUsage()
+	case "deltadiag":
+		printDeltadiagUsage()
+	case "parse-mkv":
+		printParseMKVUsage()
+	case "index-source":
+		printIndexSourceUsage()
+	case "match":
+		printMatchUsage()
+	default:
+		printUsage()
+	}
+}
+
+func printCreateUsage() {
+	fmt.Print(`Usage: mkvdup create [options] <mkv-file> <source-dir> <output> [name]
 
 Create a dedup file from an MKV and its source media.
 
@@ -73,8 +108,10 @@ Examples:
     mkvdup create --warn-threshold 50 movie.mkv /media/dvd-backups movie.mkvdup
     mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 `)
-	case "batch-create":
-		fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
+}
+
+func printBatchCreateUsage() {
+	fmt.Print(`Usage: mkvdup batch-create [options] <manifest.yaml>
 
 Create multiple dedup files from a YAML manifest. Files sharing the same
 source directory are grouped and the source is indexed once per group.
@@ -119,8 +156,10 @@ Examples:
     mkvdup batch-create --warn-threshold 50 episodes.yaml
     mkvdup batch-create --skip-codec-mismatch episodes.yaml
 `)
-	case "probe":
-		fmt.Print(`Usage: mkvdup probe <mkv-file>... -- <source-dir>...
+}
+
+func printProbeUsage() {
+	fmt.Print(`Usage: mkvdup probe <mkv-file>... -- <source-dir>...
 
 Quick test to check if MKV file(s) match one or more source directories.
 When multiple MKVs are provided, each source is indexed only once.
@@ -137,8 +176,10 @@ Examples:
     mkvdup probe movie.mkv /media/disc1 /media/disc2
     mkvdup probe ep1.mkv ep2.mkv ep3.mkv -- /media/disc1 /media/disc2
 `)
-	case "mount":
-		os.Stdout.WriteString(`Usage: mkvdup mount [options] <mountpoint> [config.yaml...]
+}
+
+func printMountUsage() {
+	os.Stdout.WriteString(`Usage: mkvdup mount [options] <mountpoint> [config.yaml...]
 
 Mount dedup files as a FUSE filesystem.
 
@@ -200,8 +241,10 @@ Examples:
     mkvdup mount --source-watch-poll-interval 10s /mnt/videos config.yaml
     mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 `)
-	case "info":
-		fmt.Print(`Usage: mkvdup info [options] <dedup-file>
+}
+
+func printInfoUsage() {
+	fmt.Print(`Usage: mkvdup info [options] <dedup-file>
 
 Show information about a dedup file.
 
@@ -215,8 +258,10 @@ Examples:
     mkvdup info movie.mkvdup
     mkvdup info --hide-unused-files movie.mkvdup
 `)
-	case "verify":
-		fmt.Print(`Usage: mkvdup verify <dedup-file> <source-dir> <original-mkv>
+}
+
+func printVerifyUsage() {
+	fmt.Print(`Usage: mkvdup verify <dedup-file> <source-dir> <original-mkv>
 
 Verify that a dedup file correctly reconstructs the original MKV.
 
@@ -228,8 +273,10 @@ Arguments:
 Examples:
     mkvdup verify movie.mkvdup /media/dvd-backups original.mkv
 `)
-	case "extract":
-		fmt.Print(`Usage: mkvdup extract <dedup-file> <source-dir> <output-mkv>
+}
+
+func printExtractUsage() {
+	fmt.Print(`Usage: mkvdup extract <dedup-file> <source-dir> <output-mkv>
 
 Rebuild the original MKV from a dedup file and source media.
 
@@ -241,8 +288,10 @@ Arguments:
 Examples:
     mkvdup extract movie.mkvdup /media/dvd-backups restored-movie.mkv
 `)
-	case "check":
-		fmt.Print(`Usage: mkvdup check <dedup-file> <source-dir> [options]
+}
+
+func printCheckUsage() {
+	fmt.Print(`Usage: mkvdup check <dedup-file> <source-dir> [options]
 
 Check integrity of a dedup file and its source files.
 
@@ -264,8 +313,10 @@ Examples:
     mkvdup check movie.mkvdup /media/dvd-backups
     mkvdup check --source-checksums movie.mkvdup /media/dvd-backups
 `)
-	case "stats":
-		fmt.Print(`Usage: mkvdup stats [options] <config.yaml...>
+}
+
+func printStatsUsage() {
+	fmt.Print(`Usage: mkvdup stats [options] <config.yaml...>
 
 Show space savings and file statistics for mkvdup-managed files.
 
@@ -283,8 +334,10 @@ Examples:
     mkvdup stats --config-dir /etc/mkvdup.d/
     mkvdup stats movie1.yaml movie2.yaml
 `)
-	case "validate":
-		fmt.Print(`Usage: mkvdup validate [options] <config.yaml...>
+}
+
+func printValidateUsage() {
+	fmt.Print(`Usage: mkvdup validate [options] <config.yaml...>
 
 Validate configuration files for correctness before mounting.
 
@@ -317,8 +370,10 @@ Examples:
     mkvdup validate --config-dir /etc/mkvdup.d/
     mkvdup validate --deep --strict /etc/mkvdup.conf
 `)
-	case "reload":
-		fmt.Print(`Usage: mkvdup reload {--pid-file PATH | --pid PID} [options] [config.yaml...]
+}
+
+func printReloadUsage() {
+	fmt.Print(`Usage: mkvdup reload {--pid-file PATH | --pid PID} [options] [config.yaml...]
 
 Reload a running daemon's configuration by validating the config
 and sending SIGHUP to the daemon process.
@@ -345,8 +400,10 @@ Examples:
     mkvdup reload --pid-file /run/mkvdup.pid
     mkvdup reload --pid $(pidof mkvdup)
 `)
-	case "deltadiag":
-		fmt.Print(`Usage: mkvdup deltadiag <dedup-file> <mkv-file>
+}
+
+func printDeltadiagUsage() {
+	fmt.Print(`Usage: mkvdup deltadiag <dedup-file> <mkv-file>
 
 Analyze unmatched (delta) regions in a dedup file by cross-referencing
 with the original MKV to determine what stream type each delta region
@@ -364,8 +421,10 @@ Arguments:
 Examples:
     mkvdup deltadiag movie.mkvdup movie.mkv
 `)
-	case "parse-mkv":
-		fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
+}
+
+func printParseMKVUsage() {
+	fmt.Print(`Usage: mkvdup parse-mkv <mkv-file>
 
 Parse an MKV file and display packet information (debugging).
 
@@ -375,8 +434,10 @@ Arguments:
 Examples:
     mkvdup parse-mkv movie.mkv
 `)
-	case "index-source":
-		fmt.Print(`Usage: mkvdup index-source <source-dir>
+}
+
+func printIndexSourceUsage() {
+	fmt.Print(`Usage: mkvdup index-source <source-dir>
 
 Index a source directory and display statistics (debugging).
 
@@ -386,8 +447,10 @@ Arguments:
 Examples:
     mkvdup index-source /media/dvd-backups
 `)
-	case "match":
-		fmt.Print(`Usage: mkvdup match <mkv-file> <source-dir>
+}
+
+func printMatchUsage() {
+	fmt.Print(`Usage: mkvdup match <mkv-file> <source-dir>
 
 Match MKV packets to source and show detailed results (debugging).
 
@@ -398,7 +461,4 @@ Arguments:
 Examples:
     mkvdup match movie.mkv /media/dvd-backups
 `)
-	default:
-		printUsage()
-	}
 }
