@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
@@ -123,7 +124,10 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 	var processedSize int64
 
 	// Process each file
-	for fileIndex, relPath := range files {
+	// fileIndex tracks the next available index for source file entries.
+	// Most files produce one entry, but Blu-ray ISOs produce one per M2TS region.
+	fileIndex := 0
+	for _, relPath := range files {
 		fullPath := filepath.Join(idx.sourceDir, relPath)
 
 		size, err := GetFileInfo(fullPath)
@@ -138,6 +142,22 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 					progress(processedSize+fileProcessed, totalSize)
 				}
 			})
+		} else if idx.sourceType == TypeBluray && isISOFile(relPath) {
+			// Blu-ray ISO: one ISO may contain multiple M2TS regions,
+			// each producing a separate source file entry.
+			var n int
+			n, _, err = idx.indexBlurayISOFile(uint16(fileIndex), fullPath, relPath, size, func(fileProcessed int64) {
+				if progress != nil {
+					progress(processedSize+fileProcessed, totalSize)
+				}
+			})
+			if err != nil {
+				return fmt.Errorf("index file %s: %w", relPath, err)
+			}
+			// indexBlurayISOFile already added source file entries
+			fileIndex += n
+			processedSize += size
+			continue
 		} else if idx.sourceType == TypeBluray {
 			checksum, err = idx.indexM2TSFile(uint16(fileIndex), fullPath, size, func(fileProcessed int64) {
 				if progress != nil {
@@ -161,10 +181,16 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 			Checksum:     checksum,
 		})
 
+		fileIndex++
 		processedSize += size
 	}
 
 	return nil
+}
+
+// isISOFile returns true if the path has an .iso extension.
+func isISOFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".iso")
 }
 
 // checksumWithProgress computes xxhash checksum of data in chunks, calling
@@ -535,6 +561,138 @@ func (idx *Indexer) indexM2TSFile(fileIndex uint16, path string, size int64, pro
 	}
 
 	return checksum, nil
+}
+
+// indexBlurayISOFile processes a Blu-ray ISO file by finding M2TS regions
+// within the ISO9660 filesystem and indexing each as a separate source file entry.
+// Returns the number of source file entries created and the ISO checksum.
+func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath string, size int64, progress func(int64)) (int, uint64, error) {
+	// Find M2TS file extents within the ISO
+	m2tsFiles, err := findBlurayM2TSInISO(path)
+	if err != nil {
+		return 0, 0, fmt.Errorf("find M2TS in ISO: %w", err)
+	}
+	if len(m2tsFiles) == 0 {
+		return 0, 0, fmt.Errorf("no M2TS files found in Blu-ray ISO")
+	}
+
+	// Memory-map the entire ISO
+	mmapFile, err := mmap.Open(path)
+	if err != nil {
+		return 0, 0, fmt.Errorf("mmap open: %w", err)
+	}
+	// Don't close — stored in MmapFiles for later use
+	idx.index.MmapFiles = append(idx.index.MmapFiles, mmapFile)
+
+	mmapFile.Advise(unix.MADV_SEQUENTIAL)
+	isoData := mmapFile.Data()
+
+	// Phase 1: Parse all M2TS regions (0% → 33%)
+	type parsedM2TS struct {
+		adapter *isoM2TSAdapter
+		extent  isoFileExtent
+	}
+	var parsed []parsedM2TS
+
+	for _, m2ts := range m2tsFiles {
+		endOffset := m2ts.Offset + m2ts.Size
+		if endOffset > int64(len(isoData)) {
+			if idx.verbose {
+				fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: extent beyond ISO bounds (%d + %d > %d)\n",
+					m2ts.Name, m2ts.Offset, m2ts.Size, len(isoData))
+			}
+			continue
+		}
+
+		m2tsSlice := isoData[m2ts.Offset:endOffset]
+		parser := NewMPEGTSParser(m2tsSlice)
+
+		if err := parser.ParseWithProgress(nil); err != nil {
+			if idx.verbose {
+				fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
+			}
+			continue
+		}
+
+		adapter := newISOAdapter(parser, isoData, m2ts.Offset)
+		parsed = append(parsed, parsedM2TS{adapter: adapter, extent: m2ts})
+	}
+
+	if len(parsed) == 0 {
+		return 0, 0, fmt.Errorf("no valid M2TS streams found in Blu-ray ISO")
+	}
+
+	if progress != nil {
+		progress(size / 3)
+	}
+
+	// Phase 2: Checksum the full ISO (33% → 66%)
+	checksum := checksumWithProgress(isoData, func(processed int64) {
+		if progress != nil {
+			progress(size/3 + processed/3)
+		}
+	})
+
+	// Phase 3: Index ES data from all M2TS regions (66% → 100%)
+	entriesCreated := 0
+	for _, p := range parsed {
+		fileIndex := startFileIndex + uint16(entriesCreated)
+		adapter := p.adapter
+
+		// Store adapter as ESReader for this source file entry
+		idx.index.ESReaders = append(idx.index.ESReaders, adapter)
+
+		// Index video ES
+		videoESSize := adapter.TotalESSize(true)
+		if videoESSize > 0 {
+			if err := idx.indexESData(fileIndex, adapter, true, videoESSize, nil); err != nil {
+				return 0, 0, fmt.Errorf("index video ES for %s: %w", p.extent.Name, err)
+			}
+		}
+
+		// Index audio sub-streams
+		subtitleIDs := adapter.parser.SubtitleSubStreams()
+		subtitleSet := make(map[byte]bool, len(subtitleIDs))
+		for _, id := range subtitleIDs {
+			subtitleSet[id] = true
+		}
+		for _, subStreamID := range adapter.AudioSubStreams() {
+			if subtitleSet[subStreamID] {
+				continue
+			}
+			subStreamSize := adapter.AudioSubStreamESSize(subStreamID)
+			if subStreamSize > 0 {
+				if err := idx.indexAudioSubStream(fileIndex, adapter, subStreamID, subStreamSize); err != nil {
+					return 0, 0, fmt.Errorf("index audio sub-stream %d for %s: %w", subStreamID, p.extent.Name, err)
+				}
+			}
+		}
+
+		// Index subtitle sub-streams
+		for _, subStreamID := range subtitleIDs {
+			subStreamSize := adapter.AudioSubStreamESSize(subStreamID)
+			if subStreamSize > 0 {
+				if err := idx.indexSubStream(fileIndex, adapter, subStreamID, subStreamSize, FindPGSSyncPoints); err != nil {
+					return 0, 0, fmt.Errorf("index subtitle sub-stream %d for %s: %w", subStreamID, p.extent.Name, err)
+				}
+			}
+		}
+
+		// Add source file entry — all entries share the same ISO path, size, checksum
+		idx.index.Files = append(idx.index.Files, File{
+			RelativePath: relPath,
+			Size:         size,
+			Checksum:     checksum,
+		})
+
+		entriesCreated++
+	}
+
+	if progress != nil {
+		progress(size)
+	}
+
+	return entriesCreated, checksum, nil
 }
 
 // indexRawFileData is the core of indexRawFile operating on already-opened mmap data.

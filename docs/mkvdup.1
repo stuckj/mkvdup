@@ -71,16 +71,21 @@ Skip MKVs with codec mismatch instead of processing them.
 Mismatched files are reported as SKIP in the batch summary.
 .RE
 .TP
-.B probe \fImkv-file\fR \fIsource-dir\fR...
-Quick test to check if an MKV matches one or more source directories.
+.B probe \fImkv-file\fR... \fB\-\-\fR \fIsource-dir\fR...
+Quick test to check if MKV file(s) match one or more source directories.
+When multiple MKVs are provided, each source is indexed only once.
 Useful for identifying which disc an MKV came from in multi-disc sets.
+For backward compatibility, a single MKV without \fB\-\-\fR is also supported.
 .RS
 .TP
 .I mkv-file
-Path to the MKV file to test
+One or more MKV files to test (before \fB\-\-\fR)
+.TP
+.B \-\-
+Separator between MKV files and source directories
 .TP
 .I source-dir
-One or more directories to test against
+One or more directories to test against (after \fB\-\-\fR)
 .RE
 .TP
 .B mount \fR[\fIoptions\fR] \fImountpoint\fR [\fIconfig.yaml\fR...]
@@ -335,7 +340,8 @@ Test if MKV matches a source (useful for multi-disc sets):
 .PP
 .RS
 .nf
-@PACKAGE_NAME@ probe movie.mkv /media/disc1 /media/disc2 /media/disc3
+@PACKAGE_NAME@ probe movie.mkv /media/disc1 /media/disc2
+@PACKAGE_NAME@ probe ep1.mkv ep2.mkv ep3.mkv -- /media/disc1 /media/disc2
 .fi
 .RE
 .PP

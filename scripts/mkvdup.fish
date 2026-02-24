@@ -1,20 +1,13 @@
 # Fish completion for mkvdup
 # Install to /usr/share/fish/vendor_completions.d/mkvdup.fish
 
-# Determine the command name from the completion being registered
-set -l cmd (status basename | string replace -r '\.fish$' '')
-if test -z "$cmd"
-    set cmd mkvdup
-end
-
-# Disable file completions by default (we'll enable them per-subcommand)
-complete -c $cmd -f
-
-# Helper function to check if a subcommand has been given
+# Helper function to check if a subcommand has been given.
+# Only examines completed tokens (excludes the current token being typed)
+# so that partial input like "batch-" still offers "batch-create".
 function __fish_mkvdup_needs_command
-    set -l cmd (commandline -opc)
-    # Skip global options to find subcommand
-    for i in $cmd[2..-1]
+    set -l tokens (commandline -opc)
+    # Examine all tokens except the last (which is being completed)
+    for i in $tokens[2..-2]
         switch $i
             case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
                 continue
@@ -28,9 +21,9 @@ function __fish_mkvdup_needs_command
 end
 
 function __fish_mkvdup_using_command
-    set -l cmd (commandline -opc)
+    set -l tokens (commandline -opc)
     set -l target $argv[1]
-    for i in $cmd[2..-1]
+    for i in $tokens[2..-1]
         switch $i
             case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
                 continue
@@ -45,6 +38,12 @@ function __fish_mkvdup_using_command
     return 1
 end
 
+# Register completions for both mkvdup and mkvdup-canary
+for cmd in mkvdup mkvdup-canary
+
+# Disable file completions by default (we'll enable them per-subcommand)
+complete -c $cmd -f
+
 # Global options
 complete -c $cmd -n __fish_mkvdup_needs_command -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n __fish_mkvdup_needs_command -s q -l quiet -d 'Suppress informational progress output'
@@ -55,7 +54,7 @@ complete -c $cmd -n __fish_mkvdup_needs_command -l version -d 'Show version'
 # Subcommands
 complete -c $cmd -n __fish_mkvdup_needs_command -a create -d 'Create a dedup file from an MKV and its source directory'
 complete -c $cmd -n __fish_mkvdup_needs_command -a batch-create -d 'Create multiple dedup files from a manifest'
-complete -c $cmd -n __fish_mkvdup_needs_command -a probe -d 'Quick test if an MKV likely matches a source'
+complete -c $cmd -n __fish_mkvdup_needs_command -a probe -d 'Quick test if MKV file(s) likely match source(s)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a mount -d 'Mount virtual filesystem from config files'
 complete -c $cmd -n __fish_mkvdup_needs_command -a info -d 'Show information about a dedup file'
 complete -c $cmd -n __fish_mkvdup_needs_command -a verify -d 'Verify a dedup file against the original MKV'
@@ -87,7 +86,7 @@ complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -l skip-codec-mis
 complete -c $cmd -n '__fish_mkvdup_using_command batch-create' -F -d 'Manifest file'
 
 # probe options
-complete -c $cmd -n '__fish_mkvdup_using_command probe' -F -d 'MKV file or source directories'
+complete -c $cmd -n '__fish_mkvdup_using_command probe' -F -d 'MKV files, --, and source directories'
 
 # mount options
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l allow-other -d 'Allow other users to access the mount'
@@ -111,11 +110,13 @@ complete -c $cmd -n '__fish_mkvdup_using_command info' -l hide-unused-files -d '
 complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Dedup file'
 
 # verify options
+complete -c $cmd -n '__fish_mkvdup_using_command verify' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -F -d 'Dedup file, source directory, or original MKV'
 
 # extract options
+complete -c $cmd -n '__fish_mkvdup_using_command extract' -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n '__fish_mkvdup_using_command extract' -F -d 'Dedup file, source directory, or output MKV'
@@ -155,3 +156,5 @@ complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -F -d 'Dedup file or
 
 # help - complete with subcommand names
 complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag' -d 'Command'
+
+end # for cmd

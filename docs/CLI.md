@@ -404,28 +404,24 @@ mkvdup extract movie.mkvdup /media/dvd-backups restored-movie.mkv
 
 ### probe
 
-Quick test if an MKV likely matches a source. Useful for multi-disc sets.
+Quick test if MKV file(s) likely match source(s). Useful for multi-disc sets.
 
 ```bash
-mkvdup probe /path/to/video.mkv /path/to/source1 /path/to/source2 ...
+# Single MKV against multiple sources (backward compatible)
+mkvdup probe /path/to/video.mkv /path/to/source1 /path/to/source2
 
-# Example output:
-#   Probing video.mkv against 3 sources...
-#   Sampling 20 packets from MKV...
-#
-#   Results:
-#     /data/disc1  18/20 matches (90%) ← likely match
-#     /data/disc2   2/20 matches (10%)
-#     /data/disc3   0/20 matches (0%)
+# Multiple MKVs against multiple sources (use -- separator)
+mkvdup probe ep1.mkv ep2.mkv ep3.mkv -- /path/to/disc1 /path/to/disc2
 ```
 
-**Use case:** You have 5 ISOs from a multi-disc set and 20 MKV files. Rather than trying each combination with full dedup (which takes minutes per attempt), probe can test all combinations in under a minute.
+When multiple MKVs are provided, each source is indexed only once and all MKV hash sets are checked against it. This makes batch probing (e.g., 26 TV episodes against 5 disc sources) dramatically faster than probing each MKV individually.
+
+**Use case:** You have 5 ISOs from a multi-disc set and 20 MKV files. Rather than trying each combination with full dedup (which takes minutes per attempt), probe can test all combinations in a single pass.
 
 **Algorithm:**
-1. Parse MKV file (quick scan, not full parse)
-2. Sample 20 packets from different positions (5 from first 10%, 10 from middle 80%, 5 from last 10%)
-3. For each source: look up each sampled packet hash, count matches
-4. Report match percentages, sorted by likelihood
+1. Parse each MKV file and sample 20 packets per MKV (5 from first 10%, 10 from middle 80%, 5 from last 10%)
+2. For each source: index once, then check all MKV hash sets against it
+3. Report match percentages per MKV, sorted by likelihood
 
 **Output interpretation:**
 - 80-100% match: Very likely the correct source

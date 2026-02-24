@@ -18,7 +18,7 @@ This tool is intended for personal backup and archival of legally owned media. I
 ## Features
 
 - **DVD support** - Works with ISO files containing VOB (MPEG-PS) content
-- **Blu-ray support** - Works with BDMV directory structures (planned)
+- **Blu-ray support** - Works with BDMV directory structures
 - **FUSE filesystem** - Mount deduplicated files and access them transparently
 - **Permission customization** - `chmod`/`chown` support with persistent metadata storage
 - **Verification** - Byte-for-byte verification of reconstructed files
@@ -145,6 +145,8 @@ mkvdup info video.mkvdup
 5. **Reconstruct on-demand** - FUSE filesystem stitches data from source files and the dedup file
 
 ## Documentation
+
+See [docs/CLI.md](docs/CLI.md) for the full command-line reference.
 
 - [DESIGN.md](DESIGN.md) - Architecture overview and technical decisions
 - [docs/MATCHING.md](docs/MATCHING.md) - Matching algorithms and ES-aware indexing
