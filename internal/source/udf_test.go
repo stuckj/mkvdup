@@ -435,6 +435,70 @@ func TestISOAdapterAdjustsOffsets_UDF(t *testing.T) {
 	}
 }
 
+func TestISOAdapterMultiExtentAdjustsOffsets(t *testing.T) {
+	m2tsData := buildBasicM2TSData()
+
+	// Place all M2TS data in the first extent and use a second empty-ish extent
+	// to exercise the multi-extent offset mapping. Since the data is small (6 packets),
+	// putting it all in extent 1 avoids packet-detection issues on tiny chunks.
+	ext1Offset := int64(1000 * 2048) // First extent at sector 1000
+	ext2Offset := int64(5000 * 2048) // Second extent at sector 5000 (non-contiguous)
+	ext2Len := int64(192)            // One empty packet's worth
+
+	fullISO := make([]byte, int(ext2Offset)+int(ext2Len)+2048)
+	copy(fullISO[ext1Offset:], m2tsData)
+
+	extents := []isoPhysicalRange{
+		{ISOOffset: ext1Offset, Length: int64(len(m2tsData))},
+		{ISOOffset: ext2Offset, Length: ext2Len},
+	}
+
+	mr := newMultiRegionData(extents, fullISO)
+	parser := NewMPEGTSParserMultiRegion(mr)
+	if err := parser.Parse(); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := newISOAdapterMultiExtent(parser, mr, extents, fullISO)
+
+	// Parser ranges have assembled-relative offsets; adapter ranges should be ISO-relative
+	parserRanges := parser.FilteredVideoRanges()
+	adapterRanges := adapter.FilteredVideoRanges()
+
+	if len(adapterRanges) != len(parserRanges) {
+		t.Fatalf("range count mismatch: parser=%d, adapter=%d", len(parserRanges), len(adapterRanges))
+	}
+
+	for i, pr := range parserRanges {
+		ar := adapterRanges[i]
+		// All data is in extent 1, so ISO offset = ext1Offset + assembled offset
+		expectedISOOffset := ext1Offset + pr.FileOffset
+		if ar.FileOffset != expectedISOOffset {
+			t.Errorf("range %d: assembled=%d, expected ISO=%d, got ISO=%d",
+				i, pr.FileOffset, expectedISOOffset, ar.FileOffset)
+		}
+		if ar.Size != pr.Size || ar.ESOffset != pr.ESOffset {
+			t.Errorf("range %d: Size or ESOffset changed", i)
+		}
+	}
+
+	// Verify DataSlice with ISO-relative offsets returns correct data
+	for i, ar := range adapterRanges {
+		data := adapter.DataSlice(ar.FileOffset, ar.Size)
+		// Should match what the parser sees at the assembled-relative offset
+		expected := mr.Slice(parserRanges[i].FileOffset, parserRanges[i].FileOffset+int64(parserRanges[i].Size))
+		if len(data) != len(expected) {
+			t.Fatalf("range %d: DataSlice len=%d, expected %d", i, len(data), len(expected))
+		}
+		for j := range data {
+			if data[j] != expected[j] {
+				t.Errorf("range %d: DataSlice[%d] = 0x%02X, expected 0x%02X", i, j, data[j], expected[j])
+				break
+			}
+		}
+	}
+}
+
 func TestIndexBlurayUDFISO(t *testing.T) {
 	m2tsData := buildBasicM2TSData()
 	isoData := buildTestUDFBlurayISO(m2tsData)
