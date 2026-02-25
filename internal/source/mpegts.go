@@ -183,8 +183,12 @@ func (p *MPEGTSParser) parseMultiRegion(progress MPEGTSProgressFunc) error {
 				bridgeBase := logicalBase - int64(len(carryover))
 				p.scanPackets(bridgePkt, 0, bridgeBase, ss, nil)
 				chunkStart = needed
+				carryover = nil
+			} else {
+				// Region too small to complete the packet — accumulate and continue
+				carryover = append(carryover, chunk...)
+				continue
 			}
-			carryover = nil
 		}
 
 		// Process complete packets in this region
