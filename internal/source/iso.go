@@ -28,7 +28,8 @@ func findBlurayM2TSInISO(isoPath string) ([]isoFileExtent, error) {
 	// Read root directory from PVD
 	rootExtent, rootDataLen, err := readISOPVDRoot(f)
 	if err != nil {
-		return nil, fmt.Errorf("read ISO PVD: %w", err)
+		// ISO9660 failed, try UDF (Blu-ray ISOs from CloneBD)
+		return findBlurayM2TSInUDF(f)
 	}
 
 	// Navigate: root → BDMV → STREAM
