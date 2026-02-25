@@ -201,6 +201,9 @@ func (a *isoM2TSAdapter) adjustRawRanges(ranges []RawRange) []RawRange {
 // logicalToISO converts a logical offset in the assembled data to the
 // corresponding physical ISO offset using the extent map.
 func (a *isoM2TSAdapter) logicalToISO(logicalOff int64) int64 {
+	if len(a.extentMap) == 0 {
+		return logicalOff
+	}
 	// Binary search for the extent containing this offset
 	idx := sort.Search(len(a.extentMap), func(i int) bool {
 		return a.extentMap[i].LogicalStart+a.extentMap[i].Length > logicalOff

@@ -3,6 +3,7 @@ package source
 import (
 	"bytes"
 	"fmt"
+	"log"
 )
 
 // MPEGTSParser parses MPEG Transport Stream (M2TS) files to extract elementary
@@ -199,6 +200,10 @@ func (p *MPEGTSParser) parseMultiRegion(progress MPEGTSProgressFunc) error {
 			carryover = make([]byte, remainder)
 			copy(carryover, chunk[chunkStart+nComplete:])
 		}
+	}
+
+	if len(carryover) > 0 {
+		log.Printf("mpegts: warning: discarding %d carryover bytes at end of multi-region data (incomplete TS packet)", len(carryover))
 	}
 
 	if progress != nil {

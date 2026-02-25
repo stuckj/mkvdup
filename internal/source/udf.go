@@ -761,7 +761,7 @@ func parseFileEntry(data []byte) (*udfFileEntry, error) {
 		// File Entry (tag 261)
 		// ECMA-167 14.9: L_EA at 168, L_AD at 172, alloc descs at 176+L_EA
 		if len(data) < 176 {
-			return nil, fmt.Errorf("File Entry too short")
+			return nil, fmt.Errorf("file entry too short")
 		}
 		infoLength = binary.LittleEndian.Uint64(data[56:64])
 		icbFlags = binary.LittleEndian.Uint16(data[34:36])
@@ -781,6 +781,11 @@ func parseFileEntry(data []byte) (*udfFileEntry, error) {
 		eaLen := binary.LittleEndian.Uint32(data[208:212])
 		allocDescsLength = binary.LittleEndian.Uint32(data[212:216])
 		allocDescsOffset = 216 + int(eaLen)
+	}
+
+	// Guard against overflow or out-of-bounds from malformed eaLen
+	if allocDescsOffset < 0 || allocDescsOffset > len(data) {
+		return nil, fmt.Errorf("file entry alloc descs offset out of bounds: %d", allocDescsOffset)
 	}
 
 	var allocDescs []byte

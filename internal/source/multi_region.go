@@ -1,6 +1,9 @@
 package source
 
-import "sort"
+import (
+	"sort"
+	"sync/atomic"
+)
 
 // multiRegionData provides a virtual contiguous view over multiple
 // non-contiguous byte slices from a memory-mapped ISO. Used for
@@ -9,7 +12,7 @@ import "sort"
 type multiRegionData struct {
 	regions   []multiRegion
 	totalSize int64
-	lastIdx   int // cached region index for fast sequential access
+	lastIdx   atomic.Int32 // cached region index for fast sequential access
 }
 
 type multiRegion struct {
@@ -24,9 +27,31 @@ func newMultiRegionData(extents []isoPhysicalRange, isoData []byte) *multiRegion
 		regions: make([]multiRegion, len(extents)),
 	}
 	logicalOff := int64(0)
+	isoLen := int64(len(isoData))
 	for i, ext := range extents {
+		end := ext.ISOOffset + ext.Length
+		if ext.ISOOffset < 0 || end > isoLen {
+			// Clamp to ISO bounds (corrupted/malformed UDF metadata)
+			start := ext.ISOOffset
+			if start < 0 {
+				start = 0
+			}
+			if end > isoLen {
+				end = isoLen
+			}
+			if start >= end {
+				mr.regions[i] = multiRegion{logicalStart: logicalOff}
+				continue
+			}
+			mr.regions[i] = multiRegion{
+				data:         isoData[start:end],
+				logicalStart: logicalOff,
+			}
+			logicalOff += end - start
+			continue
+		}
 		mr.regions[i] = multiRegion{
-			data:         isoData[ext.ISOOffset : ext.ISOOffset+ext.Length],
+			data:         isoData[ext.ISOOffset:end],
 			logicalStart: logicalOff,
 		}
 		logicalOff += ext.Length
@@ -39,12 +64,14 @@ func newMultiRegionData(extents []isoPhysicalRange, isoData []byte) *multiRegion
 func (m *multiRegionData) Len() int64 { return m.totalSize }
 
 // regionFor returns the index of the region containing the given logical offset.
+// Returns len(m.regions) if the offset is beyond all regions.
 func (m *multiRegionData) regionFor(off int64) int {
 	// Fast path: check cached index
-	if m.lastIdx < len(m.regions) {
-		r := m.regions[m.lastIdx]
+	cached := int(m.lastIdx.Load())
+	if cached < len(m.regions) {
+		r := m.regions[cached]
 		if off >= r.logicalStart && off < r.logicalStart+int64(len(r.data)) {
-			return m.lastIdx
+			return cached
 		}
 	}
 	// Binary search
@@ -52,14 +79,18 @@ func (m *multiRegionData) regionFor(off int64) int {
 		return m.regions[i].logicalStart+int64(len(m.regions[i].data)) > off
 	})
 	if idx < len(m.regions) {
-		m.lastIdx = idx
+		m.lastIdx.Store(int32(idx))
 	}
 	return idx
 }
 
 // ByteAt returns the byte at the given logical offset.
+// Returns 0 if the offset is out of bounds.
 func (m *multiRegionData) ByteAt(off int64) byte {
 	idx := m.regionFor(off)
+	if idx >= len(m.regions) {
+		return 0
+	}
 	r := m.regions[idx]
 	return r.data[off-r.logicalStart]
 }
@@ -72,6 +103,9 @@ func (m *multiRegionData) Slice(off, end int64) []byte {
 		return nil
 	}
 	idx := m.regionFor(off)
+	if idx >= len(m.regions) {
+		return nil
+	}
 	r := m.regions[idx]
 	regionOff := off - r.logicalStart
 	regionEnd := end - r.logicalStart
