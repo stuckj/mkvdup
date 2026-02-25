@@ -129,6 +129,17 @@ func main() {
 		case arg == "-q" || arg == "--quiet":
 			quiet = true
 			showProgress = false
+		case arg == "--log-file":
+			if i+1 < len(args) {
+				i++
+				var err error
+				logFile, err = os.Create(args[i])
+				if err != nil {
+					log.Fatalf("Error: cannot create log file %s: %v", args[i], err)
+				}
+			} else {
+				log.Fatalf("Error: --log-file requires a path argument")
+			}
 		default:
 			filteredArgs = append(filteredArgs, arg)
 		}
@@ -138,6 +149,11 @@ func main() {
 	// Auto-disable progress bars when stdout is not a TTY
 	if !isTerminalStdout() {
 		showProgress = false
+	}
+
+	// Close log file on exit
+	if logFile != nil {
+		defer logFile.Close()
 	}
 
 	// Handle --version (always top-level)

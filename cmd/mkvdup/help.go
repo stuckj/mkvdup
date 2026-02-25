@@ -32,11 +32,12 @@ Debug commands:
   match        Match MKV packets to source
 
 Options:
-  -v, --verbose    Enable verbose output
-  -q, --quiet      Suppress informational progress output
-  --no-progress    Disable progress bars (still show status messages)
-  -h, --help       Show help
-  --version        Show version
+  -v, --verbose      Enable verbose output
+  -q, --quiet        Suppress informational progress output
+  --no-progress      Disable progress bars (still show status messages)
+  --log-file PATH    Duplicate output to a log file (non-TTY style)
+  -h, --help         Show help
+  --version          Show version
 `)
 	fmt.Print(debugOptionsHelp())
 	fmt.Print(`Run 'mkvdup <command> --help' for more information on a command.
