@@ -688,27 +688,27 @@ func parseFileEntry(data []byte) (*udfFileEntry, error) {
 
 	if tag.TagID == udfTagFileEntry {
 		// File Entry (tag 261)
+		// ECMA-167 14.9: L_EA at 168, L_AD at 172, alloc descs at 176+L_EA
 		if len(data) < 176 {
 			return nil, fmt.Errorf("File Entry too short")
 		}
 		infoLength = binary.LittleEndian.Uint64(data[56:64])
-		allocDescsLength = binary.LittleEndian.Uint32(data[168:172])
 		icbFlags = binary.LittleEndian.Uint16(data[34:36])
 
-		// Extended attribute length at offset 172
-		eaLen := binary.LittleEndian.Uint32(data[172:176])
+		eaLen := binary.LittleEndian.Uint32(data[168:172])
+		allocDescsLength = binary.LittleEndian.Uint32(data[172:176])
 		allocDescsOffset = 176 + int(eaLen)
 	} else {
 		// Extended File Entry (tag 266)
+		// ECMA-167 14.17: L_EA at 208, L_AD at 212, alloc descs at 216+L_EA
 		if len(data) < 216 {
 			return nil, fmt.Errorf("Extended File Entry too short")
 		}
 		infoLength = binary.LittleEndian.Uint64(data[56:64])
-		allocDescsLength = binary.LittleEndian.Uint32(data[208:212])
 		icbFlags = binary.LittleEndian.Uint16(data[34:36])
 
-		// Extended attribute length at offset 212
-		eaLen := binary.LittleEndian.Uint32(data[212:216])
+		eaLen := binary.LittleEndian.Uint32(data[208:212])
+		allocDescsLength = binary.LittleEndian.Uint32(data[212:216])
 		allocDescsOffset = 216 + int(eaLen)
 	}
 

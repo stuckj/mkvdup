@@ -192,12 +192,12 @@ func writeUDFFileEntry(buf []byte, tagLoc uint32, fileType byte, infoLen uint64,
 	// Information Length at offset 56 (8 bytes)
 	binary.LittleEndian.PutUint64(buf[56:64], infoLen)
 
-	// For tag 261: alloc descs length at offset 168, EA length at 172
-	// Allocation descriptors start at offset 176
+	// For tag 261 (ECMA-167 14.9): L_EA at 168, L_AD at 172
+	// Allocation descriptors start at offset 176 + L_EA
 	if allocType == 0 {
 		// short_ad: 8 bytes
-		binary.LittleEndian.PutUint32(buf[168:172], 8) // alloc descs length
-		binary.LittleEndian.PutUint32(buf[172:176], 0) // EA length
+		binary.LittleEndian.PutUint32(buf[168:172], 0) // L_EA (extended attributes length)
+		binary.LittleEndian.PutUint32(buf[172:176], 8) // L_AD (allocation descriptors length)
 		// short_ad at offset 176
 		binary.LittleEndian.PutUint32(buf[176:180], allocLen)
 		binary.LittleEndian.PutUint32(buf[180:184], allocLB)
