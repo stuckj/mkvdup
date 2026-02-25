@@ -518,3 +518,150 @@ func TestCompressedEncoding_ZeroDeltas(t *testing.T) {
 		t.Errorf("TotalESSize = %d, want 400", sm.TotalESSize())
 	}
 }
+
+func TestEncodeCompressedRanges_OffsetFunc(t *testing.T) {
+	// Simulate ISO-style offset conversion: parser-relative offsets need
+	// a base offset added to get ISO-relative offsets.
+	const baseOffset int64 = 50000
+	offsetFunc := func(off int64) int64 { return off + baseOffset }
+
+	ranges := []source.PESPayloadRange{
+		{FileOffset: 4, Size: 184, ESOffset: 0},
+		{FileOffset: 196, Size: 184, ESOffset: 184},
+		{FileOffset: 388, Size: 184, ESOffset: 368},
+		{FileOffset: 580, Size: 184, ESOffset: 552},
+	}
+
+	defGap, defSize := findDefaults(ranges)
+
+	// Encode with offset function
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, offsetFunc)
+
+	// Encode the same ranges but with manually-adjusted offsets and no offsetFunc
+	adjustedRanges := make([]source.PESPayloadRange, len(ranges))
+	for i, r := range ranges {
+		adjustedRanges[i] = source.PESPayloadRange{
+			FileOffset: r.FileOffset + baseOffset,
+			Size:       r.Size,
+			ESOffset:   r.ESOffset,
+		}
+	}
+	compressedManual := encodeCompressedRanges(adjustedRanges, defGap, defSize, nil)
+
+	// Both should produce identical compressed output
+	if len(compressed) != len(compressedManual) {
+		t.Fatalf("compressed lengths differ: offsetFunc=%d, manual=%d", len(compressed), len(compressedManual))
+	}
+	for i := range compressed {
+		if compressed[i] != compressedManual[i] {
+			t.Errorf("byte %d differs: offsetFunc=0x%02X, manual=0x%02X", i, compressed[i], compressedManual[i])
+			break
+		}
+	}
+
+	// Verify round-trip: decode and check that stored offsets are ISO-relative
+	sm, err := buildStreamRangeMap(compressed, len(ranges), defGap, defSize)
+	if err != nil {
+		t.Fatalf("buildStreamRangeMap: %v", err)
+	}
+
+	// TotalESSize should be unchanged (offset conversion doesn't affect ES sizes)
+	expectedES := int64(4 * 184)
+	if sm.TotalESSize() != expectedES {
+		t.Errorf("TotalESSize = %d, want %d", sm.TotalESSize(), expectedES)
+	}
+
+	// Read from the decoded range map using ISO-relative source data
+	isoData := make([]byte, int(baseOffset)+4+4*192)
+	for i := range isoData {
+		isoData[i] = byte(i % 256)
+	}
+
+	// ES offset 0 should map to ISO file offset baseOffset+4
+	data, err := sm.ReadData(isoData, int64(len(isoData)), 0, 10)
+	if err != nil {
+		t.Fatalf("ReadData(0, 10): %v", err)
+	}
+	for i := 0; i < 10; i++ {
+		want := isoData[baseOffset+4+int64(i)]
+		if data[i] != want {
+			t.Errorf("byte %d: got %d, want %d", i, data[i], want)
+		}
+	}
+}
+
+func TestEncodeRangeMapSection_OffsetFunc(t *testing.T) {
+	// Test the full encodeRangeMapSection → readRangeMapSection round-trip
+	// with a non-nil OffsetFunc to verify it's applied during encoding.
+	const baseOffset int64 = 100000
+	offsetFunc := func(off int64) int64 { return off + baseOffset }
+
+	rmData := []RangeMapData{
+		{
+			FileIndex: 0,
+			VideoRanges: []source.PESPayloadRange{
+				{FileOffset: 4, Size: 184, ESOffset: 0},
+				{FileOffset: 196, Size: 184, ESOffset: 184},
+				{FileOffset: 388, Size: 184, ESOffset: 368},
+			},
+			AudioStreams: []AudioRangeData{
+				{
+					SubStreamID: 0x80,
+					Ranges: []source.PESPayloadRange{
+						{FileOffset: 1000, Size: 184, ESOffset: 0},
+						{FileOffset: 1192, Size: 184, ESOffset: 184},
+					},
+				},
+			},
+			OffsetFunc: offsetFunc,
+		},
+	}
+
+	buf, err := encodeRangeMapSection(rmData)
+	if err != nil {
+		t.Fatalf("encodeRangeMapSection: %v", err)
+	}
+
+	sources, err := readRangeMapSection(buf)
+	if err != nil {
+		t.Fatalf("readRangeMapSection: %v", err)
+	}
+
+	if len(sources) != 1 {
+		t.Fatalf("source count = %d, want 1", len(sources))
+	}
+
+	// Verify video stream reads from ISO-relative offsets
+	src := sources[0]
+	isoData := make([]byte, int(baseOffset)+2000)
+	for i := range isoData {
+		isoData[i] = byte(i % 256)
+	}
+
+	data, err := src.VideoMap.ReadData(isoData, int64(len(isoData)), 0, 5)
+	if err != nil {
+		t.Fatalf("video ReadData: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		want := isoData[baseOffset+4+int64(i)]
+		if data[i] != want {
+			t.Errorf("video byte %d: got %d, want %d", i, data[i], want)
+		}
+	}
+
+	// Verify audio stream reads from ISO-relative offsets
+	audioMap, ok := src.AudioMaps[0x80]
+	if !ok {
+		t.Fatal("audio sub-stream 0x80 not found")
+	}
+	data, err = audioMap.ReadData(isoData, int64(len(isoData)), 0, 5)
+	if err != nil {
+		t.Fatalf("audio ReadData: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		want := isoData[baseOffset+1000+int64(i)]
+		if data[i] != want {
+			t.Errorf("audio byte %d: got %d, want %d", i, data[i], want)
+		}
+	}
+}
