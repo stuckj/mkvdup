@@ -251,10 +251,23 @@ func newUDFContext(f *os.File) (*udfContext, error) {
 		return nil, fmt.Errorf("no partition descriptors found in VDS")
 	}
 
+	// Match the first physical partition map's PartitionNum to the
+	// corresponding partition descriptor. Fall back to partDescs[0].
+	partStart := partDescs[0].StartingLocation
+	if len(lvd.PartitionMaps) > 0 {
+		targetNum := lvd.PartitionMaps[0].PartitionNum
+		for _, pd := range partDescs {
+			if pd.PartitionNumber == targetNum {
+				partStart = pd.StartingLocation
+				break
+			}
+		}
+	}
+
 	ctx := &udfContext{
 		f:          f,
 		blockSize:  lvd.BlockSize,
-		partStart:  partDescs[0].StartingLocation,
+		partStart:  partStart,
 		partitions: partDescs,
 		partMaps:   lvd.PartitionMaps,
 	}
