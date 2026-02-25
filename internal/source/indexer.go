@@ -595,26 +595,57 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 	var parsed []parsedM2TS
 
 	for _, m2ts := range m2tsFiles {
-		endOffset := m2ts.Offset + m2ts.Size
-		if endOffset > int64(len(isoData)) {
-			if idx.verbose {
-				fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: extent beyond ISO bounds (%d + %d > %d)\n",
-					m2ts.Name, m2ts.Offset, m2ts.Size, len(isoData))
+		var m2tsSlice []byte
+		var adapter *isoM2TSAdapter
+
+		if m2ts.Extents != nil {
+			// Multi-extent UDF file: assemble contiguous data from extents
+			m2tsSlice = make([]byte, 0, m2ts.Size)
+			for _, ext := range m2ts.Extents {
+				endOff := ext.ISOOffset + ext.Length
+				if endOff > int64(len(isoData)) {
+					break
+				}
+				m2tsSlice = append(m2tsSlice, isoData[ext.ISOOffset:endOff]...)
 			}
-			continue
+			if int64(len(m2tsSlice)) != m2ts.Size {
+				if idx.verbose {
+					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: assembled %d bytes, expected %d\n",
+						m2ts.Name, len(m2tsSlice), m2ts.Size)
+				}
+				continue
+			}
+
+			parser := NewMPEGTSParser(m2tsSlice)
+			if err := parser.ParseWithProgress(nil); err != nil {
+				if idx.verbose {
+					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
+				}
+				continue
+			}
+			adapter = newISOAdapterMultiExtent(parser, isoData, m2tsSlice, m2ts.Extents)
+		} else {
+			// Contiguous file: use sub-slice of mmap'd ISO
+			endOffset := m2ts.Offset + m2ts.Size
+			if endOffset > int64(len(isoData)) {
+				if idx.verbose {
+					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: extent beyond ISO bounds (%d + %d > %d)\n",
+						m2ts.Name, m2ts.Offset, m2ts.Size, len(isoData))
+				}
+				continue
+			}
+
+			m2tsSlice = isoData[m2ts.Offset:endOffset]
+			parser := NewMPEGTSParser(m2tsSlice)
+			if err := parser.ParseWithProgress(nil); err != nil {
+				if idx.verbose {
+					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
+				}
+				continue
+			}
+			adapter = newISOAdapter(parser, isoData, m2ts.Offset)
 		}
 
-		m2tsSlice := isoData[m2ts.Offset:endOffset]
-		parser := NewMPEGTSParser(m2tsSlice)
-
-		if err := parser.ParseWithProgress(nil); err != nil {
-			if idx.verbose {
-				fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
-			}
-			continue
-		}
-
-		adapter := newISOAdapter(parser, isoData, m2ts.Offset)
 		parsed = append(parsed, parsedM2TS{adapter: adapter, extent: m2ts})
 	}
 

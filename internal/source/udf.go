@@ -195,18 +195,25 @@ func findBlurayM2TSInUDF(f *os.File) ([]isoFileExtent, error) {
 			continue
 		}
 
-		// Resolve file extents to get physical offset and size
-		offset, err := ctx.resolveFileOffset(fe)
-		if err != nil {
+		// Collect all physical extents for this file.
+		extents, err := ctx.resolveAllExtents(fe)
+		if err != nil || len(extents) == 0 {
 			continue
 		}
 
-		m2tsFiles = append(m2tsFiles, isoFileExtent{
+		m2ts := isoFileExtent{
 			Name:   name,
-			Offset: offset,
+			Offset: extents[0].ISOOffset,
 			Size:   int64(fe.InfoLength),
 			IsDir:  false,
-		})
+		}
+
+		// Only populate Extents if the data is non-contiguous.
+		if !extentsContiguous(extents) {
+			m2ts.Extents = extents
+		}
+
+		m2tsFiles = append(m2tsFiles, m2ts)
 	}
 
 	if len(m2tsFiles) == 0 {
@@ -521,6 +528,73 @@ func (ctx *udfContext) resolveFileOffset(fe *udfFileEntry) (int64, error) {
 	default:
 		return 0, fmt.Errorf("unsupported allocation descriptor type %d", fe.AllocType&0x07)
 	}
+}
+
+// resolveAllExtents collects all physical extents for a file entry.
+// For long_ad, each AD has an explicit partition reference.
+// For short_ad, the partition is inherited from the FE.
+func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, error) {
+	switch fe.AllocType & 0x07 {
+	case 0: // short_ad
+		if int(fe.PartRef) < len(ctx.partMaps) && ctx.partMaps[fe.PartRef].IsMetadata {
+			return nil, fmt.Errorf("short_ad on metadata partition not supported for file extents")
+		}
+		var extents []isoPhysicalRange
+		remaining := int64(fe.InfoLength)
+		for off := 0; off+8 <= len(fe.AllocDescs) && remaining > 0; off += 8 {
+			ad := parseShortAD(fe.AllocDescs[off : off+8])
+			extLen := int64(ad.Length & 0x3FFFFFFF)
+			if extLen == 0 {
+				break
+			}
+			if extLen > remaining {
+				extLen = remaining
+			}
+			extents = append(extents, isoPhysicalRange{
+				ISOOffset: ctx.resolveBlockPhysical(ad.Position),
+				Length:    extLen,
+			})
+			remaining -= extLen
+		}
+		return extents, nil
+
+	case 1: // long_ad
+		var extents []isoPhysicalRange
+		remaining := int64(fe.InfoLength)
+		for off := 0; off+16 <= len(fe.AllocDescs) && remaining > 0; off += 16 {
+			ad := parseLongAD(fe.AllocDescs[off : off+16])
+			extLen := int64(ad.Length & 0x3FFFFFFF)
+			if extLen == 0 {
+				break
+			}
+			if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
+				return nil, fmt.Errorf("long_ad extent on metadata partition")
+			}
+			if extLen > remaining {
+				extLen = remaining
+			}
+			extents = append(extents, isoPhysicalRange{
+				ISOOffset: ctx.resolveBlockPhysical(ad.Location),
+				Length:    extLen,
+			})
+			remaining -= extLen
+		}
+		return extents, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported alloc type %d for extent resolution", fe.AllocType&0x07)
+	}
+}
+
+// extentsContiguous returns true if all extents are physically adjacent.
+func extentsContiguous(extents []isoPhysicalRange) bool {
+	for i := 1; i < len(extents); i++ {
+		prevEnd := extents[i-1].ISOOffset + extents[i-1].Length
+		if extents[i].ISOOffset != prevEnd {
+			return false
+		}
+	}
+	return true
 }
 
 // readBlock reads one block from the given logical block number within

@@ -10,10 +10,17 @@ const isoSectorSize = 2048
 
 // isoFileExtent represents a file within an ISO9660 filesystem.
 type isoFileExtent struct {
-	Name   string // filename (uppercase, no version suffix)
-	Offset int64  // byte offset in ISO (extent LBA * sectorSize)
-	Size   int64  // data length in bytes
-	IsDir  bool   // true if this is a directory entry
+	Name    string             // filename (uppercase, no version suffix)
+	Offset  int64              // byte offset in ISO (first extent)
+	Size    int64              // data length in bytes
+	IsDir   bool               // true if this is a directory entry
+	Extents []isoPhysicalRange // non-nil for multi-extent UDF files
+}
+
+// isoPhysicalRange describes one contiguous physical region within an ISO.
+type isoPhysicalRange struct {
+	ISOOffset int64 // byte offset in the ISO file
+	Length    int64 // number of bytes
 }
 
 // findBlurayM2TSInISO parses an ISO9660 filesystem to find M2TS files

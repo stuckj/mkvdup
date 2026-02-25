@@ -1,15 +1,32 @@
 package source
 
+import "sort"
+
 // isoM2TSAdapter wraps an MPEGTSParser to adjust FileOffset values for
 // an M2TS region embedded within a Blu-ray ISO file. The parser operates
 // on a sub-slice of the ISO data (the M2TS region), producing FileOffset
 // values relative to the sub-slice. This adapter adds baseOffset to
 // produce ISO-relative FileOffset values for range maps, while delegating
 // ES-offset-based reads to the wrapped parser unchanged.
+//
+// For multi-extent UDF files where the M2TS data is non-contiguous in the
+// ISO, the adapter maps logical (assembled) offsets to physical ISO offsets
+// via an extent table.
 type isoM2TSAdapter struct {
 	parser     *MPEGTSParser
-	isoData    []byte // full ISO mmap data
+	isoData    []byte // full ISO mmap data (used by Data() for contiguous case)
 	baseOffset int64  // M2TS region start offset within the ISO
+
+	// For non-contiguous multi-extent files:
+	assembledData []byte           // contiguous M2TS data assembled from extents
+	extentMap     []extentMapEntry // maps logical offset → ISO offset
+}
+
+// extentMapEntry maps a range of logical (assembled) offsets to physical ISO offsets.
+type extentMapEntry struct {
+	LogicalStart int64 // start offset in assembled data
+	ISOOffset    int64 // corresponding offset in the ISO file
+	Length       int64 // length of this extent
 }
 
 // newISOAdapter creates an adapter for an M2TS region within an ISO.
@@ -21,11 +38,38 @@ func newISOAdapter(parser *MPEGTSParser, isoData []byte, baseOffset int64) *isoM
 	}
 }
 
+// newISOAdapterMultiExtent creates an adapter for a non-contiguous M2TS region.
+// assembledData is the contiguous M2TS data copied from multiple ISO extents.
+// extents describes the physical layout in the ISO.
+func newISOAdapterMultiExtent(parser *MPEGTSParser, isoData, assembledData []byte, extents []isoPhysicalRange) *isoM2TSAdapter {
+	// Build the extent map with cumulative logical offsets
+	em := make([]extentMapEntry, len(extents))
+	logicalOff := int64(0)
+	for i, ext := range extents {
+		em[i] = extentMapEntry{
+			LogicalStart: logicalOff,
+			ISOOffset:    ext.ISOOffset,
+			Length:       ext.Length,
+		}
+		logicalOff += ext.Length
+	}
+	return &isoM2TSAdapter{
+		parser:        parser,
+		isoData:       isoData,
+		assembledData: assembledData,
+		extentMap:     em,
+	}
+}
+
 // --- esDataProvider interface (used by indexer) ---
 
-// Data returns the full ISO data so indexESData() can do
-// data[r.FileOffset:endOffset] with ISO-relative FileOffset values.
+// Data returns the backing data buffer. For contiguous files, this is the
+// full ISO mmap (FileOffset values are ISO-relative). For multi-extent files,
+// this is the assembled contiguous data (FileOffset values are assembled-relative).
 func (a *isoM2TSAdapter) Data() []byte {
+	if a.assembledData != nil {
+		return a.assembledData
+	}
 	return a.isoData
 }
 
@@ -49,6 +93,11 @@ func (a *isoM2TSAdapter) ReadAudioSubStreamData(subStreamID byte, esOffset int64
 
 func (a *isoM2TSAdapter) ESOffsetToFileOffset(esOffset int64, isVideo bool) (fileOffset int64, remaining int) {
 	fOff, rem := a.parser.ESOffsetToFileOffset(esOffset, isVideo)
+	if a.assembledData != nil {
+		// Multi-extent: parser offset is assembled-relative,
+		// convert to ISO-relative for range maps / reconstruction.
+		return a.logicalToISO(fOff), rem
+	}
 	return fOff + a.baseOffset, rem
 }
 
@@ -98,9 +147,16 @@ func (a *isoM2TSAdapter) RawRangesForAudioSubStream(subStreamID byte, esOffset i
 
 // --- Internal helpers ---
 
-// adjustRanges creates a copy of ranges with baseOffset added to FileOffset.
+// adjustRanges creates a copy of ranges with offsets adjusted.
+// For contiguous files, adds baseOffset. For multi-extent files,
+// offsets are left as assembled-relative (since Data() returns assembled data).
 func (a *isoM2TSAdapter) adjustRanges(ranges []PESPayloadRange) []PESPayloadRange {
 	if len(ranges) == 0 {
+		return ranges
+	}
+	if a.assembledData != nil {
+		// Multi-extent: parser offsets are already relative to assembled data
+		// which is what Data() returns. No adjustment needed.
 		return ranges
 	}
 	adjusted := make([]PESPayloadRange, len(ranges))
@@ -114,8 +170,13 @@ func (a *isoM2TSAdapter) adjustRanges(ranges []PESPayloadRange) []PESPayloadRang
 	return adjusted
 }
 
-// adjustRawRanges creates a copy of raw ranges with baseOffset added to FileOffset.
+// adjustRawRanges creates a copy of raw ranges with offsets adjusted.
 func (a *isoM2TSAdapter) adjustRawRanges(ranges []RawRange) []RawRange {
+	if a.assembledData != nil {
+		// Multi-extent: convert assembled-relative offsets to ISO-relative
+		// for range maps stored in the dedup file.
+		return a.mapRawRangesToISO(ranges)
+	}
 	adjusted := make([]RawRange, len(ranges))
 	for i, r := range ranges {
 		adjusted[i] = RawRange{
@@ -124,4 +185,52 @@ func (a *isoM2TSAdapter) adjustRawRanges(ranges []RawRange) []RawRange {
 		}
 	}
 	return adjusted
+}
+
+// logicalToISO converts a logical offset in the assembled data to the
+// corresponding physical ISO offset using the extent map.
+func (a *isoM2TSAdapter) logicalToISO(logicalOff int64) int64 {
+	// Binary search for the extent containing this offset
+	idx := sort.Search(len(a.extentMap), func(i int) bool {
+		return a.extentMap[i].LogicalStart+a.extentMap[i].Length > logicalOff
+	})
+	if idx >= len(a.extentMap) {
+		// Shouldn't happen — fall back to last extent
+		idx = len(a.extentMap) - 1
+	}
+	e := a.extentMap[idx]
+	return e.ISOOffset + (logicalOff - e.LogicalStart)
+}
+
+// mapRawRangesToISO converts assembled-relative raw ranges to ISO-relative ranges.
+// A single assembled range may span an extent boundary, so it may be split into
+// multiple ISO ranges.
+func (a *isoM2TSAdapter) mapRawRangesToISO(ranges []RawRange) []RawRange {
+	var result []RawRange
+	for _, r := range ranges {
+		remaining := int64(r.Size)
+		logOff := r.FileOffset
+		for remaining > 0 {
+			idx := sort.Search(len(a.extentMap), func(i int) bool {
+				return a.extentMap[i].LogicalStart+a.extentMap[i].Length > logOff
+			})
+			if idx >= len(a.extentMap) {
+				break
+			}
+			e := a.extentMap[idx]
+			offsetInExtent := logOff - e.LogicalStart
+			available := e.Length - offsetInExtent
+			chunk := remaining
+			if chunk > available {
+				chunk = available
+			}
+			result = append(result, RawRange{
+				FileOffset: e.ISOOffset + offsetInExtent,
+				Size:       int(chunk),
+			})
+			logOff += chunk
+			remaining -= chunk
+		}
+	}
+	return result
 }
