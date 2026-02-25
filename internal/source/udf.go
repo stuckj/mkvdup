@@ -493,43 +493,6 @@ func (ctx *udfContext) lookupDir(fids []udfFID, name string) (*udfFileEntry, err
 	return nil, fmt.Errorf("%q not found in directory", name)
 }
 
-// resolveFileOffset returns the physical byte offset of the first extent
-// of a file. For contiguously-allocated files (the common case for M2TS),
-// this is sufficient to locate the file data.
-func (ctx *udfContext) resolveFileOffset(fe *udfFileEntry) (int64, error) {
-	switch fe.AllocType & 0x07 {
-	case 0: // short_ad
-		if len(fe.AllocDescs) < 8 {
-			return 0, fmt.Errorf("no short allocation descriptors")
-		}
-		ad := parseShortAD(fe.AllocDescs[:8])
-		// Short ADs inherit the FE's partition. For M2TS files this
-		// should always be the physical partition, but handle both.
-		if int(fe.PartRef) < len(ctx.partMaps) && ctx.partMaps[fe.PartRef].IsMetadata {
-			return 0, fmt.Errorf("short_ad on metadata partition not supported for resolveFileOffset")
-		}
-		return ctx.resolveBlockPhysical(ad.Position), nil
-
-	case 1: // long_ad
-		if len(fe.AllocDescs) < 16 {
-			return 0, fmt.Errorf("no long allocation descriptors")
-		}
-		ad := parseLongAD(fe.AllocDescs[:16])
-		// Long ADs carry explicit partRef — must point to physical partition
-		// for file data we can return a byte offset for.
-		if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
-			return 0, fmt.Errorf("long_ad on metadata partition not supported for resolveFileOffset")
-		}
-		return ctx.resolveBlockPhysical(ad.Location), nil
-
-	case 3: // inline/immediate data
-		return 0, fmt.Errorf("inline data not supported for M2TS files")
-
-	default:
-		return 0, fmt.Errorf("unsupported allocation descriptor type %d", fe.AllocType&0x07)
-	}
-}
-
 // resolveAllExtents collects all physical extents for a file entry.
 // For long_ad, each AD has an explicit partition reference.
 // For short_ad, the partition is inherited from the FE.
@@ -810,7 +773,7 @@ func parseFileEntry(data []byte) (*udfFileEntry, error) {
 		// Extended File Entry (tag 266)
 		// ECMA-167 14.17: L_EA at 208, L_AD at 212, alloc descs at 216+L_EA
 		if len(data) < 216 {
-			return nil, fmt.Errorf("Extended File Entry too short")
+			return nil, fmt.Errorf("extended file entry too short")
 		}
 		infoLength = binary.LittleEndian.Uint64(data[56:64])
 		icbFlags = binary.LittleEndian.Uint16(data[34:36])
