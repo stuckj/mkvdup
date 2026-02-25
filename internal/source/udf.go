@@ -72,6 +72,7 @@ type udfFileEntry struct {
 	InfoLength uint64
 	AllocDescs []byte // raw allocation descriptors
 	AllocType  byte   // 0=short_ad, 1=long_ad, 3=immediate/inline
+	PartRef    uint16 // partition reference where this FE resides
 }
 
 // udfFID represents a File Identifier Descriptor (tag 257).
@@ -414,6 +415,15 @@ func (ctx *udfContext) readMetadataFile(metaFileLoc uint32) ([]byte, error) {
 		return nil, fmt.Errorf("parse metadata file entry: %w", err)
 	}
 
+	// The metadata file's FE is on the physical partition. Find the
+	// physical (Type 1) partition map index so short_ad resolves correctly.
+	for i, pm := range ctx.partMaps {
+		if pm.Type == 1 {
+			fe.PartRef = uint16(i)
+			break
+		}
+	}
+
 	return ctx.readFileData(fe)
 }
 
@@ -445,7 +455,12 @@ func (ctx *udfContext) readFileEntryAt(loc udfLongAD) (*udfFileEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read file entry block %d (part %d): %w", loc.Location, loc.PartRef, err)
 	}
-	return parseFileEntry(data)
+	fe, err := parseFileEntry(data)
+	if err != nil {
+		return nil, err
+	}
+	fe.PartRef = loc.PartRef
+	return fe, nil
 }
 
 // readDirectoryFromFE reads directory data from a File Entry and parses FIDs.
@@ -481,6 +496,11 @@ func (ctx *udfContext) resolveFileOffset(fe *udfFileEntry) (int64, error) {
 			return 0, fmt.Errorf("no short allocation descriptors")
 		}
 		ad := parseShortAD(fe.AllocDescs[:8])
+		// Short ADs inherit the FE's partition. For M2TS files this
+		// should always be the physical partition, but handle both.
+		if int(fe.PartRef) < len(ctx.partMaps) && ctx.partMaps[fe.PartRef].IsMetadata {
+			return 0, fmt.Errorf("short_ad on metadata partition not supported for resolveFileOffset")
+		}
 		return ctx.resolveBlockPhysical(ad.Position), nil
 
 	case 1: // long_ad
@@ -488,7 +508,12 @@ func (ctx *udfContext) resolveFileOffset(fe *udfFileEntry) (int64, error) {
 			return 0, fmt.Errorf("no long allocation descriptors")
 		}
 		ad := parseLongAD(fe.AllocDescs[:16])
-		return ctx.resolveBlockForPart(ad.Location, ad.PartRef), nil
+		// Long ADs carry explicit partRef — must point to physical partition
+		// for file data we can return a byte offset for.
+		if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
+			return 0, fmt.Errorf("long_ad on metadata partition not supported for resolveFileOffset")
+		}
+		return ctx.resolveBlockPhysical(ad.Location), nil
 
 	case 3: // inline/immediate data
 		return 0, fmt.Errorf("inline data not supported for M2TS files")
@@ -532,12 +557,6 @@ func (ctx *udfContext) resolveBlockPhysical(blockNum uint32) int64 {
 	return int64(ctx.partStart+blockNum) * int64(ctx.blockSize)
 }
 
-// resolveBlockForPart converts a logical block number to a physical byte offset,
-// taking the partition reference into account.
-func (ctx *udfContext) resolveBlockForPart(blockNum uint32, _ uint16) int64 {
-	return int64(ctx.partStart+blockNum) * int64(ctx.blockSize)
-}
-
 // readFileData reads the complete data of a file described by a File Entry.
 func (ctx *udfContext) readFileData(fe *udfFileEntry) ([]byte, error) {
 	if fe.InfoLength == 0 {
@@ -563,7 +582,12 @@ func (ctx *udfContext) readFileData(fe *udfFileEntry) ([]byte, error) {
 }
 
 // readFromShortADs reads file data described by short allocation descriptors.
+// Short ADs don't carry an explicit partition reference — they inherit the
+// partition of the File Entry that contains them.
 func (ctx *udfContext) readFromShortADs(fe *udfFileEntry) ([]byte, error) {
+	// Determine if this FE's partition is the metadata partition.
+	isMeta := int(fe.PartRef) < len(ctx.partMaps) && ctx.partMaps[fe.PartRef].IsMetadata && ctx.metaData != nil
+
 	result := make([]byte, 0, fe.InfoLength)
 	remaining := int64(fe.InfoLength)
 
@@ -574,14 +598,24 @@ func (ctx *udfContext) readFromShortADs(fe *udfFileEntry) ([]byte, error) {
 			break
 		}
 
-		physOffset := int64(ctx.partStart+ad.Position) * int64(ctx.blockSize)
 		toRead := min(extLen, remaining)
 
-		buf := make([]byte, toRead)
-		if _, err := ctx.f.ReadAt(buf, physOffset); err != nil {
-			return nil, fmt.Errorf("read short_ad extent at offset %d: %w", physOffset, err)
+		if isMeta {
+			// Resolve within the loaded metadata data.
+			byteOffset := int64(ad.Position) * int64(ctx.blockSize)
+			if byteOffset+toRead > int64(len(ctx.metaData)) {
+				return nil, fmt.Errorf("metadata short_ad extent out of range (offset %d, len %d, metaLen %d)",
+					byteOffset, toRead, len(ctx.metaData))
+			}
+			result = append(result, ctx.metaData[byteOffset:byteOffset+toRead]...)
+		} else {
+			physOffset := int64(ctx.partStart+ad.Position) * int64(ctx.blockSize)
+			buf := make([]byte, toRead)
+			if _, err := ctx.f.ReadAt(buf, physOffset); err != nil {
+				return nil, fmt.Errorf("read short_ad extent at offset %d: %w", physOffset, err)
+			}
+			result = append(result, buf...)
 		}
-		result = append(result, buf...)
 		remaining -= toRead
 	}
 
