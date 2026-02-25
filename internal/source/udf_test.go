@@ -419,6 +419,7 @@ func TestISOAdapterAdjustsOffsets_UDF(t *testing.T) {
 
 	adapter := newISOAdapter(parser, fullISO, baseOffset)
 
+	// FilteredVideoRanges should return parser's ranges directly (zero-copy)
 	parserRanges := parser.FilteredVideoRanges()
 	adapterRanges := adapter.FilteredVideoRanges()
 
@@ -428,9 +429,18 @@ func TestISOAdapterAdjustsOffsets_UDF(t *testing.T) {
 
 	for i, pr := range parserRanges {
 		ar := adapterRanges[i]
-		expectedOffset := pr.FileOffset + baseOffset
-		if ar.FileOffset != expectedOffset {
-			t.Errorf("range %d: expected FileOffset %d, got %d", i, expectedOffset, ar.FileOffset)
+		if ar.FileOffset != pr.FileOffset {
+			t.Errorf("range %d: expected parser-relative FileOffset %d, got %d", i, pr.FileOffset, ar.FileOffset)
+		}
+	}
+
+	// FileOffsetConverter should add baseOffset
+	conv := adapter.FileOffsetConverter()
+	for i, pr := range parserRanges {
+		isoOff := conv(pr.FileOffset)
+		expected := pr.FileOffset + baseOffset
+		if isoOff != expected {
+			t.Errorf("range %d: FileOffsetConverter(%d) = %d, want %d", i, pr.FileOffset, isoOff, expected)
 		}
 	}
 }
@@ -459,9 +469,9 @@ func TestISOAdapterMultiExtentAdjustsOffsets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	adapter := newISOAdapterMultiExtent(parser, mr, extents, fullISO)
+	adapter := newISOAdapterMultiExtent(parser, mr, extents)
 
-	// Parser ranges have assembled-relative offsets; adapter ranges should be ISO-relative
+	// FilteredVideoRanges should return parser's ranges directly (zero-copy)
 	parserRanges := parser.FilteredVideoRanges()
 	adapterRanges := adapter.FilteredVideoRanges()
 
@@ -471,22 +481,31 @@ func TestISOAdapterMultiExtentAdjustsOffsets(t *testing.T) {
 
 	for i, pr := range parserRanges {
 		ar := adapterRanges[i]
-		// All data is in extent 1, so ISO offset = ext1Offset + assembled offset
-		expectedISOOffset := ext1Offset + pr.FileOffset
-		if ar.FileOffset != expectedISOOffset {
-			t.Errorf("range %d: assembled=%d, expected ISO=%d, got ISO=%d",
-				i, pr.FileOffset, expectedISOOffset, ar.FileOffset)
+		if ar.FileOffset != pr.FileOffset {
+			t.Errorf("range %d: expected parser-relative FileOffset %d, got %d",
+				i, pr.FileOffset, ar.FileOffset)
 		}
 		if ar.Size != pr.Size || ar.ESOffset != pr.ESOffset {
 			t.Errorf("range %d: Size or ESOffset changed", i)
 		}
 	}
 
-	// Verify DataSlice with ISO-relative offsets returns correct data
-	for i, ar := range adapterRanges {
-		data := adapter.DataSlice(ar.FileOffset, ar.Size)
-		// Should match what the parser sees at the assembled-relative offset
-		expected := mr.Slice(parserRanges[i].FileOffset, parserRanges[i].FileOffset+int64(parserRanges[i].Size))
+	// FileOffsetConverter should map assembled offsets to ISO offsets
+	conv := adapter.FileOffsetConverter()
+	for i, pr := range parserRanges {
+		isoOff := conv(pr.FileOffset)
+		// All data is in extent 1, so ISO offset = ext1Offset + assembled offset
+		expectedISOOffset := ext1Offset + pr.FileOffset
+		if isoOff != expectedISOOffset {
+			t.Errorf("range %d: FileOffsetConverter(%d) = %d, want %d",
+				i, pr.FileOffset, isoOff, expectedISOOffset)
+		}
+	}
+
+	// Verify DataSlice with parser-relative offsets returns correct data
+	for i, pr := range parserRanges {
+		data := adapter.DataSlice(pr.FileOffset, pr.Size)
+		expected := mr.Slice(pr.FileOffset, pr.FileOffset+int64(pr.Size))
 		if len(data) != len(expected) {
 			t.Fatalf("range %d: DataSlice len=%d, expected %d", i, len(data), len(expected))
 		}

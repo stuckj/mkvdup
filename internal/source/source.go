@@ -241,6 +241,14 @@ type PESRangeProvider interface {
 	AudioSubStreams() []byte
 }
 
+// FileOffsetAdjuster provides a function to convert parser-relative FileOffset
+// values to source-file-relative offsets for range map storage.
+// Implemented by isoM2TSAdapter where the parser operates on a sub-region
+// of the ISO and FileOffset values need to be adjusted to ISO-relative.
+type FileOffsetAdjuster interface {
+	FileOffsetConverter() func(int64) int64
+}
+
 // RawReader provides an interface for reading raw file data.
 type RawReader interface {
 	ReadAt(buf []byte, offset int64) (int, error)

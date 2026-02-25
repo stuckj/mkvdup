@@ -609,7 +609,7 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 				}
 				continue
 			}
-			adapter = newISOAdapterMultiExtent(parser, mr, m2ts.Extents, isoData)
+			adapter = newISOAdapterMultiExtent(parser, mr, m2ts.Extents)
 		} else {
 			// Contiguous file: use sub-slice of mmap'd ISO
 			endOffset := m2ts.Offset + m2ts.Size

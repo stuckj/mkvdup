@@ -109,7 +109,7 @@ func TestEncodeDecodeRoundTrip_UniformEntries(t *testing.T) {
 		t.Fatalf("findDefaults = (%d, %d), want (8, 184)", defGap, defSize)
 	}
 
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 	t.Logf("Compressed %d uniform entries: %d bytes (%.1f bytes/entry)",
 		count, len(compressed), float64(len(compressed))/float64(count))
 
@@ -199,7 +199,7 @@ func TestEncodeDecodeRoundTrip_MixedEntries(t *testing.T) {
 		t.Fatalf("findDefaults = (%d, %d), want (8, 184)", defGap, defSize)
 	}
 
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 	t.Logf("Compressed %d mixed entries: %d bytes", len(ranges), len(compressed))
 
 	sm, err := buildStreamRangeMap(compressed, len(ranges), defGap, defSize)
@@ -240,7 +240,7 @@ func TestEncodeDecodeRoundTrip_SingleEntry(t *testing.T) {
 	}
 
 	defGap, defSize := findDefaults(ranges)
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 
 	sm, err := buildStreamRangeMap(compressed, 1, defGap, defSize)
 	if err != nil {
@@ -278,7 +278,7 @@ func TestEncodeDecodeRoundTrip_AllExplicit(t *testing.T) {
 	}
 
 	defGap, defSize := findDefaults(ranges)
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 	t.Logf("Compressed %d all-explicit entries: %d bytes (defGap=%d, defSize=%d)",
 		len(ranges), len(compressed), defGap, defSize)
 
@@ -391,7 +391,7 @@ func TestCoarseIndex_LargeRLERun(t *testing.T) {
 	}
 
 	defGap, defSize := findDefaults(ranges)
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 
 	sm, err := buildStreamRangeMap(compressed, count, defGap, defSize)
 	if err != nil {
@@ -449,7 +449,7 @@ func TestReadData_SpanningManyEntries(t *testing.T) {
 	}
 
 	defGap, defSize := findDefaults(ranges)
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 
 	sm, err := buildStreamRangeMap(compressed, count, defGap, defSize)
 	if err != nil {
@@ -504,7 +504,7 @@ func TestCompressedEncoding_ZeroDeltas(t *testing.T) {
 	}
 
 	defGap, defSize := findDefaults(ranges)
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, nil)
 
 	// Verify no 0x00 bytes appear as token starters (after the first entry)
 	// The first entry is two uvarints, then subsequent tokens should not start with 0x00

@@ -2,20 +2,21 @@ package source
 
 import "sort"
 
-// isoM2TSAdapter wraps an MPEGTSParser to adjust FileOffset values for
-// an M2TS region embedded within a Blu-ray ISO file. The parser operates
-// on a sub-slice of the ISO data (the M2TS region), producing FileOffset
-// values relative to the sub-slice. This adapter adds baseOffset to
-// produce ISO-relative FileOffset values for range maps, while delegating
-// ES-offset-based reads to the wrapped parser unchanged.
+// isoM2TSAdapter wraps an MPEGTSParser to provide ISO-level integration
+// for an M2TS region embedded within a Blu-ray ISO file. The parser operates
+// on a sub-slice (contiguous) or virtual contiguous view (multi-extent) of
+// the ISO data, producing FileOffset values relative to that view.
 //
-// For multi-extent UDF files where the M2TS data is non-contiguous in the
-// ISO, the adapter uses a multiRegionData to provide a virtual contiguous
-// view over the mmap sub-slices, and maps logical offsets to physical ISO
-// offsets via an extent table.
+// The adapter handles two offset domains:
+//   - Parser-relative: used by FilteredVideoRanges (zero-copy from parser),
+//     DataSlice (adds baseOffset / resolves via multiRegionData internally),
+//     and all ES-offset-based reads.
+//   - ISO-relative: used by range maps stored in the dedup file. The
+//     FileOffsetConverter method provides the conversion function, applied
+//     lazily during range map encoding to avoid copying range arrays.
 type isoM2TSAdapter struct {
 	parser     *MPEGTSParser
-	isoData    []byte // full ISO mmap data (used by Data() for contiguous case)
+	isoData    []byte // full ISO mmap data (contiguous case: used by Data/DataSlice)
 	baseOffset int64  // M2TS region start offset within the ISO
 
 	// For non-contiguous multi-extent files:
@@ -42,8 +43,7 @@ func newISOAdapter(parser *MPEGTSParser, isoData []byte, baseOffset int64) *isoM
 // newISOAdapterMultiExtent creates an adapter for a non-contiguous M2TS region.
 // mr provides a virtual contiguous view over the mmap sub-slices.
 // extents describes the physical layout in the ISO.
-// isoData is the full ISO mmap data (for DataSize bounds checking).
-func newISOAdapterMultiExtent(parser *MPEGTSParser, mr *multiRegionData, extents []isoPhysicalRange, isoData []byte) *isoM2TSAdapter {
+func newISOAdapterMultiExtent(parser *MPEGTSParser, mr *multiRegionData, extents []isoPhysicalRange) *isoM2TSAdapter {
 	// Build the extent map with cumulative logical offsets
 	em := make([]extentMapEntry, len(extents))
 	logicalOff := int64(0)
@@ -57,7 +57,6 @@ func newISOAdapterMultiExtent(parser *MPEGTSParser, mr *multiRegionData, extents
 	}
 	return &isoM2TSAdapter{
 		parser:    parser,
-		isoData:   isoData,
 		mr:        mr,
 		extentMap: em,
 	}
@@ -66,8 +65,7 @@ func newISOAdapterMultiExtent(parser *MPEGTSParser, mr *multiRegionData, extents
 // --- esDataProvider interface (used by indexer) ---
 
 // Data returns the backing data buffer. For contiguous files, this is the
-// full ISO mmap (FileOffset values are ISO-relative). For multi-extent files,
-// returns nil — use DataSlice instead.
+// full ISO mmap. For multi-extent files, returns nil — use DataSlice instead.
 func (a *isoM2TSAdapter) Data() []byte {
 	if a.mr != nil {
 		return nil
@@ -76,31 +74,32 @@ func (a *isoM2TSAdapter) Data() []byte {
 }
 
 // DataSlice returns a sub-slice of the backing data at the given offset and size.
-// Offsets are ISO-relative (from adjustRanges). Works for both contiguous and
-// multi-extent files.
+// Offsets are parser-relative (from FilteredVideoRanges). The adapter handles
+// the mapping to ISO data internally.
 func (a *isoM2TSAdapter) DataSlice(off int64, size int) []byte {
 	if a.mr != nil {
-		// Multi-extent: convert ISO-relative offset to assembled-relative,
-		// then resolve through the virtual contiguous view.
-		logicalOff := a.isoToLogical(off)
-		return a.mr.Slice(logicalOff, logicalOff+int64(size))
+		// Multi-extent: parser-relative = assembled-relative, resolve via mr
+		return a.mr.Slice(off, off+int64(size))
 	}
-	// Contiguous: offset is ISO-relative (adjusted by adjustRanges)
-	return a.isoData[off : off+int64(size)]
+	// Contiguous: parser-relative + baseOffset = ISO-relative
+	return a.isoData[off+a.baseOffset : off+a.baseOffset+int64(size)]
 }
 
-// DataSize returns the size of the backing ISO data.
-// Used for bounds-checking ISO-relative offsets from adjustRanges.
+// DataSize returns the parser's data size (for bounds checking parser-relative offsets).
 func (a *isoM2TSAdapter) DataSize() int64 {
-	return int64(len(a.isoData))
+	return a.parser.DataSize()
 }
 
+// FilteredVideoRanges returns the parser's filtered video ranges (zero-copy).
+// FileOffset values are parser-relative. Use FileOffsetConverter to get
+// ISO-relative offsets for range map encoding.
 func (a *isoM2TSAdapter) FilteredVideoRanges() []PESPayloadRange {
-	return a.adjustRanges(a.parser.FilteredVideoRanges())
+	return a.parser.FilteredVideoRanges()
 }
 
+// FilteredAudioRanges returns the parser's filtered audio ranges (zero-copy).
 func (a *isoM2TSAdapter) FilteredAudioRanges(subStreamID byte) []PESPayloadRange {
-	return a.adjustRanges(a.parser.FilteredAudioRanges(subStreamID))
+	return a.parser.FilteredAudioRanges(subStreamID)
 }
 
 func (a *isoM2TSAdapter) ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error) {
@@ -139,6 +138,18 @@ func (a *isoM2TSAdapter) AudioSubStreamESSize(subStreamID byte) int64 {
 // FilteredVideoRanges and FilteredAudioRanges already defined above.
 // AudioSubStreams already defined above.
 
+// --- FileOffsetAdjuster interface ---
+
+// FileOffsetConverter returns a function that converts parser-relative
+// FileOffset values to ISO-relative offsets for range map storage.
+func (a *isoM2TSAdapter) FileOffsetConverter() func(int64) int64 {
+	if a.mr != nil {
+		return a.logicalToISO
+	}
+	baseOff := a.baseOffset
+	return func(off int64) int64 { return off + baseOff }
+}
+
 // --- hintedESReader interface (used by matcher expand) ---
 
 func (a *isoM2TSAdapter) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHint int) (byte, int, bool) {
@@ -169,38 +180,8 @@ func (a *isoM2TSAdapter) RawRangesForAudioSubStream(subStreamID byte, esOffset i
 
 // --- Internal helpers ---
 
-// adjustRanges creates a copy of ranges with FileOffset converted to ISO-relative.
-// For contiguous files, adds baseOffset. For multi-extent files, converts
-// assembled-relative offsets to ISO-relative via logicalToISO.
-// ISO-relative offsets are needed for range maps stored in the dedup file
-// (reconstruction reads from the ISO at these offsets).
-func (a *isoM2TSAdapter) adjustRanges(ranges []PESPayloadRange) []PESPayloadRange {
-	if len(ranges) == 0 {
-		return ranges
-	}
-	adjusted := make([]PESPayloadRange, len(ranges))
-	if a.mr != nil {
-		// Multi-extent: convert assembled-relative to ISO-relative
-		for i, r := range ranges {
-			adjusted[i] = PESPayloadRange{
-				FileOffset: a.logicalToISO(r.FileOffset),
-				Size:       r.Size,
-				ESOffset:   r.ESOffset,
-			}
-		}
-		return adjusted
-	}
-	for i, r := range ranges {
-		adjusted[i] = PESPayloadRange{
-			FileOffset: r.FileOffset + a.baseOffset,
-			Size:       r.Size,
-			ESOffset:   r.ESOffset,
-		}
-	}
-	return adjusted
-}
-
 // adjustRawRanges creates a copy of raw ranges with offsets adjusted.
+// Raw ranges are small (per-match, not per-packet) so copying is fine.
 func (a *isoM2TSAdapter) adjustRawRanges(ranges []RawRange) []RawRange {
 	if a.mr != nil {
 		// Multi-extent: convert assembled-relative offsets to ISO-relative
@@ -215,18 +196,6 @@ func (a *isoM2TSAdapter) adjustRawRanges(ranges []RawRange) []RawRange {
 		}
 	}
 	return adjusted
-}
-
-// isoToLogical converts a physical ISO offset to the corresponding logical
-// offset in the assembled data. Used by DataSlice to convert ISO-relative
-// offsets (from adjustRanges) back to assembled-relative for multiRegionData.
-func (a *isoM2TSAdapter) isoToLogical(isoOff int64) int64 {
-	for _, e := range a.extentMap {
-		if isoOff >= e.ISOOffset && isoOff < e.ISOOffset+e.Length {
-			return e.LogicalStart + (isoOff - e.ISOOffset)
-		}
-	}
-	return 0
 }
 
 // logicalToISO converts a logical offset in the assembled data to the
