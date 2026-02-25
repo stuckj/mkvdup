@@ -615,6 +615,16 @@ func (p *MPEGPSParser) Data() []byte {
 	return p.data
 }
 
+// DataSlice returns a sub-slice of the backing data at the given offset and size.
+func (p *MPEGPSParser) DataSlice(off int64, size int) []byte {
+	return p.data[off : off+int64(size)]
+}
+
+// DataSize returns the total size of the backing data.
+func (p *MPEGPSParser) DataSize() int64 {
+	return p.size
+}
+
 // ReadESByteWithHint reads a single byte from the ES stream, using a range hint
 // to avoid binary search when reading sequentially. Returns the byte, the range
 // index where it was found (for use as hint on next call), and success status.
@@ -630,12 +640,12 @@ func (p *MPEGPSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHin
 	} else {
 		ranges = p.videoRanges
 	}
-	return readByteWithHint(p.data, p.size, ranges, esOffset, rangeHint)
+	return readByteWithHint(p.data, nil, p.size, ranges, esOffset, rangeHint)
 }
 
 // ReadAudioByteWithHint reads a single byte from an audio sub-stream, using a range hint.
 func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
-	return readByteWithHint(p.data, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)
+	return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)
 }
 
 // Video start codes that should be KEPT (not user_data)
@@ -687,7 +697,7 @@ func (p *MPEGPSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byt
 	} else {
 		ranges = p.videoRanges
 	}
-	return readFromRanges(p.data, p.size, ranges, esOffset, size)
+	return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)
 }
 
 // ReadAudioSubStreamData reads audio data from a specific sub-stream.
@@ -696,5 +706,5 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 	if !ok {
 		return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
 	}
-	return readFromRanges(p.data, p.size, ranges, esOffset, size)
+	return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)
 }

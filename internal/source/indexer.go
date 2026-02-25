@@ -278,9 +278,11 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 }
 
 // esDataProvider is the interface needed by indexESData and indexAudioSubStream.
-// Both MPEGPSParser and MPEGTSParser implement this.
+// Both MPEGPSParser and MPEGTSParser implement this, as well as isoM2TSAdapter.
 type esDataProvider interface {
 	Data() []byte
+	DataSlice(off int64, size int) []byte
+	DataSize() int64
 	FilteredVideoRanges() []PESPayloadRange
 	FilteredAudioRanges(subStreamID byte) []PESPayloadRange
 	ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error)
@@ -295,18 +297,17 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 		return nil
 	}
 
-	data := parser.Data() // Get mmap'd data for direct access
+	dataSize := parser.DataSize()
 	syncPointCount := 0
 	var indexFastPath, indexSlowPath, indexSkipped int
 
-	// Iterate through each PES payload range (zero-copy)
+	// Iterate through each PES payload range (zero-copy when within one region)
 	for rangeIdx, r := range ranges {
-		// Direct slice access into mmap'd data - no copy!
 		endOffset := r.FileOffset + int64(r.Size)
-		if endOffset > int64(len(data)) {
+		if endOffset > dataSize {
 			continue
 		}
-		rangeData := data[r.FileOffset:endOffset]
+		rangeData := parser.DataSlice(r.FileOffset, r.Size)
 
 		// Find NAL unit start positions (byte after 00 00 01)
 		// Hashing from NAL header enables matching both Annex B and AVCC formats
@@ -383,16 +384,15 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
 		return nil
 	}
 
-	data := parser.Data() // Get mmap'd data for direct access
+	dataSize := parser.DataSize()
 
-	// Iterate through each PES payload range (zero-copy)
+	// Iterate through each PES payload range (zero-copy when within one region)
 	for _, r := range ranges {
-		// Direct slice access into mmap'd data - no copy!
 		endOffset := r.FileOffset + int64(r.Size)
-		if endOffset > int64(len(data)) {
+		if endOffset > dataSize {
 			continue
 		}
-		rangeData := data[r.FileOffset:endOffset]
+		rangeData := parser.DataSlice(r.FileOffset, r.Size)
 
 		// Find sync points in this range
 		syncPoints := findSyncPoints(rangeData)
@@ -595,35 +595,21 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 	var parsed []parsedM2TS
 
 	for _, m2ts := range m2tsFiles {
-		var m2tsSlice []byte
 		var adapter *isoM2TSAdapter
 
 		if m2ts.Extents != nil {
-			// Multi-extent UDF file: assemble contiguous data from extents
-			m2tsSlice = make([]byte, 0, m2ts.Size)
-			for _, ext := range m2ts.Extents {
-				endOff := ext.ISOOffset + ext.Length
-				if endOff > int64(len(isoData)) {
-					break
-				}
-				m2tsSlice = append(m2tsSlice, isoData[ext.ISOOffset:endOff]...)
-			}
-			if int64(len(m2tsSlice)) != m2ts.Size {
-				if idx.verbose {
-					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: assembled %d bytes, expected %d\n",
-						m2ts.Name, len(m2tsSlice), m2ts.Size)
-				}
-				continue
-			}
+			// Multi-extent UDF file: create virtual contiguous view
+			// over the existing mmap sub-slices (zero-copy, no heap allocation)
+			mr := newMultiRegionData(m2ts.Extents, isoData)
 
-			parser := NewMPEGTSParser(m2tsSlice)
+			parser := NewMPEGTSParserMultiRegion(mr)
 			if err := parser.ParseWithProgress(nil); err != nil {
 				if idx.verbose {
 					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
 				}
 				continue
 			}
-			adapter = newISOAdapterMultiExtent(parser, isoData, m2tsSlice, m2ts.Extents)
+			adapter = newISOAdapterMultiExtent(parser, mr, m2ts.Extents)
 		} else {
 			// Contiguous file: use sub-slice of mmap'd ISO
 			endOffset := m2ts.Offset + m2ts.Size
@@ -635,8 +621,8 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 				continue
 			}
 
-			m2tsSlice = isoData[m2ts.Offset:endOffset]
-			parser := NewMPEGTSParser(m2tsSlice)
+			m2tsData := isoData[m2ts.Offset:endOffset]
+			parser := NewMPEGTSParser(m2tsData)
 			if err := parser.ParseWithProgress(nil); err != nil {
 				if idx.verbose {
 					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)

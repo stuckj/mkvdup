@@ -10,16 +10,17 @@ import "sort"
 // ES-offset-based reads to the wrapped parser unchanged.
 //
 // For multi-extent UDF files where the M2TS data is non-contiguous in the
-// ISO, the adapter maps logical (assembled) offsets to physical ISO offsets
-// via an extent table.
+// ISO, the adapter uses a multiRegionData to provide a virtual contiguous
+// view over the mmap sub-slices, and maps logical offsets to physical ISO
+// offsets via an extent table.
 type isoM2TSAdapter struct {
 	parser     *MPEGTSParser
 	isoData    []byte // full ISO mmap data (used by Data() for contiguous case)
 	baseOffset int64  // M2TS region start offset within the ISO
 
 	// For non-contiguous multi-extent files:
-	assembledData []byte           // contiguous M2TS data assembled from extents
-	extentMap     []extentMapEntry // maps logical offset → ISO offset
+	mr        *multiRegionData // virtual contiguous view over mmap sub-slices
+	extentMap []extentMapEntry // maps logical offset → ISO offset
 }
 
 // extentMapEntry maps a range of logical (assembled) offsets to physical ISO offsets.
@@ -39,9 +40,9 @@ func newISOAdapter(parser *MPEGTSParser, isoData []byte, baseOffset int64) *isoM
 }
 
 // newISOAdapterMultiExtent creates an adapter for a non-contiguous M2TS region.
-// assembledData is the contiguous M2TS data copied from multiple ISO extents.
+// mr provides a virtual contiguous view over the mmap sub-slices.
 // extents describes the physical layout in the ISO.
-func newISOAdapterMultiExtent(parser *MPEGTSParser, isoData, assembledData []byte, extents []isoPhysicalRange) *isoM2TSAdapter {
+func newISOAdapterMultiExtent(parser *MPEGTSParser, mr *multiRegionData, extents []isoPhysicalRange) *isoM2TSAdapter {
 	// Build the extent map with cumulative logical offsets
 	em := make([]extentMapEntry, len(extents))
 	logicalOff := int64(0)
@@ -54,10 +55,9 @@ func newISOAdapterMultiExtent(parser *MPEGTSParser, isoData, assembledData []byt
 		logicalOff += ext.Length
 	}
 	return &isoM2TSAdapter{
-		parser:        parser,
-		isoData:       isoData,
-		assembledData: assembledData,
-		extentMap:     em,
+		parser:    parser,
+		mr:        mr,
+		extentMap: em,
 	}
 }
 
@@ -65,12 +65,31 @@ func newISOAdapterMultiExtent(parser *MPEGTSParser, isoData, assembledData []byt
 
 // Data returns the backing data buffer. For contiguous files, this is the
 // full ISO mmap (FileOffset values are ISO-relative). For multi-extent files,
-// this is the assembled contiguous data (FileOffset values are assembled-relative).
+// returns nil — use DataSlice instead.
 func (a *isoM2TSAdapter) Data() []byte {
-	if a.assembledData != nil {
-		return a.assembledData
+	if a.mr != nil {
+		return nil
 	}
 	return a.isoData
+}
+
+// DataSlice returns a sub-slice of the backing data at the given offset and size.
+// Works for both contiguous and multi-extent files.
+func (a *isoM2TSAdapter) DataSlice(off int64, size int) []byte {
+	if a.mr != nil {
+		// Multi-extent: offset is assembled-relative (parser produced these)
+		return a.mr.Slice(off, off+int64(size))
+	}
+	// Contiguous: offset is ISO-relative (adjusted by adjustRanges)
+	return a.isoData[off : off+int64(size)]
+}
+
+// DataSize returns the total size of the backing data.
+func (a *isoM2TSAdapter) DataSize() int64 {
+	if a.mr != nil {
+		return a.mr.Len()
+	}
+	return int64(len(a.isoData))
 }
 
 func (a *isoM2TSAdapter) FilteredVideoRanges() []PESPayloadRange {
@@ -93,7 +112,7 @@ func (a *isoM2TSAdapter) ReadAudioSubStreamData(subStreamID byte, esOffset int64
 
 func (a *isoM2TSAdapter) ESOffsetToFileOffset(esOffset int64, isVideo bool) (fileOffset int64, remaining int) {
 	fOff, rem := a.parser.ESOffsetToFileOffset(esOffset, isVideo)
-	if a.assembledData != nil {
+	if a.mr != nil {
 		// Multi-extent: parser offset is assembled-relative,
 		// convert to ISO-relative for range maps / reconstruction.
 		return a.logicalToISO(fOff), rem
@@ -149,14 +168,14 @@ func (a *isoM2TSAdapter) RawRangesForAudioSubStream(subStreamID byte, esOffset i
 
 // adjustRanges creates a copy of ranges with offsets adjusted.
 // For contiguous files, adds baseOffset. For multi-extent files,
-// offsets are left as assembled-relative (since Data() returns assembled data).
+// offsets are left as assembled-relative (since DataSlice handles the mapping).
 func (a *isoM2TSAdapter) adjustRanges(ranges []PESPayloadRange) []PESPayloadRange {
 	if len(ranges) == 0 {
 		return ranges
 	}
-	if a.assembledData != nil {
+	if a.mr != nil {
 		// Multi-extent: parser offsets are already relative to assembled data
-		// which is what Data() returns. No adjustment needed.
+		// which DataSlice can resolve. No adjustment needed.
 		return ranges
 	}
 	adjusted := make([]PESPayloadRange, len(ranges))
@@ -172,7 +191,7 @@ func (a *isoM2TSAdapter) adjustRanges(ranges []PESPayloadRange) []PESPayloadRang
 
 // adjustRawRanges creates a copy of raw ranges with offsets adjusted.
 func (a *isoM2TSAdapter) adjustRawRanges(ranges []RawRange) []RawRange {
-	if a.assembledData != nil {
+	if a.mr != nil {
 		// Multi-extent: convert assembled-relative offsets to ISO-relative
 		// for range maps stored in the dedup file.
 		return a.mapRawRangesToISO(ranges)

@@ -24,10 +24,19 @@ func binarySearchRanges(ranges []PESPayloadRange, esOffset int64) int {
 	return -1
 }
 
+// readByteAt reads a single byte from data or multiRegion at the given file offset.
+func readByteAt(data []byte, mr *multiRegionData, fileOffset int64) byte {
+	if mr != nil {
+		return mr.ByteAt(fileOffset)
+	}
+	return data[fileOffset]
+}
+
 // readByteWithHint reads a single byte from a set of PES payload ranges using a hint
 // for O(1) sequential access. Returns the byte, the range index for the next hint,
 // and success status. Pass rangeHint=-1 to force binary search.
-func readByteWithHint(data []byte, dataSize int64, ranges []PESPayloadRange, esOffset int64, rangeHint int) (byte, int, bool) {
+// When mr is non-nil, byte reads use the multi-region data instead of data.
+func readByteWithHint(data []byte, mr *multiRegionData, dataSize int64, ranges []PESPayloadRange, esOffset int64, rangeHint int) (byte, int, bool) {
 	if len(ranges) == 0 {
 		return 0, -1, false
 	}
@@ -39,7 +48,7 @@ func readByteWithHint(data []byte, dataSize int64, ranges []PESPayloadRange, esO
 			offsetInPayload := esOffset - r.ESOffset
 			fileOffset := r.FileOffset + offsetInPayload
 			if fileOffset >= 0 && fileOffset < dataSize {
-				return data[fileOffset], rangeHint, true
+				return readByteAt(data, mr, fileOffset), rangeHint, true
 			}
 		}
 		// Check next range (common case when crossing boundaries forward)
@@ -49,7 +58,7 @@ func readByteWithHint(data []byte, dataSize int64, ranges []PESPayloadRange, esO
 				offsetInPayload := esOffset - r.ESOffset
 				fileOffset := r.FileOffset + offsetInPayload
 				if fileOffset >= 0 && fileOffset < dataSize {
-					return data[fileOffset], rangeHint + 1, true
+					return readByteAt(data, mr, fileOffset), rangeHint + 1, true
 				}
 			}
 		}
@@ -60,7 +69,7 @@ func readByteWithHint(data []byte, dataSize int64, ranges []PESPayloadRange, esO
 				offsetInPayload := esOffset - r.ESOffset
 				fileOffset := r.FileOffset + offsetInPayload
 				if fileOffset >= 0 && fileOffset < dataSize {
-					return data[fileOffset], rangeHint - 1, true
+					return readByteAt(data, mr, fileOffset), rangeHint - 1, true
 				}
 			}
 		}
@@ -76,16 +85,25 @@ func readByteWithHint(data []byte, dataSize int64, ranges []PESPayloadRange, esO
 	offsetInPayload := esOffset - r.ESOffset
 	fileOffset := r.FileOffset + offsetInPayload
 	if fileOffset >= 0 && fileOffset < dataSize {
-		return data[fileOffset], rangeIdx, true
+		return readByteAt(data, mr, fileOffset), rangeIdx, true
 	}
 
 	return 0, -1, false
 }
 
+// readSliceAt reads a byte slice from data or multiRegion at the given file offset range.
+func readSliceAt(data []byte, mr *multiRegionData, fileOffset, endOffset int64) []byte {
+	if mr != nil {
+		return mr.Slice(fileOffset, endOffset)
+	}
+	return data[fileOffset:endOffset]
+}
+
 // readFromRanges reads data from PES payload ranges starting at the given ES offset.
 // Returns a zero-copy slice when data fits in a single range (common case),
 // only copies when data spans multiple ranges.
-func readFromRanges(data []byte, dataSize int64, ranges []PESPayloadRange, esOffset int64, size int) ([]byte, error) {
+// When mr is non-nil, data reads use the multi-region data instead of data.
+func readFromRanges(data []byte, mr *multiRegionData, dataSize int64, ranges []PESPayloadRange, esOffset int64, size int) ([]byte, error) {
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("no ranges available")
 	}
@@ -118,7 +136,7 @@ func readFromRanges(data []byte, dataSize int64, ranges []PESPayloadRange, esOff
 		if endOffset > dataSize {
 			return nil, fmt.Errorf("file offset out of range")
 		}
-		return data[fileOffset:endOffset], nil
+		return readSliceAt(data, mr, fileOffset, endOffset), nil
 	}
 
 	// Slow path: data spans multiple ranges — must copy
@@ -153,7 +171,7 @@ func readFromRanges(data []byte, dataSize int64, ranges []PESPayloadRange, esOff
 			return nil, fmt.Errorf("failed to read ES data: offset out of range")
 		}
 
-		result = append(result, data[fileOffset:endOffset]...)
+		result = append(result, readSliceAt(data, mr, fileOffset, endOffset)...)
 		esOffset += int64(toRead)
 		remaining -= toRead
 		rangeIdx++
