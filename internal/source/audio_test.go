@@ -252,6 +252,71 @@ func TestAC3FrameSize_AllValid(t *testing.T) {
 	}
 }
 
+func TestDTSCoreFrameSize(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want int
+	}{
+		{
+			name: "valid DTS frame, 96 bytes (minimum)",
+			// frame_size_raw = 95, +1 = 96
+			// byte5 = 0x00 (bits: nblks[0]=0, frame_size[13:7]=0000000)
+			// byte6 = 0xBE (bits: frame_size[6:0]=1011111, amode[5]=0)
+			// frame_size_raw = (0x00 & 0x7F) << 7 | (0xBE >> 1) = 0 | 95 = 95
+			data: []byte{0x7F, 0xFE, 0x80, 0x01, 0x00, 0x00, 0xBE},
+			want: 96,
+		},
+		{
+			name: "valid DTS frame, 2048 bytes",
+			// frame_size_raw = 2047, +1 = 2048
+			// 2047 = 0x7FF → upper 7 bits = 0x0F, lower 7 bits = 0x7F
+			// byte5 = (0x0F) = 0x0F (nblks[0]=0, frame_size[13:7]=0001111)
+			// byte6 = (0x7F << 1) = 0xFE (frame_size[6:0]=1111111, amode[5]=0)
+			data: []byte{0x7F, 0xFE, 0x80, 0x01, 0x00, 0x0F, 0xFE},
+			want: 2048,
+		},
+		{
+			name: "valid DTS frame, 16384 bytes (maximum)",
+			// frame_size_raw = 16383 = 0x3FFF
+			// upper 7 bits = 0x7F, lower 7 bits = 0x7F
+			// byte5 = 0x7F, byte6 = 0xFE
+			data: []byte{0x7F, 0xFE, 0x80, 0x01, 0x00, 0x7F, 0xFE},
+			want: 16384,
+		},
+		{
+			name: "too small (frame < 96 bytes)",
+			// frame_size_raw = 0, +1 = 1 → below 96 minimum
+			data: []byte{0x7F, 0xFE, 0x80, 0x01, 0x00, 0x00, 0x00},
+			want: 0,
+		},
+		{
+			name: "wrong sync word",
+			data: []byte{0x7F, 0xFE, 0x80, 0x02, 0x00, 0x0F, 0xFE},
+			want: 0,
+		},
+		{
+			name: "data too short",
+			data: []byte{0x7F, 0xFE, 0x80, 0x01, 0x00, 0x0F},
+			want: 0,
+		},
+		{
+			name: "nil data",
+			data: nil,
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DTSCoreFrameSize(tt.data)
+			if got != tt.want {
+				t.Errorf("DTSCoreFrameSize() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func BenchmarkFindAudioSyncPoints(b *testing.B) {
 	// Create test data with some sync patterns scattered throughout
 	data := make([]byte, 1024*1024) // 1MB

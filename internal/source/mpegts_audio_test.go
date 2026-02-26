@@ -249,6 +249,203 @@ func TestSplitCombinedAudioRanges_CrossRange(t *testing.T) {
 	}
 }
 
+func TestMPEGTSParser_DTSHDCoreSplit(t *testing.T) {
+	data := buildDTSHDCoreM2TSData()
+	p := NewMPEGTSParser(data)
+	if err := p.Parse(); err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	// Should have 2 audio sub-streams: original DTS-HD combined (0) + DTS core (1)
+	if got := p.AudioSubStreamCount(); got != 2 {
+		t.Fatalf("AudioSubStreamCount = %d, want 2 (DTS-HD combined + DTS core)", got)
+	}
+
+	subs := p.AudioSubStreams()
+
+	// Sub-stream 0 should be the original combined DTS-HD stream (preserved)
+	combinedSize := p.AudioSubStreamESSize(subs[0])
+	// Sub-stream 1 should be the extracted DTS core
+	coreSize := p.AudioSubStreamESSize(subs[1])
+
+	// Combined should be 911 bytes (total payload)
+	if combinedSize != 911 {
+		t.Errorf("Combined DTS-HD sub-stream size = %d, want 911", combinedSize)
+	}
+
+	// DTS core: 2 × 256 = 512 bytes
+	if coreSize != 512 {
+		t.Errorf("DTS core sub-stream size = %d, want 512 (2 × 256)", coreSize)
+	}
+
+	// Verify core codec is DTS (not DTS-HD)
+	if p.subStreamCodec[subs[1]] != CodecDTSAudio {
+		t.Errorf("DTS core sub-stream codec = %v, want CodecDTSAudio", p.subStreamCodec[subs[1]])
+	}
+
+	// Verify combined codec is still DTS-HD
+	if p.subStreamCodec[subs[0]] != CodecDTSHDAudio {
+		t.Errorf("Combined sub-stream codec = %v, want CodecDTSHDAudio", p.subStreamCodec[subs[0]])
+	}
+
+	// Verify core data starts with DTS sync word
+	coreData, err := p.ReadAudioSubStreamData(subs[1], 0, 4)
+	if err != nil {
+		t.Fatalf("ReadAudioSubStreamData(core) error: %v", err)
+	}
+	if coreData[0] != 0x7F || coreData[1] != 0xFE || coreData[2] != 0x80 || coreData[3] != 0x01 {
+		t.Errorf("DTS core data starts with [%02X %02X %02X %02X], want [7F FE 80 01]",
+			coreData[0], coreData[1], coreData[2], coreData[3])
+	}
+}
+
+func TestMPEGTSParser_NoSplitForPureDTS(t *testing.T) {
+	// A stream with type 0x82 (pure DTS core, not DTS-HD) should NOT be split
+	data := buildTestM2TS(t, []testStream{
+		{0x1B}, // H.264 video
+		{0x82}, // DTS core audio
+	})
+
+	p := NewMPEGTSParser(data)
+	if err := p.Parse(); err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	// Should have just 1 audio sub-stream (no split for non-DTS-HD)
+	if got := p.AudioSubStreamCount(); got != 1 {
+		t.Errorf("AudioSubStreamCount = %d, want 1 (no split for pure DTS core)", got)
+	}
+}
+
+func TestDetectCombinedDTSHDCore(t *testing.T) {
+	// Data with both DTS core and DTS-HD ExSS sync words
+	combined := make([]byte, 512)
+	combined[0] = 0x7F // DTS core sync
+	combined[1] = 0xFE
+	combined[2] = 0x80
+	combined[3] = 0x01
+	combined[200] = 0x64 // DTS-HD ExSS sync
+	combined[201] = 0x58
+	combined[202] = 0x20
+	combined[203] = 0x25
+
+	p := &MPEGTSParser{
+		data: combined,
+		size: int64(len(combined)),
+	}
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: 512, ESOffset: 0},
+	}
+
+	if !p.detectCombinedDTSHDCore(ranges) {
+		t.Error("detectCombinedDTSHDCore() = false, want true for data with both sync words")
+	}
+
+	// Data with only DTS core sync
+	coreOnly := make([]byte, 512)
+	coreOnly[0] = 0x7F
+	coreOnly[1] = 0xFE
+	coreOnly[2] = 0x80
+	coreOnly[3] = 0x01
+	p2 := &MPEGTSParser{data: coreOnly, size: int64(len(coreOnly))}
+	if p2.detectCombinedDTSHDCore(ranges) {
+		t.Error("detectCombinedDTSHDCore() = true, want false for DTS-core-only data")
+	}
+
+	// Data with only ExSS sync
+	exssOnly := make([]byte, 512)
+	exssOnly[0] = 0x64
+	exssOnly[1] = 0x58
+	exssOnly[2] = 0x20
+	exssOnly[3] = 0x25
+	p3 := &MPEGTSParser{data: exssOnly, size: int64(len(exssOnly))}
+	if p3.detectCombinedDTSHDCore(ranges) {
+		t.Error("detectCombinedDTSHDCore() = true, want false for ExSS-only data")
+	}
+}
+
+func TestSplitDTSHDCoreRanges(t *testing.T) {
+	// Build combined payload: DTSCore(256) + ExSS(128) + DTSCore(256) + ExSS(100)
+	var payload []byte
+	payload = append(payload, makeDTSCoreFrame(256, 0x11)...)  // 256 bytes core
+	payload = append(payload, makeDTSHDExSSUnit(128, 0x22)...) // 128 bytes extension
+	payload = append(payload, makeDTSCoreFrame(256, 0x33)...)  // 256 bytes core
+	payload = append(payload, makeDTSHDExSSUnit(100, 0x44)...) // 100 bytes extension
+	// Total: 740 bytes
+
+	p := &MPEGTSParser{
+		data: payload,
+		size: int64(len(payload)),
+	}
+
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: len(payload), ESOffset: 0},
+	}
+
+	coreRanges := p.splitDTSHDCoreRanges(ranges)
+
+	var coreTotal int64
+	for _, r := range coreRanges {
+		coreTotal += int64(r.Size)
+	}
+
+	if coreTotal != 512 {
+		t.Errorf("DTS core total size = %d, want 512 (2 × 256)", coreTotal)
+	}
+
+	// Verify ES offsets are sequential
+	for i := 1; i < len(coreRanges); i++ {
+		prev := coreRanges[i-1]
+		cur := coreRanges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("core range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+}
+
+func TestSplitDTSHDCoreRanges_CrossRange(t *testing.T) {
+	// Build combined payload: DTSCore(256) + ExSS(128) + DTSCore(256) + ExSS(100)
+	var payload []byte
+	payload = append(payload, makeDTSCoreFrame(256, 0x11)...)  // 256 bytes core
+	payload = append(payload, makeDTSHDExSSUnit(128, 0x22)...) // 128 bytes extension
+	payload = append(payload, makeDTSCoreFrame(256, 0x33)...)  // 256 bytes core
+	payload = append(payload, makeDTSHDExSSUnit(100, 0x44)...) // 100 bytes extension
+	// Total: 740 bytes
+
+	p := &MPEGTSParser{
+		data: payload,
+		size: int64(len(payload)),
+	}
+
+	// Split into ranges that force DTS core header to straddle boundary.
+	// Second core frame starts at offset 384. Put range boundary at 386
+	// so the sync word 7F FE 80 01 and frame size are split across ranges.
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: 386, ESOffset: 0},     // ends mid-header of second DTS core
+		{FileOffset: 386, Size: 354, ESOffset: 386}, // rest
+	}
+
+	coreRanges := p.splitDTSHDCoreRanges(ranges)
+
+	var coreTotal int64
+	for _, r := range coreRanges {
+		coreTotal += int64(r.Size)
+	}
+
+	if coreTotal != 512 {
+		t.Errorf("DTS core total size = %d, want 512 (2 × 256)", coreTotal)
+	}
+
+	// Verify ES offsets are sequential
+	for i := 1; i < len(coreRanges); i++ {
+		prev := coreRanges[i-1]
+		cur := coreRanges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("core range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+}
+
 func TestMPEGTSParser_SubtitleSubStreams(t *testing.T) {
 	// Build M2TS with video + 2 audio + 1 PGS subtitle
 	data := buildTestM2TS(t, []testStream{

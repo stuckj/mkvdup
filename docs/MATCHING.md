@@ -141,6 +141,27 @@ The original sub-stream ID keeps the TrueHD-only ranges; a new sub-stream ID is 
 
 **Impact:** On a 40GB Blu-ray (MI7), audio delta dropped from 1.85 GB (42% of total delta) to near-zero after splitting. The matcher can now find TrueHD data in the TrueHD MKV track and AC3 data in the AC3 MKV track.
 
+## Blu-ray DTS-HD + DTS Core Stream Splitting
+
+**Problem:** On Blu-ray discs, DTS-HD audio streams (PMT stream types 0x85/0x86) embed a DTS core within each audio frame, followed by extension data (ExSS: XBR, XLL, XXCh). The PES payload contains:
+
+```
+PES payload: [DTS core frame][ExSS extension][DTS core frame][ExSS extension]...
+```
+
+MakeMKV may extract either the full DTS-HD stream (as `A_DTS/LOSSLESS` or `A_DTS/EXPRESS`) or just the DTS core (as `A_DTS`). If we only index the combined stream, the `A_DTS` MKV track can't match because its ES offsets skip the extension data that's present in the source.
+
+**Solution:** After parsing PES payloads, detect combined DTS-HD streams by scanning for both DTS core sync words (`7F FE 80 01`) and DTS-HD ExSS sync words (`64 58 20 25`). When both are found, extract the DTS core frames into a new sub-stream:
+
+1. **DTS core frame detection**: When `7F FE 80 01` is found, parse the 14-bit frame size field from the header (bits 14-27 after sync word). The actual frame size is the parsed value + 1 (per ETSI TS 102 114). Valid range: 96-16384 bytes.
+2. **Range extraction**: DTS core frame bytes are collected into a new core-only sub-stream. All other bytes (ExSS extension data) remain in the original combined stream.
+3. **Cross-range tracking**: DTS core frames may span TS payload chunks. The `coreRemaining` counter tracks bytes still belonging to the current core frame across range boundaries.
+4. **Range merging**: After extraction, merge adjacent ranges that are contiguous in both file offset and ES offset.
+
+Unlike TrueHD+AC3 splitting (which replaces the original stream), DTS-HD splitting **preserves the original combined sub-stream** and adds a new core-only sub-stream. This supports both MKV variants:
+- `A_DTS` tracks match against the extracted core sub-stream
+- `A_DTS/LOSSLESS` tracks match against the original combined sub-stream
+
 ## Blu-ray PGS Subtitle Matching
 
 PGS (Presentation Graphic Stream) subtitles are carried in MPEG-TS with stream type 0x90. MakeMKV extracts these as MKV tracks with codec ID `S_HDMV/PGS`. On a typical Blu-ray, PGS data is 10-50 MB.

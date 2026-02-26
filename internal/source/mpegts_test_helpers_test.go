@@ -249,6 +249,104 @@ func buildTrueHDAC3M2TSData() []byte {
 	return data
 }
 
+// makeDTSCoreFrame creates a synthetic DTS core frame with sync word 7F FE 80 01.
+// The frame size is encoded in the header per the DTS spec.
+func makeDTSCoreFrame(size int, fillByte byte) []byte {
+	if size < 96 {
+		size = 96 // DTS minimum frame size
+	}
+	frame := make([]byte, size)
+	// Sync word
+	frame[0] = 0x7F
+	frame[1] = 0xFE
+	frame[2] = 0x80
+	frame[3] = 0x01
+	// Encode frame_size - 1 in bits 14-27 after sync word
+	// byte4: [frame_type(1) | deficit(5) | crc(1) | nblks[6]](8 bits) = 0
+	// byte5: [nblks[0] | frame_size[13:7]](8 bits)
+	// byte6: [frame_size[6:0] | amode[5]](8 bits)
+	frameSizeRaw := size - 1
+	frame[5] = byte((frameSizeRaw >> 7) & 0x7F)
+	frame[6] = byte((frameSizeRaw & 0x7F) << 1)
+	for i := 7; i < size; i++ {
+		frame[i] = fillByte
+	}
+	return frame
+}
+
+// makeDTSHDExSSUnit creates a synthetic DTS-HD Extension Substream (ExSS) unit.
+// Starts with the ExSS sync word: 64 58 20 25.
+func makeDTSHDExSSUnit(size int, fillByte byte) []byte {
+	unit := make([]byte, size)
+	if size >= 4 {
+		unit[0] = 0x64
+		unit[1] = 0x58
+		unit[2] = 0x20
+		unit[3] = 0x25
+	}
+	for i := 4; i < size; i++ {
+		unit[i] = fillByte
+	}
+	return unit
+}
+
+// buildDTSHDCoreM2TSData creates M2TS data with a combined DTS-HD stream
+// containing DTS core frames interleaved with DTS-HD ExSS extension data.
+//
+// Payload layout: [DTS Core 256B][ExSS 128B][DTS Core 256B][ExSS 271B]
+// Total: 911 bytes = 175 + 4×184
+func buildDTSHDCoreM2TSData() []byte {
+	const (
+		pmtPID   = uint16(0x0100)
+		videoPID = uint16(0x1011)
+		audioPID = uint16(0x1101)
+	)
+
+	// Build combined DTS-HD payload (DTS core + ExSS extension)
+	var audioPayload []byte
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11)...)  // 256 bytes DTS core
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...) // 128 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33)...)  // 256 bytes DTS core
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...) // 271 bytes ExSS
+	// Total: 911 bytes
+
+	var data []byte
+	data = append(data, makeM2TSPacket(0, true, 0x01, 0, 0, makePATPayload(pmtPID))...)
+	data = append(data, makeM2TSPacket(pmtPID, true, 0x01, 0, 0,
+		makePMTPayload(videoPID, 0x1B,
+			[]uint16{audioPID},
+			[]byte{0x85}))...) // 0x85 = DTS-HD
+
+	// Video PUSI
+	data = append(data, makeM2TSPacket(videoPID, true, 0x01, 0, 1,
+		makePESStart(0xE0, 0, seqBytes(0, 175)))...)
+
+	// Audio PUSI - PES header + start of audioPayload
+	pesHdr := makePESStart(0xFD, 0, nil) // 9-byte PES header
+	firstChunkSize := 184 - len(pesHdr)  // 175 bytes
+	firstPayload := make([]byte, 184)
+	copy(firstPayload, pesHdr)
+	copy(firstPayload[len(pesHdr):], audioPayload[:firstChunkSize])
+	data = append(data, makeM2TSPacket(audioPID, true, 0x01, 0, 0, firstPayload)...)
+
+	// Audio continuation packets
+	remaining := audioPayload[firstChunkSize:]
+	cc := byte(1)
+	for len(remaining) > 0 {
+		chunkSize := 184
+		if chunkSize > len(remaining) {
+			chunkSize = len(remaining)
+		}
+		chunk := make([]byte, 184)
+		copy(chunk, remaining[:chunkSize])
+		data = append(data, makeM2TSPacket(audioPID, false, 0x01, 0, cc, chunk)...)
+		remaining = remaining[chunkSize:]
+		cc++
+	}
+
+	return data
+}
+
 // testStream describes a stream for building test M2TS data.
 type testStream struct {
 	streamType byte
