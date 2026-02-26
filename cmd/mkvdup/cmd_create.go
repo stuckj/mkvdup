@@ -206,26 +206,64 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	if index.UsesESOffsets && len(index.ESReaders) > 0 {
 		if indexer.SourceType() == source.TypeBluray {
 			// V4: use range maps for Blu-ray (preserves ES offsets in entries)
+			// Only include range maps for streams actually referenced by matched entries.
+			// A Blu-ray ISO may have 100+ M2TS regions, but only a few are needed for
+			// any given MKV file. Including all range maps wastes significant space.
+			type streamKey struct {
+				fileIndex        uint16
+				isVideo          bool
+				audioSubStreamID byte
+			}
+			usedStreams := make(map[streamKey]bool)
+			for _, e := range matchResult.Entries {
+				if e.Source == 0 {
+					continue
+				}
+				usedStreams[streamKey{e.Source - 1, e.IsVideo, e.AudioSubStreamID}] = true
+			}
+			// Collect the set of file indices that need range maps
+			usedFiles := make(map[uint16]bool)
+			for k := range usedStreams {
+				usedFiles[k.fileIndex] = true
+			}
+
 			var rangeMaps []dedup.RangeMapData
-			for i, reader := range index.ESReaders {
-				if provider, ok := reader.(source.PESRangeProvider); ok {
-					rm := dedup.RangeMapData{
-						FileIndex:   uint16(i),
-						VideoRanges: provider.FilteredVideoRanges(),
-					}
-					// If this reader provides offset conversion (e.g., ISO adapter),
-					// set the converter for range map encoding.
-					if adj, ok := reader.(source.FileOffsetAdjuster); ok {
-						rm.OffsetFunc = adj.FileOffsetConverter()
-					}
-					for _, subID := range provider.AudioSubStreams() {
+			for fi := range usedFiles {
+				i := int(fi)
+				if i >= len(index.ESReaders) {
+					continue
+				}
+				reader := index.ESReaders[i]
+				provider, ok := reader.(source.PESRangeProvider)
+				if !ok {
+					continue
+				}
+				rm := dedup.RangeMapData{
+					FileIndex: fi,
+				}
+				// Only include video range map if video entries reference this file
+				if usedStreams[streamKey{fi, true, 0}] {
+					rm.VideoRanges = provider.FilteredVideoRanges()
+				}
+				// If this reader provides offset conversion (e.g., ISO adapter),
+				// set the converter for range map encoding.
+				if adj, ok := reader.(source.FileOffsetAdjuster); ok {
+					rm.OffsetFunc = adj.FileOffsetConverter()
+				}
+				// Only include audio sub-stream range maps that are actually used
+				for _, subID := range provider.AudioSubStreams() {
+					if usedStreams[streamKey{fi, false, subID}] {
 						rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
 							SubStreamID: subID,
 							Ranges:      provider.FilteredAudioRanges(subID),
 						})
 					}
-					rangeMaps = append(rangeMaps, rm)
 				}
+				rangeMaps = append(rangeMaps, rm)
+			}
+			if verbose {
+				printInfo("  Range maps: %d/%d source files used, %d streams referenced\n",
+					len(usedFiles), len(index.ESReaders), len(usedStreams))
 			}
 			if len(rangeMaps) > 0 {
 				writer.SetRangeMaps(rangeMaps)

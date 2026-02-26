@@ -53,10 +53,12 @@ func deltadiag(dedupPath, mkvPath string) error {
 
 	// Build track type map and detect AVCC NAL length size
 	trackTypes := make(map[int]int)
+	trackCodecs := make(map[int]string)
 	nalLenSizes := make(map[int]int)
 	isAVCTrack := make(map[int]bool)
 	for _, t := range tracks {
 		trackTypes[int(t.Number)] = t.Type
+		trackCodecs[int(t.Number)] = t.CodecID
 		nalLenSizes[int(t.Number)] = matcher.NALLengthSizeForTrack(t.CodecID, t.CodecPrivate)
 		if strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") {
 			isAVCTrack[int(t.Number)] = true
@@ -80,6 +82,7 @@ func deltadiag(dedupPath, mkvPath string) error {
 	fmt.Fprintf(os.Stderr, "Classifying delta entries...\n")
 
 	var deltaVideo, deltaAudio, deltaContainer deltaClass
+	deltaAudioByCodec := make(map[string]*deltaClass)
 	var deltaVideoByNAL [32]deltaClass
 	var deltaVideoSliceSmall, deltaVideoSliceLarge deltaClass
 
@@ -124,6 +127,17 @@ func deltadiag(dedupPath, mkvPath string) error {
 		} else if ttype == mkv.TrackTypeAudio {
 			deltaAudio.bytes += ent.Length
 			deltaAudio.count++
+			codec := trackCodecs[int(pkt.TrackNum)]
+			if codec == "" {
+				codec = "unknown"
+			}
+			dc := deltaAudioByCodec[codec]
+			if dc == nil {
+				dc = &deltaClass{}
+				deltaAudioByCodec[codec] = dc
+			}
+			dc.bytes += ent.Length
+			dc.count++
 		} else {
 			deltaContainer.bytes += ent.Length
 			deltaContainer.count++
@@ -149,6 +163,15 @@ func deltadiag(dedupPath, mkvPath string) error {
 	fmt.Printf("Container delta: %12s bytes (%8.2f MB) [%6d entries] (%.1f%% of delta)\n",
 		formatInt(deltaContainer.bytes), float64(deltaContainer.bytes)/(1024*1024), deltaContainer.count,
 		float64(deltaContainer.bytes)/float64(totalDelta)*100)
+
+	// Audio codec breakdown
+	if len(deltaAudioByCodec) > 0 {
+		fmt.Printf("\n=== Audio Delta by Codec ===\n")
+		for codec, dc := range deltaAudioByCodec {
+			fmt.Printf("  %-20s: %10s bytes (%8.2f MB) [%6d entries]\n",
+				codec, formatInt(dc.bytes), float64(dc.bytes)/(1024*1024), dc.count)
+		}
+	}
 
 	// Video NAL type breakdown
 	nalTypeNames := map[int]string{
