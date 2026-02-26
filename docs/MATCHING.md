@@ -21,7 +21,7 @@ The source type is detected by scanning the directory structure:
 - **Blu-ray (directory)**: Contains `BDMV/STREAM/*.m2ts` files
 - **Blu-ray (ISO)**: Contains `*.iso` file(s) with UDF filesystem
 
-For ISO files, detection first attempts ISO 9660 (DVD). If the ISO does not contain a valid ISO 9660 primary volume descriptor, it falls back to UDF parsing for Blu-ray ISOs. Only format validation errors trigger the fallback; I/O errors are reported immediately.
+For ISO files, detection first attempts ISO 9660 (DVD). If the ISO does not contain a valid ISO 9660 primary volume descriptor, it falls back to UDF parsing for Blu-ray ISOs.
 
 ### Codec Detection
 
