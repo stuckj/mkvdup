@@ -1,10 +1,15 @@
 package source
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 )
+
+// errNotISO9660 is returned when the image lacks a valid ISO9660 PVD,
+// signaling the caller to try an alternative filesystem (e.g. UDF).
+var errNotISO9660 = errors.New("not an ISO9660 image")
 
 const isoSectorSize = 2048
 
@@ -35,8 +40,11 @@ func findBlurayM2TSInISO(isoPath string) ([]isoFileExtent, error) {
 	// Read root directory from PVD
 	rootExtent, rootDataLen, err := readISOPVDRoot(f)
 	if err != nil {
-		// ISO9660 failed, try UDF (Blu-ray ISOs from CloneBD)
-		return findBlurayM2TSInUDF(f)
+		if errors.Is(err, errNotISO9660) {
+			// No valid ISO9660 PVD, try UDF (Blu-ray ISOs from CloneBD)
+			return findBlurayM2TSInUDF(f)
+		}
+		return nil, fmt.Errorf("read ISO PVD: %w", err)
 	}
 
 	// Navigate: root → BDMV → STREAM
@@ -88,13 +96,13 @@ func readISOPVDRoot(f *os.File) (extentLBA uint32, dataLen uint32, err error) {
 
 	// Verify PVD: type=1, signature="CD001"
 	if pvd[0] != 1 || string(pvd[1:6]) != "CD001" {
-		return 0, 0, fmt.Errorf("not a valid ISO9660 primary volume descriptor")
+		return 0, 0, fmt.Errorf("%w: invalid primary volume descriptor", errNotISO9660)
 	}
 
 	// Root directory record at offset 156
 	root := pvd[156:]
 	if len(root) < 34 {
-		return 0, 0, fmt.Errorf("root directory record too short")
+		return 0, 0, fmt.Errorf("%w: root directory record too short", errNotISO9660)
 	}
 
 	extentLBA = uint32(root[2]) | uint32(root[3])<<8 |
