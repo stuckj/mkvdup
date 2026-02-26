@@ -3,6 +3,7 @@ package source
 import (
 	"bytes"
 	"fmt"
+	"log"
 )
 
 // MPEGTSParser parses MPEG Transport Stream (M2TS) files to extract elementary
@@ -16,10 +17,11 @@ import (
 // offsets, enabling the matcher to work with continuous ES data while the
 // underlying file has TS headers interleaved.
 type MPEGTSParser struct {
-	data       []byte // mmap'd file data (zero-copy)
-	size       int64
-	packetSize int // 192 (M2TS) or 188 (standard TS)
-	tsOffset   int // offset from packet start to TS sync byte (4 for M2TS, 0 for TS)
+	data        []byte           // mmap'd file data (zero-copy); nil when using multiRegion
+	multiRegion *multiRegionData // non-nil for multi-extent UDF files
+	size        int64
+	packetSize  int // 192 (M2TS) or 188 (standard TS)
+	tsOffset    int // offset from packet start to TS sync byte (4 for M2TS, 0 for TS)
 
 	// Stream PIDs from PMT
 	videoPID   uint16
@@ -52,6 +54,29 @@ func NewMPEGTSParser(data []byte) *MPEGTSParser {
 	}
 }
 
+// NewMPEGTSParserMultiRegion creates a parser for non-contiguous M2TS data
+// from a multi-extent UDF file. The multiRegionData provides a virtual
+// contiguous view over multiple mmap sub-slices.
+func NewMPEGTSParserMultiRegion(mr *multiRegionData) *MPEGTSParser {
+	return &MPEGTSParser{
+		multiRegion:      mr,
+		size:             mr.Len(),
+		audioBySubStream: make(map[byte][]PESPayloadRange),
+		pidToSubStream:   make(map[uint16]byte),
+		subStreamToPID:   make(map[byte]uint16),
+		subStreamCodec:   make(map[byte]CodecType),
+	}
+}
+
+// dataSlice returns a sub-slice of the parser's data source.
+// Uses multiRegion when available, otherwise direct slice of p.data.
+func (p *MPEGTSParser) dataSlice(off, end int64) []byte {
+	if p.multiRegion != nil {
+		return p.multiRegion.Slice(off, end)
+	}
+	return p.data[off:end]
+}
+
 // MPEGTSProgressFunc is called to report MPEG-TS parsing progress.
 type MPEGTSProgressFunc func(processed, total int64)
 
@@ -62,6 +87,10 @@ func (p *MPEGTSParser) Parse() error {
 
 // ParseWithProgress scans the M2TS file with progress reporting.
 func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
+	if p.multiRegion != nil {
+		return p.parseMultiRegion(progress)
+	}
+
 	// Step 1: Detect TS packet size
 	detectLen := 192 * 16
 	if detectLen > len(p.data) {
@@ -85,11 +114,129 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 		return fmt.Errorf("parse PAT/PMT: %w", err)
 	}
 
-	if p.videoPID == 0 && len(p.audioPIDs) == 0 {
-		return fmt.Errorf("no video or audio PIDs found in PMT")
+	// Step 3: Scan packets and build PES ranges
+	ss := p.initScanState()
+	p.scanPackets(p.data, startOffset, 0, ss, progress)
+
+	if progress != nil {
+		progress(p.size, p.size)
 	}
 
-	// Build PID lookup set for fast checking
+	return p.finalizeParse()
+}
+
+// parseMultiRegion handles parsing when data comes from multiple non-contiguous
+// mmap regions. Processes each region sequentially, handling TS packets that
+// straddle region boundaries via a small carryover buffer.
+func (p *MPEGTSParser) parseMultiRegion(progress MPEGTSProgressFunc) error {
+	mr := p.multiRegion
+	if len(mr.regions) == 0 {
+		return fmt.Errorf("no regions in multi-region data")
+	}
+
+	// Step 1: Detect TS packet size from first region
+	firstRegion := mr.regions[0].data
+	detectLen := 192 * 16
+	if detectLen > len(firstRegion) {
+		detectLen = len(firstRegion)
+	}
+	packetSize, startOffset := detectTSPacketSize(firstRegion[:detectLen])
+	if packetSize == 0 {
+		return fmt.Errorf("cannot detect TS packet size")
+	}
+	p.packetSize = packetSize
+	if packetSize == 192 {
+		p.tsOffset = 4
+	}
+
+	// Step 2: Parse PAT/PMT from first region
+	scanLen := 2 * 1024 * 1024
+	if scanLen > len(firstRegion) {
+		scanLen = len(firstRegion)
+	}
+	if err := p.parsePATandPMT(firstRegion[:scanLen], startOffset); err != nil {
+		return fmt.Errorf("parse PAT/PMT: %w", err)
+	}
+
+	// Step 3: Scan packets across all regions
+	ss := p.initScanState()
+
+	var carryover []byte
+	for i, reg := range mr.regions {
+		chunk := reg.data
+		logicalBase := reg.logicalStart
+		chunkStart := 0
+
+		if i == 0 {
+			// First region: skip to the initial start offset
+			chunkStart = startOffset
+		}
+
+		// Handle carryover from previous region boundary
+		if len(carryover) > 0 {
+			needed := p.packetSize - len(carryover)
+			if needed <= len(chunk) {
+				// Assemble the straddling packet and process it
+				bridgePkt := make([]byte, p.packetSize)
+				copy(bridgePkt, carryover)
+				copy(bridgePkt[len(carryover):], chunk[:needed])
+				bridgeBase := logicalBase - int64(len(carryover))
+				p.scanPackets(bridgePkt, 0, bridgeBase, ss, nil)
+				chunkStart = needed
+				carryover = nil
+			} else {
+				// Region too small to complete the packet — accumulate and continue
+				carryover = append(carryover, chunk...)
+				continue
+			}
+		}
+
+		// Process complete packets in this region
+		available := len(chunk) - chunkStart
+		nComplete := (available / p.packetSize) * p.packetSize
+		if nComplete > 0 {
+			p.scanPackets(chunk[chunkStart:chunkStart+nComplete], 0, logicalBase+int64(chunkStart), ss, progress)
+		}
+
+		// Save any remainder for the next region
+		remainder := available - nComplete
+		if remainder > 0 {
+			carryover = make([]byte, remainder)
+			copy(carryover, chunk[chunkStart+nComplete:])
+		}
+	}
+
+	if len(carryover) > 0 {
+		log.Printf("mpegts: warning: discarding %d carryover bytes at end of multi-region data (incomplete TS packet)", len(carryover))
+	}
+
+	if progress != nil {
+		progress(p.size, p.size)
+	}
+
+	return p.finalizeParse()
+}
+
+// pesState tracks PES header parsing state across TS packets.
+type pesState struct {
+	headerBytesRemaining int
+}
+
+// scanState holds mutable state for the packet scanning loop.
+type scanState struct {
+	trackedPIDs    map[uint16]bool
+	pesStates      map[uint16]*pesState
+	videoESOffset  int64
+	audioESOffsets map[byte]int64
+	lastProgress   int64
+}
+
+// initScanState sets up PID tracking and PES state for scanning.
+func (p *MPEGTSParser) initScanState() *scanState {
+	if p.videoPID == 0 && len(p.audioPIDs) == 0 {
+		return nil
+	}
+
 	trackedPIDs := make(map[uint16]bool)
 	if p.videoPID != 0 {
 		trackedPIDs[p.videoPID] = true
@@ -108,35 +255,38 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 		p.audioBySubStream[subID] = make([]PESPayloadRange, 0, estimatedPackets/10/len(p.audioPIDs))
 	}
 
-	// Step 3: Single-pass packet iteration
-	var videoESOffset int64
-	audioESOffsets := make(map[byte]int64) // per sub-stream ID
-
-	// Track whether we're inside a PES header (PES headers can span the
-	// remainder of the PUSI packet's payload)
-	type pesState struct {
-		headerBytesRemaining int // PES header bytes still to skip in next continuation packet
-	}
 	pesStates := make(map[uint16]*pesState)
 	for pid := range trackedPIDs {
 		pesStates[pid] = &pesState{}
 	}
 
-	lastProgress := int64(0)
+	return &scanState{
+		trackedPIDs:    trackedPIDs,
+		pesStates:      pesStates,
+		audioESOffsets: make(map[byte]int64),
+	}
+}
 
-	for pos := startOffset; pos+p.packetSize <= len(p.data); pos += p.packetSize {
+// scanPackets processes TS packets in a data buffer, recording PES payload ranges.
+// logicalBase is added to all FileOffset values to produce logical (assembled) offsets.
+func (p *MPEGTSParser) scanPackets(data []byte, startPos int, logicalBase int64, ss *scanState, progress MPEGTSProgressFunc) {
+	if ss == nil {
+		return
+	}
+
+	for pos := startPos; pos+p.packetSize <= len(data); pos += p.packetSize {
 		tsStart := pos + p.tsOffset
-		if tsStart >= len(p.data) || p.data[tsStart] != 0x47 {
+		if tsStart >= len(data) || data[tsStart] != 0x47 {
 			continue
 		}
 
-		pid := uint16(p.data[tsStart+1]&0x1F)<<8 | uint16(p.data[tsStart+2])
-		if !trackedPIDs[pid] {
+		pid := uint16(data[tsStart+1]&0x1F)<<8 | uint16(data[tsStart+2])
+		if !ss.trackedPIDs[pid] {
 			continue
 		}
 
-		pusi := p.data[tsStart+1]&0x40 != 0
-		adaptFieldCtrl := (p.data[tsStart+3] >> 4) & 0x03
+		pusi := data[tsStart+1]&0x40 != 0
+		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
 
 		// Find payload start
 		payloadOff := tsStart + 4
@@ -144,7 +294,7 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 		case 0x01: // payload only
 		case 0x03: // adaptation field + payload
 			if payloadOff < pos+p.packetSize {
-				adaptLen := int(p.data[payloadOff])
+				adaptLen := int(data[payloadOff])
 				payloadOff += 1 + adaptLen
 			}
 		default: // 0x02 = adaptation only, 0x00 = reserved
@@ -152,61 +302,57 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 		}
 
 		payloadEnd := pos + p.packetSize
-		if payloadEnd > len(p.data) {
-			payloadEnd = len(p.data)
+		if payloadEnd > len(data) {
+			payloadEnd = len(data)
 		}
 		if payloadOff >= payloadEnd {
 			continue
 		}
 
-		payload := p.data[payloadOff:payloadEnd]
-		state := pesStates[pid]
+		payload := data[payloadOff:payloadEnd]
+		state := ss.pesStates[pid]
+
+		// File offset in the logical (assembled) coordinate space
+		logPayloadOff := logicalBase + int64(payloadOff)
 
 		if pusi {
 			// New PES packet starts here
-			// Parse PES header: 00 00 01 XX LL LL [flags...] HD [header_data]
 			if len(payload) < 9 || payload[0] != 0 || payload[1] != 0 || payload[2] != 1 {
-				// Not a valid PES start — skip
 				continue
 			}
-			// PES header data length at byte 8
 			pesHeaderDataLen := int(payload[8])
-			pesHeaderSize := 9 + pesHeaderDataLen // 3 (start code) + 1 (stream_id) + 2 (length) + 2 (flags) + 1 (hdr_data_len) + hdr_data
+			pesHeaderSize := 9 + pesHeaderDataLen
 
 			if pesHeaderSize >= len(payload) {
-				// PES header spans beyond this packet — skip all payload,
-				// record remaining header bytes for next packet
 				state.headerBytesRemaining = pesHeaderSize - len(payload)
 				continue
 			}
 
-			// Payload data starts after PES header
 			esPayload := payload[pesHeaderSize:]
-			fileOffset := int64(payloadOff) + int64(pesHeaderSize)
+			fileOffset := logPayloadOff + int64(pesHeaderSize)
 
 			if pid == p.videoPID {
 				p.videoRanges = append(p.videoRanges, PESPayloadRange{
 					FileOffset: fileOffset,
 					Size:       len(esPayload),
-					ESOffset:   videoESOffset,
+					ESOffset:   ss.videoESOffset,
 				})
-				videoESOffset += int64(len(esPayload))
+				ss.videoESOffset += int64(len(esPayload))
 			} else {
 				subID := p.pidToSubStream[pid]
 				p.audioBySubStream[subID] = append(p.audioBySubStream[subID], PESPayloadRange{
 					FileOffset: fileOffset,
 					Size:       len(esPayload),
-					ESOffset:   audioESOffsets[subID],
+					ESOffset:   ss.audioESOffsets[subID],
 				})
-				audioESOffsets[subID] += int64(len(esPayload))
+				ss.audioESOffsets[subID] += int64(len(esPayload))
 			}
 			state.headerBytesRemaining = 0
 		} else {
 			// Continuation packet
 			esPayload := payload
-			fileOffset := int64(payloadOff)
+			fileOffset := logPayloadOff
 
-			// Skip remaining PES header bytes if we're still in the header
 			if state.headerBytesRemaining > 0 {
 				if state.headerBytesRemaining >= len(esPayload) {
 					state.headerBytesRemaining -= len(esPayload)
@@ -225,39 +371,41 @@ func (p *MPEGTSParser) ParseWithProgress(progress MPEGTSProgressFunc) error {
 				p.videoRanges = append(p.videoRanges, PESPayloadRange{
 					FileOffset: fileOffset,
 					Size:       len(esPayload),
-					ESOffset:   videoESOffset,
+					ESOffset:   ss.videoESOffset,
 				})
-				videoESOffset += int64(len(esPayload))
+				ss.videoESOffset += int64(len(esPayload))
 			} else {
 				subID := p.pidToSubStream[pid]
 				p.audioBySubStream[subID] = append(p.audioBySubStream[subID], PESPayloadRange{
 					FileOffset: fileOffset,
 					Size:       len(esPayload),
-					ESOffset:   audioESOffsets[subID],
+					ESOffset:   ss.audioESOffsets[subID],
 				})
-				audioESOffsets[subID] += int64(len(esPayload))
+				ss.audioESOffsets[subID] += int64(len(esPayload))
 			}
 		}
 
 		// Report progress
-		if progress != nil && int64(pos)-lastProgress > 100*1024*1024 {
-			progress(int64(pos), p.size)
-			lastProgress = int64(pos)
+		logPos := logicalBase + int64(pos)
+		if progress != nil && logPos-ss.lastProgress > 100*1024*1024 {
+			progress(logPos, p.size)
+			ss.lastProgress = logPos
 		}
 	}
+}
 
-	if progress != nil {
-		progress(p.size, p.size)
+// finalizeParse performs post-scan processing: video range filtering and
+// TrueHD+AC3 stream splitting. Shared by contiguous and multi-region paths.
+func (p *MPEGTSParser) finalizeParse() error {
+	if p.videoPID == 0 && len(p.audioPIDs) == 0 {
+		return fmt.Errorf("no video or audio PIDs found in PMT")
 	}
 
-	// Step 4: Build filtered video ranges
 	if err := p.buildFilteredVideoRanges(); err != nil {
 		return fmt.Errorf("build filtered video ranges: %w", err)
 	}
 
 	p.filterUserData = true
-
-	// Step 5: Split combined TrueHD+AC3 streams into separate sub-streams
 	p.splitTrueHDAC3Streams()
 
 	return nil
@@ -449,7 +597,7 @@ func (p *MPEGTSParser) buildFilteredVideoRanges() error {
 		if endOffset > p.size {
 			continue
 		}
-		data := p.data[rawRange.FileOffset:endOffset]
+		data := p.dataSlice(rawRange.FileOffset, endOffset)
 
 		i := 2
 		rangeStart := 0
@@ -517,7 +665,7 @@ func (p *MPEGTSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byt
 	if len(ranges) == 0 {
 		ranges = p.videoRanges
 	}
-	return readFromRanges(p.data, p.size, ranges, esOffset, size)
+	return readFromRanges(p.data, p.multiRegion, p.size, ranges, esOffset, size)
 }
 
 // ESOffsetToFileOffset converts an ES offset to a file offset and remaining bytes.
@@ -579,7 +727,7 @@ func (p *MPEGTSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 	if !ok {
 		return nil, fmt.Errorf("audio sub-stream %d not found", subStreamID)
 	}
-	return readFromRanges(p.data, p.size, ranges, esOffset, size)
+	return readFromRanges(p.data, p.multiRegion, p.size, ranges, esOffset, size)
 }
 
 // --- ESRangeConverter interface implementation ---
@@ -616,19 +764,34 @@ func (p *MPEGTSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHin
 	if len(ranges) == 0 {
 		ranges = p.videoRanges
 	}
-	return readByteWithHint(p.data, p.size, ranges, esOffset, rangeHint)
+	return readByteWithHint(p.data, p.multiRegion, p.size, ranges, esOffset, rangeHint)
 }
 
 // ReadAudioByteWithHint reads a single byte from an audio sub-stream with a range hint.
 func (p *MPEGTSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
-	return readByteWithHint(p.data, p.size, p.audioBySubStream[subStreamID], esOffset, rangeHint)
+	return readByteWithHint(p.data, p.multiRegion, p.size, p.audioBySubStream[subStreamID], esOffset, rangeHint)
 }
 
 // --- Accessors for indexer ---
 
 // Data returns the raw mmap'd file data for zero-copy access.
+// Returns nil when using multi-region data; use DataSlice instead.
 func (p *MPEGTSParser) Data() []byte {
 	return p.data
+}
+
+// DataSlice returns a sub-slice of the backing data at the given offset and size.
+// Works for both contiguous and multi-region data.
+func (p *MPEGTSParser) DataSlice(off int64, size int) []byte {
+	if p.multiRegion != nil {
+		return p.multiRegion.Slice(off, off+int64(size))
+	}
+	return p.data[off : off+int64(size)]
+}
+
+// DataSize returns the total size of the backing data.
+func (p *MPEGTSParser) DataSize() int64 {
+	return p.size
 }
 
 // FilteredVideoRanges returns the filtered video payload ranges.
@@ -732,7 +895,7 @@ func (p *MPEGTSParser) detectCombinedTrueHDAC3(ranges []PESPayloadRange) bool {
 		if endOffset > p.size {
 			continue
 		}
-		data := p.data[r.FileOffset:endOffset]
+		data := p.dataSlice(r.FileOffset, endOffset)
 		// Clamp to remaining check budget
 		remaining := maxCheck - bytesChecked
 		if remaining < len(data) {
@@ -777,7 +940,7 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 		if endOffset > p.size {
 			continue
 		}
-		data := p.data[r.FileOffset:endOffset]
+		data := p.dataSlice(r.FileOffset, endOffset)
 		pos := 0
 
 		// Handle header bytes buffered from previous range.
@@ -922,7 +1085,7 @@ func (p *MPEGTSParser) splitCombinedAudioRanges(ranges []PESPayloadRange) (ac3Ra
 				if checkStart < 0 {
 					checkStart = 0
 				}
-				tailData := p.data[last.FileOffset:lastEnd]
+				tailData := p.dataSlice(last.FileOffset, lastEnd)
 				bufStart := -1
 				for j := len(tailData) - 1; j >= checkStart; j-- {
 					if tailData[j] == 0x0B {

@@ -256,7 +256,7 @@ func TestISOAdapterAdjustsOffsets(t *testing.T) {
 
 	adapter := newISOAdapter(parser, fullISO, baseOffset)
 
-	// Check that FilteredVideoRanges have adjusted FileOffset
+	// FilteredVideoRanges should return parser's ranges directly (zero-copy)
 	parserRanges := parser.FilteredVideoRanges()
 	adapterRanges := adapter.FilteredVideoRanges()
 
@@ -266,9 +266,9 @@ func TestISOAdapterAdjustsOffsets(t *testing.T) {
 
 	for i, pr := range parserRanges {
 		ar := adapterRanges[i]
-		expectedOffset := pr.FileOffset + baseOffset
-		if ar.FileOffset != expectedOffset {
-			t.Errorf("range %d: expected FileOffset %d, got %d", i, expectedOffset, ar.FileOffset)
+		// Ranges should be identical (parser-relative, zero-copy)
+		if ar.FileOffset != pr.FileOffset {
+			t.Errorf("range %d: expected parser-relative FileOffset %d, got %d", i, pr.FileOffset, ar.FileOffset)
 		}
 		if ar.Size != pr.Size {
 			t.Errorf("range %d: Size mismatch: %d vs %d", i, ar.Size, pr.Size)
@@ -278,19 +278,28 @@ func TestISOAdapterAdjustsOffsets(t *testing.T) {
 		}
 	}
 
+	// FileOffsetConverter should add baseOffset
+	conv := adapter.FileOffsetConverter()
+	for i, pr := range parserRanges {
+		isoOff := conv(pr.FileOffset)
+		expected := pr.FileOffset + baseOffset
+		if isoOff != expected {
+			t.Errorf("range %d: FileOffsetConverter(%d) = %d, want %d", i, pr.FileOffset, isoOff, expected)
+		}
+	}
+
 	// Verify Data() returns the full ISO data
 	if len(adapter.Data()) != len(fullISO) {
 		t.Errorf("Data() length: expected %d, got %d", len(fullISO), len(adapter.Data()))
 	}
 
-	// Verify zero-copy access works: data[r.FileOffset:r.FileOffset+r.Size]
-	// should give the same bytes as the original M2TS region
-	for i, ar := range adapterRanges {
-		isoSlice := adapter.Data()[ar.FileOffset : ar.FileOffset+int64(ar.Size)]
-		m2tsSlice := m2tsData[parserRanges[i].FileOffset : parserRanges[i].FileOffset+int64(parserRanges[i].Size)]
-		for j := range isoSlice {
-			if isoSlice[j] != m2tsSlice[j] {
-				t.Errorf("range %d byte %d: ISO data %02x != M2TS data %02x", i, j, isoSlice[j], m2tsSlice[j])
+	// Verify DataSlice works with parser-relative offsets
+	for i, pr := range parserRanges {
+		data := adapter.DataSlice(pr.FileOffset, pr.Size)
+		m2tsSlice := m2tsData[pr.FileOffset : pr.FileOffset+int64(pr.Size)]
+		for j := range data {
+			if data[j] != m2tsSlice[j] {
+				t.Errorf("range %d byte %d: DataSlice data %02x != M2TS data %02x", i, j, data[j], m2tsSlice[j])
 				break
 			}
 		}

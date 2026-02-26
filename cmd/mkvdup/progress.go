@@ -2,9 +2,15 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
+
+// logFile is set by --log-file to duplicate output to a file.
+// Console output is unchanged; the log file receives non-TTY-style output
+// (milestones instead of progress bars, no ANSI escape sequences).
+var logFile *os.File
 
 // progressBar renders an in-place progress bar with ETA.
 //
@@ -17,16 +23,18 @@ import (
 //
 //	Phase 2/6: Building source index... done (00:00:27)
 //
-// When showProgress is false, only the prefix and completion line are printed.
-// When quiet is true, nothing is printed.
+// When showProgress is false (non-TTY), milestone percentages are printed at
+// 10% intervals so redirected logs still show progress.
+// When quiet is true, nothing is printed to stdout (log file still receives output).
 type progressBar struct {
-	prefix    string
-	total     int64
-	processed int64
-	startTime time.Time
-	lastDraw  time.Time
-	unit      string // "bytes" or "packets"
-	done      bool
+	prefix        string
+	total         int64
+	processed     int64
+	startTime     time.Time
+	lastDraw      time.Time
+	unit          string // "bytes" or "packets"
+	done          bool
+	lastMilestone int // last 10% milestone printed (0-10)
 }
 
 const barWidth = 40
@@ -44,17 +52,25 @@ func newProgressBar(prefix string, total int64, unit string) *progressBar {
 	if !quiet {
 		fmt.Println(prefix)
 	}
+	if logFile != nil {
+		fmt.Fprintln(logFile, prefix)
+	}
 	return p
 }
 
 // Update sets the current progress and redraws the bar (throttled to 500ms).
 func (p *progressBar) Update(processed int64) {
-	if p.done || quiet {
+	if p.done {
 		return
 	}
 	p.processed = processed
 
-	if !showProgress {
+	// Milestone progress for non-TTY stdout and/or log file
+	if (!showProgress && !quiet) || logFile != nil {
+		p.updateMilestone()
+	}
+
+	if quiet || !showProgress {
 		return
 	}
 
@@ -65,15 +81,43 @@ func (p *progressBar) Update(processed int64) {
 	p.draw()
 }
 
+// updateMilestone prints percentage milestones at 10% intervals.
+// Output goes to stdout (when non-TTY) and/or the log file.
+func (p *progressBar) updateMilestone() {
+	if p.total <= 0 {
+		return
+	}
+
+	pct := float64(p.processed) / float64(p.total) * 100
+	milestone := int(pct / 10)
+	if milestone > 10 {
+		milestone = 10
+	}
+	if milestone <= p.lastMilestone {
+		return
+	}
+	p.lastMilestone = milestone
+
+	elapsed := time.Since(p.startTime)
+	line := fmt.Sprintf("  %d%% (%s)\n", milestone*10, formatDuration(elapsed))
+
+	if !showProgress && !quiet {
+		fmt.Print(line)
+	}
+	if logFile != nil {
+		fmt.Fprint(logFile, line)
+	}
+}
+
 // Cancel cleans up a progress bar on error without printing "done".
 // It prints a newline to move past any partial bar line. Safe to call
 // after Finish() (no-op if already done).
 func (p *progressBar) Cancel() {
-	if p.done || quiet {
+	if p.done {
 		return
 	}
 	p.done = true
-	if showProgress {
+	if !quiet && showProgress {
 		// Clear partial bar line and move to next line
 		fmt.Print("\r\033[2K\n")
 	}
@@ -81,17 +125,22 @@ func (p *progressBar) Cancel() {
 
 // Finish completes the progress bar and prints the elapsed time.
 func (p *progressBar) Finish() {
-	if p.done || quiet {
+	if p.done {
 		return
 	}
 	p.done = true
 	elapsed := time.Since(p.startTime)
 
-	if showProgress {
-		// Clear the bar line, move up, and overwrite the prefix line with completion
-		fmt.Printf("\r\033[2K\033[A\r\033[2K%s done (%s)\n", p.prefix, formatDuration(elapsed))
-	} else {
-		fmt.Printf("%s done (%s)\n", p.prefix, formatDuration(elapsed))
+	if !quiet {
+		if showProgress {
+			// Clear the bar line, move up, and overwrite the prefix line with completion
+			fmt.Printf("\r\033[2K\033[A\r\033[2K%s done (%s)\n", p.prefix, formatDuration(elapsed))
+		} else {
+			fmt.Printf("%s done (%s)\n", p.prefix, formatDuration(elapsed))
+		}
+	}
+	if logFile != nil {
+		fmt.Fprintf(logFile, "%s done (%s)\n", p.prefix, formatDuration(elapsed))
 	}
 }
 
@@ -176,16 +225,24 @@ func formatSize(n int64) string {
 	}
 }
 
-// printInfo prints informational output, suppressed when quiet is true.
+// printInfo prints informational output, suppressed on stdout when quiet is true.
+// Always written to logFile if one is open.
 func printInfo(format string, a ...any) {
 	if !quiet {
 		fmt.Printf(format, a...)
 	}
+	if logFile != nil {
+		fmt.Fprintf(logFile, format, a...)
+	}
 }
 
-// printInfoln prints informational output with a newline, suppressed when quiet is true.
+// printInfoln prints informational output with a newline, suppressed on stdout when quiet is true.
+// Always written to logFile if one is open.
 func printInfoln(a ...any) {
 	if !quiet {
 		fmt.Println(a...)
+	}
+	if logFile != nil {
+		fmt.Fprintln(logFile, a...)
 	}
 }

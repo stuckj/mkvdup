@@ -155,7 +155,10 @@ func findDefaults(ranges []source.PESPayloadRange) (defaultGap int64, defaultSiz
 //   - (zigzag(delta)+1) (uvarint) + size (uvarint): explicit entry
 //
 // The +1 shift ensures explicit entries never start with 0x00.
-func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, defaultSize int) []byte {
+// offsetFunc, if non-nil, converts parser-relative FileOffset values to
+// source-file-relative offsets (e.g., adding ISO base offset). The encoded
+// data always stores converted offsets.
+func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, defaultSize int, offsetFunc func(int64) int64) []byte {
 	if len(ranges) == 0 {
 		return nil
 	}
@@ -166,8 +169,14 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
 	out := make([]byte, 0, 256)
 	var varintBuf [binary.MaxVarintLen64]byte
 
+	// Resolve first entry's offset (apply conversion if needed)
+	prevOff := ranges[0].FileOffset
+	if offsetFunc != nil {
+		prevOff = offsetFunc(prevOff)
+	}
+
 	// First entry: always explicit
-	n := binary.PutUvarint(varintBuf[:], uint64(ranges[0].FileOffset))
+	n := binary.PutUvarint(varintBuf[:], uint64(prevOff))
 	out = append(out, varintBuf[:n]...)
 	n = binary.PutUvarint(varintBuf[:], uint64(ranges[0].Size))
 	out = append(out, varintBuf[:n]...)
@@ -176,8 +185,13 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
 	rleCount := 0
 
 	for i := 1; i < len(ranges); i++ {
-		prevEnd := ranges[i-1].FileOffset + int64(ranges[i-1].Size)
-		gap := ranges[i].FileOffset - prevEnd
+		curOff := ranges[i].FileOffset
+		if offsetFunc != nil {
+			curOff = offsetFunc(curOff)
+		}
+
+		prevEnd := prevOff + int64(ranges[i-1].Size)
+		gap := curOff - prevEnd
 
 		if gap == defaultGap && ranges[i].Size == defaultSize {
 			rleCount++
@@ -191,7 +205,7 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
 			}
 
 			predicted := prevEnd + defaultGap
-			delta := ranges[i].FileOffset - predicted
+			delta := curOff - predicted
 			encoded := zigzagEncode(delta) + 1
 
 			n := binary.PutUvarint(varintBuf[:], encoded)
@@ -199,6 +213,8 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
 			n = binary.PutUvarint(varintBuf[:], uint64(ranges[i].Size))
 			out = append(out, varintBuf[:n]...)
 		}
+
+		prevOff = curOff
 	}
 
 	// Flush final RLE
@@ -807,6 +823,7 @@ type RangeMapData struct {
 	FileIndex    uint16
 	VideoRanges  []source.PESPayloadRange
 	AudioStreams []AudioRangeData
+	OffsetFunc   func(int64) int64 // optional: converts parser-relative to source-file-relative FileOffset
 }
 
 // AudioRangeData holds range data for one audio sub-stream.
@@ -843,12 +860,12 @@ func encodeRangeMapSection(rangeMaps []RangeMapData) ([]byte, error) {
 
 		// Video stream
 		if len(rm.VideoRanges) > 0 {
-			writeCompressedStream(&buf, rm.FileIndex, 0, 0, rm.VideoRanges)
+			writeCompressedStream(&buf, rm.FileIndex, 0, 0, rm.VideoRanges, rm.OffsetFunc)
 		}
 
 		// Audio streams
 		for _, audio := range rm.AudioStreams {
-			writeCompressedStream(&buf, rm.FileIndex, 1, audio.SubStreamID, audio.Ranges)
+			writeCompressedStream(&buf, rm.FileIndex, 1, audio.SubStreamID, audio.Ranges, rm.OffsetFunc)
 		}
 	}
 
@@ -856,7 +873,9 @@ func encodeRangeMapSection(rangeMaps []RangeMapData) ([]byte, error) {
 }
 
 // writeCompressedStream writes one stream's compressed range data.
-func writeCompressedStream(buf *bytes.Buffer, fileIndex uint16, streamType uint8, subStreamID byte, ranges []source.PESPayloadRange) {
+// offsetFunc, if non-nil, converts parser-relative FileOffset values to
+// source-file-relative offsets during encoding.
+func writeCompressedStream(buf *bytes.Buffer, fileIndex uint16, streamType uint8, subStreamID byte, ranges []source.PESPayloadRange, offsetFunc func(int64) int64) {
 	// Stream header: FileIndex(2) + StreamType(1) + SubStreamID(1) + EntryCount(4) = 8 bytes
 	var hdrBuf [16]byte
 	binary.LittleEndian.PutUint16(hdrBuf[0:2], fileIndex)
@@ -865,15 +884,16 @@ func writeCompressedStream(buf *bytes.Buffer, fileIndex uint16, streamType uint8
 	binary.LittleEndian.PutUint32(hdrBuf[4:8], uint32(len(ranges)))
 	buf.Write(hdrBuf[:8])
 
-	// Find defaults
+	// Find defaults (parser-relative offsets — gaps are the same in both domains
+	// for the common non-boundary case, which dominates the mode calculation)
 	defGap, defSize := findDefaults(ranges)
 
 	// Compression parameters: DefaultGap(2) + DefaultSize(2) + CompressedDataSize(4) = 8 bytes
 	binary.LittleEndian.PutUint16(hdrBuf[0:2], uint16(defGap))
 	binary.LittleEndian.PutUint16(hdrBuf[2:4], uint16(defSize))
 
-	// Encode compressed ranges
-	compressed := encodeCompressedRanges(ranges, defGap, defSize)
+	// Encode compressed ranges (applies offsetFunc during encoding)
+	compressed := encodeCompressedRanges(ranges, defGap, defSize, offsetFunc)
 
 	binary.LittleEndian.PutUint32(hdrBuf[4:8], uint32(len(compressed)))
 	buf.Write(hdrBuf[:8])

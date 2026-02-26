@@ -97,7 +97,10 @@ func detectISOType(isoPath string) (Type, error) {
 
 	// Check volume descriptor type (byte 0) and signature "CD001" (bytes 1-5)
 	if pvd[0] != 1 || string(pvd[1:6]) != "CD001" {
-		// Not a valid ISO9660 primary volume descriptor, default to DVD
+		// No ISO9660 PVD. Check for UDF (Blu-ray ISOs from CloneBD).
+		if isUDFImage(f) {
+			return detectUDFISOType(f)
+		}
 		return TypeDVD, nil
 	}
 
@@ -236,6 +239,14 @@ type PESRangeProvider interface {
 	FilteredVideoRanges() []PESPayloadRange
 	FilteredAudioRanges(subStreamID byte) []PESPayloadRange
 	AudioSubStreams() []byte
+}
+
+// FileOffsetAdjuster provides a function to convert parser-relative FileOffset
+// values to source-file-relative offsets for range map storage.
+// Implemented by isoM2TSAdapter where the parser operates on a sub-region
+// of the ISO and FileOffset values need to be adjusted to ISO-relative.
+type FileOffsetAdjuster interface {
+	FileOffsetConverter() func(int64) int64
 }
 
 // RawReader provides an interface for reading raw file data.

@@ -213,6 +213,11 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 						FileIndex:   uint16(i),
 						VideoRanges: provider.FilteredVideoRanges(),
 					}
+					// If this reader provides offset conversion (e.g., ISO adapter),
+					// set the converter for range map encoding.
+					if adj, ok := reader.(source.FileOffsetAdjuster); ok {
+						rm.OffsetFunc = adj.FileOffsetConverter()
+					}
 					for _, subID := range provider.AudioSubStreams() {
 						rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
 							SubStreamID: subID,

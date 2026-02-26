@@ -1,19 +1,31 @@
 package source
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 )
 
+// errNotISO9660 is returned when the image lacks a valid ISO9660 PVD,
+// signaling the caller to try an alternative filesystem (e.g. UDF).
+var errNotISO9660 = errors.New("not an ISO9660 image")
+
 const isoSectorSize = 2048
 
 // isoFileExtent represents a file within an ISO9660 filesystem.
 type isoFileExtent struct {
-	Name   string // filename (uppercase, no version suffix)
-	Offset int64  // byte offset in ISO (extent LBA * sectorSize)
-	Size   int64  // data length in bytes
-	IsDir  bool   // true if this is a directory entry
+	Name    string             // filename (uppercase, no version suffix)
+	Offset  int64              // byte offset in ISO (first extent)
+	Size    int64              // data length in bytes
+	IsDir   bool               // true if this is a directory entry
+	Extents []isoPhysicalRange // non-nil for multi-extent UDF files
+}
+
+// isoPhysicalRange describes one contiguous physical region within an ISO.
+type isoPhysicalRange struct {
+	ISOOffset int64 // byte offset in the ISO file
+	Length    int64 // number of bytes
 }
 
 // findBlurayM2TSInISO parses an ISO9660 filesystem to find M2TS files
@@ -28,6 +40,10 @@ func findBlurayM2TSInISO(isoPath string) ([]isoFileExtent, error) {
 	// Read root directory from PVD
 	rootExtent, rootDataLen, err := readISOPVDRoot(f)
 	if err != nil {
+		if errors.Is(err, errNotISO9660) {
+			// No valid ISO9660 PVD, try UDF (Blu-ray ISOs from CloneBD)
+			return findBlurayM2TSInUDF(f)
+		}
 		return nil, fmt.Errorf("read ISO PVD: %w", err)
 	}
 
@@ -80,13 +96,13 @@ func readISOPVDRoot(f *os.File) (extentLBA uint32, dataLen uint32, err error) {
 
 	// Verify PVD: type=1, signature="CD001"
 	if pvd[0] != 1 || string(pvd[1:6]) != "CD001" {
-		return 0, 0, fmt.Errorf("not a valid ISO9660 primary volume descriptor")
+		return 0, 0, fmt.Errorf("%w: invalid primary volume descriptor", errNotISO9660)
 	}
 
 	// Root directory record at offset 156
 	root := pvd[156:]
 	if len(root) < 34 {
-		return 0, 0, fmt.Errorf("root directory record too short")
+		return 0, 0, fmt.Errorf("%w: root directory record too short", errNotISO9660)
 	}
 
 	extentLBA = uint32(root[2]) | uint32(root[3])<<8 |
