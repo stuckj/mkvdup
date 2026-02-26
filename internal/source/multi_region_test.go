@@ -130,3 +130,41 @@ func TestMultiRegionData_ParserIntegration(t *testing.T) {
 		t.Errorf("Slice across boundary mismatch at offset %d", boundaryOff)
 	}
 }
+
+func TestMultiRegionData_NegativeOffsets(t *testing.T) {
+	isoData := make([]byte, 200)
+	for i := range isoData {
+		isoData[i] = 0xAA
+	}
+	mr := newMultiRegionData([]isoPhysicalRange{
+		{ISOOffset: 0, Length: 200},
+	}, isoData)
+
+	// ByteAt with negative offset should return 0, not panic
+	if b := mr.ByteAt(-1); b != 0 {
+		t.Errorf("ByteAt(-1) = 0x%02X, want 0", b)
+	}
+	if b := mr.ByteAt(-100); b != 0 {
+		t.Errorf("ByteAt(-100) = 0x%02X, want 0", b)
+	}
+
+	// ByteAt beyond totalSize should return 0
+	if b := mr.ByteAt(200); b != 0 {
+		t.Errorf("ByteAt(200) = 0x%02X, want 0", b)
+	}
+
+	// Slice with negative off should return nil, not panic
+	if s := mr.Slice(-1, 10); s != nil {
+		t.Errorf("Slice(-1, 10) = %v, want nil", s)
+	}
+
+	// Slice with negative end should return nil
+	if s := mr.Slice(0, -1); s != nil {
+		t.Errorf("Slice(0, -1) = %v, want nil", s)
+	}
+
+	// Slice with both negative should return nil
+	if s := mr.Slice(-10, -5); s != nil {
+		t.Errorf("Slice(-10, -5) = %v, want nil", s)
+	}
+}

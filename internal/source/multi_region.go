@@ -87,6 +87,9 @@ func (m *multiRegionData) regionFor(off int64) int {
 // ByteAt returns the byte at the given logical offset.
 // Returns 0 if the offset is out of bounds.
 func (m *multiRegionData) ByteAt(off int64) byte {
+	if off < 0 || off >= m.totalSize {
+		return 0
+	}
 	idx := m.regionFor(off)
 	if idx >= len(m.regions) {
 		return 0
@@ -99,7 +102,7 @@ func (m *multiRegionData) ByteAt(off int64) byte {
 // Returns a zero-copy sub-slice when the range falls within one region.
 // Copies into a new buffer when the range straddles a region boundary.
 func (m *multiRegionData) Slice(off, end int64) []byte {
-	if off >= end {
+	if off < 0 || end < 0 || off >= end {
 		return nil
 	}
 	idx := m.regionFor(off)
