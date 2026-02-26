@@ -153,6 +153,11 @@ for each stream (video and audio) of each source file. It uses compressed
 delta+varint+RLE encoding to achieve high compression ratios on the highly
 regular M2TS packet structure.
 
+Only streams (video, audio sub-streams) that are actually referenced by
+matched index entries are included. For multi-region Blu-ray ISOs that may
+contain 100+ M2TS files, this avoids storing range maps for unrelated
+regions and keeps the section compact.
+
 ### Section Layout
 
 ```
@@ -278,8 +283,13 @@ For each FUSE read:
   entries that span multiple PES payloads are merged during creation)
 
 **Range map overhead (V4 only):**
-- Typically <100 KB total for all streams, even for 35+ GB source files
-- Negligible compared to index and delta sizes
+- Video range maps: typically <100 KB due to regular M2TS packet structure
+  (192-byte stride compresses ~1000:1 via RLE)
+- Audio range maps: can be tens of MB due to irregular payload sizes
+  (e.g., DTS core frames extracted from DTS-HD streams have variable sizes
+  that break RLE compression)
+- Only streams referenced by matched entries are included, so unrelated
+  M2TS regions in multi-region Blu-ray ISOs are excluded
 
 ## Delta Contents
 
