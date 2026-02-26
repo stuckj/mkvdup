@@ -385,7 +385,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	if !quiet && result.Savings < warnThreshold {
 		printInfoln()
 		printInfo("WARNING: Space savings (%.1f%%) below %.0f%%\n", result.Savings, warnThreshold)
-		printInfoln("  This may indicate wrong source or transcoded MKV.")
+		printInfoln("  This may indicate wrong source, transcoded MKV, or very small MKV file.")
 	}
 
 	return nil

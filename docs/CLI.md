@@ -566,8 +566,10 @@ If space savings fall below the warning threshold (default: 75%), a warning is s
 
 ```
 WARNING: Space savings (28.4%) below 75%
-  This may indicate wrong source or transcoded MKV.
+  This may indicate wrong source, transcoded MKV, or very small MKV file.
 ```
+
+Small MKV files (under ~200 MB) may naturally show lower space savings because the fixed overhead of the dedup file format (offset tables, MKV container headers, chapter data) becomes a larger proportion of the total file size. This is expected and does not indicate a matching problem.
 
 Use `--warn-threshold N` to customize the percentage. Use `--quiet` to suppress all informational output including warnings.
 

@@ -355,6 +355,6 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 		for _, s := range lowSavings {
 			printInfoln(s)
 		}
-		printInfoln("  This may indicate wrong source or transcoded MKV.")
+		printInfoln("  This may indicate wrong source, transcoded MKV, or very small MKV file.")
 	}
 }
