@@ -1359,8 +1359,11 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 
 		// After processing, check if trailing bytes could be a partial DTS core header
 		if coreRemaining == 0 && len(data) > 0 {
-			// Look for 0x7F (start of DTS sync word) near end of range
-			checkStart := len(data) - 4
+			// Look for 0x7F (start of DTS sync word) near end of range.
+			// We need up to 7 bytes (4-byte sync + 3 bytes) for DTSCoreFrameSize(),
+			// so search the last 6 bytes in case the sync word starts at len(data)-6
+			// or len(data)-5 and continues into the next range.
+			checkStart := len(data) - 6
 			if checkStart < 0 {
 				checkStart = 0
 			}
@@ -1392,7 +1395,6 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 			last := coreRanges[len(coreRanges)-1]
 			coreRanges = coreRanges[:len(coreRanges)-1]
 			coreES -= int64(last.Size)
-			_ = last // suppress unused warning
 		}
 	}
 

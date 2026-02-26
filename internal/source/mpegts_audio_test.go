@@ -446,6 +446,51 @@ func TestSplitDTSHDCoreRanges_CrossRange(t *testing.T) {
 	}
 }
 
+func TestSplitDTSHDCoreRanges_SyncNearRangeEnd(t *testing.T) {
+	// Regression test: ensure DTS core sync words starting 5-6 bytes before
+	// a range boundary are detected. DTSCoreFrameSize() needs 7 bytes, so
+	// the lookback window must cover at least 6 bytes from the end.
+	var payload []byte
+	payload = append(payload, makeDTSHDExSSUnit(128, 0x11)...) // 128 bytes extension
+	payload = append(payload, makeDTSCoreFrame(256, 0x22)...)  // 256 bytes core at offset 128
+	payload = append(payload, makeDTSHDExSSUnit(100, 0x33)...) // 100 bytes extension
+	// Total: 484 bytes
+
+	p := &MPEGTSParser{
+		data: payload,
+		size: int64(len(payload)),
+	}
+
+	// Place range boundary 5 bytes after the DTS core sync word starts.
+	// Core frame starts at offset 128. Boundary at 133 means the sync word
+	// (bytes 128-131) plus one header byte are in range[0], but the remaining
+	// 2 header bytes needed for frame size are in range[1].
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: 133, ESOffset: 0},     // has 0x7F at [128], 5 bytes of header
+		{FileOffset: 133, Size: 351, ESOffset: 133}, // rest of core + extension
+	}
+
+	coreRanges := p.splitDTSHDCoreRanges(ranges)
+
+	var coreTotal int64
+	for _, r := range coreRanges {
+		coreTotal += int64(r.Size)
+	}
+
+	if coreTotal != 256 {
+		t.Errorf("DTS core total size = %d, want 256", coreTotal)
+	}
+
+	// Verify ES offsets are sequential
+	for i := 1; i < len(coreRanges); i++ {
+		prev := coreRanges[i-1]
+		cur := coreRanges[i]
+		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
+			t.Errorf("core range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
+		}
+	}
+}
+
 func TestMPEGTSParser_SubtitleSubStreams(t *testing.T) {
 	// Build M2TS with video + 2 audio + 1 PGS subtitle
 	data := buildTestM2TS(t, []testStream{
