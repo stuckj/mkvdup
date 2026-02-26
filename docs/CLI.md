@@ -18,6 +18,9 @@ mkvdup --quiet <command> [args...]
 # Disable progress bars (phase labels and completion times still shown)
 mkvdup --no-progress <command> [args...]
 
+# Duplicate output to a log file (non-TTY style)
+mkvdup --log-file /path/to/logfile <command> [args...]
+
 # Examples:
 mkvdup -v create video.mkv /source/dir
 mkvdup -q create video.mkv /source/dir
@@ -39,7 +42,14 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 **No-progress mode (`--no-progress`):**
 - Disables visual progress bars
 - Phase labels and completion times are still printed
+- Milestone percentages are printed at 10% intervals (so redirected logs still show progress)
 - Automatically enabled when stdout is not a terminal (e.g., piped to a file)
+
+**Log file (`--log-file PATH`):**
+- Duplicates all informational output to the specified file
+- Uses non-TTY style: milestone percentages at 10% intervals instead of progress bars, no ANSI escape sequences
+- Output is written regardless of `--quiet` (quiet only suppresses stdout)
+- Useful for capturing progress when running in the background or via systemd
 
 ## Commands
 
@@ -539,7 +549,16 @@ When multiple source directories are used, source group headers are shown:
 Indexing source 1/2...
 ```
 
-Progress bars are automatically disabled when stdout is not a terminal. Use `--no-progress` to disable them manually (phase labels and completion times are still shown). Use `--quiet` to suppress all informational output.
+Progress bars are automatically disabled when stdout is not a terminal. When disabled, milestone percentages are printed at 10% intervals:
+```
+Phase 3/6: Parsing MKV file...
+  10% (00:00:03)
+  20% (00:00:06)
+  ...
+Phase 3/6: Parsing MKV file... done (00:00:27)
+```
+
+Use `--no-progress` to disable progress bars manually (phase labels and completion times are still shown). Use `--quiet` to suppress all informational output on stdout. Use `--log-file PATH` to capture output to a file (always uses non-TTY milestone style, written even when `--quiet` is set).
 
 ## Warning Threshold
 

@@ -46,7 +46,7 @@ _mkvdup() {
     fi
 
     local commands="create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag help"
-    local global_opts="-v --verbose -q --quiet --no-progress -h --help --version"
+    local global_opts="-v --verbose -q --quiet --no-progress --log-file -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
     local cmd=""
@@ -54,6 +54,10 @@ _mkvdup() {
     for ((i=1; i < cword; i++)); do
         case "${words[i]}" in
             -v|--verbose|-q|--quiet|--no-progress|-h|--help|--version)
+                ;;
+            --log-file)
+                # Skip --log-file and its argument
+                ((i++))
                 ;;
             -*)
                 # Skip unknown options and their potential arguments
@@ -67,11 +71,23 @@ _mkvdup() {
 
     # If no command yet, complete commands and global options
     if [[ -z "$cmd" ]]; then
+        case "$prev" in
+            --log-file)
+                _filedir
+                return
+                ;;
+        esac
         if [[ "$cur" == -* ]]; then
             COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         else
             COMPREPLY=($(compgen -W "$commands" -- "$cur"))
         fi
+        return
+    fi
+
+    # Global option --log-file takes a path argument
+    if [[ "$prev" == "--log-file" ]]; then
+        _filedir
         return
     fi
 
