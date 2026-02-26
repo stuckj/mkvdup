@@ -18,7 +18,7 @@ This tool is intended for personal backup and archival of legally owned media. I
 ## Features
 
 - **DVD support** - Works with ISO files containing VOB (MPEG-PS) content
-- **Blu-ray support** - Works with BDMV directory structures
+- **Blu-ray support** - Works with BDMV directory structures and Blu-ray ISO files
 - **FUSE filesystem** - Mount deduplicated files and access them transparently
 - **Permission customization** - `chmod`/`chown` support with persistent metadata storage
 - **Verification** - Byte-for-byte verification of reconstructed files

@@ -20,11 +20,12 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 
 | Type | Structure | Container Format |
 |------|-----------|------------------|
-| DVD | Single `.iso` file | VOB (MPEG-PS) |
+| DVD | Single `.iso` file (ISO 9660) | VOB (MPEG-PS) |
 | Blu-ray | Directory with BDMV structure | M2TS (MPEG-TS) |
+| Blu-ray ISO | Single `.iso` file (UDF) | M2TS (MPEG-TS) |
 
-Both source types are referenced via a **source directory** which contains either:
-- A single ISO file (DVD)
+All source types are referenced via a **source directory** which contains either:
+- A single ISO file — DVD (ISO 9660) or Blu-ray (UDF)
 - A Blu-ray backup directory structure (BDMV/STREAM/*.m2ts)
 
 ## Architecture

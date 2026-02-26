@@ -312,7 +312,14 @@ Implies
 .TP
 .B \-\-no\-progress
 Disable progress bars. Phase labels and completion times are still printed.
-Automatically enabled when stdout is not a terminal.
+Milestone percentages are printed at 10% intervals. Automatically enabled
+when stdout is not a terminal.
+.TP
+.B \-\-log\-file \fIPATH\fR
+Duplicate all informational output to the specified file. The log file uses
+non-TTY style: milestone percentages at 10% intervals instead of progress
+bars, no ANSI escape sequences. Output is written regardless of
+.BR \-\-quiet .
 .TP
 .BR \-h ", " \-\-help
 Show help message

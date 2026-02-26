@@ -6,10 +6,18 @@
 # so that partial input like "batch-" still offers "batch-create".
 function __fish_mkvdup_needs_command
     set -l tokens (commandline -opc)
+    set -l skip_next 0
     # Examine all tokens except the last (which is being completed)
     for i in $tokens[2..-2]
+        if test $skip_next -eq 1
+            set skip_next 0
+            continue
+        end
         switch $i
             case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
+                continue
+            case '--log-file'
+                set skip_next 1
                 continue
             case '-*'
                 continue
@@ -23,9 +31,17 @@ end
 function __fish_mkvdup_using_command
     set -l tokens (commandline -opc)
     set -l target $argv[1]
+    set -l skip_next 0
     for i in $tokens[2..-1]
+        if test $skip_next -eq 1
+            set skip_next 0
+            continue
+        end
         switch $i
             case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
+                continue
+            case '--log-file'
+                set skip_next 1
                 continue
             case '-*'
                 continue
@@ -48,6 +64,7 @@ complete -c $cmd -f
 complete -c $cmd -n __fish_mkvdup_needs_command -s v -l verbose -d 'Enable verbose/debug output'
 complete -c $cmd -n __fish_mkvdup_needs_command -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n __fish_mkvdup_needs_command -l no-progress -d 'Disable progress bars'
+complete -c $cmd -n __fish_mkvdup_needs_command -l log-file -d 'Duplicate output to a log file' -r
 complete -c $cmd -n __fish_mkvdup_needs_command -s h -l help -d 'Show help'
 complete -c $cmd -n __fish_mkvdup_needs_command -l version -d 'Show version'
 
