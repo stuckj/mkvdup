@@ -90,7 +90,7 @@ func probe(mkvPaths []string, sourceDirs []string) error {
 			}
 			continue
 		}
-		indexer.SetVerbose(verbose)
+		indexer.SetVerboseWriter(verboseWriter())
 
 		if err := indexer.Build(nil); err != nil {
 			fmt.Printf("  Error building index: %v\n", err)

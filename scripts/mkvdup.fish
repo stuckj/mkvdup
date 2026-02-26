@@ -14,7 +14,7 @@ function __fish_mkvdup_needs_command
             continue
         end
         switch $i
-            case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
+            case '-v' '--verbose' '-q' '--quiet' '--no-progress' '--log-verbose' '-h' '--help' '--version'
                 continue
             case '--log-file'
                 set skip_next 1
@@ -38,7 +38,7 @@ function __fish_mkvdup_using_command
             continue
         end
         switch $i
-            case '-v' '--verbose' '-q' '--quiet' '--no-progress' '-h' '--help' '--version'
+            case '-v' '--verbose' '-q' '--quiet' '--no-progress' '--log-verbose' '-h' '--help' '--version'
                 continue
             case '--log-file'
                 set skip_next 1
@@ -65,6 +65,7 @@ complete -c $cmd -n __fish_mkvdup_needs_command -s v -l verbose -d 'Enable verbo
 complete -c $cmd -n __fish_mkvdup_needs_command -s q -l quiet -d 'Suppress informational progress output'
 complete -c $cmd -n __fish_mkvdup_needs_command -l no-progress -d 'Disable progress bars'
 complete -c $cmd -n __fish_mkvdup_needs_command -l log-file -d 'Duplicate output to a log file' -r
+complete -c $cmd -n __fish_mkvdup_needs_command -l log-verbose -d 'Enable verbose output in log file only'
 complete -c $cmd -n __fish_mkvdup_needs_command -s h -l help -d 'Show help'
 complete -c $cmd -n __fish_mkvdup_needs_command -l version -d 'Show version'
 

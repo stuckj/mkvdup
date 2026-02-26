@@ -4,6 +4,7 @@ package matcher
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"sort"
@@ -192,7 +193,7 @@ type Matcher struct {
 	trackTypes     map[int]int            // Map from track number to track type
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
 	numWorkers     int                    // Number of worker goroutines for parallel matching
-	verbose        bool                   // Enable diagnostic output
+	verboseWriter  io.Writer              // Destination for diagnostic output (nil = disabled)
 	isAVCTrack     map[int]bool           // Per-track: whether this track uses H.264 NAL types
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
@@ -266,9 +267,10 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 	}, nil
 }
 
-// SetVerbose enables or disables diagnostic output during matching.
-func (m *Matcher) SetVerbose(v bool) {
-	m.verbose = v
+// SetVerboseWriter sets the destination for diagnostic output during matching.
+// Pass nil to disable verbose output.
+func (m *Matcher) SetVerboseWriter(w io.Writer) {
+	m.verboseWriter = w
 }
 
 // SetNumWorkers sets the number of worker goroutines for parallel matching.
@@ -379,21 +381,22 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	}
 
 	// Print diagnostic summary (verbose only)
-	if m.verbose {
-		fmt.Fprintf(os.Stderr, "\n=== Video Matching Diagnostics ===\n")
-		fmt.Fprintf(os.Stderr, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
-		fmt.Fprintf(os.Stderr, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs verify failed:   %d\n", m.diagVideoNALsVerifyFailed.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs all skipped:     %d\n", m.diagVideoNALsAllSkipped.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs matched bytes:   %d (%.2f MB)\n",
+	if m.verboseWriter != nil {
+		w := m.verboseWriter
+		fmt.Fprintf(w, "\n=== Video Matching Diagnostics ===\n")
+		fmt.Fprintf(w, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
+		fmt.Fprintf(w, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
+		fmt.Fprintf(w, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
+		fmt.Fprintf(w, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
+		fmt.Fprintf(w, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
+		fmt.Fprintf(w, "Video NALs verify failed:   %d\n", m.diagVideoNALsVerifyFailed.Load())
+		fmt.Fprintf(w, "Video NALs all skipped:     %d\n", m.diagVideoNALsAllSkipped.Load())
+		fmt.Fprintf(w, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
+		fmt.Fprintf(w, "Video NALs matched bytes:   %d (%.2f MB)\n",
 			m.diagVideoNALsMatchedBytes.Load(), float64(m.diagVideoNALsMatchedBytes.Load())/(1024*1024))
-		fmt.Fprintf(os.Stderr, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
+		fmt.Fprintf(w, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
 		if len(m.isAVCTrack) > 0 {
-			fmt.Fprintf(os.Stderr, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
+			fmt.Fprintf(w, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
 			nalTypeNames := map[byte]string{
 				1: "non-IDR slice", 2: "slice A", 3: "slice B", 4: "slice C",
 				5: "IDR slice", 6: "SEI", 7: "SPS", 8: "PPS", 9: "AUD", 12: "filler",
@@ -409,27 +412,27 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 				if name == "" {
 					name = "other"
 				}
-				fmt.Fprintf(os.Stderr, "  type %2d (%14s): %8d / %8d / %8d (%.1f%% miss)\n",
+				fmt.Fprintf(w, "  type %2d (%14s): %8d / %8d / %8d (%.1f%% miss)\n",
 					i, name, total, matched, notFound, float64(notFound)/float64(total)*100)
 			}
 		}
 		// NAL size bucket breakdown
 		nalSizeBucketNames := [5]string{"<64B", "64-127B", "128B-1KB", "1KB-32KB", "32KB+"}
-		fmt.Fprintf(os.Stderr, "\nVideo NAL size distribution (matched / unmatched):\n")
+		fmt.Fprintf(w, "\nVideo NAL size distribution (matched / unmatched):\n")
 		for i := 0; i < 5; i++ {
 			matched := m.diagNALSizeMatched[i].Load()
 			unmatched := m.diagNALSizeUnmatched[i].Load()
 			if matched > 0 || unmatched > 0 {
-				fmt.Fprintf(os.Stderr, "  %9s: %8d matched, %8d unmatched\n",
+				fmt.Fprintf(w, "  %9s: %8d matched, %8d unmatched\n",
 					nalSizeBucketNames[i], matched, unmatched)
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "\nFirst hash-not-found examples:\n")
+		fmt.Fprintf(w, "\nFirst hash-not-found examples:\n")
 		for _, ex := range m.diagExamplesOutput {
-			fmt.Fprintf(os.Stderr, "%s\n", ex)
+			fmt.Fprintf(w, "%s\n", ex)
 		}
-		fmt.Fprintf(os.Stderr, "=================================\n")
+		fmt.Fprintf(w, "=================================\n")
 	}
 
 	// Merge overlapping regions and build final entries

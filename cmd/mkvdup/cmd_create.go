@@ -64,7 +64,7 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 	if err != nil {
 		return nil, nil, fmt.Errorf("create indexer: %w", err)
 	}
-	indexer.SetVerbose(verbose)
+	indexer.SetVerboseWriter(verboseWriter())
 
 	// We don't know total size until Build starts calling back with it,
 	// so create bar with 0 and let first Update set the total.
@@ -94,8 +94,8 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 func checkCodecCompatibilityFromDir(tracks []mkv.Track, sourceDir string, nonInteractive bool) error {
 	sourceCodecs, err := source.DetectSourceCodecsFromDir(sourceDir)
 	if err != nil {
-		if verbose {
-			fmt.Printf("  Note: could not detect source codecs: %v\n", err)
+		if verbose || logVerbose {
+			printInfo("  Note: could not detect source codecs: %v\n", err)
 		}
 		return nil
 	}
@@ -171,7 +171,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		return result
 	}
 	defer m.Close()
-	m.SetVerbose(verbose)
+	m.SetVerboseWriter(verboseWriter())
 
 	matchBar := newProgressBar(phaseLabel(1, "Matching packets..."), int64(len(parser.Packets())), "packets")
 	matchResult, err := m.Match(mkvPath, parser.Packets(), parser.Tracks(), func(processed, total int) {
@@ -261,7 +261,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 				}
 				rangeMaps = append(rangeMaps, rm)
 			}
-			if verbose {
+			if verbose || logVerbose {
 				printInfo("  Range maps: %d/%d source files used, %d streams referenced\n",
 					len(usedFiles), len(index.ESReaders), len(usedStreams))
 			}

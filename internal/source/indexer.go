@@ -2,7 +2,7 @@ package source
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -28,8 +28,8 @@ type Indexer struct {
 	sourceType     Type
 	windowSize     int
 	index          *Index
-	useRawIndexing bool // Force raw file indexing even for DVDs
-	verbose        bool // Enable diagnostic output
+	useRawIndexing bool      // Force raw file indexing even for DVDs
+	verboseWriter  io.Writer // Destination for diagnostic output (nil = disabled)
 }
 
 // NewIndexer creates a new Indexer for the given source directory.
@@ -67,9 +67,10 @@ func (idx *Indexer) SourceType() Type {
 	return idx.sourceType
 }
 
-// SetVerbose enables or disables diagnostic output during indexing.
-func (idx *Indexer) SetVerbose(v bool) {
-	idx.verbose = v
+// SetVerboseWriter sets the destination for diagnostic output during indexing.
+// Pass nil to disable verbose output.
+func (idx *Indexer) SetVerboseWriter(w io.Writer) {
+	idx.verboseWriter = w
 }
 
 // SourceDir returns the source directory path.
@@ -360,8 +361,8 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 		}
 	}
 
-	if idx.verbose {
-		fmt.Fprintf(os.Stderr, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
+	if idx.verboseWriter != nil {
+		fmt.Fprintf(idx.verboseWriter, "  [indexESData] video=%v: %d NALs indexed (fast=%d, slow/cross-range=%d, skipped=%d)\n",
 			isVideo, syncPointCount, indexFastPath, indexSlowPath, indexSkipped)
 	}
 
@@ -604,8 +605,8 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 
 			parser := NewMPEGTSParserMultiRegion(mr)
 			if err := parser.ParseWithProgress(nil); err != nil {
-				if idx.verbose {
-					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
+				if idx.verboseWriter != nil {
+					fmt.Fprintf(idx.verboseWriter, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
 				}
 				continue
 			}
@@ -614,8 +615,8 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 			// Contiguous file: use sub-slice of mmap'd ISO
 			endOffset := m2ts.Offset + m2ts.Size
 			if endOffset > int64(len(isoData)) {
-				if idx.verbose {
-					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: extent beyond ISO bounds (%d + %d > %d)\n",
+				if idx.verboseWriter != nil {
+					fmt.Fprintf(idx.verboseWriter, "  [indexBlurayISO] skipping %s: extent beyond ISO bounds (%d + %d > %d)\n",
 						m2ts.Name, m2ts.Offset, m2ts.Size, len(isoData))
 				}
 				continue
@@ -624,8 +625,8 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 			m2tsData := isoData[m2ts.Offset:endOffset]
 			parser := NewMPEGTSParser(m2tsData)
 			if err := parser.ParseWithProgress(nil); err != nil {
-				if idx.verbose {
-					fmt.Fprintf(os.Stderr, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
+				if idx.verboseWriter != nil {
+					fmt.Fprintf(idx.verboseWriter, "  [indexBlurayISO] skipping %s: %v\n", m2ts.Name, err)
 				}
 				continue
 			}

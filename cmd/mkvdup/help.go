@@ -36,6 +36,7 @@ Options:
   -q, --quiet        Suppress informational progress output
   --no-progress      Disable progress bars (still show status messages)
   --log-file PATH    Duplicate output to a log file (non-TTY style)
+  --log-verbose      Enable verbose output in log file only
   -h, --help         Show help
   --version          Show version
 `)

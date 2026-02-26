@@ -33,15 +33,15 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 	defer original.Close()
 
 	// Debug: show first few bytes comparison (controlled by verbose flag)
-	if verbose {
+	if verbose || logVerbose {
 		origFirst := make([]byte, 32)
 		reconFirst := make([]byte, 32)
 		n, _ := original.ReadAt(origFirst, 0)
-		fmt.Printf("  Debug: Original ReadAt(32, 0) returned %d bytes\n", n)
+		printInfo("  Debug: Original ReadAt(32, 0) returned %d bytes\n", n)
 		n, _ = reader.ReadAt(reconFirst, 0)
-		fmt.Printf("  Debug: Reader ReadAt(32, 0) returned %d bytes\n", n)
-		fmt.Printf("  Debug: Original first 32 bytes:      %x\n", origFirst)
-		fmt.Printf("  Debug: Reconstructed first 32 bytes: %x\n", reconFirst)
+		printInfo("  Debug: Reader ReadAt(32, 0) returned %d bytes\n", n)
+		printInfo("  Debug: Original first 32 bytes:      %x\n", origFirst)
+		printInfo("  Debug: Reconstructed first 32 bytes: %x\n", reconFirst)
 		original.Seek(0, 0) // Reset file position
 	}
 
@@ -65,10 +65,10 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 		}
 		n2, err2 := reader.ReadAt(reconstructedBuf[:n1], offset)
 
-		if verbose && offset == 0 {
-			fmt.Printf("  Debug: Loop first read - n1=%d, n2=%d, err1=%v, err2=%v\n", n1, n2, err1, err2)
-			fmt.Printf("  Debug: originalBuf first 32:      %x\n", originalBuf[:32])
-			fmt.Printf("  Debug: reconstructedBuf first 32: %x\n", reconstructedBuf[:32])
+		if (verbose || logVerbose) && offset == 0 {
+			printInfo("  Debug: Loop first read - n1=%d, n2=%d, err1=%v, err2=%v\n", n1, n2, err1, err2)
+			printInfo("  Debug: originalBuf first 32:      %x\n", originalBuf[:32])
+			printInfo("  Debug: reconstructedBuf first 32: %x\n", reconstructedBuf[:32])
 		}
 
 		if n1 != n2 {

@@ -321,6 +321,16 @@ non-TTY style: milestone percentages at 10% intervals instead of progress
 bars, no ANSI escape sequences. Output is written regardless of
 .BR \-\-quiet .
 .TP
+.B \-\-log\-verbose
+Enable verbose diagnostic output in the log file only (not on the console).
+Requires
+.B \-\-log\-file
+to have effect. When
+.B \-\-verbose
+is also set, diagnostics go to both stderr and the log file.
+Useful for background or headless runs where diagnostics should be captured
+for later review without cluttering the console.
+.TP
 .BR \-h ", " \-\-help
 Show help message
 .TP

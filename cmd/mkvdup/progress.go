@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -234,6 +235,25 @@ func printInfo(format string, a ...any) {
 	if logFile != nil {
 		fmt.Fprintf(logFile, format, a...)
 	}
+}
+
+// verboseWriter returns the io.Writer for verbose diagnostic output based on
+// the current flag configuration:
+//   - verbose + logFile → both stderr and log file (MultiWriter)
+//   - verbose only     → stderr
+//   - logVerbose + logFile → log file only
+//   - otherwise        → nil (verbose disabled)
+func verboseWriter() io.Writer {
+	if verbose {
+		if logFile != nil {
+			return io.MultiWriter(os.Stderr, logFile)
+		}
+		return os.Stderr
+	}
+	if logVerbose && logFile != nil {
+		return logFile
+	}
+	return nil
 }
 
 // printInfoln prints informational output with a newline, suppressed on stdout when quiet is true.
