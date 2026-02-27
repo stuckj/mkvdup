@@ -249,8 +249,6 @@ func buildTrueHDAC3M2TSData() []byte {
 	return data
 }
 
-// makeDTSCoreFrame creates a synthetic DTS core frame with sync word 7F FE 80 01.
-// The frame size is encoded in the header per the DTS spec.
 // makeDTSCoreFrame creates a synthetic DTS core frame of the given size.
 // The FSIZE header field is set to the given fsizeValue (or size if fsizeValue is 0).
 // In DTS-HD streams, FSIZE reports the full access unit size (core + extension),
