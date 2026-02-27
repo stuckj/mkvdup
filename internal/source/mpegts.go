@@ -1273,39 +1273,70 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 		buf = append(buf, data...)
 	}
 
-	// Find first validated DTS core sync word.
-	dtsSyncPos := -1
+	// Find all DTS core sync positions to measure frame boundaries.
+	var syncPositions []int
 	for i := 0; i+6 < len(buf); i++ {
 		if buf[i] == 0x7F && buf[i+1] == 0xFE &&
 			buf[i+2] == 0x80 && buf[i+3] == 0x01 {
 			if DTSCoreFrameSize(buf[i:i+7]) > 0 {
-				dtsSyncPos = i
-				break
+				syncPositions = append(syncPositions, i)
 			}
 		}
 	}
-	if dtsSyncPos < 0 {
+	if len(syncPositions) == 0 {
 		return 0
 	}
 
-	// Scan forward for ExSS sync or next DTS sync to find actual core boundary.
+	dtsSyncPos := syncPositions[0]
+
+	// Find actual core boundary from the first frame by scanning for ExSS
+	// sync or next DTS sync.
+	coreSize := 0
 	for i := dtsSyncPos + 7; i+3 < len(buf); i++ {
 		// ExSS sync: 64 58 20 25
 		if buf[i] == 0x64 && buf[i+1] == 0x58 &&
 			buf[i+2] == 0x20 && buf[i+3] == 0x25 {
-			return i - dtsSyncPos
+			coreSize = i - dtsSyncPos
+			break
 		}
 		// Next DTS core sync: 7F FE 80 01 (validated)
 		if buf[i] == 0x7F && buf[i+1] == 0xFE &&
 			buf[i+2] == 0x80 && buf[i+3] == 0x01 {
 			if i+6 < len(buf) && DTSCoreFrameSize(buf[i:i+7]) > 0 {
-				return i - dtsSyncPos
+				coreSize = i - dtsSyncPos
+				break
 			}
 		}
 	}
 
-	// Could not find boundary — fall back to FSIZE from header.
-	return DTSCoreFrameSize(buf[dtsSyncPos : dtsSyncPos+7])
+	if coreSize == 0 {
+		// Could not find boundary — fall back to FSIZE from header.
+		return DTSCoreFrameSize(buf[dtsSyncPos : dtsSyncPos+7])
+	}
+
+	// Validate that all detected frames have a consistent core size.
+	// DTS core on Blu-ray uses CBR, so frame sizes should be uniform.
+	// If they vary, the single-size assumption in splitDTSHDCoreRanges
+	// would produce incorrect ranges.
+	for i := 1; i < len(syncPositions)-1; i++ {
+		frameSize := syncPositions[i+1] - syncPositions[i]
+		// In a DTS-HD stream, the distance between consecutive DTS syncs
+		// is the full access unit (core + extension). But the distance
+		// from a DTS sync to the next ExSS should equal coreSize.
+		// We can't easily re-detect ExSS for each frame here, but we can
+		// check that all access unit sizes are equal (implying consistent
+		// core sizes within a uniform structure).
+		if i == 1 {
+			continue // need at least two intervals to compare
+		}
+		prevFrameSize := syncPositions[i] - syncPositions[i-1]
+		if frameSize != prevFrameSize {
+			log.Printf("mpegts: warning: DTS-HD stream has variable frame sizes (%d vs %d bytes); skipping core extraction", prevFrameSize, frameSize)
+			return 0
+		}
+	}
+
+	return coreSize
 }
 
 // splitDTSHDCoreRanges extracts DTS core frame ranges from a combined DTS-HD
