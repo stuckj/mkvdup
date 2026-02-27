@@ -1345,46 +1345,56 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 		if headerBufLen > 0 && coreRemaining == 0 {
 			need := 7 - headerBufLen
 			if need > len(data) {
-				copy(headerBuf[headerBufLen:], data)
-				headerBufLen += len(data)
-				headerPendingRanges = append(headerPendingRanges, r)
-				continue
-			}
-			copy(headerBuf[headerBufLen:], data[:need])
-			if DTSCoreFrameSize(headerBuf[:7]) > 0 {
-				// Valid DTS core frame spanning range boundary.
-				// Add any intermediate pending ranges to core.
-				for _, pr := range headerPendingRanges {
-					coreRanges = append(coreRanges, PESPayloadRange{
-						FileOffset: pr.FileOffset,
-						Size:       pr.Size,
-						ESOffset:   coreES,
-					})
-					coreES += int64(pr.Size)
+				// This range doesn't have enough bytes to complete the
+				// 7-byte header. Abandon the speculative cross-range
+				// header and fall through to normal scanning so these
+				// bytes aren't silently skipped if the header turns out
+				// to be invalid.
+				if len(coreRanges) > 0 {
+					last := coreRanges[len(coreRanges)-1]
+					coreRanges = coreRanges[:len(coreRanges)-1]
+					coreES -= int64(last.Size)
 				}
 				headerPendingRanges = nil
-				coreRanges = append(coreRanges, PESPayloadRange{
-					FileOffset: r.FileOffset,
-					Size:       need,
-					ESOffset:   coreES,
-				})
-				coreES += int64(need)
-				// Use detected core size, not FSIZE. Subtract the 7 header
-				// bytes already consumed (from buffer + current range).
-				coreRemaining = actualCoreSize - 7
-				pos = need
 				headerBufLen = 0
-				goto scanLoop
+				// Fall through to scanLoop below
+			} else {
+				copy(headerBuf[headerBufLen:], data[:need])
+				if DTSCoreFrameSize(headerBuf[:7]) > 0 {
+					// Valid DTS core frame spanning range boundary.
+					// Add any intermediate pending ranges to core.
+					for _, pr := range headerPendingRanges {
+						coreRanges = append(coreRanges, PESPayloadRange{
+							FileOffset: pr.FileOffset,
+							Size:       pr.Size,
+							ESOffset:   coreES,
+						})
+						coreES += int64(pr.Size)
+					}
+					headerPendingRanges = nil
+					coreRanges = append(coreRanges, PESPayloadRange{
+						FileOffset: r.FileOffset,
+						Size:       need,
+						ESOffset:   coreES,
+					})
+					coreES += int64(need)
+					// Use detected core size, not FSIZE. Subtract the 7 header
+					// bytes already consumed (from buffer + current range).
+					coreRemaining = actualCoreSize - 7
+					pos = need
+					headerBufLen = 0
+					goto scanLoop
+				}
+				// Not a valid DTS core header — discard buffered bytes (they're extension data).
+				// Re-attribute the optimistic core range back (remove it).
+				if len(coreRanges) > 0 {
+					last := coreRanges[len(coreRanges)-1]
+					coreRanges = coreRanges[:len(coreRanges)-1]
+					coreES -= int64(last.Size)
+				}
+				headerPendingRanges = nil
+				headerBufLen = 0
 			}
-			// Not a valid DTS core header — discard buffered bytes (they're extension data).
-			// Re-attribute the optimistic core range back (remove it).
-			if len(coreRanges) > 0 {
-				last := coreRanges[len(coreRanges)-1]
-				coreRanges = coreRanges[:len(coreRanges)-1]
-				coreES -= int64(last.Size)
-			}
-			headerPendingRanges = nil
-			headerBufLen = 0
 		}
 
 	scanLoop:

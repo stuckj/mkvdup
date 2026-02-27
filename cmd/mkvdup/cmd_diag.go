@@ -167,7 +167,13 @@ func deltadiag(dedupPath, mkvPath string) error {
 	// Audio codec breakdown
 	if len(deltaAudioByCodec) > 0 {
 		fmt.Printf("\n=== Audio Delta by Codec ===\n")
-		for codec, dc := range deltaAudioByCodec {
+		codecs := make([]string, 0, len(deltaAudioByCodec))
+		for codec := range deltaAudioByCodec {
+			codecs = append(codecs, codec)
+		}
+		sort.Strings(codecs)
+		for _, codec := range codecs {
+			dc := deltaAudioByCodec[codec]
 			fmt.Printf("  %-20s: %10s bytes (%8.2f MB) [%6d entries]\n",
 				codec, formatInt(dc.bytes), float64(dc.bytes)/(1024*1024), dc.count)
 		}

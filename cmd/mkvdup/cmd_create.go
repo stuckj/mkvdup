@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -227,8 +228,15 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 				usedFiles[k.fileIndex] = true
 			}
 
-			var rangeMaps []dedup.RangeMapData
+			// Sort file indices for deterministic output.
+			sortedFiles := make([]uint16, 0, len(usedFiles))
 			for fi := range usedFiles {
+				sortedFiles = append(sortedFiles, fi)
+			}
+			sort.Slice(sortedFiles, func(i, j int) bool { return sortedFiles[i] < sortedFiles[j] })
+
+			var rangeMaps []dedup.RangeMapData
+			for _, fi := range sortedFiles {
 				i := int(fi)
 				if i >= len(index.ESReaders) {
 					continue
