@@ -94,8 +94,8 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 func checkCodecCompatibilityFromDir(tracks []mkv.Track, sourceDir string, nonInteractive bool) error {
 	sourceCodecs, err := source.DetectSourceCodecsFromDir(sourceDir)
 	if err != nil {
-		if verbose || logVerbose {
-			printInfo("  Note: could not detect source codecs: %v\n", err)
+		if vw := verboseWriter(); vw != nil {
+			fmt.Fprintf(vw, "  Note: could not detect source codecs: %v\n", err)
 		}
 		return nil
 	}
@@ -261,8 +261,8 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 				}
 				rangeMaps = append(rangeMaps, rm)
 			}
-			if verbose || logVerbose {
-				printInfo("  Range maps: %d/%d source files used, %d streams referenced\n",
+			if vw := verboseWriter(); vw != nil {
+				fmt.Fprintf(vw, "  Range maps: %d/%d source files used, %d streams referenced\n",
 					len(usedFiles), len(index.ESReaders), len(usedStreams))
 			}
 			if len(rangeMaps) > 0 {
@@ -320,7 +320,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 
 	// Verify reconstruction
 	verifyPrefix := phaseLabel(3, "Verifying reconstruction...")
-	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verbose, verifyPrefix); err != nil {
+	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verifyPrefix); err != nil {
 		printInfo("  WARNING: Verification failed: %v\n", err)
 		printInfoln("  Keeping files for debugging")
 	}

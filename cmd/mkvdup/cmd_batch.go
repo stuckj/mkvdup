@@ -147,8 +147,8 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 		// before the expensive indexing step.
 		sourceCodecs, codecErr := source.DetectSourceCodecsFromDir(g.sourceDir)
 		if codecErr != nil {
-			if verbose || logVerbose {
-				printInfo("Note: could not detect source codecs for %s: %v\n", g.sourceDir, codecErr)
+			if vw := verboseWriter(); vw != nil {
+				fmt.Fprintf(vw, "Note: could not detect source codecs for %s: %v\n", g.sourceDir, codecErr)
 			}
 			printInfoln()
 		} else {
@@ -159,15 +159,15 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 				f := manifest.Files[fi]
 				codecParser, err := mkv.NewParser(f.MKV)
 				if err != nil {
-					if verbose || logVerbose {
-						printInfo("Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
+					if vw := verboseWriter(); vw != nil {
+						fmt.Fprintf(vw, "Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
 					}
 					continue
 				}
 				if err := codecParser.ParseTracksOnly(); err != nil {
 					codecParser.Close()
-					if verbose || logVerbose {
-						printInfo("Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
+					if vw := verboseWriter(); vw != nil {
+						fmt.Fprintf(vw, "Note: skipping codec pre-check for %s: %v\n", filepath.Base(f.MKV), err)
 					}
 					continue
 				}
