@@ -33,10 +33,11 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 mkvdup --log-verbose --log-file out.log create video.mkv /source/dir video.mkvdup
 ```
 
-**Verbose mode enables:**
+**Verbose mode (`-v`, `--verbose`):**
 - FUSE operation logging (Open, Read, Lookup, Readdir)
 - Detailed verification output with byte comparisons
 - Debug information for troubleshooting
+- When combined with `--log-file`, verbose diagnostics go to both stderr and the log file
 
 **Quiet mode (`-q`, `--quiet`):**
 - Suppresses informational progress output during `create`, `batch-create`, `verify`, and `extract` (phase labels, progress bars, statistics)
