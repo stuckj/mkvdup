@@ -840,8 +840,8 @@ func (p *MPEGTSParser) VideoCodec() CodecType {
 
 // splitTrueHDAC3Streams detects combined TrueHD+AC3 audio streams and splits
 // them into separate sub-streams. On Blu-ray, TrueHD streams (PMT type 0x83)
-// interleave an AC3 compatibility core in the same PID. MakeMKV splits these
-// into separate MKV tracks, so we must split them here to match.
+// interleave an AC3 compatibility core in the same PID. Video extraction tools split
+// these into separate MKV tracks, so we must split them here to match.
 func (p *MPEGTSParser) splitTrueHDAC3Streams() {
 	for _, subID := range p.audioSubStreams {
 		if p.subStreamCodec[subID] != CodecTrueHDAudio {
@@ -1165,8 +1165,9 @@ func mergeAdjacentRanges(ranges []PESPayloadRange) []PESPayloadRange {
 // splitDTSHDCoreStreams detects DTS-HD audio streams that contain an embedded
 // DTS core and extracts the core into a separate sub-stream. On Blu-ray,
 // DTS-HD streams (PMT types 0x85/0x86) embed DTS core frames followed by
-// extension data (ExSS: XBR, XLL, XXCh) in the same PID. MakeMKV may extract
-// either the full DTS-HD stream (A_DTS/LOSSLESS) or just the DTS core (A_DTS).
+// extension data (ExSS: XBR, XLL, XXCh) in the same PID. Video extraction tools may
+// extract either the full DTS-HD stream (A_DTS/LOSSLESS) or just the DTS core
+// (A_DTS).
 //
 // Unlike TrueHD+AC3 where the original is replaced, here we keep the original
 // combined sub-stream (for A_DTS/LOSSLESS matching) and add a new core-only
