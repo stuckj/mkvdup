@@ -315,10 +315,10 @@ func buildDTSHDCoreM2TSData() []byte {
 	// size (core + extension), not just the core. Simulate this with the
 	// fsizeValue parameter: first AU = 256+128 = 384, second AU = 256+271 = 527.
 	var audioPayload []byte
-	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11, 384)...)  // 256 bytes DTS core (FSIZE=384)
-	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...)      // 128 bytes ExSS
-	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33, 527)...)  // 256 bytes DTS core (FSIZE=527)
-	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...)      // 271 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11, 384)...) // 256 bytes DTS core (FSIZE=384)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...)     // 128 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33, 527)...) // 256 bytes DTS core (FSIZE=527)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...)     // 271 bytes ExSS
 	// Total: 911 bytes
 
 	var data []byte
@@ -373,10 +373,10 @@ func buildDTSHDCoreM2TSData_CorrectFSIZE() []byte {
 
 	// Build combined DTS-HD payload with correct FSIZE (core-only size).
 	var audioPayload []byte
-	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11)...)       // 256 bytes DTS core (FSIZE=256)
-	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...)      // 128 bytes ExSS
-	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33)...)       // 256 bytes DTS core (FSIZE=256)
-	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...)      // 271 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11)...)  // 256 bytes DTS core (FSIZE=256)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...) // 128 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33)...)  // 256 bytes DTS core (FSIZE=256)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...) // 271 bytes ExSS
 	// Total: 911 bytes
 
 	var data []byte
