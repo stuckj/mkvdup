@@ -251,7 +251,11 @@ func buildTrueHDAC3M2TSData() []byte {
 
 // makeDTSCoreFrame creates a synthetic DTS core frame with sync word 7F FE 80 01.
 // The frame size is encoded in the header per the DTS spec.
-func makeDTSCoreFrame(size int, fillByte byte) []byte {
+// makeDTSCoreFrame creates a synthetic DTS core frame of the given size.
+// The FSIZE header field is set to the given fsizeValue (or size if fsizeValue is 0).
+// In DTS-HD streams, FSIZE reports the full access unit size (core + extension),
+// not just the core portion. Pass the full access unit size to simulate this.
+func makeDTSCoreFrame(size int, fillByte byte, fsizeValue ...int) []byte {
 	if size < 96 {
 		size = 96 // DTS minimum frame size
 	}
@@ -265,7 +269,11 @@ func makeDTSCoreFrame(size int, fillByte byte) []byte {
 	// byte4: [frame_type(1) | deficit(5) | crc(1) | nblks[6]](8 bits) = 0
 	// byte5: [nblks[0] | frame_size[13:7]](8 bits)
 	// byte6: [frame_size[6:0] | amode[5]](8 bits)
-	frameSizeRaw := size - 1
+	fsize := size
+	if len(fsizeValue) > 0 && fsizeValue[0] > 0 {
+		fsize = fsizeValue[0]
+	}
+	frameSizeRaw := fsize - 1
 	frame[5] = byte((frameSizeRaw >> 7) & 0x7F)
 	frame[6] = byte((frameSizeRaw & 0x7F) << 1)
 	for i := 7; i < size; i++ {
@@ -302,12 +310,73 @@ func buildDTSHDCoreM2TSData() []byte {
 		audioPID = uint16(0x1101)
 	)
 
-	// Build combined DTS-HD payload (DTS core + ExSS extension)
+	// Build combined DTS-HD payload (DTS core + ExSS extension).
+	// In DTS-HD, the core header's FSIZE field reports the full access unit
+	// size (core + extension), not just the core. Simulate this with the
+	// fsizeValue parameter: first AU = 256+128 = 384, second AU = 256+271 = 527.
 	var audioPayload []byte
-	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11)...)  // 256 bytes DTS core
-	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...) // 128 bytes ExSS
-	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33)...)  // 256 bytes DTS core
-	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...) // 271 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11, 384)...)  // 256 bytes DTS core (FSIZE=384)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...)      // 128 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33, 527)...)  // 256 bytes DTS core (FSIZE=527)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...)      // 271 bytes ExSS
+	// Total: 911 bytes
+
+	var data []byte
+	data = append(data, makeM2TSPacket(0, true, 0x01, 0, 0, makePATPayload(pmtPID))...)
+	data = append(data, makeM2TSPacket(pmtPID, true, 0x01, 0, 0,
+		makePMTPayload(videoPID, 0x1B,
+			[]uint16{audioPID},
+			[]byte{0x85}))...) // 0x85 = DTS-HD
+
+	// Video PUSI
+	data = append(data, makeM2TSPacket(videoPID, true, 0x01, 0, 1,
+		makePESStart(0xE0, 0, seqBytes(0, 175)))...)
+
+	// Audio PUSI - PES header + start of audioPayload
+	pesHdr := makePESStart(0xFD, 0, nil) // 9-byte PES header
+	firstChunkSize := 184 - len(pesHdr)  // 175 bytes
+	firstPayload := make([]byte, 184)
+	copy(firstPayload, pesHdr)
+	copy(firstPayload[len(pesHdr):], audioPayload[:firstChunkSize])
+	data = append(data, makeM2TSPacket(audioPID, true, 0x01, 0, 0, firstPayload)...)
+
+	// Audio continuation packets
+	remaining := audioPayload[firstChunkSize:]
+	cc := byte(1)
+	for len(remaining) > 0 {
+		chunkSize := 184
+		if chunkSize > len(remaining) {
+			chunkSize = len(remaining)
+		}
+		chunk := make([]byte, 184)
+		copy(chunk, remaining[:chunkSize])
+		data = append(data, makeM2TSPacket(audioPID, false, 0x01, 0, cc, chunk)...)
+		remaining = remaining[chunkSize:]
+		cc++
+	}
+
+	return data
+}
+
+// buildDTSHDCoreM2TSData_CorrectFSIZE creates M2TS data like buildDTSHDCoreM2TSData
+// but with FSIZE correctly set to the core-only size (not the full access unit).
+// This tests that detection works regardless of whether FSIZE is inflated.
+//
+// Payload layout: [DTS Core 256B][ExSS 128B][DTS Core 256B][ExSS 271B]
+// Total: 911 bytes
+func buildDTSHDCoreM2TSData_CorrectFSIZE() []byte {
+	const (
+		pmtPID   = uint16(0x0100)
+		videoPID = uint16(0x1011)
+		audioPID = uint16(0x1101)
+	)
+
+	// Build combined DTS-HD payload with correct FSIZE (core-only size).
+	var audioPayload []byte
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11)...)       // 256 bytes DTS core (FSIZE=256)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...)      // 128 bytes ExSS
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33)...)       // 256 bytes DTS core (FSIZE=256)
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(271, 0x44)...)      // 271 bytes ExSS
 	// Total: 911 bytes
 
 	var data []byte

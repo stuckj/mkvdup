@@ -1245,10 +1245,83 @@ func (p *MPEGTSParser) detectCombinedDTSHDCore(ranges []PESPayloadRange) bool {
 	return false
 }
 
+// detectActualDTSCoreSize reads the beginning of a DTS-HD stream's ES data
+// to determine the actual core frame size. In DTS-HD MA/HRA streams, the FSIZE
+// field in the DTS core header reports the full access unit size (core + extension),
+// not just the core portion. This function finds the real core boundary by
+// scanning for the ExSS sync word (64 58 20 25) or the next DTS core sync word.
+//
+// Returns the actual core frame size in bytes, or 0 if it cannot be determined.
+func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
+	// Read up to 32KB of ES data — enough for several frames at any bitrate.
+	const maxRead = 32 * 1024
+	buf := make([]byte, 0, maxRead)
+	for _, r := range ranges {
+		if len(buf) >= maxRead {
+			break
+		}
+		endOffset := r.FileOffset + int64(r.Size)
+		if endOffset > p.size {
+			continue
+		}
+		data := p.dataSlice(r.FileOffset, endOffset)
+		remaining := maxRead - len(buf)
+		if len(data) > remaining {
+			data = data[:remaining]
+		}
+		buf = append(buf, data...)
+	}
+
+	// Find first validated DTS core sync word.
+	dtsSyncPos := -1
+	for i := 0; i+6 < len(buf); i++ {
+		if buf[i] == 0x7F && buf[i+1] == 0xFE &&
+			buf[i+2] == 0x80 && buf[i+3] == 0x01 {
+			if DTSCoreFrameSize(buf[i:i+7]) > 0 {
+				dtsSyncPos = i
+				break
+			}
+		}
+	}
+	if dtsSyncPos < 0 {
+		return 0
+	}
+
+	// Scan forward for ExSS sync or next DTS sync to find actual core boundary.
+	for i := dtsSyncPos + 7; i+3 < len(buf); i++ {
+		// ExSS sync: 64 58 20 25
+		if buf[i] == 0x64 && buf[i+1] == 0x58 &&
+			buf[i+2] == 0x20 && buf[i+3] == 0x25 {
+			return i - dtsSyncPos
+		}
+		// Next DTS core sync: 7F FE 80 01 (validated)
+		if buf[i] == 0x7F && buf[i+1] == 0xFE &&
+			buf[i+2] == 0x80 && buf[i+3] == 0x01 {
+			if i+6 < len(buf) && DTSCoreFrameSize(buf[i:i+7]) > 0 {
+				return i - dtsSyncPos
+			}
+		}
+	}
+
+	// Could not find boundary — fall back to FSIZE from header.
+	return DTSCoreFrameSize(buf[dtsSyncPos : dtsSyncPos+7])
+}
+
 // splitDTSHDCoreRanges extracts DTS core frame ranges from a combined DTS-HD
-// stream. It walks through PES payload ranges, parsing DTS core frame headers
-// to determine frame sizes, and collects only the DTS core bytes.
+// stream. It walks through PES payload ranges, identifies DTS core frames by
+// their sync word, and collects only the core bytes (excluding DTS-HD extension
+// data).
+//
+// In DTS-HD streams, the FSIZE header field reports the full access unit size
+// (core + extension), not the core-only size. We detect the actual core size
+// by scanning for the ExSS boundary in detectActualDTSCoreSize.
 func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPayloadRange {
+	// Detect actual core frame size by scanning the stream.
+	actualCoreSize := p.detectActualDTSCoreSize(ranges)
+	if actualCoreSize <= 0 {
+		return nil
+	}
+
 	var coreRanges []PESPayloadRange
 	var coreES int64   // cumulative ES offset for core output
 	coreRemaining := 0 // bytes remaining in current DTS core frame
@@ -1277,8 +1350,7 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 				continue
 			}
 			copy(headerBuf[headerBufLen:], data[:need])
-			frameSize := DTSCoreFrameSize(headerBuf[:7])
-			if frameSize > 0 {
+			if DTSCoreFrameSize(headerBuf[:7]) > 0 {
 				// Valid DTS core frame spanning range boundary.
 				// Add any intermediate pending ranges to core.
 				for _, pr := range headerPendingRanges {
@@ -1296,7 +1368,9 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 					ESOffset:   coreES,
 				})
 				coreES += int64(need)
-				coreRemaining = frameSize - 7
+				// Use detected core size, not FSIZE. Subtract the 7 header
+				// bytes already consumed (from buffer + current range).
+				coreRemaining = actualCoreSize - 7
 				pos = need
 				headerBufLen = 0
 				goto scanLoop
@@ -1335,9 +1409,8 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 			if pos+6 < len(data) &&
 				data[pos] == 0x7F && data[pos+1] == 0xFE &&
 				data[pos+2] == 0x80 && data[pos+3] == 0x01 {
-				frameSize := DTSCoreFrameSize(data[pos : pos+7])
-				if frameSize > 0 {
-					coreRemaining = frameSize
+				if DTSCoreFrameSize(data[pos:pos+7]) > 0 {
+					coreRemaining = actualCoreSize
 					continue // will be consumed in coreRemaining branch
 				}
 			}

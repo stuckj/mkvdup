@@ -153,14 +153,23 @@ MakeMKV may extract either the full DTS-HD stream (as `A_DTS/LOSSLESS` or `A_DTS
 
 **Solution:** After parsing PES payloads, detect combined DTS-HD streams by scanning for both DTS core sync words (`7F FE 80 01`) and DTS-HD ExSS sync words (`64 58 20 25`). When both are found, extract the DTS core frames into a new sub-stream:
 
-1. **DTS core frame detection**: When `7F FE 80 01` is found, parse the 14-bit frame size field from the header (bits 14-27 after sync word). The actual frame size is the parsed value + 1 (per ETSI TS 102 114). Valid range: 96-16384 bytes.
-2. **Range extraction**: DTS core frame bytes are collected into a new core-only sub-stream. All other bytes (ExSS extension data) remain in the original combined stream.
-3. **Cross-range tracking**: DTS core frames may span TS payload chunks. The `coreRemaining` counter tracks bytes still belonging to the current core frame across range boundaries.
-4. **Range merging**: After extraction, merge adjacent ranges that are contiguous in both file offset and ES offset.
+1. **Actual core size detection**: The FSIZE field in DTS core headers reports the full access unit size (core + extension), not the core-only size. To find the real core boundary, `detectActualDTSCoreSize` reads the first 32KB of ES data and scans forward from the first DTS sync word for either an ExSS sync (`64 58 20 25`) or the next DTS core sync (`7F FE 80 01`). The distance from the DTS sync to this boundary is the actual core frame size. This handles both DTS-HD MA streams (where FSIZE is inflated) and older MKVs where MakeMKV already extracted core-only data (where FSIZE matches the real core size).
+2. **DTS core frame detection**: When `7F FE 80 01` is found, the header's FSIZE field is validated (must parse to a value in range 96-16384), but the detected actual core size from step 1 is used for frame boundaries instead of FSIZE.
+3. **Range extraction**: DTS core frame bytes are collected into a new core-only sub-stream. All other bytes (ExSS extension data) remain in the original combined stream.
+4. **Cross-range tracking**: DTS core frames may span TS payload chunks. The `coreRemaining` counter tracks bytes still belonging to the current core frame across range boundaries.
+5. **Range merging**: After extraction, merge adjacent ranges that are contiguous in both file offset and ES offset.
 
 Unlike TrueHD+AC3 splitting (which replaces the original stream), DTS-HD splitting **preserves the original combined sub-stream** and adds a new core-only sub-stream. This supports both MKV variants:
 - `A_DTS` tracks match against the extracted core sub-stream
 - `A_DTS/LOSSLESS` tracks match against the original combined sub-stream
+
+### DTS-HD FSIZE Header Field
+
+The DTS core header contains a 14-bit FSIZE field (bits 14-27 after the sync word) that, per ETSI TS 102 114, reports "Frame Byte Size" as the number of bytes in the frame (parsed value + 1). In standalone DTS core streams, FSIZE accurately reflects the core frame size. However, in DTS-HD streams (MA and HRA), FSIZE reports the **full access unit size** — the combined core frame plus extension data (ExSS). For example, a DTS-HD MA stream might report FSIZE=7743 when the actual core frame is only 2012 bytes.
+
+Older versions of MakeMKV (circa 2015) extracted only the DTS core sub-stream from DTS-HD sources but preserved the original inflated FSIZE in the headers. Using FSIZE directly for core frame boundaries would include extension data bytes in the "core" ranges, causing ~35% of audio data to go unmatched (typical savings dropped from ~97% to ~90%).
+
+The `detectActualDTSCoreSize` function handles both cases correctly by measuring the actual distance to the next sync boundary rather than trusting FSIZE.
 
 ## Blu-ray PGS Subtitle Matching
 

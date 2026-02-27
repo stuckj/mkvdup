@@ -299,6 +299,38 @@ func TestMPEGTSParser_DTSHDCoreSplit(t *testing.T) {
 	}
 }
 
+func TestMPEGTSParser_DTSHDCoreSplit_CorrectFSIZE(t *testing.T) {
+	// Test with FSIZE matching core-only size (some encoders may set FSIZE correctly).
+	// The detection should still work: ExSS sync marks the core boundary regardless.
+	data := buildDTSHDCoreM2TSData_CorrectFSIZE()
+	p := NewMPEGTSParser(data)
+	if err := p.Parse(); err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	if got := p.AudioSubStreamCount(); got != 2 {
+		t.Fatalf("AudioSubStreamCount = %d, want 2", got)
+	}
+
+	subs := p.AudioSubStreams()
+	coreSize := p.AudioSubStreamESSize(subs[1])
+
+	// DTS core: 2 × 256 = 512 bytes (same as inflated FSIZE test)
+	if coreSize != 512 {
+		t.Errorf("DTS core sub-stream size = %d, want 512 (2 × 256)", coreSize)
+	}
+
+	// Verify core data starts with DTS sync word
+	coreData, err := p.ReadAudioSubStreamData(subs[1], 0, 4)
+	if err != nil {
+		t.Fatalf("ReadAudioSubStreamData(core) error: %v", err)
+	}
+	if coreData[0] != 0x7F || coreData[1] != 0xFE || coreData[2] != 0x80 || coreData[3] != 0x01 {
+		t.Errorf("DTS core data starts with [%02X %02X %02X %02X], want [7F FE 80 01]",
+			coreData[0], coreData[1], coreData[2], coreData[3])
+	}
+}
+
 func TestMPEGTSParser_NoSplitForPureDTS(t *testing.T) {
 	// A stream with type 0x82 (pure DTS core, not DTS-HD) should NOT be split
 	data := buildTestM2TS(t, []testStream{
