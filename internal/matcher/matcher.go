@@ -92,6 +92,14 @@ type trackCodecInfo struct {
 	nalLengthSize int // 0 = Annex B (start codes), 1/2/4 = AVCC/HVCC (length-prefixed NAL units)
 }
 
+// trackLocalityHint stores per-track locality state so that interleaved
+// packets from different tracks don't thrash a single shared hint.
+type trackLocalityHint struct {
+	fileIndex atomic.Uint32
+	offset    atomic.Int64
+	valid     atomic.Bool
+}
+
 type Matcher struct {
 	sourceIndex    *source.Index
 	mkvMmap        *mmap.File
@@ -110,12 +118,11 @@ type Matcher struct {
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
 	coverageMu    sync.RWMutex
 
-	// Locality hint: shared across workers. Workers process near-sequential
-	// packets so hints naturally stay roughly current. Stale values just mean
-	// one wasted nearby search before falling back to the full location list.
-	lastMatchFileIndex atomic.Uint32
-	lastMatchOffset    atomic.Int64
-	lastMatchValid     atomic.Bool
+	// Per-track locality hints. Each track gets its own hint so interleaved
+	// packets from different tracks (e.g. multiple DTS streams) don't thrash
+	// a single shared hint. Created in Match() before workers start; the map
+	// itself is read-only during matching, only the atomic fields are written.
+	trackHints map[uint64]*trackLocalityHint
 
 	// Diagnostic counters for investigating match failures
 	diagVideoPacketsTotal       atomic.Int64 // Total video packets processed
@@ -245,10 +252,12 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.diagExamplesOutput = nil
 	m.diagExamplesMu.Unlock()
 
-	// Reset locality hint so matches from a previous MKV do not bias this run
-	m.lastMatchFileIndex.Store(0)
-	m.lastMatchOffset.Store(0)
-	m.lastMatchValid.Store(false)
+	// Initialize per-track locality hints so each track has its own hint.
+	// Zero value of trackLocalityHint has valid == false, which is correct.
+	m.trackHints = make(map[uint64]*trackLocalityHint, len(tracks))
+	for _, t := range tracks {
+		m.trackHints[t.Number] = &trackLocalityHint{}
+	}
 
 	// Build track type and codec info maps
 	for _, t := range tracks {

@@ -263,10 +263,11 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	var triedIndices [localityNearbyCount]int
 	triedCount := 0
 
-	// Phase 1: Locality-aware search — try nearby locations first
-	if m.lastMatchValid.Load() && len(locations) > 1 {
-		hintFile := uint16(m.lastMatchFileIndex.Load())
-		hintOffset := m.lastMatchOffset.Load()
+	// Phase 1: Locality-aware search — try nearby locations first (per-track hint)
+	hint := m.trackHints[pkt.TrackNum]
+	if hint != nil && hint.valid.Load() && len(locations) > 1 {
+		hintFile := uint16(hint.fileIndex.Load())
+		hintOffset := hint.offset.Load()
 
 		nearby := nearbyLocationIndices(locations, hintFile, hintOffset, localityNearbyCount)
 		for _, idx := range nearby {
@@ -336,10 +337,12 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 		m.regionsMu.Unlock()
 		// Mark chunks as covered for fast coverage checks
 		m.markChunksCovered(bestMatch.mkvStart, bestMatch.mkvEnd)
-		// Update locality hint with midpoint of matched source region
-		m.lastMatchFileIndex.Store(uint32(bestMatch.fileIndex))
-		m.lastMatchOffset.Store(bestMatch.srcOffset + bestMatchLen/2)
-		m.lastMatchValid.Store(true)
+		// Update per-track locality hint with midpoint of matched source region
+		if hint != nil {
+			hint.fileIndex.Store(uint32(bestMatch.fileIndex))
+			hint.offset.Store(bestMatch.srcOffset + bestMatchLen/2)
+			hint.valid.Store(true)
+		}
 		if isVideo {
 			m.diagVideoNALsMatched.Add(1)
 			m.diagVideoNALsMatchedBytes.Add(bestMatchLen)
