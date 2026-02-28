@@ -745,27 +745,62 @@ func (p *MPEGPSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byt
 }
 
 // ReadAudioSubStreamData reads audio data from a specific sub-stream.
-// For LPCM sub-streams, the data is byte-swapped/unpacked to match MKV format.
+// For LPCM sub-streams, the data is byte-swapped to match MKV little-endian format.
+// Handles alignment: if esOffset is odd, reads from the pair-aligned offset,
+// swaps, and returns only the requested portion.
 func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error) {
 	ranges, ok := p.filteredAudioBySubStream[subStreamID]
 	if !ok {
 		return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
 	}
-	data, err := readFromRanges(p.data, nil, p.size, ranges, esOffset, size)
+
+	if !p.lpcmSubStreams[subStreamID] {
+		return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)
+	}
+
+	// LPCM 16-bit forward transform (DVD big-endian → MKV little-endian).
+	// Byte-swap pairs are aligned to the ES start (pairs at offsets 0-1, 2-3, ...).
+	// If esOffset is odd, we must read one extra byte before to complete the pair.
+	alignedOffset := esOffset
+	trimFront := 0
+	if esOffset%2 == 1 {
+		alignedOffset = esOffset - 1
+		trimFront = 1
+	}
+	alignedSize := size + trimFront
+	// If alignedSize is odd, extend by 1 to complete the trailing pair
+	// (if data is available).
+	trimBack := 0
+	if alignedSize%2 == 1 {
+		alignedSize++
+		trimBack = 1
+	}
+
+	data, err := readFromRanges(p.data, nil, p.size, ranges, alignedOffset, alignedSize)
 	if err != nil {
-		return nil, err
+		// If extending caused an out-of-range error, retry without the trailing extension
+		if trimBack > 0 {
+			alignedSize--
+			trimBack = 0
+			data, err = readFromRanges(p.data, nil, p.size, ranges, alignedOffset, alignedSize)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Apply LPCM 16-bit forward transform (DVD big-endian → MKV little-endian)
-	if p.lpcmSubStreams[subStreamID] {
-		// readFromRanges may return a zero-copy mmap slice, so clone first
-		result := make([]byte, len(data))
-		copy(result, data)
-		TransformLPCM16BE(result)
-		return result, nil
-	}
+	// readFromRanges may return a zero-copy mmap slice, so clone first
+	result := make([]byte, len(data))
+	copy(result, data)
+	TransformLPCM16BE(result)
 
-	return data, nil
+	// Trim to the originally requested range
+	start := trimFront
+	end := start + size
+	if end > len(result) {
+		end = len(result)
+	}
+	return result[start:end], nil
 }
 
 // IsLPCMSubStream returns true if the given sub-stream ID is an LPCM sub-stream.

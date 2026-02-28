@@ -201,3 +201,86 @@ func TestByteSwapAlignment(t *testing.T) {
 		}
 	}
 }
+
+func TestLPCMAlignedSubRead(t *testing.T) {
+	// Verify the aligned-read-then-trim approach for reading byte-swapped
+	// data at arbitrary offsets. This is the algorithm used by both
+	// ReadAudioSubStreamData and the FUSE reader for odd-offset reads.
+	//
+	// Source (big-endian): [H0, L0, H1, L1, H2, L2, H3, L3, ...]
+	// MKV (little-endian): [L0, H0, L1, H1, L2, H2, L3, H3, ...]
+	//
+	// Reading at odd offset N requires reading from N-1, swapping, then
+	// trimming the first byte.
+
+	srcData := make([]byte, 20)
+	for i := range srcData {
+		srcData[i] = byte(i) // [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+	}
+
+	// Compute the full MKV-format (byte-swapped) data as ground truth
+	mkvData := make([]byte, len(srcData))
+	copy(mkvData, srcData)
+	TransformLPCM16BE(mkvData)
+	// mkvData = [1,0,3,2,5,4,7,6,9,8,11,10,13,12,15,14,17,16,19,18]
+
+	// Simulate aligned reads at various offsets and sizes
+	tests := []struct {
+		name   string
+		offset int // offset within the ES (entry)
+		size   int // bytes to read
+	}{
+		{"even offset, even size", 0, 6},
+		{"even offset, odd size", 2, 5},
+		{"odd offset, even size", 1, 4},
+		{"odd offset, odd size", 3, 5},
+		{"odd offset, size 1", 5, 1},
+		{"even offset, size 1", 4, 1},
+		{"odd offset at end", 17, 3},
+		{"last byte", 19, 1},
+		{"full range even", 0, 20},
+		{"odd offset, size 2", 1, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the aligned read algorithm
+			alignedOffset := tt.offset
+			trimFront := 0
+			if tt.offset%2 == 1 {
+				alignedOffset = tt.offset - 1
+				trimFront = 1
+			}
+			alignedSize := tt.size + trimFront
+			// Extend to complete trailing pair if possible
+			if alignedSize%2 == 1 && alignedOffset+alignedSize < len(srcData) {
+				alignedSize++
+			}
+			if alignedOffset+alignedSize > len(srcData) {
+				alignedSize = len(srcData) - alignedOffset
+			}
+
+			// Read aligned source data
+			buf := make([]byte, alignedSize)
+			copy(buf, srcData[alignedOffset:alignedOffset+alignedSize])
+
+			// Byte-swap the aligned buffer
+			TransformLPCM16BE(buf)
+
+			// Trim to get the requested range
+			result := buf[trimFront:]
+			if len(result) > tt.size {
+				result = result[:tt.size]
+			}
+
+			// Compare against ground truth
+			expected := mkvData[tt.offset : tt.offset+len(result)]
+			for i := range result {
+				if result[i] != expected[i] {
+					t.Errorf("byte %d: got 0x%02X, want 0x%02X (offset=%d, size=%d)",
+						i, result[i], expected[i], tt.offset, tt.size)
+				}
+			}
+		})
+	}
+}
