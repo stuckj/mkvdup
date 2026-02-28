@@ -158,21 +158,21 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 	// DTS core on Blu-ray uses CBR, so frame sizes should be uniform.
 	// If they vary, the single-size assumption in splitDTSHDCoreRanges
 	// would produce incorrect ranges.
-	for i := 1; i < len(syncPositions)-1; i++ {
-		frameSize := syncPositions[i+1] - syncPositions[i]
-		// In a DTS-HD stream, the distance between consecutive DTS syncs
-		// is the full access unit (core + extension). But the distance
-		// from a DTS sync to the next ExSS should equal coreSize.
-		// We can't easily re-detect ExSS for each frame here, but we can
-		// check that all access unit sizes are equal (implying consistent
-		// core sizes within a uniform structure).
-		if i == 1 {
-			continue // need at least two intervals to compare
-		}
-		prevFrameSize := syncPositions[i] - syncPositions[i-1]
-		if frameSize != prevFrameSize {
-			log.Printf("mpegts: warning: DTS-HD stream has variable frame sizes (%d vs %d bytes); skipping core extraction", prevFrameSize, frameSize)
-			return 0
+	if len(syncPositions) >= 2 {
+		prevFrameSize := syncPositions[1] - syncPositions[0]
+		for i := 1; i < len(syncPositions)-1; i++ {
+			frameSize := syncPositions[i+1] - syncPositions[i]
+			// In a DTS-HD stream, the distance between consecutive DTS syncs
+			// is the full access unit (core + extension). But the distance
+			// from a DTS sync to the next ExSS should equal coreSize.
+			// We can't easily re-detect ExSS for each frame here, but we can
+			// check that all access unit sizes are equal (implying consistent
+			// core sizes within a uniform structure).
+			if frameSize != prevFrameSize {
+				log.Printf("mpegts: warning: DTS-HD stream has variable frame sizes (%d vs %d bytes); skipping core extraction", prevFrameSize, frameSize)
+				return 0
+			}
+			prevFrameSize = frameSize
 		}
 	}
 
@@ -217,18 +217,13 @@ func (p *MPEGTSParser) splitDTSHDCoreRanges(ranges []PESPayloadRange) []PESPaylo
 			need := 7 - headerBufLen
 			if need > len(data) {
 				// This range doesn't have enough bytes to complete the
-				// 7-byte header. Abandon the speculative cross-range
-				// header and fall through to normal scanning so these
-				// bytes aren't silently skipped if the header turns out
-				// to be invalid.
-				if len(coreRanges) > 0 {
-					last := coreRanges[len(coreRanges)-1]
-					coreRanges = coreRanges[:len(coreRanges)-1]
-					coreES -= int64(last.Size)
-				}
-				headerPendingRanges = nil
-				headerBufLen = 0
-				// Fall through to scanLoop below
+				// 7-byte header. Buffer these bytes and continue accumulating
+				// across subsequent ranges until we have a full 7-byte header.
+				copy(headerBuf[headerBufLen:], data)
+				headerBufLen += len(data)
+				headerPendingRanges = append(headerPendingRanges, r)
+				// Move to the next range; do not rescan these bytes individually.
+				continue
 			} else {
 				copy(headerBuf[headerBufLen:], data[:need])
 				if DTSCoreFrameSize(headerBuf[:7]) > 0 {

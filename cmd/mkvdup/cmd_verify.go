@@ -31,7 +31,7 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 	}
 	defer original.Close()
 
-	// Debug: show first few bytes comparison (controlled by verbose flag)
+	// Debug: show first few bytes comparison (controlled by verboseWriter; may be enabled via -v/--verbose or --log-verbose + --log-file)
 	if vw := verboseWriter(); vw != nil {
 		origFirst := make([]byte, 32)
 		reconFirst := make([]byte, 32)
