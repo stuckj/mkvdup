@@ -1,14 +1,14 @@
 Package: mkvdup-canary
-Version: 1.2.1~canary.2
+Version: 1.3.0~canary.1
 Architecture: amd64
 Maintainer: stuckj <stuckj@users.noreply.github.com>
-Installed-Size: 4799
+Installed-Size: 4815
 Depends: fuse3
-Filename: pool/canary/mkvdup-canary_1.2.1~canary.2_amd64.deb
-Size: 2056170
-MD5sum: c3558e2c13444cccc252bf109991fb80
-SHA1: cc4d7b0fd0dbcf553a19b80087b2fd64dd51a709
-SHA256: dd1d9f7353df229b6b6ade9750e635b5fc21c41f07b265901d1a00654bfbc70d
+Filename: pool/canary/mkvdup-canary_1.3.0~canary.1_amd64.deb
+Size: 2059522
+MD5sum: 623752ab22ebd13d596445b1676dd980
+SHA1: cfdff1f0525a4ce647a2fa186dec60f42d02489a
+SHA256: 2b1c595f6198ef2da98d283061018d0a5d7669e98e52c1c0ecabdba012849caa
 Section: video
 Priority: optional
 Homepage: https://github.com/stuckj/mkvdup
