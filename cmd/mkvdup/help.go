@@ -36,6 +36,7 @@ Options:
   -q, --quiet        Suppress informational progress output
   --no-progress      Disable progress bars (still show status messages)
   --log-file PATH    Duplicate output to a log file (non-TTY style)
+  --log-verbose      Enable verbose output in log file only
   -h, --help         Show help
   --version          Show version
 `)
@@ -96,6 +97,8 @@ Arguments:
 
 Options:
     -v, --verbose       Enable verbose/debug output
+    --log-file PATH     Duplicate output to a log file (non-TTY style)
+    --log-verbose       Enable verbose output in log file only
     --warn-threshold N  Minimum space savings percentage to avoid warning (default: 75)
     --non-interactive   Don't prompt on codec mismatch (show warning and continue)
 
@@ -126,6 +129,8 @@ Arguments:
 
 Options:
     -v, --verbose          Enable verbose/debug output
+    --log-file PATH        Duplicate output to a log file (non-TTY style)
+    --log-verbose          Enable verbose output in log file only
     --warn-threshold N     Minimum space savings percentage to avoid warning (default: 75)
     --skip-codec-mismatch  Skip MKVs with codec mismatch instead of processing them
 

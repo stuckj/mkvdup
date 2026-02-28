@@ -366,14 +366,14 @@ func TestMKVFSRoot_Reload_MoveToSubdirAndBack(t *testing.T) {
 
 	// Start with file in subdirectory
 	initial := []dedup.Config{
-		{Name: "Zootopia/movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "TestMovie/movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
 	}
 	root, err := NewMKVFSFromConfigs(initial, false, factory, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := root.rootDir.subdirs["Zootopia"]; !ok {
-		t.Fatal("expected Zootopia dir initially")
+	if _, ok := root.rootDir.subdirs["TestMovie"]; !ok {
+		t.Fatal("expected TestMovie dir initially")
 	}
 
 	// First reload: move to root level (remove subdirectory)
@@ -383,8 +383,8 @@ func TestMKVFSRoot_Reload_MoveToSubdirAndBack(t *testing.T) {
 	if err := root.Reload(reload1, nil); err != nil {
 		t.Fatalf("first reload: %v", err)
 	}
-	if _, ok := root.rootDir.subdirs["Zootopia"]; ok {
-		t.Error("Zootopia dir should be removed after first reload")
+	if _, ok := root.rootDir.subdirs["TestMovie"]; ok {
+		t.Error("TestMovie dir should be removed after first reload")
 	}
 	if _, ok := root.rootDir.files["movie.mkv"]; !ok {
 		t.Fatal("expected movie.mkv at root after first reload")
@@ -395,21 +395,21 @@ func TestMKVFSRoot_Reload_MoveToSubdirAndBack(t *testing.T) {
 	// MKVFSDirNode with an uninitialized fs.Inode. findParentInode must
 	// return nil for the uninitialized parent to prevent notification panics.
 	reload2 := []dedup.Config{
-		{Name: "Zootopia/movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
+		{Name: "TestMovie/movie.mkv", DedupFile: "/data/m1.dedup", SourceDir: "/src"},
 	}
 	if err := root.Reload(reload2, nil); err != nil {
 		t.Fatalf("second reload: %v", err)
 	}
-	if _, ok := root.rootDir.subdirs["Zootopia"]; !ok {
-		t.Error("expected Zootopia dir after second reload")
+	if _, ok := root.rootDir.subdirs["TestMovie"]; !ok {
+		t.Error("expected TestMovie dir after second reload")
 	}
 	if _, ok := root.rootDir.files["movie.mkv"]; ok {
 		t.Error("movie.mkv should not be at root after second reload")
 	}
 
-	// Verify findParentInode returns nil for the uninitialized Zootopia
+	// Verify findParentInode returns nil for the uninitialized TestMovie
 	// directory (its fs.Inode was never registered via NewPersistentInode)
-	parentInode, _ := root.findParentInode("Zootopia/movie.mkv")
+	parentInode, _ := root.findParentInode("TestMovie/movie.mkv")
 	if parentInode != nil {
 		t.Error("findParentInode should return nil for uninitialized parent dir")
 	}

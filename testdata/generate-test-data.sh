@@ -3,7 +3,7 @@
 # Generate test data for mkvdup integration tests.
 #
 # This script downloads the Big Buck Bunny DVD ISO and creates an MKV using ffmpeg.
-# Using ffmpeg (not MakeMKV) ensures reproducible results across environments.
+# Using ffmpeg ensures reproducible results across environments.
 #
 # Usage:
 #   ./generate-test-data.sh [--output-dir DIR]

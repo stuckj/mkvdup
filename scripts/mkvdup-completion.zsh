@@ -9,6 +9,7 @@ _mkvdup_create() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
@@ -25,6 +26,7 @@ _mkvdup_batch_create() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--warn-threshold=[Minimum space savings percentage to avoid warning]:percentage' \
@@ -38,6 +40,7 @@ _mkvdup_probe() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '*:MKV files and source directories:_files'
@@ -49,6 +52,7 @@ _mkvdup_mount() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--allow-other[Allow other users to access the mount]' \
@@ -75,6 +79,7 @@ _mkvdup_info() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--hide-unused-files[Hide unused source files]' \
@@ -87,6 +92,7 @@ _mkvdup_verify() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
@@ -100,6 +106,7 @@ _mkvdup_extract() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
@@ -113,6 +120,7 @@ _mkvdup_check() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--source-checksums[Verify source file checksums]' \
@@ -126,6 +134,7 @@ _mkvdup_stats() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--config-dir[Treat config argument as directory of YAML files]' \
@@ -138,6 +147,7 @@ _mkvdup_validate() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--config-dir[Treat config argument as directory of YAML files]' \
@@ -152,6 +162,7 @@ _mkvdup_reload() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '(--pid)--pid-file=[PID file of the running daemon]:PID file:_files' \
@@ -166,6 +177,7 @@ _mkvdup_parse_mkv() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"'
@@ -177,6 +189,7 @@ _mkvdup_index_source() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Source directory:_files -/'
@@ -188,6 +201,7 @@ _mkvdup_match() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:MKV file:_files -g "*.mkv(-.)"' \
@@ -200,6 +214,7 @@ _mkvdup_deltadiag() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:Dedup file:_files -g "*.mkvdup(-.)"' \
@@ -215,6 +230,7 @@ _mkvdup() {
         '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
         '--no-progress[Disable progress bars]' \
         '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '1:command:->command' \

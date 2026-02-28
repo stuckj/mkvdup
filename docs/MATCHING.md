@@ -55,7 +55,7 @@ Since most video codecs use `00 00 01` as a start code prefix, we scan for this 
 
 ## ES-Aware Indexing (DVD)
 
-**Problem:** DVDs use MPEG Program Stream (MPEG-PS) containers which wrap Elementary Stream (ES) data in PES packets. When ripping to MKV, tools extract the raw ES data, stripping all container framing. If we index raw file offsets in the ISO, the container bytes create misalignments.
+**Problem:** DVDs use MPEG Program Stream (MPEG-PS) containers which wrap Elementary Stream (ES) data in PES packets. When extracting to MKV, tools extract the raw ES data, stripping all container framing. If we index raw file offsets in the ISO, the container bytes create misalignments.
 
 **Solution:** Parse the MPEG-PS structure and build an index based on **ES offsets** (continuous byte positions within the elementary stream) rather than raw file offsets.
 
@@ -76,7 +76,7 @@ The parser maintains a mapping of ES offsets to file offsets for each PES payloa
 
 ## ES-Aware Indexing (Blu-ray)
 
-**Problem:** Blu-rays use MPEG Transport Stream (MPEG-TS) containers in M2TS files. M2TS files consist of fixed-size 192-byte packets: a 4-byte timecode prefix plus a 188-byte TS packet (which itself has a 4-byte header, leaving up to 184 bytes for payload). Each TS packet carries a small fragment of a PES packet, identified by a 13-bit PID. PES packets span multiple TS packets and contain the actual codec data. When ripping to MKV, tools extract the raw ES data, stripping all TS and PES framing. If we index raw file offsets in the M2TS file, the 8-byte headers (4-byte timecode + 4-byte TS header, interleaved every 192 bytes) cause misalignments — expansion fails at every packet boundary.
+**Problem:** Blu-rays use MPEG Transport Stream (MPEG-TS) containers in M2TS files. M2TS files consist of fixed-size 192-byte packets: a 4-byte timecode prefix plus a 188-byte TS packet (which itself has a 4-byte header, leaving up to 184 bytes for payload). Each TS packet carries a small fragment of a PES packet, identified by a 13-bit PID. PES packets span multiple TS packets and contain the actual codec data. When extracting to MKV, tools extract the raw ES data, stripping all TS and PES framing. If we index raw file offsets in the M2TS file, the 8-byte headers (4-byte timecode + 4-byte TS header, interleaved every 192 bytes) cause misalignments — expansion fails at every packet boundary.
 
 **Solution:** Parse the MPEG-TS structure (PAT → PMT → PES packets) and build an index based on continuous ES offsets, the same approach used for DVDs.
 
@@ -128,7 +128,7 @@ Unlike DVDs where audio is multiplexed in Private Stream 1 with sub-stream IDs, 
 PES payload: [AC3 frame][TrueHD frame(s)][AC3 frame][TrueHD frame(s)]...
 ```
 
-MakeMKV (and other ripping tools) split these into separate MKV tracks: one for TrueHD-only data, one for the AC3 core. If we index them as a single combined sub-stream, the interleaved AC3+TrueHD bytes don't match either MKV track.
+Video extraction tools split these into separate MKV tracks: one for TrueHD-only data, one for the AC3 core. If we index them as a single combined sub-stream, the interleaved AC3+TrueHD bytes don't match either MKV track.
 
 **Solution:** After parsing all PES payloads, detect combined TrueHD+AC3 streams by scanning the first 16KB of ES data for both AC3 sync words (`0B 77`) and TrueHD major sync words (`F8 72 6F BA`). When both are found, split the ranges by walking through the payload and parsing AC3 frame headers to determine frame boundaries:
 
@@ -141,9 +141,39 @@ The original sub-stream ID keeps the TrueHD-only ranges; a new sub-stream ID is 
 
 **Impact:** On a 40GB Blu-ray (MI7), audio delta dropped from 1.85 GB (42% of total delta) to near-zero after splitting. The matcher can now find TrueHD data in the TrueHD MKV track and AC3 data in the AC3 MKV track.
 
+## Blu-ray DTS-HD + DTS Core Stream Splitting
+
+**Problem:** On Blu-ray discs, DTS-HD audio streams (PMT stream types 0x85/0x86) embed a DTS core within each audio frame, followed by extension data (ExSS: XBR, XLL, XXCh). The PES payload contains:
+
+```
+PES payload: [DTS core frame][ExSS extension][DTS core frame][ExSS extension]...
+```
+
+Video extraction tools may extract either the full DTS-HD stream (as `A_DTS/LOSSLESS` or `A_DTS/EXPRESS`) or just the DTS core (as `A_DTS`). If we only index the combined stream, the `A_DTS` MKV track can't match because its ES offsets skip the extension data that's present in the source.
+
+**Solution:** After parsing PES payloads, detect combined DTS-HD streams by scanning for both DTS core sync words (`7F FE 80 01`) and DTS-HD ExSS sync words (`64 58 20 25`). When both are found, extract the DTS core frames into a new sub-stream:
+
+1. **Actual core size detection**: The FSIZE field in DTS core headers reports the full access unit size (core + extension), not the core-only size. To find the real core boundary, `detectActualDTSCoreSize` reads the first 32KB of ES data and scans forward from the first DTS sync word for either an ExSS sync (`64 58 20 25`) or the next DTS core sync (`7F FE 80 01`). The distance from the DTS sync to this boundary is the actual core frame size. This handles both DTS-HD MA streams (where FSIZE is inflated) and older MKVs where the extraction tool already produced core-only data (where FSIZE matches the real core size).
+2. **DTS core frame detection**: When `7F FE 80 01` is found, the header's FSIZE field is validated (must parse to a value in range 96-16384), but the detected actual core size from step 1 is used for frame boundaries instead of FSIZE.
+3. **Range extraction**: DTS core frame bytes are collected into a new core-only sub-stream. All other bytes (ExSS extension data) remain in the original combined stream.
+4. **Cross-range tracking**: DTS core frames may span TS payload chunks. The `coreRemaining` counter tracks bytes still belonging to the current core frame across range boundaries.
+5. **Range merging**: After extraction, merge adjacent ranges that are contiguous in both file offset and ES offset.
+
+Unlike TrueHD+AC3 splitting (which replaces the original stream), DTS-HD splitting **preserves the original combined sub-stream** and adds a new core-only sub-stream. This supports both MKV variants:
+- `A_DTS` tracks match against the extracted core sub-stream
+- `A_DTS/LOSSLESS` tracks match against the original combined sub-stream
+
+### DTS-HD FSIZE Header Field
+
+The DTS core header contains a 14-bit FSIZE field (bits 14-27 after the sync word) that, per ETSI TS 102 114, reports "Frame Byte Size" as the number of bytes in the frame (parsed value + 1). In standalone DTS core streams, FSIZE accurately reflects the core frame size. However, in DTS-HD streams (MA and HRA), FSIZE reports the **full access unit size** — the combined core frame plus extension data (ExSS). For example, a DTS-HD MA stream might report FSIZE=7743 when the actual core frame is only 2012 bytes.
+
+Older versions of some video extraction tools extracted only the DTS core sub-stream from DTS-HD sources but preserved the original inflated FSIZE in the headers. Using FSIZE directly for core frame boundaries would include extension data bytes in the "core" ranges, causing ~35% of audio data to go unmatched (typical savings dropped from ~97% to ~90%).
+
+The `detectActualDTSCoreSize` function handles both cases correctly by measuring the actual distance to the next sync boundary rather than trusting FSIZE.
+
 ## Blu-ray PGS Subtitle Matching
 
-PGS (Presentation Graphic Stream) subtitles are carried in MPEG-TS with stream type 0x90. MakeMKV extracts these as MKV tracks with codec ID `S_HDMV/PGS`. On a typical Blu-ray, PGS data is 10-50 MB.
+PGS (Presentation Graphic Stream) subtitles are carried in MPEG-TS with stream type 0x90. Video extraction tools extract these as MKV tracks with codec ID `S_HDMV/PGS`. On a typical Blu-ray, PGS data is 10-50 MB.
 
 PGS subtitle streams are handled using the same sub-stream infrastructure as audio:
 
@@ -335,11 +365,11 @@ The remaining ~1.6% unmatched data consists of:
 
 ## Known Limitation: H.264 Slice Header Modifications
 
-On Blu-ray H.264 content, approximately 1.3-1.5% of non-IDR slice NALs and IDR slice NALs cannot be matched to the source. This is caused by MakeMKV (and similar ripping tools) modifying H.264 slice header fields during remux.
+On Blu-ray H.264 content, approximately 1.3-1.5% of non-IDR slice NALs and IDR slice NALs cannot be matched to the source. This is caused by video extraction tools modifying H.264 slice header fields during remux.
 
 ### Root Cause
 
-H.264 slice headers are bit-packed using Exp-Golomb coding. Fields like `first_mb_in_slice`, `slice_type`, and `frame_num` are encoded at the bit level, and there is **no byte-alignment boundary** between the slice header and the slice data that follows it. When MakeMKV modifies any of these fields:
+H.264 slice headers are bit-packed using Exp-Golomb coding. Fields like `first_mb_in_slice`, `slice_type`, and `frame_num` are encoded at the bit level, and there is **no byte-alignment boundary** between the slice header and the slice data that follows it. When a video extraction tool modifies any of these fields:
 
 1. The modified field may encode to a different number of bits
 2. All subsequent bits in the NAL shift by a non-byte-aligned amount

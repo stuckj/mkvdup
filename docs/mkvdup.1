@@ -39,7 +39,7 @@ Directories are auto-created when mounted via FUSE.
 .B \-\-warn\-threshold N
 Minimum space savings percentage to avoid a warning (default: 75).
 If the resulting dedup file achieves less than this percentage of savings,
-a warning is printed suggesting wrong source or transcoded MKV.
+a warning is printed suggesting wrong source, transcoded MKV, or very small MKV file.
 .TP
 .B \-\-non\-interactive
 Don't prompt on codec mismatch; show warning and continue.
@@ -320,6 +320,16 @@ Duplicate all informational output to the specified file. The log file uses
 non-TTY style: milestone percentages at 10% intervals instead of progress
 bars, no ANSI escape sequences. Output is written regardless of
 .BR \-\-quiet .
+.TP
+.B \-\-log\-verbose
+Enable verbose diagnostic output in the log file only (not on the console).
+Requires
+.B \-\-log\-file
+to have effect. When
+.B \-\-verbose
+is also set, diagnostics go to both stderr and the log file.
+Useful for background or headless runs where diagnostics should be captured
+for later review without cluttering the console.
 .TP
 .BR \-h ", " \-\-help
 Show help message

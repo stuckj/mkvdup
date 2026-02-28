@@ -12,9 +12,8 @@ import (
 )
 
 // verifyReconstruction verifies that the dedup file can reconstruct the original MKV.
-// Set verbose=true to enable debug output for troubleshooting.
 // If phasePrefix is non-empty, a progress bar is shown.
-func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *source.Index, verbose bool, phasePrefix string) error {
+func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *source.Index, phasePrefix string) error {
 	reader, err := dedup.NewReader(dedupPath, sourceDir)
 	if err != nil {
 		return fmt.Errorf("open dedup file: %w", err)
@@ -32,16 +31,16 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 	}
 	defer original.Close()
 
-	// Debug: show first few bytes comparison (controlled by verbose flag)
-	if verbose {
+	// Debug: show first few bytes comparison (controlled by verboseWriter; may be enabled via -v/--verbose or --log-verbose + --log-file)
+	if vw := verboseWriter(); vw != nil {
 		origFirst := make([]byte, 32)
 		reconFirst := make([]byte, 32)
 		n, _ := original.ReadAt(origFirst, 0)
-		fmt.Printf("  Debug: Original ReadAt(32, 0) returned %d bytes\n", n)
+		fmt.Fprintf(vw, "  Debug: Original ReadAt(32, 0) returned %d bytes\n", n)
 		n, _ = reader.ReadAt(reconFirst, 0)
-		fmt.Printf("  Debug: Reader ReadAt(32, 0) returned %d bytes\n", n)
-		fmt.Printf("  Debug: Original first 32 bytes:      %x\n", origFirst)
-		fmt.Printf("  Debug: Reconstructed first 32 bytes: %x\n", reconFirst)
+		fmt.Fprintf(vw, "  Debug: Reader ReadAt(32, 0) returned %d bytes\n", n)
+		fmt.Fprintf(vw, "  Debug: Original first 32 bytes:      %x\n", origFirst)
+		fmt.Fprintf(vw, "  Debug: Reconstructed first 32 bytes: %x\n", reconFirst)
 		original.Seek(0, 0) // Reset file position
 	}
 
@@ -65,10 +64,10 @@ func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *sour
 		}
 		n2, err2 := reader.ReadAt(reconstructedBuf[:n1], offset)
 
-		if verbose && offset == 0 {
-			fmt.Printf("  Debug: Loop first read - n1=%d, n2=%d, err1=%v, err2=%v\n", n1, n2, err1, err2)
-			fmt.Printf("  Debug: originalBuf first 32:      %x\n", originalBuf[:32])
-			fmt.Printf("  Debug: reconstructedBuf first 32: %x\n", reconstructedBuf[:32])
+		if vw := verboseWriter(); vw != nil && offset == 0 {
+			fmt.Fprintf(vw, "  Debug: Loop first read - n1=%d, n2=%d, err1=%v, err2=%v\n", n1, n2, err1, err2)
+			fmt.Fprintf(vw, "  Debug: originalBuf first 32:      %x\n", originalBuf[:32])
+			fmt.Fprintf(vw, "  Debug: reconstructedBuf first 32: %x\n", reconstructedBuf[:32])
 		}
 
 		if n1 != n2 {

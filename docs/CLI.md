@@ -21,18 +21,23 @@ mkvdup --no-progress <command> [args...]
 # Duplicate output to a log file (non-TTY style)
 mkvdup --log-file /path/to/logfile <command> [args...]
 
+# Enable verbose diagnostics in log file only (not on console)
+mkvdup --log-verbose --log-file /path/to/logfile <command> [args...]
+
 # Examples:
 mkvdup -v create video.mkv /source/dir
 mkvdup -q create video.mkv /source/dir
 mkvdup --no-progress create video.mkv /source/dir
 mkvdup -v mount /mnt/media config1.yaml config2.yaml
 mkvdup -v verify video.mkvdup /source/dir video.mkv
+mkvdup --log-verbose --log-file out.log create video.mkv /source/dir video.mkvdup
 ```
 
-**Verbose mode enables:**
+**Verbose mode (`-v`, `--verbose`):**
 - FUSE operation logging (Open, Read, Lookup, Readdir)
 - Detailed verification output with byte comparisons
 - Debug information for troubleshooting
+- When combined with `--log-file`, verbose diagnostics go to both stderr and the log file
 
 **Quiet mode (`-q`, `--quiet`):**
 - Suppresses informational progress output during `create`, `batch-create`, `verify`, and `extract` (phase labels, progress bars, statistics)
@@ -50,6 +55,12 @@ mkvdup -v verify video.mkvdup /source/dir video.mkv
 - Uses non-TTY style: milestone percentages at 10% intervals instead of progress bars, no ANSI escape sequences
 - Output is written regardless of `--quiet` (quiet only suppresses stdout)
 - Useful for capturing progress when running in the background or via systemd
+
+**Log-verbose mode (`--log-verbose`):**
+- Enables verbose diagnostic output in the log file only (not on console)
+- Requires `--log-file` to have effect (without a log file, there is nowhere to write)
+- When `--verbose` is also set, `--verbose` takes precedence (diagnostics go to both stderr and log file)
+- Useful for background or headless runs where you want diagnostics captured for later review without cluttering the console
 
 ## Commands
 
@@ -566,8 +577,10 @@ If space savings fall below the warning threshold (default: 75%), a warning is s
 
 ```
 WARNING: Space savings (28.4%) below 75%
-  This may indicate wrong source or transcoded MKV.
+  This may indicate wrong source, transcoded MKV, or very small MKV file.
 ```
+
+Small MKV files (under ~200 MB) may naturally show lower space savings because the fixed overhead of the dedup file format (offset tables, MKV container headers, chapter data) becomes a larger proportion of the total file size. This is expected and does not indicate a matching problem.
 
 Use `--warn-threshold N` to customize the percentage. Use `--quiet` to suppress all informational output including warnings.
 

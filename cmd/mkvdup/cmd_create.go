@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 	if err != nil {
 		return nil, nil, fmt.Errorf("create indexer: %w", err)
 	}
-	indexer.SetVerbose(verbose)
+	indexer.SetVerboseWriter(verboseWriter())
 
 	// We don't know total size until Build starts calling back with it,
 	// so create bar with 0 and let first Update set the total.
@@ -94,8 +95,8 @@ func buildSourceIndex(sourceDir, phasePrefix string) (*source.Indexer, *source.I
 func checkCodecCompatibilityFromDir(tracks []mkv.Track, sourceDir string, nonInteractive bool) error {
 	sourceCodecs, err := source.DetectSourceCodecsFromDir(sourceDir)
 	if err != nil {
-		if verbose {
-			fmt.Printf("  Note: could not detect source codecs: %v\n", err)
+		if vw := verboseWriter(); vw != nil {
+			fmt.Fprintf(vw, "  Note: could not detect source codecs: %v\n", err)
 		}
 		return nil
 	}
@@ -171,7 +172,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		return result
 	}
 	defer m.Close()
-	m.SetVerbose(verbose)
+	m.SetVerboseWriter(verboseWriter())
 
 	matchBar := newProgressBar(phaseLabel(1, "Matching packets..."), int64(len(parser.Packets())), "packets")
 	matchResult, err := m.Match(mkvPath, parser.Packets(), parser.Tracks(), func(processed, total int) {
@@ -206,26 +207,71 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	if index.UsesESOffsets && len(index.ESReaders) > 0 {
 		if indexer.SourceType() == source.TypeBluray {
 			// V4: use range maps for Blu-ray (preserves ES offsets in entries)
+			// Only include range maps for streams actually referenced by matched entries.
+			// A Blu-ray ISO may have 100+ M2TS regions, but only a few are needed for
+			// any given MKV file. Including all range maps wastes significant space.
+			type streamKey struct {
+				fileIndex        uint16
+				isVideo          bool
+				audioSubStreamID byte
+			}
+			usedStreams := make(map[streamKey]bool)
+			for _, e := range matchResult.Entries {
+				if e.Source == 0 {
+					continue
+				}
+				usedStreams[streamKey{e.Source - 1, e.IsVideo, e.AudioSubStreamID}] = true
+			}
+			// Collect the set of file indices that need range maps
+			usedFiles := make(map[uint16]bool)
+			for k := range usedStreams {
+				usedFiles[k.fileIndex] = true
+			}
+
+			// Sort file indices for deterministic output.
+			sortedFiles := make([]uint16, 0, len(usedFiles))
+			for fi := range usedFiles {
+				sortedFiles = append(sortedFiles, fi)
+			}
+			sort.Slice(sortedFiles, func(i, j int) bool { return sortedFiles[i] < sortedFiles[j] })
+
 			var rangeMaps []dedup.RangeMapData
-			for i, reader := range index.ESReaders {
-				if provider, ok := reader.(source.PESRangeProvider); ok {
-					rm := dedup.RangeMapData{
-						FileIndex:   uint16(i),
-						VideoRanges: provider.FilteredVideoRanges(),
-					}
-					// If this reader provides offset conversion (e.g., ISO adapter),
-					// set the converter for range map encoding.
-					if adj, ok := reader.(source.FileOffsetAdjuster); ok {
-						rm.OffsetFunc = adj.FileOffsetConverter()
-					}
-					for _, subID := range provider.AudioSubStreams() {
+			for _, fi := range sortedFiles {
+				i := int(fi)
+				if i >= len(index.ESReaders) {
+					continue
+				}
+				reader := index.ESReaders[i]
+				provider, ok := reader.(source.PESRangeProvider)
+				if !ok {
+					continue
+				}
+				rm := dedup.RangeMapData{
+					FileIndex: fi,
+				}
+				// Only include video range map if video entries reference this file
+				if usedStreams[streamKey{fi, true, 0}] {
+					rm.VideoRanges = provider.FilteredVideoRanges()
+				}
+				// If this reader provides offset conversion (e.g., ISO adapter),
+				// set the converter for range map encoding.
+				if adj, ok := reader.(source.FileOffsetAdjuster); ok {
+					rm.OffsetFunc = adj.FileOffsetConverter()
+				}
+				// Only include audio sub-stream range maps that are actually used
+				for _, subID := range provider.AudioSubStreams() {
+					if usedStreams[streamKey{fi, false, subID}] {
 						rm.AudioStreams = append(rm.AudioStreams, dedup.AudioRangeData{
 							SubStreamID: subID,
 							Ranges:      provider.FilteredAudioRanges(subID),
 						})
 					}
-					rangeMaps = append(rangeMaps, rm)
 				}
+				rangeMaps = append(rangeMaps, rm)
+			}
+			if vw := verboseWriter(); vw != nil {
+				fmt.Fprintf(vw, "  Range maps: %d/%d source files used, %d streams referenced\n",
+					len(usedFiles), len(index.ESReaders), len(usedStreams))
 			}
 			if len(rangeMaps) > 0 {
 				writer.SetRangeMaps(rangeMaps)
@@ -282,7 +328,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 
 	// Verify reconstruction
 	verifyPrefix := phaseLabel(3, "Verifying reconstruction...")
-	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verbose, verifyPrefix); err != nil {
+	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verifyPrefix); err != nil {
 		printInfo("  WARNING: Verification failed: %v\n", err)
 		printInfoln("  Keeping files for debugging")
 	}
@@ -385,7 +431,7 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 	if !quiet && result.Savings < warnThreshold {
 		printInfoln()
 		printInfo("WARNING: Space savings (%.1f%%) below %.0f%%\n", result.Savings, warnThreshold)
-		printInfoln("  This may indicate wrong source or transcoded MKV.")
+		printInfoln("  This may indicate wrong source, transcoded MKV, or very small MKV file.")
 	}
 
 	return nil

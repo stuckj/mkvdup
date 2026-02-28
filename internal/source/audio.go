@@ -113,6 +113,40 @@ func AC3FrameSize(fscod, frmsizecod byte) int {
 	return frameSizeWords[fscod][frmsizecod] * 2
 }
 
+// DTSCoreFrameSize parses a DTS core frame header and returns the frame size
+// in bytes. The data must start at the DTS sync word (7F FE 80 01) and be at
+// least 7 bytes long. Returns 0 if the header is invalid.
+//
+// DTS core frame header layout (after 4-byte sync word):
+//
+//	Bit 0:     frame_type (1 bit)
+//	Bits 1-5:  deficit_samples (5 bits)
+//	Bit 6:     crc_present (1 bit)
+//	Bits 7-13: npcmblocks (7 bits)
+//	Bits 14-27: frame_size - 1 (14 bits)
+//
+// Reference: ETSI TS 102 114 (DTS Coherent Acoustics), confirmed against
+// ffmpeg's ff_dca_parse_core_frame_header in libavcodec/dca.c.
+func DTSCoreFrameSize(data []byte) int {
+	if len(data) < 7 {
+		return 0
+	}
+	// Verify sync word
+	if data[0] != 0x7F || data[1] != 0xFE || data[2] != 0x80 || data[3] != 0x01 {
+		return 0
+	}
+	// Frame size field is 14 bits starting at bit 14 after the sync word.
+	// Byte 4: [frame_type(1) | deficit(5) | crc(1) | nblks[6]](8 bits)
+	// Byte 5: [nblks[0] | frame_size[13:7]](8 bits)
+	// Byte 6: [frame_size[6:0] | audio_mode[5]](8 bits)
+	frameSizeRaw := int(data[5]&0x7F)<<7 | int(data[6]>>1)
+	frameSize := frameSizeRaw + 1
+	if frameSize < 96 {
+		return 0 // Too small to be a valid DTS frame
+	}
+	return frameSize
+}
+
 // FindAllSyncPoints finds both video start codes and audio sync patterns.
 // Returns combined offsets sorted by position.
 func FindAllSyncPoints(data []byte) []int {

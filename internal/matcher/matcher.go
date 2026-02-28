@@ -2,11 +2,10 @@
 package matcher
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -72,94 +71,6 @@ func NALLengthSizeForTrack(codecID string, codecPrivate []byte) int {
 	return detectNALLengthSize(codecID, codecPrivate)
 }
 
-// Entry represents a region in the MKV file and where its data comes from.
-type Entry struct {
-	MkvOffset        int64  // Start offset in the MKV file
-	Length           int64  // Length of this region
-	Source           uint16 // 0 = delta, 1+ = source file index + 1 (supports up to 65535 files)
-	SourceOffset     int64  // Offset in source file (or ES offset for ES-based sources)
-	IsVideo          bool   // For ES-based sources: whether this is video or audio data
-	AudioSubStreamID byte   // For ES-based audio: sub-stream ID (0x80-0x87=AC3, etc.)
-}
-
-// Result contains the results of the matching process.
-type Result struct {
-	Entries        []Entry      // All entries covering the entire MKV file
-	DeltaData      []byte       // Concatenated unique data (for small deltas / tests)
-	DeltaFile      *DeltaWriter // File-backed delta data (for large files)
-	MatchedBytes   int64        // Total bytes matched to source
-	UnmatchedBytes int64        // Total bytes in delta
-	MatchedPackets int          // Number of packets that matched
-	TotalPackets   int          // Total number of packets processed
-}
-
-// DeltaSize returns the total size of delta data.
-func (r *Result) DeltaSize() int64 {
-	if r.DeltaFile != nil {
-		return r.DeltaFile.Size()
-	}
-	return int64(len(r.DeltaData))
-}
-
-// Close cleans up resources held by the result (temp files).
-func (r *Result) Close() {
-	if r.DeltaFile != nil {
-		r.DeltaFile.Close()
-		r.DeltaFile = nil
-	}
-}
-
-// DeltaWriter writes delta data to a temp file to avoid heap accumulation.
-type DeltaWriter struct {
-	file     *os.File
-	buffered *bufio.Writer
-	size     int64
-}
-
-// NewDeltaWriter creates a DeltaWriter backed by a temp file.
-func NewDeltaWriter() (*DeltaWriter, error) {
-	f, err := os.CreateTemp("", "mkvdup-delta-*")
-	if err != nil {
-		return nil, fmt.Errorf("create delta temp file: %w", err)
-	}
-	return &DeltaWriter{
-		file:     f,
-		buffered: bufio.NewWriterSize(f, 256*1024),
-	}, nil
-}
-
-// Write appends data to the delta file.
-func (dw *DeltaWriter) Write(data []byte) error {
-	n, err := dw.buffered.Write(data)
-	dw.size += int64(n)
-	return err
-}
-
-// Flush ensures all buffered data is written to disk.
-func (dw *DeltaWriter) Flush() error {
-	return dw.buffered.Flush()
-}
-
-// Size returns the total bytes written.
-func (dw *DeltaWriter) Size() int64 {
-	return dw.size
-}
-
-// File returns the underlying file for reading. Must call Flush() first.
-func (dw *DeltaWriter) File() *os.File {
-	return dw.file
-}
-
-// Close removes the temp file.
-func (dw *DeltaWriter) Close() {
-	if dw.file != nil {
-		name := dw.file.Name()
-		dw.file.Close()
-		os.Remove(name)
-		dw.file = nil
-	}
-}
-
 // matchedRegion tracks a region that was matched to a source.
 type matchedRegion struct {
 	mkvStart         int64
@@ -192,7 +103,7 @@ type Matcher struct {
 	trackTypes     map[int]int            // Map from track number to track type
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
 	numWorkers     int                    // Number of worker goroutines for parallel matching
-	verbose        bool                   // Enable diagnostic output
+	verboseWriter  io.Writer              // Destination for diagnostic output (nil = disabled)
 	isAVCTrack     map[int]bool           // Per-track: whether this track uses H.264 NAL types
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
@@ -266,9 +177,10 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 	}, nil
 }
 
-// SetVerbose enables or disables diagnostic output during matching.
-func (m *Matcher) SetVerbose(v bool) {
-	m.verbose = v
+// SetVerboseWriter sets the destination for diagnostic output during matching.
+// Pass nil to disable verbose output.
+func (m *Matcher) SetVerboseWriter(w io.Writer) {
+	m.verboseWriter = w
 }
 
 // SetNumWorkers sets the number of worker goroutines for parallel matching.
@@ -379,21 +291,22 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	}
 
 	// Print diagnostic summary (verbose only)
-	if m.verbose {
-		fmt.Fprintf(os.Stderr, "\n=== Video Matching Diagnostics ===\n")
-		fmt.Fprintf(os.Stderr, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
-		fmt.Fprintf(os.Stderr, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs verify failed:   %d\n", m.diagVideoNALsVerifyFailed.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs all skipped:     %d\n", m.diagVideoNALsAllSkipped.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
-		fmt.Fprintf(os.Stderr, "Video NALs matched bytes:   %d (%.2f MB)\n",
+	if m.verboseWriter != nil {
+		w := m.verboseWriter
+		fmt.Fprintf(w, "\n=== Video Matching Diagnostics ===\n")
+		fmt.Fprintf(w, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
+		fmt.Fprintf(w, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
+		fmt.Fprintf(w, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
+		fmt.Fprintf(w, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
+		fmt.Fprintf(w, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
+		fmt.Fprintf(w, "Video NALs verify failed:   %d\n", m.diagVideoNALsVerifyFailed.Load())
+		fmt.Fprintf(w, "Video NALs all skipped:     %d\n", m.diagVideoNALsAllSkipped.Load())
+		fmt.Fprintf(w, "Video NALs matched:         %d\n", m.diagVideoNALsMatched.Load())
+		fmt.Fprintf(w, "Video NALs matched bytes:   %d (%.2f MB)\n",
 			m.diagVideoNALsMatchedBytes.Load(), float64(m.diagVideoNALsMatchedBytes.Load())/(1024*1024))
-		fmt.Fprintf(os.Stderr, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
+		fmt.Fprintf(w, "Video NALs isVideo skips:   %d\n", m.diagVideoNALsSkippedIsVideo.Load())
 		if len(m.isAVCTrack) > 0 {
-			fmt.Fprintf(os.Stderr, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
+			fmt.Fprintf(w, "\nPer-NAL-type breakdown (H.264, type: total / matched / not_found / miss%%):\n")
 			nalTypeNames := map[byte]string{
 				1: "non-IDR slice", 2: "slice A", 3: "slice B", 4: "slice C",
 				5: "IDR slice", 6: "SEI", 7: "SPS", 8: "PPS", 9: "AUD", 12: "filler",
@@ -409,27 +322,27 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 				if name == "" {
 					name = "other"
 				}
-				fmt.Fprintf(os.Stderr, "  type %2d (%14s): %8d / %8d / %8d (%.1f%% miss)\n",
+				fmt.Fprintf(w, "  type %2d (%14s): %8d / %8d / %8d (%.1f%% miss)\n",
 					i, name, total, matched, notFound, float64(notFound)/float64(total)*100)
 			}
 		}
 		// NAL size bucket breakdown
 		nalSizeBucketNames := [5]string{"<64B", "64-127B", "128B-1KB", "1KB-32KB", "32KB+"}
-		fmt.Fprintf(os.Stderr, "\nVideo NAL size distribution (matched / unmatched):\n")
+		fmt.Fprintf(w, "\nVideo NAL size distribution (matched / unmatched):\n")
 		for i := 0; i < 5; i++ {
 			matched := m.diagNALSizeMatched[i].Load()
 			unmatched := m.diagNALSizeUnmatched[i].Load()
 			if matched > 0 || unmatched > 0 {
-				fmt.Fprintf(os.Stderr, "  %9s: %8d matched, %8d unmatched\n",
+				fmt.Fprintf(w, "  %9s: %8d matched, %8d unmatched\n",
 					nalSizeBucketNames[i], matched, unmatched)
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "\nFirst hash-not-found examples:\n")
+		fmt.Fprintf(w, "\nFirst hash-not-found examples:\n")
 		for _, ex := range m.diagExamplesOutput {
-			fmt.Fprintf(os.Stderr, "%s\n", ex)
+			fmt.Fprintf(w, "%s\n", ex)
 		}
-		fmt.Fprintf(os.Stderr, "=================================\n")
+		fmt.Fprintf(w, "=================================\n")
 	}
 
 	// Merge overlapping regions and build final entries
@@ -505,133 +418,4 @@ func ExtractProbeHashes(data []byte, isVideo bool, windowSize int, nalLengthSize
 	}
 
 	return hashes
-}
-
-// mergeRegions merges overlapping matched regions.
-// Regions from the same source with consistent offset mappings are merged into one.
-// Overlapping regions from different sources (or inconsistent offsets) are clipped:
-// the earlier region keeps its full range, the later region is trimmed to start
-// after the earlier one ends.
-func (m *Matcher) mergeRegions() {
-	if len(m.matchedRegions) == 0 {
-		return
-	}
-
-	// Sort by start offset
-	sort.Slice(m.matchedRegions, func(i, j int) bool {
-		return m.matchedRegions[i].mkvStart < m.matchedRegions[j].mkvStart
-	})
-
-	// Merge overlapping regions
-	// Pre-allocate with capacity since merged will be at most len(matchedRegions)
-	merged := make([]matchedRegion, 1, len(m.matchedRegions))
-	merged[0] = m.matchedRegions[0]
-	for i := 1; i < len(m.matchedRegions); i++ {
-		curr := m.matchedRegions[i]
-		last := &merged[len(merged)-1]
-
-		if curr.mkvStart >= last.mkvEnd {
-			// No overlap - add new region
-			merged = append(merged, curr)
-			continue
-		}
-
-		// Regions overlap. Check if they're from the same source with consistent
-		// offset mapping, meaning the overlapping bytes map to the same source bytes.
-		expectedSrcOffset := last.srcOffset + (curr.mkvStart - last.mkvStart)
-		sameMapping := curr.fileIndex == last.fileIndex &&
-			curr.srcOffset == expectedSrcOffset &&
-			curr.isVideo == last.isVideo &&
-			curr.audioSubStreamID == last.audioSubStreamID
-
-		if sameMapping {
-			// Same source, consistent mapping - safe to extend since both regions
-			// were independently verified and the combined range maps correctly.
-			if curr.mkvEnd > last.mkvEnd {
-				last.mkvEnd = curr.mkvEnd
-			}
-		} else if curr.mkvEnd > last.mkvEnd {
-			// Different source or inconsistent mapping. The earlier region (last)
-			// keeps priority. Clip curr to start where last ends.
-			overlap := last.mkvEnd - curr.mkvStart
-			curr.mkvStart = last.mkvEnd
-			curr.srcOffset += overlap
-			// After clipping, curr may have zero or negative length if the overlap
-			// equals or exceeds the original region size. Only keep valid regions.
-			if curr.mkvStart < curr.mkvEnd {
-				merged = append(merged, curr)
-			}
-		}
-		// If curr is fully contained in last, drop it (nothing to add).
-	}
-
-	m.matchedRegions = merged
-}
-
-// buildEntries creates the final entry list and streams delta data to a temp file.
-func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) {
-	entries := make([]Entry, 0, len(m.matchedRegions)*2+1)
-
-	deltaWriter, err := NewDeltaWriter()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	deltaOffset := int64(0)
-	pos := int64(0)
-	regionIdx := 0
-
-	for pos < m.mkvSize {
-		var inRegion *matchedRegion
-		if regionIdx < len(m.matchedRegions) && m.matchedRegions[regionIdx].mkvStart <= pos {
-			inRegion = &m.matchedRegions[regionIdx]
-		}
-
-		if inRegion != nil && pos >= inRegion.mkvStart && pos < inRegion.mkvEnd {
-			offsetInRegion := pos - inRegion.mkvStart
-			regionLen := inRegion.mkvEnd - pos
-
-			entries = append(entries, Entry{
-				MkvOffset:        pos,
-				Length:           regionLen,
-				Source:           uint16(inRegion.fileIndex + 1),
-				SourceOffset:     inRegion.srcOffset + offsetInRegion,
-				IsVideo:          inRegion.isVideo,
-				AudioSubStreamID: inRegion.audioSubStreamID,
-			})
-
-			pos = inRegion.mkvEnd
-			regionIdx++
-		} else {
-			gapEnd := m.mkvSize
-			if regionIdx < len(m.matchedRegions) {
-				gapEnd = m.matchedRegions[regionIdx].mkvStart
-			}
-			gapLen := gapEnd - pos
-
-			if gapEnd <= m.mkvSize {
-				entries = append(entries, Entry{
-					MkvOffset:    pos,
-					Length:       gapLen,
-					Source:       0,
-					SourceOffset: deltaOffset,
-				})
-				// Write gap data directly from mmap to temp file
-				if err := deltaWriter.Write(m.mkvData[pos:gapEnd]); err != nil {
-					deltaWriter.Close()
-					return nil, nil, fmt.Errorf("write delta: %w", err)
-				}
-				deltaOffset += gapLen
-			}
-
-			pos = gapEnd
-		}
-	}
-
-	if err := deltaWriter.Flush(); err != nil {
-		deltaWriter.Close()
-		return nil, nil, fmt.Errorf("flush delta: %w", err)
-	}
-
-	return entries, deltaWriter, nil
 }

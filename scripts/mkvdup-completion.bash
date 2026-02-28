@@ -46,14 +46,14 @@ _mkvdup() {
     fi
 
     local commands="create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag help"
-    local global_opts="-v --verbose -q --quiet --no-progress --log-file -h --help --version"
+    local global_opts="-v --verbose -q --quiet --no-progress --log-file --log-verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
     local cmd=""
     local i
     for ((i=1; i < cword; i++)); do
         case "${words[i]}" in
-            -v|--verbose|-q|--quiet|--no-progress|-h|--help|--version)
+            -v|--verbose|-q|--quiet|--no-progress|--log-verbose|-h|--help|--version)
                 ;;
             --log-file)
                 # Skip --log-file and its argument

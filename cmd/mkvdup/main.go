@@ -93,6 +93,9 @@ var version = "dev"
 // verbose is set to true when -v flag is passed
 var verbose bool
 
+// logVerbose enables verbose diagnostics only in the log file (not on console)
+var logVerbose bool
+
 // showProgress controls whether progress bars are rendered. Set to false by
 // --no-progress, --quiet, or when stdout is not a TTY.
 var showProgress = true
@@ -124,6 +127,8 @@ func main() {
 			showHelp = true
 		case arg == "--version":
 			showVersion = true
+		case arg == "--log-verbose":
+			logVerbose = true
 		case arg == "--no-progress":
 			showProgress = false
 		case arg == "-q" || arg == "--quiet":

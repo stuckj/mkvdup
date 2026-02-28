@@ -103,6 +103,110 @@ All source types are referenced via a **source directory** which contains either
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Source Indexer Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Source Indexer Pipeline                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Source Dir ──▶ Detect Type                                         │
+│                    │                                                │
+│        ┌───────────┼───────────┐                                    │
+│        ▼           ▼           ▼                                    │
+│   ┌─────────┐ ┌─────────┐ ┌─────────┐                              │
+│   │   DVD   │ │ Blu-ray │ │ BD ISO  │                               │
+│   │  (ISO)  │ │  (dir)  │ │ (UDF)   │                               │
+│   └────┬────┘ └────┬────┘ └────┬────┘                               │
+│        │           │           │                                    │
+│        ▼           ▼           ▼                                    │
+│   ┌─────────┐ ┌──────────────────┐                                  │
+│   │ MPEG-PS │ │ MPEG-TS Parser   │                                  │
+│   │  Parse  │ │                  │                                  │
+│   │ (VOB)   │ │  PAT/PMT ─▶ PID │                                  │
+│   └────┬────┘ │  Filtering       │                                  │
+│        │      └────────┬─────────┘                                  │
+│        │               │                                            │
+│        │      ┌────────▼─────────┐                                  │
+│        │      │ Audio Processing │                                  │
+│        │      │ ┌──────────────┐ │                                  │
+│        │      │ │TrueHD+AC3   │ │                                  │
+│        │      │ │ Splitter     │ │                                  │
+│        │      │ └──────────────┘ │                                  │
+│        │      │ ┌──────────────┐ │                                  │
+│        │      │ │DTS-HD Core   │ │                                  │
+│        │      │ │ Extractor    │ │                                  │
+│        │      │ └──────────────┘ │                                  │
+│        │      └────────┬─────────┘                                  │
+│        │               │                                            │
+│        ▼               ▼                                            │
+│   ┌─────────────────────────┐                                       │
+│   │   ES Data Indexer       │                                       │
+│   │                         │                                       │
+│   │ For each stream:        │                                       │
+│   │  Find sync points       │                                       │
+│   │  Hash 64-byte windows   │                                       │
+│   │  Build hash ─▶ location │                                       │
+│   └────────────┬────────────┘                                       │
+│                │                                                    │
+│                ▼                                                    │
+│   ┌─────────────────────────┐                                       │
+│   │  Index (hash table)     │                                       │
+│   │  hash ─▶ [file, offset] │                                       │
+│   └─────────────────────────┘                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Matcher Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Matcher Pipeline                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  MKV ──▶ Parse tracks ──▶ For each track:                          │
+│                                                                     │
+│  ┌───────────────────────────────────────────────┐                  │
+│  │ Track Processing                              │                  │
+│  │                                               │                  │
+│  │  Detect NAL framing (AVCC vs Annex B)         │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
+│  │  Find sync points in MKV track data           │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
+│  │  Hash windows ──▶ Lookup in source index      │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
+│  │  Expand matches byte-by-byte                  │                  │
+│  │  (bidirectional, respects NAL boundaries)     │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
+│  │  Coverage bitmap (4KB granularity)            │                  │
+│  │  for parallel duplicate detection             │                  │
+│  └───────────────────────────────────────────────┘                  │
+│                    │                                                │
+│                    ▼                                                │
+│  ┌───────────────────────────────────────────────┐                  │
+│  │ Post-processing                               │                  │
+│  │                                               │                  │
+│  │  Merge overlapping regions                    │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
+│  │  Build entries (MKV offset ─▶ source offset)  │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
+│  │  Write delta (unmatched MKV bytes)            │                  │
+│  └───────────────────────────────────────────────┘                  │
+│                    │                                                │
+│                    ▼                                                │
+│  ┌───────────────────────────────────────────────┐                  │
+│  │ Result                                        │                  │
+│  │  Entries[] + Delta file + Range maps           │                  │
+│  └───────────────────────────────────────────────┘                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 ## Zero-Copy Memory Mapping
 
 All file access uses true zero-copy memory mapping via `unix.Mmap` from `golang.org/x/sys/unix`. The `internal/mmap` package provides:
