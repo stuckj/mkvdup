@@ -374,7 +374,11 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error {
 				if rawRange.Size > LPCMTotalHeaderSize {
 					// Parse LPCM header on first packet to get bit depth
 					if _, ok := p.lpcmInfo[subStreamID]; !ok {
-						headerData := p.data[rawRange.FileOffset+4 : rawRange.FileOffset+4+LPCMHeaderSize]
+						headerEnd := rawRange.FileOffset + 4 + LPCMHeaderSize
+						if headerEnd > p.size {
+							continue
+						}
+						headerData := p.data[rawRange.FileOffset+4 : headerEnd]
 						info := ParseLPCMFrameHeader(headerData)
 						p.lpcmInfo[subStreamID] = info
 						// Only 16-bit LPCM is supported for byte-swap matching.

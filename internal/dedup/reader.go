@@ -483,9 +483,10 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			}
 		}
 
-		// Apply LPCM forward transform (DVD big-endian → MKV little-endian)
-		// for source entries that matched LPCM audio data.
-		if entry.Source != 0 && entry.IsLPCM {
+		// Apply LPCM byte-swap (DVD big-endian → MKV little-endian) for source
+		// entries that matched LPCM audio data. Skip when using the ES reader
+		// path (V1), because ReadAudioSubStreamData already returns transformed data.
+		if entry.Source != 0 && entry.IsLPCM && !(r.file.UsesESOffsets && r.esReader != nil) {
 			lpcmTransformBuffer(buf[bufOffset:bufOffset+readLen], offsetInEntry)
 		}
 
@@ -633,18 +634,16 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 // lpcmTransformBuffer applies the LPCM 16-bit byte swap (DVD big-endian →
 // MKV little-endian) to a buffer that was read from a raw source file.
 // offsetInEntry is the byte offset within the entry, needed for alignment.
+//
+// In practice, offsetInEntry is always even because match expansion uses
+// ReadAudioByteWithHint (which does esOffset^1 for byte-swap), so matches
+// always start and end at pair-aligned boundaries. The odd-offset guard is
+// purely defensive.
 func lpcmTransformBuffer(buf []byte, offsetInEntry int64) {
 	// 16-bit byte swap: pairs of bytes [HI][LO] → [LO][HI].
-	// If offsetInEntry is odd, the buffer starts mid-pair, so we need
-	// to handle the first byte specially.
+	// If offsetInEntry is odd, skip the first byte (which is mid-pair
+	// and can't be correctly swapped without its partner) and swap the rest.
 	if offsetInEntry%2 == 1 && len(buf) > 0 {
-		// First byte is the second byte of a pair in the source.
-		// In the MKV (LE), this byte should come from the PREVIOUS source byte,
-		// but that byte is in the adjacent pair. For byte-swapped 16-bit,
-		// the byte at odd offset N in the source maps to byte N-1 in the MKV.
-		// However, the entry's SourceOffset already accounts for this via
-		// the matched region, so we just need to swap pairs starting from
-		// an aligned position. Skip the first byte and swap the rest.
 		source.TransformLPCM16BE(buf[1:])
 	} else {
 		source.TransformLPCM16BE(buf)
