@@ -486,7 +486,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		// Apply LPCM forward transform (DVD big-endian → MKV little-endian)
 		// for source entries that matched LPCM audio data.
 		if entry.Source != 0 && entry.IsLPCM {
-			lpcmTransformBuffer(buf[bufOffset:bufOffset+readLen], entry, offsetInEntry)
+			lpcmTransformBuffer(buf[bufOffset:bufOffset+readLen], offsetInEntry)
 		}
 
 		totalRead += readLen
@@ -630,18 +630,10 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	return result
 }
 
-// lpcmTransformBuffer applies the LPCM forward transform (DVD big-endian →
+// lpcmTransformBuffer applies the LPCM 16-bit byte swap (DVD big-endian →
 // MKV little-endian) to a buffer that was read from a raw source file.
 // offsetInEntry is the byte offset within the entry, needed for alignment.
-// Currently supports 16-bit LPCM only (20/24-bit is extremely rare on DVD).
-func lpcmTransformBuffer(buf []byte, entry Entry, offsetInEntry int64) {
-	bitDepth := source.LPCMQuantizationBits(entry.LPCMQuantization)
-	if bitDepth != 16 {
-		// 20/24-bit LPCM transforms change data size (grouped → interleaved)
-		// and cannot be done in-place. Not supported in this version.
-		return
-	}
-
+func lpcmTransformBuffer(buf []byte, offsetInEntry int64) {
 	// 16-bit byte swap: pairs of bytes [HI][LO] → [LO][HI].
 	// If offsetInEntry is odd, the buffer starts mid-pair, so we need
 	// to handle the first byte specially.

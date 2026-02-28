@@ -9,11 +9,6 @@ import (
 // Larger chunks reduce page faults when expanding across mmap'd source files.
 const expandChunkSize = 4096
 
-// lpcmInfoProvider is implemented by ESReaders that can provide LPCM frame header info.
-type lpcmInfoProvider interface {
-	LPCMInfo(subStreamID byte) (source.LPCMFrameHeader, bool)
-}
-
 // tryVerifyAndExpand attempts to verify and expand a match, returning the matched region or nil.
 func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offsetInPacket int64, isVideo bool) *matchedRegion {
 	// The MKV offset where this sync point is
@@ -69,16 +64,6 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 		isVideo:          isVideo,
 		audioSubStreamID: loc.AudioSubStreamID,
 		isLPCM:           source.IsLPCMSubStreamID(loc.AudioSubStreamID),
-	}
-
-	// Populate LPCM params from the source parser
-	if region.isLPCM && m.sourceIndex.UsesESOffsets && int(loc.FileIndex) < len(m.sourceIndex.ESReaders) {
-		if parser, ok := m.sourceIndex.ESReaders[loc.FileIndex].(lpcmInfoProvider); ok {
-			if info, found := parser.LPCMInfo(loc.AudioSubStreamID); found {
-				region.lpcmQuantization = info.Quantization
-				region.lpcmChannels = info.Channels
-			}
-		}
 	}
 
 	return region

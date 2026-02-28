@@ -67,7 +67,10 @@ The writer produces V7 (DVD) or V8 (Blu-ray) files. V3-V6 files are supported fo
 │    Length: int64 (8 bytes)                              │
 │    Source: uint16 (2 bytes) [0=DELTA, 1+=file idx+1]   │
 │    SourceOffset: int64 (8 bytes) [raw file offset]     │
-│    IsVideo: uint8 (1 byte)                             │
+│    ESFlags: uint8 (1 byte)                             │
+│      bit 0: IsVideo                                    │
+│      bit 1: IsLPCM (16-bit byte-swap on FUSE read)     │
+│      bits 2-7: reserved                                │
 │    AudioSubStreamID: uint8 (1 byte) [audio or sub]     │
 │                                                        │
 │  Entry size: 28 bytes                                  │
@@ -274,7 +277,7 @@ For each FUSE read:
 - Length: 8 bytes
 - Source: 2 bytes (uint16, supports up to 65535 source files)
 - SourceOffset: 8 bytes
-- IsVideo: 1 byte
+- ESFlags: 1 byte (bit 0: IsVideo, bit 1: IsLPCM)
 - AudioSubStreamID: 1 byte (also used for subtitle sub-streams)
 
 **Estimated index size for typical video:**

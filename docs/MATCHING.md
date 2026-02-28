@@ -51,7 +51,7 @@ Since most video codecs use `00 00 01` as a start code prefix, we scan for this 
 | DTS | `7F FE 80 01` | 4-byte sync word |
 | TrueHD | `F8 72 6F BA` | 4-byte sync word |
 | MPEG Audio (MP2/MP3) | `FF Fx` | 11-bit sync, x varies |
-| LPCM/PCM | (none) | Raw samples, no framing |
+| LPCM/PCM | (none) | Raw samples, no framing (fixed-interval sync) |
 
 ## ES-Aware Indexing (DVD)
 
@@ -362,6 +362,26 @@ With all filtering implemented (ES-aware, user_data, per-sub-stream audio):
 The remaining ~1.6% unmatched data consists of:
 - MKV container headers (EBML, cluster headers, block headers)
 - Minor stream differences
+
+## DVD LPCM Audio Matching
+
+**Problem:** DVD LPCM audio (sub-stream IDs `0xA0`-`0xA7`) stores 16-bit samples as big-endian with per-frame headers, while MKV stores `A_PCM/INT/LIT` (raw little-endian PCM, no framing). The byte data is completely different despite containing identical audio. Without handling this, LPCM audio gets 0% match and falls entirely to delta, which can lose hundreds of MB on a typical LPCM-heavy DVD.
+
+**Solution:** Transform LPCM ES data at the source parser layer, invisible to the indexing and matching code:
+
+1. **Header stripping:** LPCM packets in Private Stream 1 have a 3-byte frame header after the 4-byte PS header (emphasis, mute, frame number, quantization, sample rate, channels, dynamic range control). We strip all 7 bytes, keeping only raw sample data — matching how video extraction tools produce MKV audio.
+
+2. **16-bit byte swap:** For 16-bit LPCM (quantization code 0), apply an in-place byte swap to convert big-endian sample pairs `[HI][LO]` to little-endian `[LO][HI]`. This is done transparently in `ReadAudioSubStreamData()` and `ReadAudioByteWithHint()`, so the indexer and matcher see MKV-compatible data.
+
+3. **Fixed-interval sync points:** Since PCM has no natural sync patterns (no frame headers or sync words), `FindLPCMSyncPoints` generates sync points at fixed 2048-byte intervals. The matcher uses these for PCM MKV tracks (codec ID `A_PCM/*`).
+
+4. **FUSE reconstruction:** The dedup entry's `IsLPCM` flag (ESFlags bit 1) tells the FUSE reader to apply the inverse byte swap when reading from the source. Since the 16-bit swap is its own inverse, this is a simple in-place operation with no memory allocation.
+
+### 20-bit and 24-bit LPCM
+
+DVD LPCM also supports 20-bit and 24-bit sample depths, which use a grouped big-endian packing format (upper 16-bit parts followed by packed lower bits). The MKV representation is interleaved little-endian 24-bit samples. For 20-bit, the transform changes data size (the grouped format is more compact than the interleaved output), which creates a coordinate system mismatch between source ES offsets and MKV offsets. This makes both indexing and in-place FUSE reconstruction infeasible without significant complexity.
+
+Since 20-bit and 24-bit DVD LPCM is extremely rare in practice, these formats are not handled — their audio data falls through to delta storage.
 
 ## Known Limitation: H.264 Slice Header Modifications
 

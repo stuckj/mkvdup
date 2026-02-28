@@ -73,9 +73,7 @@ type Entry struct {
 	SourceOffset     int64  // Offset in source file (or ES offset)
 	IsVideo          bool   // For ES-based sources
 	AudioSubStreamID byte   // For ES-based audio sub-streams
-	IsLPCM           bool   // True if LPCM audio requiring inverse transform on read
-	LPCMQuantization byte   // LPCM quantization (0=16-bit, 1=20-bit, 2=24-bit) — valid when IsLPCM
-	LPCMChannels     byte   // LPCM channel count minus 1 — valid when IsLPCM
+	IsLPCM           bool   // True if 16-bit LPCM audio requiring byte-swap on read
 }
 
 // RawEntry matches the 28-byte on-disk entry format exactly.
@@ -93,10 +91,8 @@ type RawEntry struct {
 // ESFlags bit layout:
 //
 //	bit 0: IsVideo
-//	bit 1: IsLPCM
-//	bits 2-3: LPCM quantization (0=16-bit, 1=20-bit, 2=24-bit) — valid when bit 1 set
-//	bits 4-6: LPCM channel count minus 1 (0=mono, 1=stereo, ..., 7=8ch) — valid when bit 1 set
-//	bit 7: reserved
+//	bit 1: IsLPCM (16-bit LPCM requiring byte-swap on read)
+//	bits 2-7: reserved
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
 func (r *RawEntry) ToEntry() Entry {
@@ -108,10 +104,6 @@ func (r *RawEntry) ToEntry() Entry {
 		IsVideo:          r.ESFlags&1 == 1,
 		AudioSubStreamID: r.AudioSubStreamID,
 		IsLPCM:           r.ESFlags&2 != 0,
-	}
-	if e.IsLPCM {
-		e.LPCMQuantization = (r.ESFlags >> 2) & 0x03
-		e.LPCMChannels = (r.ESFlags >> 4) & 0x07
 	}
 	return e
 }
@@ -154,8 +146,6 @@ func (e *Entry) ToMatcherEntry() matcher.Entry {
 		IsVideo:          e.IsVideo,
 		AudioSubStreamID: e.AudioSubStreamID,
 		IsLPCM:           e.IsLPCM,
-		LPCMQuantization: e.LPCMQuantization,
-		LPCMChannels:     e.LPCMChannels,
 	}
 }
 
@@ -169,8 +159,6 @@ func FromMatcherEntry(e matcher.Entry) Entry {
 		IsVideo:          e.IsVideo,
 		AudioSubStreamID: e.AudioSubStreamID,
 		IsLPCM:           e.IsLPCM,
-		LPCMQuantization: e.LPCMQuantization,
-		LPCMChannels:     e.LPCMChannels,
 	}
 }
 

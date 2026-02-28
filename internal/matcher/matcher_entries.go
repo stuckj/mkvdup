@@ -97,8 +97,6 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) {
 				IsVideo:          inRegion.isVideo,
 				AudioSubStreamID: inRegion.audioSubStreamID,
 				IsLPCM:           inRegion.isLPCM,
-				LPCMQuantization: inRegion.lpcmQuantization,
-				LPCMChannels:     inRegion.lpcmChannels,
 			})
 
 			pos = inRegion.mkvEnd

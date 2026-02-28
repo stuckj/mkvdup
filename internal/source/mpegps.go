@@ -370,13 +370,19 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error {
 			}
 
 			if isLPCM {
-				p.lpcmSubStreams[subStreamID] = true
 				// Strip 7 bytes: 4-byte PS header + 3-byte LPCM frame header
 				if rawRange.Size > LPCMTotalHeaderSize {
-					// Parse LPCM header on first packet to get bit depth + channels
+					// Parse LPCM header on first packet to get bit depth
 					if _, ok := p.lpcmInfo[subStreamID]; !ok {
 						headerData := p.data[rawRange.FileOffset+4 : rawRange.FileOffset+4+LPCMHeaderSize]
-						p.lpcmInfo[subStreamID] = ParseLPCMFrameHeader(headerData)
+						info := ParseLPCMFrameHeader(headerData)
+						p.lpcmInfo[subStreamID] = info
+						// Only 16-bit LPCM is supported for byte-swap matching.
+						// 20/24-bit uses grouped packing that changes data size
+						// during transform, so it falls through to delta.
+						if IsLPCM16Bit(info.Quantization) {
+							p.lpcmSubStreams[subStreamID] = true
+						}
 					}
 					esOffset := esOffsetBySubStream[subStreamID]
 					rangesBySubStream[subStreamID] = append(rangesBySubStream[subStreamID], PESPayloadRange{
@@ -672,18 +678,12 @@ func (p *MPEGPSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHin
 }
 
 // ReadAudioByteWithHint reads a single byte from an audio sub-stream, using a range hint.
-// For LPCM 16-bit sub-streams, swaps even/odd byte positions to convert big-endian to little-endian.
+// For LPCM sub-streams (16-bit only), swaps even/odd byte positions to convert big-endian to little-endian.
 func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
 	if p.lpcmSubStreams[subStreamID] {
-		info := p.lpcmInfo[subStreamID]
-		bitDepth := LPCMQuantizationBits(info.Quantization)
-		if bitDepth == 16 {
-			// Swap even/odd byte position: XOR with 1
-			swappedOffset := esOffset ^ 1
-			return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], swappedOffset, rangeHint)
-		}
-		// 20-bit and 24-bit need grouped reading, not single-byte access.
-		// The indexer forces the slow path (ReadAudioSubStreamData) for these.
+		// Swap even/odd byte position: XOR with 1
+		swappedOffset := esOffset ^ 1
+		return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], swappedOffset, rangeHint)
 	}
 	return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)
 }
@@ -752,24 +752,13 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 		return nil, err
 	}
 
-	// Apply LPCM forward transform (DVD big-endian → MKV little-endian)
+	// Apply LPCM 16-bit forward transform (DVD big-endian → MKV little-endian)
 	if p.lpcmSubStreams[subStreamID] {
-		info := p.lpcmInfo[subStreamID]
-		bitDepth := LPCMQuantizationBits(info.Quantization)
-		channels := LPCMChannelCount(info.Channels)
-
-		switch bitDepth {
-		case 16:
-			// readFromRanges may return a zero-copy mmap slice, so clone first
-			result := make([]byte, len(data))
-			copy(result, data)
-			TransformLPCM16BE(result)
-			return result, nil
-		case 20:
-			return TransformLPCM20BE(data, channels), nil
-		case 24:
-			return TransformLPCM24BE(data, channels), nil
-		}
+		// readFromRanges may return a zero-copy mmap slice, so clone first
+		result := make([]byte, len(data))
+		copy(result, data)
+		TransformLPCM16BE(result)
+		return result, nil
 	}
 
 	return data, nil
@@ -778,10 +767,4 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 // IsLPCMSubStream returns true if the given sub-stream ID is an LPCM sub-stream.
 func (p *MPEGPSParser) IsLPCMSubStream(subStreamID byte) bool {
 	return p.lpcmSubStreams[subStreamID]
-}
-
-// LPCMInfo returns the parsed LPCM frame header for the given sub-stream.
-func (p *MPEGPSParser) LPCMInfo(subStreamID byte) (LPCMFrameHeader, bool) {
-	info, ok := p.lpcmInfo[subStreamID]
-	return info, ok
 }

@@ -80,8 +80,6 @@ type matchedRegion struct {
 	isVideo          bool  // For ES-based sources
 	audioSubStreamID byte  // For audio in MPEG-PS
 	isLPCM           bool  // True if this is an LPCM audio region requiring inverse transform
-	lpcmQuantization byte  // LPCM quantization code (0=16-bit, 1=20-bit, 2=24-bit)
-	lpcmChannels     byte  // LPCM channel count minus 1 (0=mono, 1=stereo, ...)
 }
 
 // Matcher performs the deduplication matching.

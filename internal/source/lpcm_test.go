@@ -51,68 +51,18 @@ func TestParseLPCMFrameHeader(t *testing.T) {
 	}
 }
 
-func TestLPCMQuantizationBits(t *testing.T) {
-	if LPCMQuantizationBits(0) != 16 {
+func TestIsLPCM16Bit(t *testing.T) {
+	if !IsLPCM16Bit(0) {
 		t.Error("quant 0 should be 16-bit")
 	}
-	if LPCMQuantizationBits(1) != 20 {
-		t.Error("quant 1 should be 20-bit")
+	if IsLPCM16Bit(1) {
+		t.Error("quant 1 (20-bit) should not be 16-bit")
 	}
-	if LPCMQuantizationBits(2) != 24 {
-		t.Error("quant 2 should be 24-bit")
+	if IsLPCM16Bit(2) {
+		t.Error("quant 2 (24-bit) should not be 16-bit")
 	}
-	if LPCMQuantizationBits(3) != 16 {
-		t.Error("quant 3 should fallback to 16-bit")
-	}
-}
-
-func TestLPCMSampleRate(t *testing.T) {
-	if LPCMSampleRate(0) != 48000 {
-		t.Error("code 0 should be 48kHz")
-	}
-	if LPCMSampleRate(1) != 96000 {
-		t.Error("code 1 should be 96kHz")
-	}
-}
-
-func TestLPCMChannelCount(t *testing.T) {
-	if LPCMChannelCount(0) != 1 {
-		t.Error("code 0 should be 1 channel")
-	}
-	if LPCMChannelCount(1) != 2 {
-		t.Error("code 1 should be 2 channels")
-	}
-	if LPCMChannelCount(7) != 8 {
-		t.Error("code 7 should be 8 channels")
-	}
-}
-
-func TestLPCMSampleGroupSize(t *testing.T) {
-	// 16-bit: 2 bytes per sample per channel
-	if LPCMSampleGroupSize(16, 1) != 2 {
-		t.Error("16-bit mono should be 2")
-	}
-	if LPCMSampleGroupSize(16, 2) != 4 {
-		t.Error("16-bit stereo should be 4")
-	}
-
-	// 20-bit: 2*ch + ceil(ch/2) bytes
-	if LPCMSampleGroupSize(20, 1) != 3 { // 2 + 1
-		t.Errorf("20-bit mono should be 3, got %d", LPCMSampleGroupSize(20, 1))
-	}
-	if LPCMSampleGroupSize(20, 2) != 5 { // 4 + 1
-		t.Errorf("20-bit stereo should be 5, got %d", LPCMSampleGroupSize(20, 2))
-	}
-	if LPCMSampleGroupSize(20, 6) != 15 { // 12 + 3
-		t.Errorf("20-bit 6ch should be 15, got %d", LPCMSampleGroupSize(20, 6))
-	}
-
-	// 24-bit: 3 bytes per sample per channel
-	if LPCMSampleGroupSize(24, 1) != 3 {
-		t.Error("24-bit mono should be 3")
-	}
-	if LPCMSampleGroupSize(24, 2) != 6 {
-		t.Error("24-bit stereo should be 6")
+	if IsLPCM16Bit(3) {
+		t.Error("quant 3 (reserved) should not be 16-bit")
 	}
 }
 
@@ -150,59 +100,6 @@ func TestTransformLPCM16BE(t *testing.T) {
 	})
 }
 
-func TestTransformLPCM20BE(t *testing.T) {
-	t.Run("stereo", func(t *testing.T) {
-		// 2 channels, group = 5 bytes: 4 bytes upper + 1 byte lower nibbles
-		// Channel 0 upper: 0x12 0x34 → 16-bit upper = 0x1234
-		// Channel 1 upper: 0x56 0x78 → 16-bit upper = 0x5678
-		// Lower nibbles: 0xAB → ch0 = 0xA0, ch1 = 0xB0
-		data := []byte{0x12, 0x34, 0x56, 0x78, 0xAB}
-		result := TransformLPCM20BE(data, 2)
-		// Output: 2 × 3 bytes = 6 bytes
-		// Ch0: LE 24-bit: [0xA0, 0x34, 0x12]
-		// Ch1: LE 24-bit: [0xB0, 0x78, 0x56]
-		expected := []byte{0xA0, 0x34, 0x12, 0xB0, 0x78, 0x56}
-		if !bytes.Equal(result, expected) {
-			t.Errorf("got %x, want %x", result, expected)
-		}
-	})
-
-	t.Run("nil on bad channels", func(t *testing.T) {
-		if TransformLPCM20BE([]byte{1, 2, 3}, 0) != nil {
-			t.Error("should return nil for 0 channels")
-		}
-	})
-
-	t.Run("nil on short data", func(t *testing.T) {
-		if TransformLPCM20BE([]byte{1, 2}, 2) != nil {
-			t.Error("should return nil for data shorter than one group")
-		}
-	})
-}
-
-func TestTransformLPCM24BE(t *testing.T) {
-	t.Run("stereo", func(t *testing.T) {
-		// 2 channels, group = 6 bytes: 4 bytes upper + 2 bytes lower
-		// Channel 0: upper = 0x1234, lower = 0x56
-		// Channel 1: upper = 0x789A, lower = 0xBC
-		data := []byte{0x12, 0x34, 0x78, 0x9A, 0x56, 0xBC}
-		result := TransformLPCM24BE(data, 2)
-		// Output: 2 × 3 bytes = 6 bytes
-		// Ch0: LE 24-bit: [0x56, 0x34, 0x12]
-		// Ch1: LE 24-bit: [0xBC, 0x9A, 0x78]
-		expected := []byte{0x56, 0x34, 0x12, 0xBC, 0x9A, 0x78}
-		if !bytes.Equal(result, expected) {
-			t.Errorf("got %x, want %x", result, expected)
-		}
-	})
-
-	t.Run("nil on bad channels", func(t *testing.T) {
-		if TransformLPCM24BE([]byte{1, 2, 3}, 0) != nil {
-			t.Error("should return nil for 0 channels")
-		}
-	})
-}
-
 func TestInverseTransformRoundTrip16(t *testing.T) {
 	original := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 	data := make([]byte, len(original))
@@ -213,73 +110,6 @@ func TestInverseTransformRoundTrip16(t *testing.T) {
 
 	if !bytes.Equal(data, original) {
 		t.Errorf("round trip failed: got %x, want %x", data, original)
-	}
-}
-
-func TestInverseTransformRoundTrip20(t *testing.T) {
-	for _, channels := range []int{1, 2, 4, 6} {
-		groupSize := LPCMSampleGroupSize(20, channels)
-		// Create 3 groups of test data.
-		// The lower nibble bytes are packed: even channels use upper nibble,
-		// odd channels use lower nibble. Only 4 bits per channel are preserved,
-		// so we need test data where the unused bits are zero.
-		original := make([]byte, groupSize*3)
-		for i := range original {
-			original[i] = byte(i * 17)
-		}
-		// Zero out the unused nibble bits in the lower-nibble bytes
-		// so the round trip is lossless.
-		lowerStart := channels * 2
-		lowerCount := (channels + 1) / 2
-		for g := range 3 {
-			for b := range lowerCount {
-				idx := g*groupSize + lowerStart + b
-				// For even channels: only upper nibble matters
-				// For odd channels: only lower nibble matters
-				// If this byte holds 2 channels (even+odd), both nibbles matter → keep as-is
-				// If this byte holds only 1 channel (even, last byte for odd channel count),
-				// only upper nibble matters → zero lower nibble
-				if channels%2 == 1 && b == lowerCount-1 {
-					original[idx] &= 0xF0
-				}
-			}
-		}
-
-		transformed := TransformLPCM20BE(original, channels)
-		if transformed == nil {
-			t.Fatalf("TransformLPCM20BE returned nil for %d channels", channels)
-		}
-		inverse := InverseTransformLPCM20(transformed, channels)
-		if inverse == nil {
-			t.Fatalf("InverseTransformLPCM20 returned nil for %d channels", channels)
-		}
-
-		if !bytes.Equal(inverse, original) {
-			t.Errorf("round trip failed for %d channels:\n  original:  %x\n  inverse:   %x", channels, original, inverse)
-		}
-	}
-}
-
-func TestInverseTransformRoundTrip24(t *testing.T) {
-	for _, channels := range []int{1, 2, 4, 6} {
-		groupSize := LPCMSampleGroupSize(24, channels)
-		original := make([]byte, groupSize*3)
-		for i := range original {
-			original[i] = byte(i * 31)
-		}
-
-		transformed := TransformLPCM24BE(original, channels)
-		if transformed == nil {
-			t.Fatalf("TransformLPCM24BE returned nil for %d channels", channels)
-		}
-		inverse := InverseTransformLPCM24(transformed, channels)
-		if inverse == nil {
-			t.Fatalf("InverseTransformLPCM24 returned nil for %d channels", channels)
-		}
-
-		if !bytes.Equal(inverse, original) {
-			t.Errorf("round trip failed for %d channels:\n  original:  %x\n  inverse:   %x", channels, original, inverse)
-		}
 	}
 }
 

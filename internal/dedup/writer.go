@@ -448,15 +448,13 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
 		binary.LittleEndian.PutUint16(entryBuf[16:18], entry.Source)
 		binary.LittleEndian.PutUint64(entryBuf[18:26], uint64(entry.SourceOffset))
 
-		// ES flags byte: bit 0 = IsVideo, bit 1 = IsLPCM, bits 2-3 = quant, bits 4-6 = channels
+		// ES flags byte: bit 0 = IsVideo, bit 1 = IsLPCM
 		var esFlags uint8
 		if entry.IsVideo {
 			esFlags |= 1
 		}
 		if entry.IsLPCM {
 			esFlags |= 2
-			esFlags |= (entry.LPCMQuantization & 0x03) << 2
-			esFlags |= (entry.LPCMChannels & 0x07) << 4
 		}
 		entryBuf[26] = esFlags
 		entryBuf[27] = entry.AudioSubStreamID

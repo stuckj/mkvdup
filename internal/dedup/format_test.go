@@ -191,11 +191,9 @@ func TestRawEntrySizeIs28Bytes(t *testing.T) {
 
 func TestRawEntryLPCMFlags(t *testing.T) {
 	tests := []struct {
-		name             string
-		esFlags          uint8
-		wantIsLPCM       bool
-		wantQuantization byte
-		wantChannels     byte
+		name       string
+		esFlags    uint8
+		wantIsLPCM bool
 	}{
 		{
 			name:       "no LPCM (video only)",
@@ -208,32 +206,14 @@ func TestRawEntryLPCMFlags(t *testing.T) {
 			wantIsLPCM: false,
 		},
 		{
-			name:             "LPCM 16-bit stereo",
-			esFlags:          0x02 | (0 << 2) | (1 << 4), // IsLPCM | quant=0(16bit) | channels=1(stereo)
-			wantIsLPCM:       true,
-			wantQuantization: 0,
-			wantChannels:     1,
+			name:       "LPCM set",
+			esFlags:    0x02, // bit 1 = IsLPCM
+			wantIsLPCM: true,
 		},
 		{
-			name:             "LPCM 20-bit 6ch",
-			esFlags:          0x02 | (1 << 2) | (5 << 4), // IsLPCM | quant=1(20bit) | channels=5(6ch)
-			wantIsLPCM:       true,
-			wantQuantization: 1,
-			wantChannels:     5,
-		},
-		{
-			name:             "LPCM 24-bit mono",
-			esFlags:          0x02 | (2 << 2) | (0 << 4), // IsLPCM | quant=2(24bit) | channels=0(mono)
-			wantIsLPCM:       true,
-			wantQuantization: 2,
-			wantChannels:     0,
-		},
-		{
-			name:             "LPCM with IsVideo (both set)",
-			esFlags:          0x03 | (0 << 2) | (1 << 4), // IsVideo + IsLPCM
-			wantIsLPCM:       true,
-			wantQuantization: 0,
-			wantChannels:     1,
+			name:       "LPCM with IsVideo (both set)",
+			esFlags:    0x03, // bits 0+1
+			wantIsLPCM: true,
 		},
 	}
 
@@ -251,41 +231,24 @@ func TestRawEntryLPCMFlags(t *testing.T) {
 			if entry.IsLPCM != tt.wantIsLPCM {
 				t.Errorf("IsLPCM = %v, want %v", entry.IsLPCM, tt.wantIsLPCM)
 			}
-			if tt.wantIsLPCM {
-				if entry.LPCMQuantization != tt.wantQuantization {
-					t.Errorf("LPCMQuantization = %d, want %d", entry.LPCMQuantization, tt.wantQuantization)
-				}
-				if entry.LPCMChannels != tt.wantChannels {
-					t.Errorf("LPCMChannels = %d, want %d", entry.LPCMChannels, tt.wantChannels)
-				}
-			}
 		})
 	}
 }
 
 func TestLPCMESFlagsRoundTrip(t *testing.T) {
-	// Verify that encoding LPCM params into ESFlags and decoding them back
-	// produces the original values.
-	for quant := byte(0); quant <= 2; quant++ {
-		for ch := byte(0); ch <= 7; ch++ {
-			var esFlags uint8
-			esFlags |= 2 // IsLPCM
-			esFlags |= (quant & 0x03) << 2
-			esFlags |= (ch & 0x07) << 4
+	// Verify that encoding IsLPCM into ESFlags bit 1 and decoding it back works.
+	for _, isLPCM := range []bool{false, true} {
+		var esFlags uint8
+		if isLPCM {
+			esFlags |= 2 // bit 1
+		}
 
-			var r RawEntry
-			r.ESFlags = esFlags
-			entry := r.ToEntry()
+		var r RawEntry
+		r.ESFlags = esFlags
+		entry := r.ToEntry()
 
-			if !entry.IsLPCM {
-				t.Errorf("IsLPCM should be true for quant=%d, ch=%d", quant, ch)
-			}
-			if entry.LPCMQuantization != quant {
-				t.Errorf("quant=%d, ch=%d: LPCMQuantization = %d, want %d", quant, ch, entry.LPCMQuantization, quant)
-			}
-			if entry.LPCMChannels != ch {
-				t.Errorf("quant=%d, ch=%d: LPCMChannels = %d, want %d", quant, ch, entry.LPCMChannels, ch)
-			}
+		if entry.IsLPCM != isLPCM {
+			t.Errorf("IsLPCM = %v, want %v (esFlags=0x%02X)", entry.IsLPCM, isLPCM, esFlags)
 		}
 	}
 }
