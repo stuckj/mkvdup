@@ -73,6 +73,9 @@ type Entry struct {
 	SourceOffset     int64  // Offset in source file (or ES offset)
 	IsVideo          bool   // For ES-based sources
 	AudioSubStreamID byte   // For ES-based audio sub-streams
+	IsLPCM           bool   // True if LPCM audio requiring inverse transform on read
+	LPCMQuantization byte   // LPCM quantization (0=16-bit, 1=20-bit, 2=24-bit) — valid when IsLPCM
+	LPCMChannels     byte   // LPCM channel count minus 1 — valid when IsLPCM
 }
 
 // RawEntry matches the 28-byte on-disk entry format exactly.
@@ -87,16 +90,30 @@ type RawEntry struct {
 	AudioSubStreamID uint8
 }
 
+// ESFlags bit layout:
+//
+//	bit 0: IsVideo
+//	bit 1: IsLPCM
+//	bits 2-3: LPCM quantization (0=16-bit, 1=20-bit, 2=24-bit) — valid when bit 1 set
+//	bits 4-6: LPCM channel count minus 1 (0=mono, 1=stereo, ..., 7=8ch) — valid when bit 1 set
+//	bit 7: reserved
+
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
 func (r *RawEntry) ToEntry() Entry {
-	return Entry{
+	e := Entry{
 		MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
 		Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
 		Source:           binary.LittleEndian.Uint16(r.Source[:]),
 		SourceOffset:     int64(binary.LittleEndian.Uint64(r.SourceOffset[:])),
 		IsVideo:          r.ESFlags&1 == 1,
 		AudioSubStreamID: r.AudioSubStreamID,
+		IsLPCM:           r.ESFlags&2 != 0,
 	}
+	if e.IsLPCM {
+		e.LPCMQuantization = (r.ESFlags >> 2) & 0x03
+		e.LPCMChannels = (r.ESFlags >> 4) & 0x07
+	}
+	return e
 }
 
 // Footer represents the footer at the end of a .mkvdup file.
@@ -136,6 +153,9 @@ func (e *Entry) ToMatcherEntry() matcher.Entry {
 		SourceOffset:     e.SourceOffset,
 		IsVideo:          e.IsVideo,
 		AudioSubStreamID: e.AudioSubStreamID,
+		IsLPCM:           e.IsLPCM,
+		LPCMQuantization: e.LPCMQuantization,
+		LPCMChannels:     e.LPCMChannels,
 	}
 }
 
@@ -148,6 +168,9 @@ func FromMatcherEntry(e matcher.Entry) Entry {
 		SourceOffset:     e.SourceOffset,
 		IsVideo:          e.IsVideo,
 		AudioSubStreamID: e.AudioSubStreamID,
+		IsLPCM:           e.IsLPCM,
+		LPCMQuantization: e.LPCMQuantization,
+		LPCMChannels:     e.LPCMChannels,
 	}
 }
 

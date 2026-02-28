@@ -194,6 +194,11 @@ func (p *MPEGTSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, r
 	return readByteWithHint(p.data, p.multiRegion, p.size, p.audioBySubStream[subStreamID], esOffset, rangeHint)
 }
 
+// IsLPCMSubStream always returns false for MPEG-TS (LPCM is DVD-only).
+func (p *MPEGTSParser) IsLPCMSubStream(_ byte) bool {
+	return false
+}
+
 // --- Accessors for indexer ---
 
 // Data returns the raw mmap'd file data for zero-copy access.

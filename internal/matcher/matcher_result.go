@@ -14,6 +14,9 @@ type Entry struct {
 	SourceOffset     int64  // Offset in source file (or ES offset for ES-based sources)
 	IsVideo          bool   // For ES-based sources: whether this is video or audio data
 	AudioSubStreamID byte   // For ES-based audio: sub-stream ID (0x80-0x87=AC3, etc.)
+	IsLPCM           bool   // True if this is LPCM audio requiring inverse transform on read
+	LPCMQuantization byte   // LPCM quantization code (0=16-bit, 1=20-bit, 2=24-bit)
+	LPCMChannels     byte   // LPCM channel count minus 1 (0=mono, 1=stereo, ...)
 }
 
 // Result contains the results of the matching process.

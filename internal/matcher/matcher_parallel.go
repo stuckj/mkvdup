@@ -116,6 +116,8 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		}
 	} else if trackType == mkv.TrackTypeSubtitle {
 		syncPoints = source.FindPGSSyncPoints(data)
+	} else if m.isPCMTrack[int(pkt.TrackNum)] {
+		syncPoints = source.FindLPCMSyncPoints(data)
 	} else {
 		syncPoints = source.FindAudioSyncPoints(data)
 	}

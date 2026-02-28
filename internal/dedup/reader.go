@@ -11,6 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
+	"github.com/stuckj/mkvdup/internal/source"
 	"golang.org/x/sys/unix"
 )
 
@@ -482,6 +483,12 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			}
 		}
 
+		// Apply LPCM forward transform (DVD big-endian → MKV little-endian)
+		// for source entries that matched LPCM audio data.
+		if entry.Source != 0 && entry.IsLPCM {
+			lpcmTransformBuffer(buf[bufOffset:bufOffset+readLen], entry, offsetInEntry)
+		}
+
 		totalRead += readLen
 		remaining -= readLen
 		offset = readEnd
@@ -621,6 +628,35 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	}
 
 	return result
+}
+
+// lpcmTransformBuffer applies the LPCM forward transform (DVD big-endian →
+// MKV little-endian) to a buffer that was read from a raw source file.
+// offsetInEntry is the byte offset within the entry, needed for alignment.
+// Currently supports 16-bit LPCM only (20/24-bit is extremely rare on DVD).
+func lpcmTransformBuffer(buf []byte, entry Entry, offsetInEntry int64) {
+	bitDepth := source.LPCMQuantizationBits(entry.LPCMQuantization)
+	if bitDepth != 16 {
+		// 20/24-bit LPCM transforms change data size (grouped → interleaved)
+		// and cannot be done in-place. Not supported in this version.
+		return
+	}
+
+	// 16-bit byte swap: pairs of bytes [HI][LO] → [LO][HI].
+	// If offsetInEntry is odd, the buffer starts mid-pair, so we need
+	// to handle the first byte specially.
+	if offsetInEntry%2 == 1 && len(buf) > 0 {
+		// First byte is the second byte of a pair in the source.
+		// In the MKV (LE), this byte should come from the PREVIOUS source byte,
+		// but that byte is in the adjacent pair. For byte-swapped 16-bit,
+		// the byte at odd offset N in the source maps to byte N-1 in the MKV.
+		// However, the entry's SourceOffset already accounts for this via
+		// the matched region, so we just need to swap pairs starting from
+		// an aligned position. Skip the first byte and swap the rest.
+		source.TransformLPCM16BE(buf[1:])
+	} else {
+		source.TransformLPCM16BE(buf)
+	}
 }
 
 func (r *Reader) readDelta(offset int64, size int) ([]byte, error) {

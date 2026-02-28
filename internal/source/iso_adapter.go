@@ -160,6 +160,11 @@ func (a *isoM2TSAdapter) ReadAudioByteWithHint(subStreamID byte, esOffset int64,
 	return a.parser.ReadAudioByteWithHint(subStreamID, esOffset, rangeHint)
 }
 
+// IsLPCMSubStream always returns false for Blu-ray M2TS (LPCM is DVD-only).
+func (a *isoM2TSAdapter) IsLPCMSubStream(_ byte) bool {
+	return false
+}
+
 // --- ESRangeConverter interface (for V3 format — adds baseOffset to raw ranges) ---
 
 func (a *isoM2TSAdapter) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) {
