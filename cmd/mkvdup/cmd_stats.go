@@ -33,7 +33,7 @@ func showStats(configPaths []string, configDir bool) error {
 	for _, cfgPath := range resolved {
 		cfgs, _, cfgErr := dedup.ResolveConfigs([]string{cfgPath})
 		if cfgErr != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load config %s: %v\n", cfgPath, cfgErr)
+			printWarn("Failed to load config %s: %v\n", cfgPath, cfgErr)
 			continue
 		}
 		configs = append(configs, cfgs...)
@@ -50,7 +50,7 @@ func showStats(configPaths []string, configDir bool) error {
 		stats = append(stats, fs)
 
 		if fs.err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n  Error: %v\n\n", fs.name, fs.err)
+			printWarn("%s\n  Error: %v\n\n", fs.name, fs.err)
 			continue
 		}
 

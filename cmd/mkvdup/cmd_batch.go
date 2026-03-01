@@ -53,34 +53,34 @@ func reportCodecMismatches(mismatches []source.CodecMismatch, action codecMismat
 	}
 
 	// Print warning to stderr (always visible, even in quiet mode)
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "  WARNING: Codec mismatch detected")
+	printWarnln()
+	printWarnln("  WARNING: Codec mismatch detected")
 	for _, m := range mismatches {
 		mkvName := source.CodecTypeName(m.MKVCodecType)
 		var sourceNames []string
 		for _, sc := range m.SourceCodecs {
 			sourceNames = append(sourceNames, source.CodecTypeName(sc))
 		}
-		fmt.Fprintf(os.Stderr, "    MKV %s:    %s (%s)\n", m.TrackType, mkvName, m.MKVCodecID)
-		fmt.Fprintf(os.Stderr, "    Source %s: %s\n", m.TrackType, strings.Join(sourceNames, ", "))
+		printWarn("    MKV %s:    %s (%s)\n", m.TrackType, mkvName, m.MKVCodecID)
+		printWarn("    Source %s: %s\n", m.TrackType, strings.Join(sourceNames, ", "))
 	}
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "  Deduplication may produce poor results if the MKV was transcoded.")
+	printWarnln()
+	printWarnln("  Deduplication may produce poor results if the MKV was transcoded.")
 
 	switch action {
 	case codecMismatchSkip:
-		fmt.Fprintln(os.Stderr, "  Skipping (--skip-codec-mismatch)...")
-		fmt.Fprintln(os.Stderr)
+		printWarnln("  Skipping (--skip-codec-mismatch)...")
+		printWarnln()
 		return nil
 	case codecMismatchContinue:
-		fmt.Fprintln(os.Stderr, "  Continuing (non-interactive mode)...")
-		fmt.Fprintln(os.Stderr)
+		printWarnln("  Continuing (non-interactive mode)...")
+		printWarnln()
 		return nil
 	default:
 		// Interactive prompt — auto-continue if stdin is not a terminal
 		if !isTerminal() {
-			fmt.Fprintln(os.Stderr, "  Continuing (non-interactive mode)...")
-			fmt.Fprintln(os.Stderr)
+			printWarnln("  Continuing (non-interactive mode)...")
+			printWarnln()
 			return nil
 		}
 		fmt.Print("\n  Continue anyway? [y/N]: ")
@@ -213,7 +213,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 		indexer, index, err := buildSourceIndex(g.sourceDir, indexLabel)
 		totalIndexDuration += time.Since(indexStart)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ERROR indexing %s: %v\n", g.sourceDir, err)
+			printWarn("  ERROR indexing %s: %v\n", g.sourceDir, err)
 			// Mark non-skipped files in this group as failed
 			for _, fi := range g.indices {
 				processed++
@@ -227,7 +227,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 				}
 			}
 			if gi < len(groups)-1 {
-				fmt.Fprintln(os.Stderr, "  Continuing with remaining sources...")
+				printWarnln("  Continuing with remaining sources...")
 			}
 			continue
 		}
@@ -247,9 +247,9 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 			if r.Skipped {
 				printSkipStatus(r)
 			} else if r.Err != nil {
-				fmt.Fprintf(os.Stderr, "  ERROR: %v\n", r.Err)
+				printWarn("  ERROR: %v\n", r.Err)
 				if processed < len(manifest.Files) {
-					fmt.Fprintln(os.Stderr, "  Continuing with remaining files...")
+					printWarnln("  Continuing with remaining files...")
 				}
 			} else {
 				printInfo("  MKV: %s bytes | Dedup: %s bytes | Savings: %.1f%% | Time: %v\n",
@@ -327,7 +327,7 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 			printInfo("  SKIP  %s: %s\n", r.MkvPath, r.SkipReason)
 			skipped++
 		} else if r.Err != nil {
-			fmt.Fprintf(os.Stderr, "  FAIL  %s: %v\n", r.MkvPath, r.Err)
+			printWarn("  FAIL  %s: %v\n", r.MkvPath, r.Err)
 		} else {
 			printInfo("  OK    %s -> %s (%.1f%% savings)\n", r.MkvPath, filepath.Base(r.OutputPath), r.Savings)
 			if r.Savings < warnThreshold {

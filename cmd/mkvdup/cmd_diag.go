@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -32,11 +31,11 @@ func deltadiag(dedupPath, mkvPath string) error {
 
 	entryCount := reader.EntryCount()
 	origSize := reader.OriginalSize()
-	fmt.Fprintf(os.Stderr, "Dedup file: %d %s, original size %s bytes (%.2f MB)\n",
+	printWarn("Dedup file: %d %s, original size %s bytes (%.2f MB)\n",
 		entryCount, plural(entryCount, "entry", "entries"), formatInt(origSize), float64(origSize)/(1024*1024))
 
 	// Parse MKV to get packet boundaries
-	fmt.Fprintf(os.Stderr, "Parsing MKV file...\n")
+	printWarn("Parsing MKV file...\n")
 	mkvParser, err := mkv.NewParser(mkvPath)
 	if err != nil {
 		return fmt.Errorf("create MKV parser: %w", err)
@@ -49,7 +48,7 @@ func deltadiag(dedupPath, mkvPath string) error {
 
 	packets := mkvParser.Packets()
 	tracks := mkvParser.Tracks()
-	fmt.Fprintf(os.Stderr, "  %d packets, %d tracks\n", len(packets), len(tracks))
+	printWarn("  %d packets, %d tracks\n", len(packets), len(tracks))
 
 	// Build track type map and detect AVCC NAL length size
 	trackTypes := make(map[int]int)
@@ -79,7 +78,7 @@ func deltadiag(dedupPath, mkvPath string) error {
 	})
 
 	// Classify each delta entry
-	fmt.Fprintf(os.Stderr, "Classifying delta entries...\n")
+	printWarn("Classifying delta entries...\n")
 
 	var deltaVideo, deltaAudio, deltaContainer deltaClass
 	deltaAudioByCodec := make(map[string]*deltaClass)
