@@ -95,52 +95,75 @@ func deltadiag(dedupPath, mkvPath string) error {
 			continue // Skip matched entries
 		}
 
-		// Find which MKV packet contains this delta region.
-		// NOTE: Classification is approximate — a delta entry can span multiple
-		// packets or tracks, but we classify based on the single packet containing
-		// the start offset. This is usually accurate since matches expand to
-		// cover full NALs/frames, leaving delta gaps within a single packet.
-		pktIdx := deltadiagFindPacket(packets, ent.MkvOffset)
-		if pktIdx < 0 {
-			deltaContainer.bytes += ent.Length
-			deltaContainer.count++
-			continue
-		}
+		entStart := ent.MkvOffset
+		entEnd := entStart + ent.Length
 
-		pkt := packets[pktIdx]
-		ttype := trackTypes[int(pkt.TrackNum)]
-
-		if ttype == mkv.TrackTypeVideo {
-			deltaVideo.bytes += ent.Length
-			deltaVideo.count++
-
-			// Parse AVCC NALs in the delta region (H.264 only — HEVC uses different NAL type encoding)
-			nalLenSize := nalLenSizes[int(pkt.TrackNum)]
-			if nalLenSize > 0 && isAVCTrack[int(pkt.TrackNum)] && ent.Length >= int64(nalLenSize+1) {
-				deltaStart := ent.MkvOffset
-				deltaEnd := ent.MkvOffset + ent.Length
-				if deltaEnd <= int64(len(mkvData)) {
-					deltadiagClassifyAVCC(mkvData, pkt, nalLenSize, deltaStart, deltaEnd,
-						&deltaVideoByNAL, &deltaVideoSliceSmall, &deltaVideoSliceLarge)
+		// Walk through the delta entry's byte range, classifying each portion
+		// based on which MKV packet (if any) it overlaps. A single delta entry
+		// can span multiple packets and container gaps when large unmatched
+		// regions (e.g., LPCM audio) create contiguous delta runs.
+		pos := entStart
+		for pos < entEnd {
+			pktIdx := deltadiagFindPacket(packets, pos)
+			if pktIdx < 0 {
+				// Not inside any packet — find the next packet start
+				nextPkt := deltadiagFindNextPacket(packets, pos)
+				var gapEnd int64
+				if nextPkt >= 0 && packets[nextPkt].Offset < entEnd {
+					gapEnd = packets[nextPkt].Offset
+				} else {
+					gapEnd = entEnd
 				}
+				gapBytes := gapEnd - pos
+				deltaContainer.bytes += gapBytes
+				deltaContainer.count++
+				pos = gapEnd
+				continue
 			}
-		} else if ttype == mkv.TrackTypeAudio {
-			deltaAudio.bytes += ent.Length
-			deltaAudio.count++
-			codec := trackCodecs[int(pkt.TrackNum)]
-			if codec == "" {
-				codec = "unknown"
+
+			pkt := packets[pktIdx]
+			pktEnd := pkt.Offset + pkt.Size
+			overlapEnd := entEnd
+			if overlapEnd > pktEnd {
+				overlapEnd = pktEnd
 			}
-			dc := deltaAudioByCodec[codec]
-			if dc == nil {
-				dc = &deltaClass{}
-				deltaAudioByCodec[codec] = dc
+			overlapBytes := overlapEnd - pos
+
+			ttype := trackTypes[int(pkt.TrackNum)]
+			if ttype == mkv.TrackTypeVideo {
+				deltaVideo.bytes += overlapBytes
+				deltaVideo.count++
+
+				// Parse AVCC NALs in the delta region
+				nalLenSize := nalLenSizes[int(pkt.TrackNum)]
+				if nalLenSize > 0 && isAVCTrack[int(pkt.TrackNum)] && overlapBytes >= int64(nalLenSize+1) {
+					deltaStart := pos
+					deltaEnd := overlapEnd
+					if deltaEnd <= int64(len(mkvData)) {
+						deltadiagClassifyAVCC(mkvData, pkt, nalLenSize, deltaStart, deltaEnd,
+							&deltaVideoByNAL, &deltaVideoSliceSmall, &deltaVideoSliceLarge)
+					}
+				}
+			} else if ttype == mkv.TrackTypeAudio {
+				deltaAudio.bytes += overlapBytes
+				deltaAudio.count++
+				codec := trackCodecs[int(pkt.TrackNum)]
+				if codec == "" {
+					codec = "unknown"
+				}
+				dc := deltaAudioByCodec[codec]
+				if dc == nil {
+					dc = &deltaClass{}
+					deltaAudioByCodec[codec] = dc
+				}
+				dc.bytes += overlapBytes
+				dc.count++
+			} else {
+				deltaContainer.bytes += overlapBytes
+				deltaContainer.count++
 			}
-			dc.bytes += ent.Length
-			dc.count++
-		} else {
-			deltaContainer.bytes += ent.Length
-			deltaContainer.count++
+
+			pos = overlapEnd
 		}
 	}
 
@@ -247,6 +270,22 @@ func deltadiagFindPacket(packets []mkv.Packet, offset int64) int {
 		}
 	}
 	return -1
+}
+
+// deltadiagFindNextPacket finds the first packet starting at or after the given offset.
+func deltadiagFindNextPacket(packets []mkv.Packet, offset int64) int {
+	low, high := 0, len(packets)-1
+	result := -1
+	for low <= high {
+		mid := (low + high) / 2
+		if packets[mid].Offset >= offset {
+			result = mid
+			high = mid - 1
+		} else {
+			low = mid + 1
+		}
+	}
+	return result
 }
 
 // deltadiagClassifyAVCC parses AVCC NAL units within a packet to classify which

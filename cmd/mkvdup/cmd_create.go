@@ -201,15 +201,24 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	// For sources with ES offsets, decide between V3 (convert to raw) and V4 (range maps).
 	// V4 stores ES offsets with embedded range maps for ES-to-raw translation at read time.
 	// V3 converts ES offsets to raw file offsets at write time (simpler, smaller files).
-	// V4 is only used for Blu-ray (M2TS) where the TS packet structure makes V3 conversion
-	// impractical. DVDs use V3 since MPEG-PS raw offsets are straightforward.
+	// V4 is used for Blu-ray (TS packet structure makes V3 impractical) and for DVDs
+	// with LPCM audio (byte-swap pairs can straddle PES boundaries, requiring contiguous
+	// ES reads that only range maps provide). Non-LPCM DVDs use V3 for fastest reads.
 	var esConverters []source.ESRangeConverter
 	if index.UsesESOffsets && len(index.ESReaders) > 0 {
-		if indexer.SourceType() == source.TypeBluray {
-			// V4: use range maps for Blu-ray (preserves ES offsets in entries)
+		// Check if any matched entry uses LPCM (requires range maps for correct byte-swap).
+		hasLPCM := false
+		for _, e := range matchResult.Entries {
+			if e.IsLPCM {
+				hasLPCM = true
+				break
+			}
+		}
+
+		useRangeMaps := indexer.SourceType() == source.TypeBluray || hasLPCM
+		if useRangeMaps {
+			// V4: use range maps (preserves ES offsets in entries)
 			// Only include range maps for streams actually referenced by matched entries.
-			// A Blu-ray ISO may have 100+ M2TS regions, but only a few are needed for
-			// any given MKV file. Including all range maps wastes significant space.
 			type streamKey struct {
 				fileIndex        uint16
 				isVideo          bool

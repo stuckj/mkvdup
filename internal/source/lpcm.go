@@ -17,9 +17,18 @@ const LPCMHeaderSize = 3
 // LPCMTotalHeaderSize is the total header size to strip (4-byte PS + 3-byte LPCM).
 const LPCMTotalHeaderSize = 7
 
-// lpcmSyncInterval is the interval in bytes between LPCM sync points.
-// PCM has no natural sync patterns, so we use a fixed interval.
-const lpcmSyncInterval = 2048
+// lpcmIndexSyncInterval is the interval for source-side LPCM sync points.
+// One sync point per PES payload range is sufficient when the MKV side uses
+// a dense interval. Keeping the source interval large minimizes hash map memory.
+const lpcmIndexSyncInterval = 2048
+
+// lpcmMatchSyncInterval is the interval for MKV-side LPCM sync points.
+// DVD LPCM PES payloads are typically ~2008 bytes while MKV packets are typically
+// ~6400 bytes. Since gcd(2008, 6400) = 8, using an 8-byte interval guarantees
+// at least one MKV sync point aligns with each source sync point. This is
+// denser than other audio codecs but adds no memory (MKV sync points are lookups,
+// not stored in the hash map), and LPCM is rare.
+const lpcmMatchSyncInterval = 8
 
 // LPCMFrameHeader represents a parsed DVD LPCM frame header.
 type LPCMFrameHeader struct {
@@ -71,16 +80,29 @@ func InverseTransformLPCM16(data []byte) {
 	TransformLPCM16BE(data)
 }
 
-// FindLPCMSyncPoints returns fixed-interval sync points for LPCM data.
-// PCM has no natural sync patterns, so we generate sync points every
-// lpcmSyncInterval bytes, aligned to the sample group boundary.
-func FindLPCMSyncPoints(data []byte) []int {
+// FindLPCMIndexSyncPoints returns sync points for source-side LPCM indexing.
+// Uses a large interval to keep the source hash map small.
+func FindLPCMIndexSyncPoints(data []byte) []int {
 	if len(data) == 0 {
 		return nil
 	}
-
 	var offsets []int
-	for off := 0; off < len(data); off += lpcmSyncInterval {
+	for off := 0; off < len(data); off += lpcmIndexSyncInterval {
+		offsets = append(offsets, off)
+	}
+	return offsets
+}
+
+// FindLPCMMatchSyncPoints returns sync points for MKV-side LPCM matching.
+// Uses a dense interval (8 bytes) to ensure alignment with source sync points.
+// This adds no memory overhead since MKV sync points are used for hash lookups,
+// not stored in the index.
+func FindLPCMMatchSyncPoints(data []byte) []int {
+	if len(data) == 0 {
+		return nil
+	}
+	var offsets []int
+	for off := 0; off < len(data); off += lpcmMatchSyncInterval {
 		offsets = append(offsets, off)
 	}
 	return offsets

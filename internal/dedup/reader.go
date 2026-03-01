@@ -448,41 +448,38 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		// Calculate buffer position
 		bufOffset := int(readStart - originalOffset)
 
-		// Check if this is an LPCM entry needing byte-swap alignment.
-		// For LPCM entries on V3/V4 paths, the source data is raw big-endian;
-		// we must byte-swap pairs aligned to the entry start. When offsetInEntry
-		// is odd, the first byte's swap partner (at offsetInEntry-1) is not in
-		// the requested range, so we must read one extra byte before, swap the
-		// aligned buffer, then copy the correct portion.
+		// Check if this is an LPCM entry needing byte-swap.
+		// For LPCM entries, the source data is raw big-endian PCM; we must
+		// byte-swap 16-bit pairs aligned to the entry start. Both the start
+		// offset and read length may be misaligned to pair boundaries when
+		// the caller's buffer doesn't align with entry boundaries.
 		needsLPCMSwap := entry.Source != 0 && entry.IsLPCM && !(r.file.UsesESOffsets && r.esReader != nil)
-		lpcmOddStart := needsLPCMSwap && offsetInEntry%2 == 1
 
-		if lpcmOddStart {
-			// Aligned LPCM read: back up 1 byte to pair boundary.
-			// Also extend by 1 at the end if readLen is now odd (to complete
-			// the last pair), but only if the entry has data there.
-			alignedSrcOff := sourceOffset - 1
-			alignedLen := readLen + 1
-			// If alignedLen is odd and there's room in the entry, extend by 1
-			// to complete the trailing pair.
-			entryRemaining := int(entry.Length - (offsetInEntry - 1))
+		if needsLPCMSwap {
+			// Compute pair-aligned read range within the entry.
+			alignedOff := offsetInEntry
+			trimFront := 0
+			if alignedOff%2 == 1 {
+				alignedOff--
+				trimFront = 1
+			}
+			alignedLen := readLen + trimFront
+			entryRemaining := int(entry.Length - alignedOff)
 			if alignedLen%2 == 1 && alignedLen < entryRemaining {
 				alignedLen++
 			}
 
+			alignedSrcOff := entry.SourceOffset + alignedOff
 			tmp := make([]byte, alignedLen)
 			if err := r.lpcmAlignedRead(entry, alignedSrcOff, tmp); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
 			source.TransformLPCM16BE(tmp)
-			copy(buf[bufOffset:bufOffset+readLen], tmp[1:1+readLen])
+			copy(buf[bufOffset:bufOffset+readLen], tmp[trimFront:trimFront+readLen])
 		} else {
-			// Normal read path (non-LPCM, or LPCM at even offset)
+			// Normal read path (non-LPCM)
 			if err := r.readEntry(entry, sourceOffset, readLen, buf[bufOffset:bufOffset+readLen]); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
-			}
-			if needsLPCMSwap {
-				lpcmByteSwapInPlace(buf[bufOffset : bufOffset+readLen])
 			}
 		}
 
@@ -625,14 +622,6 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	}
 
 	return result
-}
-
-// lpcmByteSwapInPlace applies the LPCM 16-bit byte swap (DVD big-endian →
-// MKV little-endian) to a buffer that was read from a raw source file.
-// The buffer must start at a pair-aligned offset (even offsetInEntry).
-// Odd-offset reads are handled separately by the aligned read path in ReadAt.
-func lpcmByteSwapInPlace(buf []byte) {
-	source.TransformLPCM16BE(buf)
 }
 
 // readEntry reads data from the appropriate source for a given entry into dest.

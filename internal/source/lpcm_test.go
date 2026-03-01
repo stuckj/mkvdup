@@ -113,16 +113,16 @@ func TestInverseTransformRoundTrip16(t *testing.T) {
 	}
 }
 
-func TestFindLPCMSyncPoints(t *testing.T) {
+func TestFindLPCMIndexSyncPoints(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		if FindLPCMSyncPoints(nil) != nil {
+		if FindLPCMIndexSyncPoints(nil) != nil {
 			t.Error("nil data should return nil")
 		}
 	})
 
 	t.Run("small data", func(t *testing.T) {
 		data := make([]byte, 100)
-		points := FindLPCMSyncPoints(data)
+		points := FindLPCMIndexSyncPoints(data)
 		if len(points) != 1 || points[0] != 0 {
 			t.Errorf("expected [0], got %v", points)
 		}
@@ -130,7 +130,7 @@ func TestFindLPCMSyncPoints(t *testing.T) {
 
 	t.Run("fixed interval", func(t *testing.T) {
 		data := make([]byte, 5000)
-		points := FindLPCMSyncPoints(data)
+		points := FindLPCMIndexSyncPoints(data)
 		// Expect points at 0, 2048, 4096
 		expected := []int{0, 2048, 4096}
 		if len(points) != len(expected) {
@@ -145,7 +145,7 @@ func TestFindLPCMSyncPoints(t *testing.T) {
 
 	t.Run("exactly at interval", func(t *testing.T) {
 		data := make([]byte, 2048)
-		points := FindLPCMSyncPoints(data)
+		points := FindLPCMIndexSyncPoints(data)
 		if len(points) != 1 || points[0] != 0 {
 			t.Errorf("expected [0], got %v", points)
 		}
@@ -153,10 +153,25 @@ func TestFindLPCMSyncPoints(t *testing.T) {
 
 	t.Run("one past interval", func(t *testing.T) {
 		data := make([]byte, 2049)
-		points := FindLPCMSyncPoints(data)
+		points := FindLPCMIndexSyncPoints(data)
 		expected := []int{0, 2048}
 		if len(points) != len(expected) {
 			t.Fatalf("expected %d sync points, got %d", len(expected), len(points))
+		}
+	})
+
+	t.Run("match sync points dense", func(t *testing.T) {
+		data := make([]byte, 25)
+		points := FindLPCMMatchSyncPoints(data)
+		// Expect points at 0, 8, 16, 24
+		expected := []int{0, 8, 16, 24}
+		if len(points) != len(expected) {
+			t.Fatalf("expected %d sync points, got %d: %v", len(expected), len(points), points)
+		}
+		for i, p := range points {
+			if p != expected[i] {
+				t.Errorf("point[%d] = %d, want %d", i, p, expected[i])
+			}
 		}
 	})
 }

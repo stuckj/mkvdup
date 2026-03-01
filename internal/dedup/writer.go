@@ -203,6 +203,7 @@ func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ES
 				SourceOffset:     rr.FileOffset, // Raw file offset!
 				IsVideo:          entry.IsVideo,
 				AudioSubStreamID: entry.AudioSubStreamID,
+				IsLPCM:           entry.IsLPCM,
 			})
 			mkvOffset += int64(rr.Size)
 		}

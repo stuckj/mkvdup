@@ -373,7 +373,7 @@ The remaining ~1.6% unmatched data consists of:
 
 2. **16-bit byte swap:** For 16-bit LPCM (quantization code 0), apply an in-place byte swap to convert big-endian sample pairs `[HI][LO]` to little-endian `[LO][HI]`. This is done transparently in `ReadAudioSubStreamData()` and `ReadAudioByteWithHint()`, so the indexer and matcher see MKV-compatible data.
 
-3. **Fixed-interval sync points:** Since PCM has no natural sync patterns (no frame headers or sync words), `FindLPCMSyncPoints` generates sync points at fixed 2048-byte intervals. The matcher uses these for PCM MKV tracks (codec ID `A_PCM/*`).
+3. **Asymmetric sync points:** Since PCM has no natural sync patterns (no frame headers or sync words), we use fixed-interval sync points. The source indexer uses `FindLPCMIndexSyncPoints` with a 2048-byte interval (one sync point per PES payload range), while the MKV matcher uses `FindLPCMMatchSyncPoints` with an 8-byte interval. The dense MKV-side interval is necessary because DVD LPCM PES payloads (~2008 bytes) and MKV packets (~6400 bytes) have gcd(2008, 6400) = 8, so only an 8-byte interval guarantees alignment. The dense MKV interval adds no memory (sync points are used for hash lookups, not stored in the index).
 
 4. **FUSE reconstruction:** The dedup entry's `IsLPCM` flag (ESFlags bit 1) tells the FUSE reader to apply the inverse byte swap when reading from the source. Since the 16-bit swap is its own inverse, this is a simple in-place operation with no memory allocation.
 
