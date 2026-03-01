@@ -24,7 +24,7 @@ func TestLPCM_RoundTrip_ByteSwap(t *testing.T) {
 	const sourceDataSize = numSamples * 2
 	srcData := make([]byte, sourceDataSize)
 	for i := 0; i < numSamples; i++ {
-		srcData[2*i] = byte(i >> 8)   // HI
+		srcData[2*i] = byte(i >> 8)     // HI
 		srcData[2*i+1] = byte(i & 0xFF) // LO
 	}
 
@@ -209,7 +209,7 @@ func TestLPCM_RoundTrip_MultiPES(t *testing.T) {
 		// Fill payload with big-endian 16-bit samples continuing from previous PES
 		for s := 0; s < pesPayloadSize/2; s++ {
 			sampleIdx := p*(pesPayloadSize/2) + s
-			sourceFileData[payloadStart+2*s] = byte(sampleIdx >> 8)   // HI
+			sourceFileData[payloadStart+2*s] = byte(sampleIdx >> 8)     // HI
 			sourceFileData[payloadStart+2*s+1] = byte(sampleIdx & 0xFF) // LO
 		}
 	}
