@@ -264,8 +264,17 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 	for _, subStreamID := range audioSubStreams {
 		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
 		if subStreamSize > 0 {
-			if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
-				return 0, fmt.Errorf("index audio sub-stream 0x%02X: %w", subStreamID, err)
+			if parser.IsLPCMSubStream(subStreamID) {
+				// LPCM has no natural sync patterns; use fixed-interval sync points.
+				// The indexer forces the slow path (ReadAudioSubStreamData) for LPCM
+				// so the data goes through the byte-swap transform.
+				if err := idx.indexSubStream(fileIndex, parser, subStreamID, subStreamSize, FindLPCMIndexSyncPoints); err != nil {
+					return 0, fmt.Errorf("index LPCM sub-stream 0x%02X: %w", subStreamID, err)
+				}
+			} else {
+				if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
+					return 0, fmt.Errorf("index audio sub-stream 0x%02X: %w", subStreamID, err)
+				}
 			}
 		}
 	}

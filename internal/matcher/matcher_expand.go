@@ -56,14 +56,36 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 		mkvSyncOffset, loc, verifyLen,
 	)
 
-	return &matchedRegion{
+	isLPCM := source.IsLPCMSubStreamID(loc.AudioSubStreamID)
+
+	// For LPCM entries, align boundaries to 2-byte sample pairs.
+	// The byte-swap transform operates on pairs; an unpaired byte at either
+	// end cannot be correctly swapped during FUSE reconstruction.
+	if isLPCM && matchLen > 1 {
+		if srcStart%2 == 1 {
+			mkvStart++
+			srcStart++
+			matchLen--
+		}
+		if matchLen%2 == 1 {
+			matchLen--
+		}
+	}
+	if matchLen <= 0 {
+		return nil
+	}
+
+	region := &matchedRegion{
 		mkvStart:         mkvStart,
 		mkvEnd:           mkvStart + matchLen,
 		fileIndex:        loc.FileIndex,
 		srcOffset:        srcStart,
 		isVideo:          isVideo,
 		audioSubStreamID: loc.AudioSubStreamID,
+		isLPCM:           isLPCM,
 	}
+
+	return region
 }
 
 // expandMatch expands a verified match in both directions.

@@ -96,6 +96,7 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) {
 				SourceOffset:     inRegion.srcOffset + offsetInRegion,
 				IsVideo:          inRegion.isVideo,
 				AudioSubStreamID: inRegion.audioSubStreamID,
+				IsLPCM:           inRegion.isLPCM,
 			})
 
 			pos = inRegion.mkvEnd

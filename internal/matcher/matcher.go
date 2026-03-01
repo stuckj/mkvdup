@@ -79,6 +79,7 @@ type matchedRegion struct {
 	srcOffset        int64 // File offset or ES offset depending on source type
 	isVideo          bool  // For ES-based sources
 	audioSubStreamID byte  // For audio in MPEG-PS
+	isLPCM           bool  // True if this is an LPCM audio region requiring inverse transform
 }
 
 // Matcher performs the deduplication matching.
@@ -113,6 +114,7 @@ type Matcher struct {
 	numWorkers     int                    // Number of worker goroutines for parallel matching
 	verboseWriter  io.Writer              // Destination for diagnostic output (nil = disabled)
 	isAVCTrack     map[int]bool           // Per-track: whether this track uses H.264 NAL types
+	isPCMTrack     map[int]bool           // Per-track: whether this track uses PCM audio (A_PCM/*)
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
@@ -180,6 +182,7 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 		trackTypes:  make(map[int]int),
 		trackCodecs: make(map[int]trackCodecInfo),
 		isAVCTrack:  make(map[int]bool),
+		isPCMTrack:  make(map[int]bool),
 		numWorkers:  numWorkers,
 	}, nil
 }
@@ -228,6 +231,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.trackTypes = make(map[int]int)
 	m.trackCodecs = make(map[int]trackCodecInfo)
 	m.isAVCTrack = make(map[int]bool)
+	m.isPCMTrack = make(map[int]bool)
 	m.diagVideoPacketsTotal.Store(0)
 	m.diagVideoPacketsCoverage.Store(0)
 	m.diagVideoNALsTotal.Store(0)
@@ -269,6 +273,9 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		}
 		if t.Type == mkv.TrackTypeVideo && strings.HasPrefix(t.CodecID, "V_MPEG4/ISO/AVC") {
 			m.isAVCTrack[int(t.Number)] = true
+		}
+		if t.Type == mkv.TrackTypeAudio && strings.HasPrefix(t.CodecID, "A_PCM/") {
+			m.isPCMTrack[int(t.Number)] = true
 		}
 	}
 

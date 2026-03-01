@@ -203,6 +203,7 @@ func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ES
 				SourceOffset:     rr.FileOffset, // Raw file offset!
 				IsVideo:          entry.IsVideo,
 				AudioSubStreamID: entry.AudioSubStreamID,
+				IsLPCM:           entry.IsLPCM,
 			})
 			mkvOffset += int64(rr.Size)
 		}
@@ -448,10 +449,13 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
 		binary.LittleEndian.PutUint16(entryBuf[16:18], entry.Source)
 		binary.LittleEndian.PutUint64(entryBuf[18:26], uint64(entry.SourceOffset))
 
-		// ES flags byte: bit 0 = IsVideo
+		// ES flags byte: bit 0 = IsVideo, bit 1 = IsLPCM
 		var esFlags uint8
 		if entry.IsVideo {
-			esFlags = 1
+			esFlags |= 1
+		}
+		if entry.IsLPCM {
+			esFlags |= 2
 		}
 		entryBuf[26] = esFlags
 		entryBuf[27] = entry.AudioSubStreamID

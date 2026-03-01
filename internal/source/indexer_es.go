@@ -16,6 +16,7 @@ type esDataProvider interface {
 	FilteredAudioRanges(subStreamID byte) []PESPayloadRange
 	ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error)
 	ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
+	IsLPCMSubStream(subStreamID byte) bool
 }
 
 // indexESData indexes the elementary stream data from an ES-aware parser.
@@ -107,6 +108,8 @@ func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider,
 
 // indexSubStream indexes a specific sub-stream using the provided sync point finder.
 // Uses zero-copy iteration through PES payload ranges.
+// For LPCM sub-streams, always uses the slow path (ReadAudioSubStreamData) because
+// the raw data is big-endian but the read method returns byte-swapped little-endian data.
 func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64, findSyncPoints syncPointFinder) error {
 	ranges := parser.FilteredAudioRanges(subStreamID)
 	if len(ranges) == 0 {
@@ -114,6 +117,7 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
 	}
 
 	dataSize := parser.DataSize()
+	isLPCM := parser.IsLPCMSubStream(subStreamID)
 
 	// Iterate through each PES payload range (zero-copy when within one region)
 	for _, r := range ranges {
@@ -123,7 +127,8 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
 		}
 		rangeData := parser.DataSlice(r.FileOffset, r.Size)
 
-		// Find sync points in this range
+		// Find sync points in this range (uses raw data — LPCM sync points
+		// are fixed-interval so data content doesn't matter)
 		syncPoints := findSyncPoints(rangeData)
 
 		// Add each sync point to the index
@@ -135,8 +140,9 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
 				continue
 			}
 
-			// Check if window fits within this range (zero-copy fast path)
-			if offsetInRange+idx.windowSize <= len(rangeData) {
+			// For LPCM, always use ReadAudioSubStreamData which applies the transform.
+			// For non-LPCM, use the zero-copy fast path when possible.
+			if !isLPCM && offsetInRange+idx.windowSize <= len(rangeData) {
 				window := rangeData[offsetInRange : offsetInRange+idx.windowSize]
 				hash := xxhash.Sum64(window)
 
@@ -147,7 +153,7 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
 					AudioSubStreamID: subStreamID,
 				})
 			} else {
-				// Window spans range boundary - use ReadAudioSubStreamData (may copy)
+				// Window spans range boundary or LPCM - use ReadAudioSubStreamData
 				window, err := parser.ReadAudioSubStreamData(subStreamID, syncESOffset, idx.windowSize)
 				if err != nil || len(window) < idx.windowSize {
 					continue

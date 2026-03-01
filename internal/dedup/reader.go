@@ -11,6 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
+	"github.com/stuckj/mkvdup/internal/source"
 	"golang.org/x/sys/unix"
 )
 
@@ -447,37 +448,37 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		// Calculate buffer position
 		bufOffset := int(readStart - originalOffset)
 
-		// Read data from appropriate source
-		if entry.Source == 0 {
-			// Read from delta section (zero-copy mmap slice)
-			data, err := r.readDelta(sourceOffset, readLen)
-			if err != nil {
+		// Check if this is an LPCM entry needing byte-swap.
+		// For LPCM entries, the source data is raw big-endian PCM; we must
+		// byte-swap 16-bit pairs aligned to the entry start. Both the start
+		// offset and read length may be misaligned to pair boundaries when
+		// the caller's buffer doesn't align with entry boundaries.
+		needsLPCMSwap := entry.Source != 0 && entry.IsLPCM && !(r.file.UsesESOffsets && r.esReader != nil)
+
+		if needsLPCMSwap {
+			// Compute pair-aligned read range within the entry.
+			alignedOff := offsetInEntry
+			trimFront := 0
+			if alignedOff%2 == 1 {
+				alignedOff--
+				trimFront = 1
+			}
+			alignedLen := readLen + trimFront
+			entryRemaining := int(entry.Length - alignedOff)
+			if alignedLen%2 == 1 && alignedLen < entryRemaining {
+				alignedLen++
+			}
+
+			alignedSrcOff := entry.SourceOffset + alignedOff
+			tmp := make([]byte, alignedLen)
+			if err := r.lpcmAlignedRead(entry, alignedSrcOff, tmp); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
-			copy(buf[bufOffset:], data)
-		} else if r.rangeMapsByFile != nil {
-			// V4: Read via range map directly into output buffer (no allocation)
-			fileIndex := int(entry.Source - 1)
-			if err := r.readViaRangeMapInto(fileIndex, entry, sourceOffset, buf[bufOffset:bufOffset+readLen]); err != nil {
-				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
-			}
-		} else if r.file.UsesESOffsets && r.esReader != nil {
-			// V1: Read from ES via external reader
-			var data []byte
-			var err error
-			if entry.IsVideo {
-				data, err = r.esReader.ReadESData(sourceOffset, readLen, true)
-			} else {
-				data, err = r.esReader.ReadAudioSubStreamData(entry.AudioSubStreamID, sourceOffset, readLen)
-			}
-			if err != nil {
-				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
-			}
-			copy(buf[bufOffset:], data)
+			source.TransformLPCM16BE(tmp)
+			copy(buf[bufOffset:bufOffset+readLen], tmp[trimFront:trimFront+readLen])
 		} else {
-			// V3: Read from raw source file
-			fileIndex := int(entry.Source - 1)
-			if err := r.readSourceInto(fileIndex, sourceOffset, buf[bufOffset:bufOffset+readLen]); err != nil {
+			// Normal read path (non-LPCM)
+			if err := r.readEntry(entry, sourceOffset, readLen, buf[bufOffset:bufOffset+readLen]); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
 		}
@@ -621,6 +622,54 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry {
 	}
 
 	return result
+}
+
+// readEntry reads data from the appropriate source for a given entry into dest.
+// Handles delta, V4 range map, V1 ES reader, and V3 raw source paths.
+func (r *Reader) readEntry(entry Entry, sourceOffset int64, readLen int, dest []byte) error {
+	if entry.Source == 0 {
+		// Read from delta section (zero-copy mmap slice)
+		data, err := r.readDelta(sourceOffset, readLen)
+		if err != nil {
+			return err
+		}
+		copy(dest, data)
+		return nil
+	} else if r.rangeMapsByFile != nil {
+		// V4: Read via range map directly into output buffer (no allocation)
+		fileIndex := int(entry.Source - 1)
+		return r.readViaRangeMapInto(fileIndex, entry, sourceOffset, dest)
+	} else if r.file.UsesESOffsets && r.esReader != nil {
+		// V1: Read from ES via external reader
+		var data []byte
+		var err error
+		if entry.IsVideo {
+			data, err = r.esReader.ReadESData(sourceOffset, readLen, true)
+		} else {
+			data, err = r.esReader.ReadAudioSubStreamData(entry.AudioSubStreamID, sourceOffset, readLen)
+		}
+		if err != nil {
+			return err
+		}
+		copy(dest, data)
+		return nil
+	}
+	// V3: Read from raw source file
+	fileIndex := int(entry.Source - 1)
+	return r.readSourceInto(fileIndex, sourceOffset, dest)
+}
+
+// lpcmAlignedRead reads source data for an LPCM entry at the given (already
+// pair-aligned) source offset. This is used for the odd-offset case where we
+// need to read from one byte before the actual requested offset.
+func (r *Reader) lpcmAlignedRead(entry Entry, alignedSrcOff int64, dest []byte) error {
+	if r.rangeMapsByFile != nil {
+		fileIndex := int(entry.Source - 1)
+		return r.readViaRangeMapInto(fileIndex, entry, alignedSrcOff, dest)
+	}
+	// V3: Read from raw source file
+	fileIndex := int(entry.Source - 1)
+	return r.readSourceInto(fileIndex, alignedSrcOff, dest)
 }
 
 func (r *Reader) readDelta(offset int64, size int) ([]byte, error) {

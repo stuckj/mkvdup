@@ -188,3 +188,67 @@ func TestRawEntrySizeIs28Bytes(t *testing.T) {
 		t.Errorf("AudioSubStreamID = %d, want 0x80", entry.AudioSubStreamID)
 	}
 }
+
+func TestRawEntryLPCMFlags(t *testing.T) {
+	tests := []struct {
+		name       string
+		esFlags    uint8
+		wantIsLPCM bool
+	}{
+		{
+			name:       "no LPCM (video only)",
+			esFlags:    0x01, // bit 0 = IsVideo
+			wantIsLPCM: false,
+		},
+		{
+			name:       "no flags",
+			esFlags:    0x00,
+			wantIsLPCM: false,
+		},
+		{
+			name:       "LPCM set",
+			esFlags:    0x02, // bit 1 = IsLPCM
+			wantIsLPCM: true,
+		},
+		{
+			name:       "LPCM with IsVideo (both set)",
+			esFlags:    0x03, // bits 0+1
+			wantIsLPCM: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r RawEntry
+			binary.LittleEndian.PutUint64(r.MkvOffset[:], 100)
+			binary.LittleEndian.PutUint64(r.Length[:], 200)
+			binary.LittleEndian.PutUint16(r.Source[:], 1)
+			binary.LittleEndian.PutUint64(r.SourceOffset[:], 300)
+			r.ESFlags = tt.esFlags
+			r.AudioSubStreamID = 0xA0
+
+			entry := r.ToEntry()
+			if entry.IsLPCM != tt.wantIsLPCM {
+				t.Errorf("IsLPCM = %v, want %v", entry.IsLPCM, tt.wantIsLPCM)
+			}
+		})
+	}
+}
+
+func TestLPCMESFlagsRoundTrip(t *testing.T) {
+	// Verify that encoding IsLPCM into ESFlags bit 1 and decoding it back works.
+	for _, isLPCM := range []bool{false, true} {
+		var esFlags uint8
+		if isLPCM {
+			esFlags |= 2 // bit 1
+		}
+
+		var r RawEntry
+		r.ESFlags = esFlags
+		entry := r.ToEntry()
+
+		if entry.IsLPCM != isLPCM {
+			t.Errorf("IsLPCM = %v, want %v (esFlags=0x%02X)", entry.IsLPCM, isLPCM, esFlags)
+		}
+	}
+}
