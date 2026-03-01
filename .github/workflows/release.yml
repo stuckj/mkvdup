@@ -206,20 +206,20 @@ jobs:
 
       - name: Upload deb artifact
         if: matrix.goos == 'linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: deb-package-${{ matrix.goarch }}
           path: "*.deb"
 
       - name: Upload rpm artifact
         if: matrix.goos == 'linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rpm-package-${{ matrix.goarch }}
           path: "*.rpm"
 
       - name: Upload tarball artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tarball-${{ matrix.goos }}-${{ matrix.goarch }}
           path: "*.tar.gz"

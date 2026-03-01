@@ -48,14 +48,14 @@ jobs:
             ./...
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: unit-coverage
           path: unit-coverage.out
 
       - name: Upload test results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: unit-results
           path: unit-results.xml
@@ -134,14 +134,14 @@ jobs:
             ./internal/dedup/... ./internal/fuse/...
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dvd-coverage
           path: dvd-coverage.out
 
       - name: Upload test results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dvd-results
           path: dvd-results.xml
@@ -206,14 +206,14 @@ jobs:
             ./internal/dedup/...
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: bluray-coverage
           path: bluray-coverage.out
 
       - name: Upload test results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: bluray-results
           path: bluray-results.xml
@@ -322,7 +322,7 @@ jobs:
           merge-multiple: true
 
       - name: Upload combined results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: |
