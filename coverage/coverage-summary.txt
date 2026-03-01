@@ -3,7 +3,7 @@ github.com/stuckj/mkvdup/cmd/mkvdup/cmd_batch.go:50:			reportCodecMismatches			6
 github.com/stuckj/mkvdup/cmd/mkvdup/cmd_batch.go:101:			createBatch				61.1%
 github.com/stuckj/mkvdup/cmd/mkvdup/cmd_batch.go:276:			newSkipResult				80.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/cmd_batch.go:295:			printSkipStatus				66.7%
-github.com/stuckj/mkvdup/cmd/mkvdup/cmd_batch.go:305:			printBatchSummary			97.2%
+github.com/stuckj/mkvdup/cmd/mkvdup/cmd_batch.go:305:			printBatchSummary			97.1%
 github.com/stuckj/mkvdup/cmd/mkvdup/cmd_create.go:21:			parseMKVWithProgress			0.0%
 github.com/stuckj/mkvdup/cmd/mkvdup/cmd_create.go:63:			buildSourceIndex			16.7%
 github.com/stuckj/mkvdup/cmd/mkvdup/cmd_create.go:95:			checkCodecCompatibilityFromDir		0.0%
