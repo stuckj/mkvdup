@@ -187,7 +187,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	if daemon.IsChild() {
 		if err := daemon.NotifyReady(); err != nil {
 			// Parent may have timed out; log and continue since mount succeeded
-			fmt.Fprintf(os.Stderr, "warning: failed to notify parent: %v\n", err)
+			printWarn("warning: failed to notify parent: %v\n", err)
 		}
 		daemon.Detach()
 	} else {

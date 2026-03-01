@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -156,8 +157,10 @@ func main() {
 		showProgress = false
 	}
 
-	// Close log file on exit
+	// Duplicate log package output (used for warnings and fatal errors) to
+	// the log file so that log.Printf and log.Fatalf messages appear there too.
 	if logFile != nil {
+		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
 		defer logFile.Close()
 	}
 
@@ -623,7 +626,7 @@ func main() {
 		os.Exit(0)
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmd)
+		printWarn("Unknown command: %s\n\n", cmd)
 		printUsage()
 		os.Exit(1)
 	}

@@ -266,3 +266,19 @@ func printInfoln(a ...any) {
 		fmt.Fprintln(logFile, a...)
 	}
 }
+
+// printWarn prints warning/error output to stderr. Always written to logFile if one is open.
+func printWarn(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, format, a...)
+	if logFile != nil {
+		fmt.Fprintf(logFile, format, a...)
+	}
+}
+
+// printWarnln prints warning/error output with a newline to stderr. Always written to logFile if one is open.
+func printWarnln(a ...any) {
+	fmt.Fprintln(os.Stderr, a...)
+	if logFile != nil {
+		fmt.Fprintln(logFile, a...)
+	}
+}

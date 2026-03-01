@@ -246,7 +246,7 @@ func runDeepValidation(entries []validationEntry, configs []dedup.Config) bool {
 func validateConfigs(configPaths []string, configDir, deep, strict bool) int {
 	resolved, err := resolveConfigPaths(configPaths, configDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		printWarn("Error: %v\n", err)
 		return 1
 	}
 
