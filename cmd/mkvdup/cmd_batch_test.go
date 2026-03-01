@@ -360,13 +360,13 @@ func TestPrintBatchSummary_SkippedFiles(t *testing.T) {
 		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
 	})
 
-	if !strings.Contains(output, "SKIP  ep2.mkv: codec mismatch") {
+	if !strings.Contains(output, "SKIP  /data/ep2.mkv: codec mismatch") {
 		t.Error("expected SKIP line for ep2.mkv")
 	}
-	if !strings.Contains(output, "OK    ep1.mkv") {
+	if !strings.Contains(output, "OK    /data/ep1.mkv") {
 		t.Error("expected OK line for ep1.mkv")
 	}
-	if !strings.Contains(output, "OK    ep4.mkv") {
+	if !strings.Contains(output, "OK    /data/ep4.mkv") {
 		t.Error("expected OK line for ep4.mkv")
 	}
 	if !strings.Contains(output, "Succeeded: 2/4 (1 skipped)") {
@@ -504,12 +504,12 @@ func TestPrintBatchSummary_MixedSkipReasons(t *testing.T) {
 		printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
 	})
 
-	if !strings.Contains(output, "SKIP  ep2.mkv: codec mismatch") {
-		t.Errorf("expected 'SKIP  ep2.mkv: codec mismatch', got:\n%s", output)
+	if !strings.Contains(output, "SKIP  /data/ep2.mkv: codec mismatch") {
+		t.Errorf("expected 'SKIP  /data/ep2.mkv: codec mismatch', got:\n%s", output)
 	}
 	// output-exists shows as OK [cached], not SKIP
-	if !strings.Contains(output, "OK    ep3.mkv [cached]") {
-		t.Errorf("expected 'OK    ep3.mkv [cached]', got:\n%s", output)
+	if !strings.Contains(output, "OK    /data/ep3.mkv [cached]") {
+		t.Errorf("expected 'OK    /data/ep3.mkv [cached]', got:\n%s", output)
 	}
 	if !strings.Contains(output, "Succeeded: 2/3 (1 cached, 1 skipped)") {
 		t.Errorf("expected 'Succeeded: 2/3 (1 cached, 1 skipped)', got:\n%s", output)

@@ -197,7 +197,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 			for _, fi := range g.indices {
 				processed++
 				f := manifest.Files[fi]
-				printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), filepath.Base(f.MKV))
+				printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), f.MKV)
 				results[fi] = newSkipResult(f.MKV, f.Output, skipReasons[fi])
 				printSkipStatus(results[fi])
 			}
@@ -218,7 +218,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 			for _, fi := range g.indices {
 				processed++
 				f := manifest.Files[fi]
-				printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), filepath.Base(f.MKV))
+				printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), f.MKV)
 				if skipReasons[fi] != "" {
 					results[fi] = newSkipResult(f.MKV, f.Output, skipReasons[fi])
 					printSkipStatus(results[fi])
@@ -236,7 +236,7 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 		for _, fi := range g.indices {
 			processed++
 			f := manifest.Files[fi]
-			printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), filepath.Base(f.MKV))
+			printInfo("\n[%d/%d] %s\n", processed, len(manifest.Files), f.MKV)
 			if skipReasons[fi] != "" {
 				results[fi] = newSkipResult(f.MKV, f.Output, skipReasons[fi])
 				printSkipStatus(results[fi])
@@ -312,27 +312,26 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 	skipped := 0
 	var lowSavings []string
 	for _, r := range results {
-		base := filepath.Base(r.MkvPath)
 		if r.Skipped && r.SkipReason == "output exists" {
 			// Already-processed files: show as OK with stats
 			cached++
 			if r.OutputPath != "" {
-				printInfo("  OK    %s -> %s (%.1f%% savings) [cached]\n", base, filepath.Base(r.OutputPath), r.Savings)
+				printInfo("  OK    %s -> %s (%.1f%% savings) [cached]\n", r.MkvPath, filepath.Base(r.OutputPath), r.Savings)
 			} else {
-				printInfo("  OK    %s [cached]\n", base)
+				printInfo("  OK    %s [cached]\n", r.MkvPath)
 			}
 			if r.Savings < warnThreshold && r.MkvSize > 0 {
-				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", base, r.Savings))
+				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", r.MkvPath, r.Savings))
 			}
 		} else if r.Skipped {
-			printInfo("  SKIP  %s: %s\n", base, r.SkipReason)
+			printInfo("  SKIP  %s: %s\n", r.MkvPath, r.SkipReason)
 			skipped++
 		} else if r.Err != nil {
-			fmt.Fprintf(os.Stderr, "  FAIL  %s: %v\n", base, r.Err)
+			fmt.Fprintf(os.Stderr, "  FAIL  %s: %v\n", r.MkvPath, r.Err)
 		} else {
-			printInfo("  OK    %s -> %s (%.1f%% savings)\n", base, filepath.Base(r.OutputPath), r.Savings)
+			printInfo("  OK    %s -> %s (%.1f%% savings)\n", r.MkvPath, filepath.Base(r.OutputPath), r.Savings)
 			if r.Savings < warnThreshold {
-				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", base, r.Savings))
+				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", r.MkvPath, r.Savings))
 			}
 		}
 		if !r.Skipped && r.Err == nil || (r.Skipped && r.SkipReason == "output exists") {
