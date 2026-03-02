@@ -204,15 +204,11 @@ func TestVerifyFailureCleanup(t *testing.T) {
 	configPath := dedupPath + ".yaml"
 	failedPath := dedupPath + ".failed"
 
-	os.WriteFile(dedupPath, []byte("dedup data"), 0644)
-	os.WriteFile(configPath, []byte("name: test\n"), 0644)
-
-	// Verify both files exist before cleanup
-	if _, err := os.Stat(dedupPath); err != nil {
-		t.Fatalf("dedup file should exist: %v", err)
+	if err := os.WriteFile(dedupPath, []byte("dedup data"), 0644); err != nil {
+		t.Fatalf("write dedup file: %v", err)
 	}
-	if _, err := os.Stat(configPath); err != nil {
-		t.Fatalf("config file should exist: %v", err)
+	if err := os.WriteFile(configPath, []byte("name: test\n"), 0644); err != nil {
+		t.Fatalf("write config file: %v", err)
 	}
 
 	// Simulate the verify failure cleanup path from createDedupWithIndex:
@@ -238,25 +234,30 @@ func TestVerifyFailureCleanup(t *testing.T) {
 }
 
 func TestVerifyFailureResult(t *testing.T) {
-	// Test that createResult.VerifyErr is set correctly and that
-	// the result is treated as a failure in batch summary.
-	verifyErr := fmt.Errorf("data mismatch at offset 1024")
-	result := &createResult{
+	// Test that a result with VerifyErr is not counted as a success
+	// using the same predicate as printBatchSummary and the exit-code logic.
+	failedResult := &createResult{
 		MkvPath:   "/data/test.mkv",
-		VerifyErr: verifyErr,
+		VerifyErr: fmt.Errorf("data mismatch at offset 1024"),
+	}
+	successResult := &createResult{
+		MkvPath: "/data/ok.mkv",
+	}
+	results := []*createResult{failedResult, successResult}
+
+	successes := 0
+	for _, r := range results {
+		if !r.Skipped && r.Err == nil && r.VerifyErr == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Errorf("expected 1 success, got %d", successes)
 	}
 
 	// VerifyErr should be distinct from Err
-	if result.Err != nil {
+	if failedResult.Err != nil {
 		t.Error("Err should be nil when only VerifyErr is set")
-	}
-	if result.VerifyErr == nil {
-		t.Error("VerifyErr should be set")
-	}
-
-	// Should not be counted as success
-	if result.Err == nil && result.VerifyErr == nil {
-		t.Error("result with VerifyErr should not pass success check")
 	}
 }
 

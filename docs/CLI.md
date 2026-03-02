@@ -174,7 +174,7 @@ Relative paths are resolved against the manifest file's directory.
 - If indexing fails for one source, all files in that group are marked as failed and processing continues with the next source
 - If verification fails for a file, the output is renamed to `<output>.failed` and shown as FAIL in the summary
 - A summary at the end shows OK/FAIL status for each file
-- Exit code is 0 if any non-skipped file succeeded or if all files were skipped; exit code is 1 only if all non-skipped files failed
+- Exit code is 0 if any file succeeded (including cached outputs from prior runs) or if all files were skipped; exit code is 1 only if all processed files failed
 
 ### mount
 
