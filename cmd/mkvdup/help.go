@@ -106,6 +106,10 @@ Before matching, codecs in the MKV are compared against the source media.
 If a mismatch is detected (e.g., MKV has H.264 but source is MPEG-2), you
 will be prompted to continue. Use --non-interactive for scripted usage.
 
+After writing, the dedup file is verified against the original MKV. If
+verification fails, the output is renamed to <output>.failed and the
+command exits with code 1.
+
 Examples:
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup
     mkvdup create movie.mkv /media/dvd-backups movie.mkvdup "My Movie"
@@ -156,6 +160,14 @@ Fields:
                         .mkv extension auto-added if missing)
 
 Relative paths are resolved against the manifest file's directory.
+
+Partial failure handling:
+    If one file fails, processing continues for the remaining files.
+    If verification fails for a file, the output is renamed to <output>.failed
+    and shown as FAIL in the summary.
+    Exit code is 0 if any file succeeded (including cached outputs from
+    prior runs), or if all files were skipped.
+    Exit code is 1 only if all processed files failed.
 
 Examples:
     mkvdup batch-create episodes.yaml

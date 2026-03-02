@@ -481,6 +481,97 @@ files:
 	}
 }
 
+func TestPrintBatchSummary_VerifyFailed(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+		{
+			MkvPath:   "/data/ep2.mkv",
+			VerifyErr: fmt.Errorf("byte mismatch at offset 1024"),
+		},
+		{
+			MkvPath:    "/data/ep3.mkv",
+			OutputPath: "/data/ep3.mkvdup",
+			Savings:    97.2,
+		},
+	}
+
+	var stderrOutput string
+	stdoutOutput := captureStdout(t, func() {
+		stderrOutput = captureStderr(t, func() {
+			printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
+		})
+	})
+
+	// Verification failure should show as FAIL on stderr
+	if !strings.Contains(stderrOutput, "FAIL  /data/ep2.mkv: verification failed") {
+		t.Errorf("expected FAIL line for ep2.mkv on stderr, got:\n%s", stderrOutput)
+	}
+
+	// Should not be counted in succeeded
+	if !strings.Contains(stdoutOutput, "Succeeded: 2/3 (1 verification failed)") {
+		t.Errorf("expected 'Succeeded: 2/3 (1 verification failed)' in output, got:\n%s", stdoutOutput)
+	}
+
+	// OK files should still appear
+	if !strings.Contains(stdoutOutput, "OK    /data/ep1.mkv") {
+		t.Error("expected OK line for ep1.mkv")
+	}
+	if !strings.Contains(stdoutOutput, "OK    /data/ep3.mkv") {
+		t.Error("expected OK line for ep3.mkv")
+	}
+}
+
+func TestPrintBatchSummary_MixedVerifyAndHardFailures(t *testing.T) {
+	results := []*createResult{
+		{
+			MkvPath:    "/data/ep1.mkv",
+			OutputPath: "/data/ep1.mkvdup",
+			Savings:    98.5,
+		},
+		{
+			MkvPath: "/data/ep2.mkv",
+			Err:     fmt.Errorf("file not found"),
+		},
+		{
+			MkvPath:   "/data/ep3.mkv",
+			VerifyErr: fmt.Errorf("checksum mismatch"),
+		},
+		{
+			MkvPath:    "/data/ep4.mkv",
+			Skipped:    true,
+			SkipReason: "codec mismatch",
+		},
+	}
+
+	var stderrOutput string
+	stdoutOutput := captureStdout(t, func() {
+		stderrOutput = captureStderr(t, func() {
+			printBatchSummary(results, 5*time.Second, time.Now().Add(-10*time.Second), 75.0)
+		})
+	})
+
+	// Hard failure on stderr
+	if !strings.Contains(stderrOutput, "FAIL  /data/ep2.mkv: file not found") {
+		t.Errorf("expected FAIL line for ep2.mkv on stderr, got:\n%s", stderrOutput)
+	}
+	// Verification failure on stderr
+	if !strings.Contains(stderrOutput, "FAIL  /data/ep3.mkv: verification failed: checksum mismatch") {
+		t.Errorf("expected FAIL line for ep3.mkv on stderr, got:\n%s", stderrOutput)
+	}
+	// Skip on stdout
+	if !strings.Contains(stdoutOutput, "SKIP  /data/ep4.mkv: codec mismatch") {
+		t.Errorf("expected SKIP line for ep4.mkv, got:\n%s", stdoutOutput)
+	}
+	// Summary: 1 succeeded, 1 verify failed, 1 skipped (hard failure not in qualifiers)
+	if !strings.Contains(stdoutOutput, "Succeeded: 1/4 (1 verification failed, 1 skipped)") {
+		t.Errorf("expected 'Succeeded: 1/4 (1 verification failed, 1 skipped)' in output, got:\n%s", stdoutOutput)
+	}
+}
+
 func TestPrintBatchSummary_MixedSkipReasons(t *testing.T) {
 	results := []*createResult{
 		{

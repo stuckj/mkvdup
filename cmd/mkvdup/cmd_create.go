@@ -15,6 +15,11 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
+// osRemove and osRename are wrappers for testing. Override in tests to
+// simulate filesystem errors without touching real files.
+var osRemove = os.Remove
+var osRename = os.Rename
+
 // parseMKVWithProgress parses an MKV file with progress reporting.
 // The phasePrefix is shown during parsing (e.g., "Phase 3/6: Parsing MKV file...").
 // Returns the parser (caller must Close it) and an error if any.
@@ -53,6 +58,7 @@ type createResult struct {
 	Savings        float64
 	Duration       time.Duration
 	Err            error
+	VerifyErr      error  // non-nil if post-create verification failed
 	Skipped        bool   // true when file was skipped (e.g., codec mismatch, output exists)
 	SkipReason     string // reason for skipping (shown in summary)
 }
@@ -337,10 +343,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 
 	// Verify reconstruction
 	verifyPrefix := phaseLabel(3, "Verifying reconstruction...")
-	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verifyPrefix); err != nil {
-		printInfo("  WARNING: Verification failed: %v\n", err)
-		printInfoln("  Keeping files for debugging")
-	}
+	outputPath = handleVerifyResult(outputPath, sourceDir, mkvPath, index, verifyPrefix, result)
 
 	// Populate result
 	result.MkvSize = parser.Size()
@@ -358,6 +361,39 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	result.Duration = time.Since(start)
 
 	return result
+}
+
+// handleVerifyResult runs post-write verification and handles failures.
+// On failure: removes the config file, renames .mkvdup to .mkvdup.failed,
+// and sets result.VerifyErr. Returns the (possibly updated) outputPath.
+func handleVerifyResult(outputPath, sourceDir, mkvPath string, index *source.Index, phasePrefix string, result *createResult) string {
+	if err := verifyReconstructionFunc(outputPath, sourceDir, mkvPath, index, phasePrefix); err != nil {
+		printWarn("  ERROR: Verification failed: %v\n", err)
+
+		// Remove orphaned config file (it references the pre-rename path)
+		configPath := outputPath + ".yaml"
+		if rmErr := osRemove(configPath); rmErr != nil && !os.IsNotExist(rmErr) {
+			printWarn("  ERROR: Failed to remove config file %s: %v\n", configPath, rmErr)
+		} else if rmErr == nil {
+			printWarn("  Removed config file: %s\n", configPath)
+		}
+
+		// Rename broken file to .mkvdup.failed, overwriting any previous .failed file
+		failedPath := outputPath + ".failed"
+		if rmErr := osRemove(failedPath); rmErr != nil && !os.IsNotExist(rmErr) {
+			printWarn("  ERROR: Failed to remove existing failed file %s: %v\n", failedPath, rmErr)
+		}
+		if renameErr := osRename(outputPath, failedPath); renameErr != nil {
+			printWarn("  ERROR: Failed to rename broken file: %v\n", renameErr)
+		} else {
+			printWarn("  Renamed to: %s\n", failedPath)
+			outputPath = failedPath
+			result.OutputPath = failedPath
+		}
+
+		result.VerifyErr = err
+	}
+	return outputPath
 }
 
 // createDedup creates a .mkvdup file from an MKV and source directory.
@@ -441,6 +477,10 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 		printInfoln()
 		printInfo("WARNING: Space savings (%.1f%%) below %.0f%%\n", result.Savings, warnThreshold)
 		printInfoln("  This may indicate wrong source, transcoded MKV, or very small MKV file.")
+	}
+
+	if result.VerifyErr != nil {
+		return fmt.Errorf("verification failed: %w", result.VerifyErr)
 	}
 
 	return nil
