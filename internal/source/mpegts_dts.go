@@ -165,10 +165,10 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 	// trust the measurement.
 	for _, sp := range syncPositions[1:] {
 		boundary := sp + coreSize
-		if boundary+6 >= len(buf) {
+		if boundary+3 >= len(buf) {
 			break
 		}
-		// ExSS sync at expected boundary — core size is correct
+		// ExSS sync at expected boundary — core size is correct (4 bytes needed)
 		if buf[boundary] == 0x64 && buf[boundary+1] == 0x58 &&
 			buf[boundary+2] == 0x20 && buf[boundary+3] == 0x25 {
 			continue
@@ -176,12 +176,19 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 		// Next DTS core sync at boundary — no extension in this frame,
 		// but core size still matches. Validate the header to avoid false
 		// positives from extension data containing the sync word pattern.
-		if buf[boundary] == 0x7F && buf[boundary+1] == 0xFE &&
+		// Requires 7 bytes for DTSCoreFrameSize validation.
+		if boundary+6 < len(buf) &&
+			buf[boundary] == 0x7F && buf[boundary+1] == 0xFE &&
 			buf[boundary+2] == 0x80 && buf[boundary+3] == 0x01 &&
 			DTSCoreFrameSize(buf[boundary:boundary+7]) > 0 {
 			continue
 		}
-		// Neither marker at expected boundary — core size may be wrong
+		// Neither marker at expected boundary — core size may be wrong.
+		// If there aren't enough bytes for DTS header validation, don't
+		// treat it as a mismatch — just stop checking.
+		if boundary+6 >= len(buf) {
+			break
+		}
 		log.Printf("mpegts: warning: DTS core boundary mismatch at offset %d (expected ExSS or DTS sync at +%d); skipping core extraction", sp, coreSize)
 		return 0
 	}
