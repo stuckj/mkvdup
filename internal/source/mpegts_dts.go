@@ -165,7 +165,7 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 	// trust the measurement.
 	for _, sp := range syncPositions[1:] {
 		boundary := sp + coreSize
-		if boundary+3 >= len(buf) {
+		if boundary+6 >= len(buf) {
 			break
 		}
 		// ExSS sync at expected boundary — core size is correct
@@ -174,9 +174,11 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 			continue
 		}
 		// Next DTS core sync at boundary — no extension in this frame,
-		// but core size still matches
+		// but core size still matches. Validate the header to avoid false
+		// positives from extension data containing the sync word pattern.
 		if buf[boundary] == 0x7F && buf[boundary+1] == 0xFE &&
-			buf[boundary+2] == 0x80 && buf[boundary+3] == 0x01 {
+			buf[boundary+2] == 0x80 && buf[boundary+3] == 0x01 &&
+			DTSCoreFrameSize(buf[boundary:boundary+7]) > 0 {
 			continue
 		}
 		// Neither marker at expected boundary — core size may be wrong
