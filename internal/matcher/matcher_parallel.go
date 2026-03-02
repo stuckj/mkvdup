@@ -10,6 +10,25 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
+// computeNALSize computes the NAL/sync-unit or frame size from the sync point layout.
+// For AVCC, consecutive sync points are separated by the length prefix of the
+// next NAL. For Annex B video, sync points correspond to NAL/sync-unit boundaries
+// (e.g. slice headers, sequence headers), not necessarily whole decoded frames;
+// for audio and subtitles, consecutive sync points typically delimit frame boundaries.
+// Returns (nalSize, exact). exact is true only when derived from a known next
+// sync point; when false, nalSize is just the remaining data in the (possibly
+// truncated) buffer and must not be used for short-circuit decisions.
+func computeNALSize(syncPoints []int, i, syncOff, dataLen int, isVideo bool, nalLengthSize int) (int, bool) {
+	nalSize := dataLen - syncOff
+	if i+1 < len(syncPoints) {
+		if isVideo && nalLengthSize > 0 {
+			return syncPoints[i+1] - nalLengthSize - syncOff, true
+		}
+		return syncPoints[i+1] - syncOff, true
+	}
+	return nalSize, false
+}
+
 // matchParallel processes packets in parallel using a worker pool.
 func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int {
 	var processedCount atomic.Int64
@@ -153,13 +172,8 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			m.diagVideoNALsTotal.Add(1)
 		}
 
-		// Compute NAL size from distance to next sync point (minus length prefix).
-		// For AVCC, consecutive sync points are separated by the length prefix of the
-		// next NAL. For Annex B and non-video, use remaining data length.
-		nalSize := len(data) - syncOff
-		if isVideo && codecInfo.nalLengthSize > 0 && i+1 < len(syncPoints) {
-			nalSize = syncPoints[i+1] - codecInfo.nalLengthSize - syncOff
-		}
+		// Compute NAL/frame size from distance to next sync point.
+		nalSize, nalSizeExact := computeNALSize(syncPoints, i, syncOff, len(data), isVideo, codecInfo.nalLengthSize)
 
 		// Track NAL type for video diagnostics (H.264 only —
 		// HEVC uses different NAL type encoding, MPEG-2 uses start code types)
@@ -167,9 +181,9 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		if isVideo && m.isAVCTrack[int(pkt.TrackNum)] && syncOff < len(data) {
 			nalType := data[syncOff] & 0x1F
 			m.diagNALTypeTotal[nalType].Add(1)
-			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize, nalType)
+			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize, nalSizeExact, nalType)
 		} else {
-			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize)
+			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize, nalSizeExact)
 		}
 
 		if matched {
@@ -192,7 +206,7 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		}
 		fullData := m.mkvData[pkt.Offset:fullEnd]
 		moreSyncPoints := source.FindVideoNALStarts(fullData)
-		for _, syncOff := range moreSyncPoints {
+		for moreIdx, syncOff := range moreSyncPoints {
 			if syncOff < int(readSize) {
 				continue // Already tried in the first pass
 			}
@@ -203,7 +217,8 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
 				continue
 			}
-			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, hint, len(fullData)-syncOff) {
+			moreNALSize, moreNALSizeExact := computeNALSize(moreSyncPoints, moreIdx, syncOff, len(fullData), isVideo, codecInfo.nalLengthSize)
+			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, hint, moreNALSize, moreNALSizeExact) {
 				anyMatched = true
 				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
 					return true
@@ -214,7 +229,7 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 
 	// Also try from packet start (in case it's already aligned)
 	if !anyMatched {
-		if m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo, hint, len(data)) {
+		if m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo, hint, len(data), false) {
 			anyMatched = true
 		}
 	}
@@ -228,10 +243,12 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 //     If any produces a match >= localityGoodMatchThreshold, accept immediately.
 //   - Phase 2: Fall back to trying all remaining locations (handles scene changes,
 //     chapter boundaries, multi-file sources).
-func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool, hint *trackLocalityHint, nalSize int, nalType ...byte) bool {
+func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool, hint *trackLocalityHint, nalSize int, nalSizeExact bool, nalType ...byte) bool {
 	if len(data) < m.windowSize {
 		return false
 	}
+
+	m.diagTotalSyncPoints.Add(1)
 
 	window := data[:m.windowSize]
 	hash := xxhash.Sum64(window)
@@ -294,16 +311,27 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 					bestMatch = region
 					bestMatchLen = matchLen
 				}
-				// Short-circuit: a match this large is almost certainly the best
-				if bestMatchLen >= localityGoodMatchThreshold {
+				// Short-circuit: a match this large is almost certainly the best.
+				// Also short-circuit when the match covers the entire frame/NAL,
+				// since no improvement is possible. Only apply the nalSize check
+				// when nalSize >= windowSize to avoid false positives on LPCM
+				// (8-byte sync intervals where short matches may be collisions).
+				if bestMatchLen >= localityGoodMatchThreshold || (nalSizeExact && nalSize >= m.windowSize && bestMatchLen >= int64(nalSize)) {
 					break
 				}
 			}
 		}
 	}
 
-	// Phase 2: Full search of remaining locations (skip if Phase 1 found a good match)
-	if bestMatchLen < localityGoodMatchThreshold {
+	// Phase 2: Full search of remaining locations (skip if Phase 1 found a good match
+	// or the match already covers the entire frame/NAL)
+	phase2Skipped := bestMatchLen >= localityGoodMatchThreshold || (nalSizeExact && nalSize >= m.windowSize && bestMatchLen >= int64(nalSize))
+	if phase2Skipped {
+		m.diagPhase1Skips.Add(1)
+	}
+	if !phase2Skipped {
+		m.diagPhase2Fallbacks.Add(1)
+		verifyAttempts := 0
 		for i, loc := range locations {
 			// Skip indices already tried in Phase 1 (linear scan of small array)
 			alreadyTried := false
@@ -324,6 +352,8 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			}
 
 			triedVerify = true
+			verifyAttempts++
+			m.diagPhase2Locations.Add(1)
 			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
 			if region != nil {
 				matchLen := region.mkvEnd - region.mkvStart
@@ -331,6 +361,17 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 					bestMatch = region
 					bestMatchLen = matchLen
 				}
+				// Early exit: stop searching once we have a good enough match
+				if bestMatchLen >= localityGoodMatchThreshold || (nalSizeExact && nalSize >= m.windowSize && bestMatchLen >= int64(nalSize)) {
+					m.diagPhase2EarlyExits.Add(1)
+					break
+				}
+			}
+
+			// Cap verify attempts to prevent I/O thrashing on hash collisions
+			if verifyAttempts >= phase2MaxVerifyAttempts {
+				m.diagPhase2Capped.Add(1)
+				break
 			}
 		}
 	}

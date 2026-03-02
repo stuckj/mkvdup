@@ -414,6 +414,62 @@ func buildDTSHDCoreM2TSData_CorrectFSIZE() []byte {
 	return data
 }
 
+// buildDTSHDCoreM2TSData_VariableExSS creates M2TS data with a combined DTS-HD
+// stream where the ExSS extension size varies across frames. This simulates
+// DTS-HD MA/HRA where the extension is variable-bitrate while the core is CBR.
+// With 3 frames, the validation must handle variable access unit sizes.
+//
+// Payload layout: [DTS Core 256B][ExSS 128B][DTS Core 256B][ExSS 200B][DTS Core 256B][ExSS 96B]
+// Total: 1192 bytes
+func buildDTSHDCoreM2TSData_VariableExSS() []byte {
+	const (
+		pmtPID   = uint16(0x0100)
+		videoPID = uint16(0x1011)
+		audioPID = uint16(0x1101)
+	)
+
+	var audioPayload []byte
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x11, 384)...) // AU = 256+128 = 384
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(128, 0x22)...)
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x33, 456)...) // AU = 256+200 = 456
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(200, 0x44)...)
+	audioPayload = append(audioPayload, makeDTSCoreFrame(256, 0x55, 352)...) // AU = 256+96 = 352
+	audioPayload = append(audioPayload, makeDTSHDExSSUnit(96, 0x66)...)
+
+	var data []byte
+	data = append(data, makeM2TSPacket(0, true, 0x01, 0, 0, makePATPayload(pmtPID))...)
+	data = append(data, makeM2TSPacket(pmtPID, true, 0x01, 0, 0,
+		makePMTPayload(videoPID, 0x1B,
+			[]uint16{audioPID},
+			[]byte{0x85}))...)
+
+	data = append(data, makeM2TSPacket(videoPID, true, 0x01, 0, 1,
+		makePESStart(0xE0, 0, seqBytes(0, 175)))...)
+
+	pesHdr := makePESStart(0xFD, 0, nil)
+	firstChunkSize := 184 - len(pesHdr)
+	firstPayload := make([]byte, 184)
+	copy(firstPayload, pesHdr)
+	copy(firstPayload[len(pesHdr):], audioPayload[:firstChunkSize])
+	data = append(data, makeM2TSPacket(audioPID, true, 0x01, 0, 0, firstPayload)...)
+
+	remaining := audioPayload[firstChunkSize:]
+	cc := byte(1)
+	for len(remaining) > 0 {
+		chunkSize := 184
+		if chunkSize > len(remaining) {
+			chunkSize = len(remaining)
+		}
+		chunk := make([]byte, 184)
+		copy(chunk, remaining[:chunkSize])
+		data = append(data, makeM2TSPacket(audioPID, false, 0x01, 0, cc, chunk)...)
+		remaining = remaining[chunkSize:]
+		cc++
+	}
+
+	return data
+}
+
 // testStream describes a stream for building test M2TS data.
 type testStream struct {
 	streamType byte

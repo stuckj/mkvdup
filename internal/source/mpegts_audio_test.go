@@ -331,6 +331,35 @@ func TestMPEGTSParser_DTSHDCoreSplit_CorrectFSIZE(t *testing.T) {
 	}
 }
 
+func TestMPEGTSParser_DTSHDCoreSplit_VariableExSS(t *testing.T) {
+	// DTS-HD MA/HRA can have variable-size extension data across frames while
+	// the DTS core remains constant (CBR). This test has 3 frames with different
+	// ExSS sizes, which produces variable access unit sizes. The core splitting
+	// must still succeed by validating the core boundary directly (checking for
+	// ExSS sync at syncPos + coreSize) rather than requiring uniform access units.
+	data := buildDTSHDCoreM2TSData_VariableExSS()
+	p := NewMPEGTSParser(data)
+	if err := p.Parse(); err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+
+	if got := p.AudioSubStreamCount(); got != 2 {
+		t.Fatalf("AudioSubStreamCount = %d, want 2 (DTS-HD combined + DTS core)", got)
+	}
+
+	subs := p.AudioSubStreams()
+	coreSize := p.AudioSubStreamESSize(subs[1])
+
+	// DTS core: 3 × 256 = 768 bytes
+	if coreSize != 768 {
+		t.Errorf("DTS core sub-stream size = %d, want 768 (3 × 256)", coreSize)
+	}
+
+	if p.subStreamCodec[subs[1]] != CodecDTSAudio {
+		t.Errorf("DTS core sub-stream codec = %v, want CodecDTSAudio", p.subStreamCodec[subs[1]])
+	}
+}
+
 func TestMPEGTSParser_NoSplitForPureDTS(t *testing.T) {
 	// A stream with type 0x82 (pure DTS core, not DTS-HD) should NOT be split
 	data := buildTestM2TS(t, []testStream{
