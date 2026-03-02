@@ -344,9 +344,11 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		// Remove orphaned config file (it references the pre-rename path)
 		configPath := outputPath + ".yaml"
 		os.Remove(configPath)
+		printWarn("  Removed config file: %s\n", configPath)
 
-		// Rename broken file to .mkvdup.failed
+		// Rename broken file to .mkvdup.failed, overwriting any previous .failed file
 		failedPath := outputPath + ".failed"
+		os.Remove(failedPath)
 		if renameErr := os.Rename(outputPath, failedPath); renameErr != nil {
 			printWarn("  ERROR: Failed to rename broken file: %v\n", renameErr)
 		} else {
