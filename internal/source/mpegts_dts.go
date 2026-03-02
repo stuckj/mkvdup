@@ -154,13 +154,15 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 		return DTSCoreFrameSize(buf[dtsSyncPos : dtsSyncPos+7])
 	}
 
-	// Validate that the detected core size is consistent across multiple
+	// Validate that the detected core size is consistent across additional
 	// frames. DTS core on Blu-ray uses CBR, so the core portion of each
 	// access unit should be the same size. The DTS-HD extension data can
 	// vary in size (making total access units differ), so we validate the
 	// core boundary directly: at syncPos + coreSize we expect either an
 	// ExSS sync word (64 58 20 25) or the next DTS core sync word.
-	validated := 0
+	// The first frame's boundary is already validated (it produced coreSize),
+	// so if the buffer is too short to check any additional frames we still
+	// trust the measurement.
 	for _, sp := range syncPositions[1:] {
 		boundary := sp + coreSize
 		if boundary+3 >= len(buf) {
@@ -169,23 +171,16 @@ func (p *MPEGTSParser) detectActualDTSCoreSize(ranges []PESPayloadRange) int {
 		// ExSS sync at expected boundary — core size is correct
 		if buf[boundary] == 0x64 && buf[boundary+1] == 0x58 &&
 			buf[boundary+2] == 0x20 && buf[boundary+3] == 0x25 {
-			validated++
 			continue
 		}
 		// Next DTS core sync at boundary — no extension in this frame,
 		// but core size still matches
 		if buf[boundary] == 0x7F && buf[boundary+1] == 0xFE &&
 			buf[boundary+2] == 0x80 && buf[boundary+3] == 0x01 {
-			validated++
 			continue
 		}
 		// Neither marker at expected boundary — core size may be wrong
 		log.Printf("mpegts: warning: DTS core boundary mismatch at offset %d (expected ExSS or DTS sync at +%d); skipping core extraction", sp, coreSize)
-		return 0
-	}
-	if validated == 0 && len(syncPositions) >= 2 {
-		// Had multiple sync positions but couldn't validate any
-		log.Printf("mpegts: warning: could not validate DTS core size across frames; skipping core extraction")
 		return 0
 	}
 
