@@ -211,6 +211,9 @@ func TestPhase2ShortCircuit_LargeFrame(t *testing.T) {
 // TestPhase2ShortCircuit_LPCMNotShortCircuited verifies that LPCM tracks
 // (nalSize=8 < windowSize=64) do NOT get the nalSize short-circuit,
 // since their tiny sync intervals make hash collisions more likely.
+// The MKV data diverges after the window size (64 bytes) so the match stays
+// below the 4KB threshold, ensuring only the nalSize guard could skip Phase 2.
+// Since nalSize < windowSize, the guard should NOT fire and Phase 2 SHOULD run.
 func TestPhase2ShortCircuit_LPCMNotShortCircuited(t *testing.T) {
 	const windowSize = 64
 	const lpcmNALSize = 8 // LPCM sync intervals are 8 bytes
@@ -259,8 +262,14 @@ func TestPhase2ShortCircuit_LPCMNotShortCircuited(t *testing.T) {
 	}
 	defer m.Close()
 
+	// MKV data matches correct source for only windowSize bytes, then diverges.
+	// This keeps the match at exactly 64 bytes — well below the 4KB threshold —
+	// so only the nalSize guard could prevent Phase 2 from running.
 	mkvData := make([]byte, 65536)
-	copy(mkvData, correctData)
+	copy(mkvData[:windowSize], correctData[:windowSize])
+	for i := windowSize; i < len(mkvData); i++ {
+		mkvData[i] = byte((i * 13) % 256) // Different from all source files
+	}
 	m.mkvData = mkvData
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
@@ -282,14 +291,13 @@ func TestPhase2ShortCircuit_LPCMNotShortCircuited(t *testing.T) {
 		t.Fatal("expected match but got none")
 	}
 
-	// LPCM nalSize=8 < windowSize=64, so nalSize short-circuit should NOT apply.
-	// The match will be very large (whole file matches), so the 4KB threshold
-	// should trigger instead. Phase 2 should still be skipped, but via the
-	// original localityGoodMatchThreshold, not the nalSize check.
+	// LPCM nalSize=8 < windowSize=64, so the nalSize short-circuit must NOT apply.
+	// The match is only 64 bytes (below 4KB threshold), so neither short-circuit
+	// fires. Phase 2 SHOULD run.
 	phase2Fallbacks := m.diagPhase2Fallbacks.Load()
-	t.Logf("Phase 2 fallbacks: %d (want 0 — skipped via 4KB threshold)", phase2Fallbacks)
-	if phase2Fallbacks != 0 {
-		t.Errorf("Phase 2 was triggered %d times", phase2Fallbacks)
+	t.Logf("Phase 2 fallbacks: %d (want 1 — nalSize guard prevented short-circuit)", phase2Fallbacks)
+	if phase2Fallbacks != 1 {
+		t.Errorf("Phase 2 fallbacks = %d, want 1 (LPCM nalSize < windowSize should not short-circuit)", phase2Fallbacks)
 	}
 }
 

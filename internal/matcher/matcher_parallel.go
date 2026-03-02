@@ -10,10 +10,11 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
-// computeNALSize computes the NAL/frame size from the sync point layout.
+// computeNALSize computes the NAL/sync-unit or frame size from the sync point layout.
 // For AVCC, consecutive sync points are separated by the length prefix of the
-// next NAL. For all other formats (Annex B, audio, subtitles), consecutive
-// sync points directly delimit frame boundaries.
+// next NAL. For Annex B video, sync points correspond to NAL/sync-unit boundaries
+// (e.g. slice headers, sequence headers), not necessarily whole decoded frames;
+// for audio and subtitles, consecutive sync points typically delimit frame boundaries.
 // Returns (nalSize, exact). exact is true only when derived from a known next
 // sync point; when false, nalSize is just the remaining data in the (possibly
 // truncated) buffer and must not be used for short-circuit decisions.

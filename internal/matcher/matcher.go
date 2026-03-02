@@ -160,7 +160,7 @@ type Matcher struct {
 	diagPhase2EarlyExits atomic.Int64 // Times Phase 2 exited early (full-frame match found)
 	diagPhase2Capped     atomic.Int64 // Times Phase 2 hit the verify attempt cap
 	diagPhase1Skips      atomic.Int64 // Times Phase 2 was skipped (Phase 1 sufficient)
-	diagTotalSyncPoints  atomic.Int64 // Total sync points processed (all track types)
+	diagTotalSyncPoints  atomic.Int64 // Total match attempts (all track types)
 
 	// First few hash-not-found examples for debugging
 	diagExamplesMu     sync.Mutex
