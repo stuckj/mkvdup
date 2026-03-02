@@ -347,6 +347,7 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 			printWarn("  ERROR: Failed to rename broken file: %v\n", renameErr)
 		} else {
 			printWarn("  Renamed to: %s\n", failedPath)
+			outputPath = failedPath
 		}
 
 		// Remove orphaned config file (it references the old path)

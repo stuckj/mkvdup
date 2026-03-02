@@ -262,19 +262,22 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 	// Print summary
 	printBatchSummary(results, totalIndexDuration, totalStart, warnThreshold)
 
-	// Return error if all non-skipped files failed (hard error or verification failure)
-	anySucceeded := false
+	// Return error only if there were non-skipped files and all of them failed.
+	// All-skipped batches (e.g., codec mismatch) are not considered failures.
+	hasNonSkipped := false
+	anyNonSkippedSucceeded := false
 	for _, r := range results {
-		if r.Err == nil && r.VerifyErr == nil && !r.Skipped {
-			anySucceeded = true
-			break
+		isSkipped := r.Skipped && r.SkipReason != "output exists"
+		if isSkipped {
+			continue
 		}
-		if r.Skipped && r.SkipReason == "output exists" {
-			anySucceeded = true
+		hasNonSkipped = true
+		if r.Err == nil && r.VerifyErr == nil {
+			anyNonSkippedSucceeded = true
 			break
 		}
 	}
-	if !anySucceeded {
+	if hasNonSkipped && !anyNonSkippedSucceeded {
 		return fmt.Errorf("batch create completed with errors")
 	}
 	return nil
