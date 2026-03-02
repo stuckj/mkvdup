@@ -165,7 +165,8 @@ Partial failure handling:
     If one file fails, processing continues for the remaining files.
     If verification fails for a file, the output is renamed to <output>.failed
     and shown as FAIL in the summary.
-    Exit code is 0 if any file succeeded, 1 if all files failed.
+    Exit code is 0 if any non-skipped file succeeded or all files were skipped.
+    Exit code is 1 only if all non-skipped files failed.
 
 Examples:
     mkvdup batch-create episodes.yaml

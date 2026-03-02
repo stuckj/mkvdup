@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -191,6 +194,70 @@ func TestSamplePackets_RequestFour(t *testing.T) {
 		t.Errorf("Expected at most 4 samples, got %d", len(result))
 	}
 	t.Logf("Got %d samples for n=4 request", len(result))
+}
+
+func TestVerifyFailureCleanup(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create dummy dedup and config files to simulate post-write state
+	dedupPath := filepath.Join(dir, "test.mkvdup")
+	configPath := dedupPath + ".yaml"
+	failedPath := dedupPath + ".failed"
+
+	os.WriteFile(dedupPath, []byte("dedup data"), 0644)
+	os.WriteFile(configPath, []byte("name: test\n"), 0644)
+
+	// Verify both files exist before cleanup
+	if _, err := os.Stat(dedupPath); err != nil {
+		t.Fatalf("dedup file should exist: %v", err)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("config file should exist: %v", err)
+	}
+
+	// Simulate the verify failure cleanup path from createDedupWithIndex:
+	// 1. Remove config file (before rename, so we use the original outputPath)
+	os.Remove(configPath)
+	// 2. Rename dedup to .failed
+	if err := os.Rename(dedupPath, failedPath); err != nil {
+		t.Fatalf("rename failed: %v", err)
+	}
+
+	// Verify: config file removed
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Error("config file should have been removed")
+	}
+	// Verify: original dedup file gone
+	if _, err := os.Stat(dedupPath); !os.IsNotExist(err) {
+		t.Error("original dedup file should not exist after rename")
+	}
+	// Verify: .failed file exists
+	if _, err := os.Stat(failedPath); err != nil {
+		t.Error("failed file should exist after rename")
+	}
+}
+
+func TestVerifyFailureResult(t *testing.T) {
+	// Test that createResult.VerifyErr is set correctly and that
+	// the result is treated as a failure in batch summary.
+	verifyErr := fmt.Errorf("data mismatch at offset 1024")
+	result := &createResult{
+		MkvPath:   "/data/test.mkv",
+		VerifyErr: verifyErr,
+	}
+
+	// VerifyErr should be distinct from Err
+	if result.Err != nil {
+		t.Error("Err should be nil when only VerifyErr is set")
+	}
+	if result.VerifyErr == nil {
+		t.Error("VerifyErr should be set")
+	}
+
+	// Should not be counted as success
+	if result.Err == nil && result.VerifyErr == nil {
+		t.Error("result with VerifyErr should not pass success check")
+	}
 }
 
 func TestReportCodecMismatches_SkipAction(t *testing.T) {

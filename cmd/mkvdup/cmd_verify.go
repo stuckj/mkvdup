@@ -11,6 +11,10 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
+// verifyReconstructionFunc is the function used for post-create verification.
+// It can be overridden in tests to simulate verification failures.
+var verifyReconstructionFunc = verifyReconstruction
+
 // verifyReconstruction verifies that the dedup file can reconstruct the original MKV.
 // If phasePrefix is non-empty, a progress bar is shown.
 func verifyReconstruction(dedupPath, sourceDir, originalPath string, index *source.Index, phasePrefix string) error {

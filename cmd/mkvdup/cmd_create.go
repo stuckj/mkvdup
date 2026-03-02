@@ -338,8 +338,12 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 
 	// Verify reconstruction
 	verifyPrefix := phaseLabel(3, "Verifying reconstruction...")
-	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verifyPrefix); err != nil {
+	if err := verifyReconstructionFunc(outputPath, sourceDir, mkvPath, index, verifyPrefix); err != nil {
 		printWarn("  ERROR: Verification failed: %v\n", err)
+
+		// Remove orphaned config file (it references the pre-rename path)
+		configPath := outputPath + ".yaml"
+		os.Remove(configPath)
 
 		// Rename broken file to .mkvdup.failed
 		failedPath := outputPath + ".failed"
@@ -348,11 +352,8 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 		} else {
 			printWarn("  Renamed to: %s\n", failedPath)
 			outputPath = failedPath
+			result.OutputPath = failedPath
 		}
-
-		// Remove orphaned config file (it references the old path)
-		configPath := outputPath + ".yaml"
-		os.Remove(configPath)
 
 		result.VerifyErr = err
 	}

@@ -251,6 +251,11 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 				if processed < len(manifest.Files) {
 					printWarnln("  Continuing with remaining files...")
 				}
+			} else if r.VerifyErr != nil {
+				// Verification error messages are already printed by createDedupWithIndex
+				if processed < len(manifest.Files) {
+					printWarnln("  Continuing with remaining files...")
+				}
 			} else {
 				printInfo("  MKV: %s bytes | Dedup: %s bytes | Savings: %.1f%% | Time: %v\n",
 					formatInt(r.MkvSize), formatInt(r.DedupSize), r.Savings, r.Duration.Round(time.Second))
