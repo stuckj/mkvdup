@@ -196,7 +196,7 @@ func TestSamplePackets_RequestFour(t *testing.T) {
 	t.Logf("Got %d samples for n=4 request", len(result))
 }
 
-func TestVerifyFailureCleanup(t *testing.T) {
+func TestHandleVerifyResult_Cleanup(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create dummy dedup and config files to simulate post-write state
@@ -211,13 +211,24 @@ func TestVerifyFailureCleanup(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	// Simulate the verify failure cleanup path from createDedupWithIndex:
-	// 1. Remove config file (before rename, so we use the original outputPath)
-	os.Remove(configPath)
-	// 2. Rename dedup to .failed
-	if err := os.Rename(dedupPath, failedPath); err != nil {
-		t.Fatalf("rename failed: %v", err)
+	// Mock verification to fail
+	oldVerify := verifyReconstructionFunc
+	verifyReconstructionFunc = func(_, _, _ string, _ *source.Index, _ string) error {
+		return fmt.Errorf("simulated verification failure")
 	}
+	defer func() { verifyReconstructionFunc = oldVerify }()
+
+	result := &createResult{OutputPath: dedupPath}
+
+	// Call the real production helper
+	captureStderr(t, func() {
+		newPath := handleVerifyResult(dedupPath, "/fake/source", "/fake/mkv", nil, "Verifying...", result)
+
+		// outputPath should be updated to .failed
+		if newPath != failedPath {
+			t.Errorf("expected outputPath %q, got %q", failedPath, newPath)
+		}
+	})
 
 	// Verify: config file removed
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
@@ -230,6 +241,72 @@ func TestVerifyFailureCleanup(t *testing.T) {
 	// Verify: .failed file exists
 	if _, err := os.Stat(failedPath); err != nil {
 		t.Error("failed file should exist after rename")
+	}
+	// Verify: result fields set correctly
+	if result.VerifyErr == nil {
+		t.Error("VerifyErr should be set")
+	}
+	if result.OutputPath != failedPath {
+		t.Errorf("result.OutputPath = %q, want %q", result.OutputPath, failedPath)
+	}
+}
+
+func TestHandleVerifyResult_Success(t *testing.T) {
+	// When verification succeeds, nothing should change
+	oldVerify := verifyReconstructionFunc
+	verifyReconstructionFunc = func(_, _, _ string, _ *source.Index, _ string) error {
+		return nil
+	}
+	defer func() { verifyReconstructionFunc = oldVerify }()
+
+	result := &createResult{OutputPath: "/data/test.mkvdup"}
+
+	newPath := handleVerifyResult("/data/test.mkvdup", "/fake/source", "/fake/mkv", nil, "Verifying...", result)
+
+	if newPath != "/data/test.mkvdup" {
+		t.Errorf("expected unchanged outputPath, got %q", newPath)
+	}
+	if result.VerifyErr != nil {
+		t.Errorf("VerifyErr should be nil on success, got %v", result.VerifyErr)
+	}
+	if result.OutputPath != "/data/test.mkvdup" {
+		t.Errorf("OutputPath should be unchanged, got %q", result.OutputPath)
+	}
+}
+
+func TestHandleVerifyResult_OverwritesExistingFailed(t *testing.T) {
+	dir := t.TempDir()
+
+	dedupPath := filepath.Join(dir, "test.mkvdup")
+	failedPath := dedupPath + ".failed"
+
+	// Create both dedup and a pre-existing .failed file
+	if err := os.WriteFile(dedupPath, []byte("new dedup data"), 0644); err != nil {
+		t.Fatalf("write dedup file: %v", err)
+	}
+	if err := os.WriteFile(failedPath, []byte("old failed data"), 0644); err != nil {
+		t.Fatalf("write failed file: %v", err)
+	}
+
+	oldVerify := verifyReconstructionFunc
+	verifyReconstructionFunc = func(_, _, _ string, _ *source.Index, _ string) error {
+		return fmt.Errorf("simulated failure")
+	}
+	defer func() { verifyReconstructionFunc = oldVerify }()
+
+	result := &createResult{OutputPath: dedupPath}
+
+	captureStderr(t, func() {
+		handleVerifyResult(dedupPath, "/fake/source", "/fake/mkv", nil, "Verifying...", result)
+	})
+
+	// .failed should contain the new data, not the old
+	data, err := os.ReadFile(failedPath)
+	if err != nil {
+		t.Fatalf("read failed file: %v", err)
+	}
+	if string(data) != "new dedup data" {
+		t.Errorf("expected .failed to contain new data, got %q", string(data))
 	}
 }
 
