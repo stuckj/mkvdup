@@ -11,6 +11,10 @@ import (
 // TestPhase2ShortCircuit_DTSFrameSize verifies that when Phase 1 finds a match
 // covering an entire DTS-sized frame (~512 bytes), Phase 2 is NOT triggered.
 // This is the core diagnostic for the DTS thrashing fix.
+//
+// The source and MKV data diverge immediately after the frame boundary so that
+// expansion stops at nalSize, ensuring the nalSize short-circuit (not the 4KB
+// threshold) is what actually skips Phase 2.
 func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 	const windowSize = 64
 	const dtsFrameSize = 512 // Typical DTS core frame
@@ -69,9 +73,14 @@ func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 	}
 	defer m.Close()
 
-	// Set up MKV data that matches the correct file's data
+	// Set up MKV data that matches the correct file for the first dtsFrameSize
+	// bytes, then diverges. This ensures expansion stops at exactly dtsFrameSize
+	// so only the nalSize short-circuit can skip Phase 2 (not the 4KB threshold).
 	mkvData := make([]byte, 65536)
-	copy(mkvData, correctData)
+	copy(mkvData[:dtsFrameSize], correctData[:dtsFrameSize])
+	for i := dtsFrameSize; i < len(mkvData); i++ {
+		mkvData[i] = byte((i * 13) % 256) // Different from all source files
+	}
 	m.mkvData = mkvData
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
@@ -95,13 +104,15 @@ func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 		TrackNum: 1,
 	}
 
-	// Call tryMatchFromOffsetParallel with DTS-like nalSize
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, dtsFrameSize)
+	// Call tryMatchFromOffsetParallel with DTS-like nalSize (nalSizeExact=true)
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, dtsFrameSize, true)
 	if !matched {
 		t.Fatal("expected match but got none")
 	}
 
-	// KEY DIAGNOSTIC: Phase 2 should NOT have been triggered
+	// KEY DIAGNOSTIC: Phase 2 should NOT have been triggered.
+	// The match is exactly dtsFrameSize (512) bytes — below the 4KB threshold —
+	// so only the nalSize short-circuit could have prevented Phase 2.
 	phase2Fallbacks := m.diagPhase2Fallbacks.Load()
 	phase2Locations := m.diagPhase2Locations.Load()
 
@@ -184,7 +195,7 @@ func TestPhase2ShortCircuit_LargeFrame(t *testing.T) {
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, largeNALSize)
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, largeNALSize, true)
 	if !matched {
 		t.Fatal("expected match but got none")
 	}
@@ -266,7 +277,7 @@ func TestPhase2ShortCircuit_LPCMNotShortCircuited(t *testing.T) {
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, lpcmNALSize)
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, lpcmNALSize, true)
 	if !matched {
 		t.Fatal("expected match but got none")
 	}
@@ -333,8 +344,12 @@ func TestPhase2Fallback_NoHint(t *testing.T) {
 	}
 	defer m.Close()
 
+	// MKV data matches correct source for dtsFrameSize bytes, then diverges.
 	mkvData := make([]byte, 65536)
-	copy(mkvData, correctData)
+	copy(mkvData[:dtsFrameSize], correctData[:dtsFrameSize])
+	for i := dtsFrameSize; i < len(mkvData); i++ {
+		mkvData[i] = byte((i * 13) % 256)
+	}
 	m.mkvData = mkvData
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
@@ -348,7 +363,7 @@ func TestPhase2Fallback_NoHint(t *testing.T) {
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
 	// With no valid hint, Phase 1 is skipped entirely, so Phase 2 must run
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, m.trackHints[1], dtsFrameSize)
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, m.trackHints[1], dtsFrameSize, true)
 	if !matched {
 		t.Fatal("expected match but got none")
 	}
@@ -360,8 +375,8 @@ func TestPhase2Fallback_NoHint(t *testing.T) {
 	}
 }
 
-// TestNALSizeComputation_AudioSyncPoints verifies that nalSize is correctly
-// computed as distance-to-next-sync-point for audio tracks (the fix).
+// TestNALSizeComputation_AudioSyncPoints verifies that computeNALSize correctly
+// computes frame size as distance-to-next-sync-point for audio tracks.
 func TestNALSizeComputation_AudioSyncPoints(t *testing.T) {
 	// Build a data buffer with DTS sync words at known offsets
 	data := make([]byte, 4096)
@@ -382,33 +397,100 @@ func TestNALSizeComputation_AudioSyncPoints(t *testing.T) {
 		t.Fatalf("unexpected sync points: %v (want [0, 512, 1024, ...])", syncPoints)
 	}
 
-	// Test nalSize computation (the fixed logic)
+	// Test nalSize computation using the production helper
 	for i, syncOff := range syncPoints {
-		nalSize := len(data) - syncOff // Default: remaining data
-		if i+1 < len(syncPoints) {
-			// Fixed: compute for ALL track types, not just AVCC
-			nalSize = syncPoints[i+1] - syncOff
-		}
+		nalSize, exact := computeNALSize(syncPoints, i, syncOff, len(data), false, 0)
 
 		switch i {
 		case 0:
-			if nalSize != 512 {
-				t.Errorf("syncPoint[0] nalSize = %d, want 512", nalSize)
+			if nalSize != 512 || !exact {
+				t.Errorf("syncPoint[0] nalSize = %d, exact = %v, want 512, true", nalSize, exact)
 			}
 		case 1:
-			if nalSize != 512 {
-				t.Errorf("syncPoint[1] nalSize = %d, want 512", nalSize)
+			if nalSize != 512 || !exact {
+				t.Errorf("syncPoint[1] nalSize = %d, exact = %v, want 512, true", nalSize, exact)
 			}
 		case 2:
-			// Last sync point: nalSize = remaining data
+			// Last sync point: nalSize = remaining data, not exact
 			expected := len(data) - 1024
-			if nalSize != expected {
-				t.Errorf("syncPoint[2] nalSize = %d, want %d (remaining data)", nalSize, expected)
+			if nalSize != expected || exact {
+				t.Errorf("syncPoint[2] nalSize = %d, exact = %v, want %d, false", nalSize, exact, expected)
 			}
 		}
 	}
 
 	t.Logf("DTS sync points found: %v", syncPoints[:3])
-	t.Logf("nalSize values: %d, %d, %d (want 512, 512, %d)",
-		512, 512, len(data)-1024, len(data)-1024)
+	t.Logf("nalSize values: 512, 512, %d", len(data)-1024)
+}
+
+// TestNALSizeExact_PreventsShortCircuit verifies that when nalSizeExact is
+// false (last sync point in truncated buffer), the nalSize short-circuit
+// does NOT apply, even if bestMatchLen >= nalSize.
+func TestNALSizeExact_PreventsShortCircuit(t *testing.T) {
+	const windowSize = 64
+	const nalSize = 512
+
+	correctData := make([]byte, 65536)
+	for i := range correctData {
+		correctData[i] = byte(i % 251)
+	}
+	hash := xxhash.Sum64(correctData[:windowSize])
+
+	// Only one source file — no wrong files. With nalSizeExact=false,
+	// the match of 512 bytes shouldn't trigger the nalSize short-circuit,
+	// so Phase 2 should run (even though Phase 1 found a match).
+	files := []source.File{{RelativePath: "correct.m2ts", Size: int64(len(correctData))}}
+	rawReaders := []source.RawReader{&sliceReader{data: correctData}}
+	locations := []source.Location{{FileIndex: 0, Offset: 0}}
+
+	idx := &source.Index{
+		WindowSize:      windowSize,
+		HashToLocations: map[uint64][]source.Location{hash: locations},
+		SourceDir:       "/test",
+		SourceType:      source.TypeBluray,
+		Files:           files,
+		RawReaders:      rawReaders,
+		UsesESOffsets:   false,
+	}
+	idx.SortLocationsByOffset()
+
+	m, err := NewMatcher(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	// MKV matches for nalSize bytes then diverges
+	mkvData := make([]byte, 65536)
+	copy(mkvData[:nalSize], correctData[:nalSize])
+	for i := nalSize; i < len(mkvData); i++ {
+		mkvData[i] = byte((i * 13) % 256)
+	}
+	m.mkvData = mkvData
+	m.mkvSize = int64(len(mkvData))
+	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
+	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
+	m.trackHints = map[uint64]*trackLocalityHint{1: {}}
+
+	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
+	m.coveredChunks = make([]uint64, (numChunks+63)/64)
+
+	hint := m.trackHints[1]
+	hint.fileIndex.Store(0)
+	hint.offset.Store(0)
+	hint.valid.Store(true)
+
+	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
+
+	// nalSizeExact=false: match is 512 bytes (== nalSize) but nalSize is
+	// not from a real sync point boundary, so the short-circuit must NOT fire.
+	// With only 1 location, Phase 2 has nothing new to try, but the gate
+	// decision (phase2Skipped) should be false.
+	m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, nalSize, false)
+
+	phase1Skips := m.diagPhase1Skips.Load()
+	t.Logf("Phase 1 skips: %d (want 0 — nalSizeExact=false should prevent skip)", phase1Skips)
+	if phase1Skips != 0 {
+		t.Errorf("Phase 1 skips = %d, want 0 (nalSizeExact=false should not short-circuit)", phase1Skips)
+	}
 }
