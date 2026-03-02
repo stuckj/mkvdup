@@ -269,6 +269,8 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 
 	// Return error only if there were non-skipped files and all of them failed.
 	// All-skipped batches (e.g., codec mismatch) are not considered failures.
+	// "output exists" (cached) files count as successes — they represent prior
+	// successful runs and are shown as "OK [cached]" in the summary.
 	hasNonSkipped := false
 	anyNonSkippedSucceeded := false
 	for _, r := range results {
