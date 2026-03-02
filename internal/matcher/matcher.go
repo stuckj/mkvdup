@@ -375,7 +375,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 			}
 		}
 
-		fmt.Fprintf(w, "\nTotal sync points processed: %d\n", m.diagTotalSyncPoints.Load())
+		fmt.Fprintf(w, "\nTotal match attempts: %d\n", m.diagTotalSyncPoints.Load())
 		fmt.Fprintf(w, "Phase 1 skips (Phase 2 avoided): %d\n", m.diagPhase1Skips.Load())
 		fmt.Fprintf(w, "Phase 2 full-search fallbacks: %d\n", m.diagPhase2Fallbacks.Load())
 		fmt.Fprintf(w, "Phase 2 total locations checked: %d\n", m.diagPhase2Locations.Load())
