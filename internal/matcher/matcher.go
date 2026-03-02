@@ -29,6 +29,13 @@ const (
 	// from a nearby location without trying all remaining locations.
 	// At 4KB (64x the 64-byte window), a false positive is vanishingly unlikely.
 	localityGoodMatchThreshold = 4096
+
+	// phase2MaxVerifyAttempts caps the number of tryVerifyAndExpand calls in
+	// Phase 2. Common audio patterns (e.g. DTS core headers) can produce the
+	// same 64-byte hash across hundreds of source files. When none verify,
+	// the uncapped scan causes I/O thrashing. 64 attempts is >10x the
+	// observed average for successful Phase 2 searches (~6 locations).
+	phase2MaxVerifyAttempts = 64
 )
 
 // detectNALLengthSize determines the NAL unit length field size from an MKV track's
@@ -147,6 +154,14 @@ type Matcher struct {
 	diagNALSizeMatched   [5]atomic.Int64
 	diagNALSizeUnmatched [5]atomic.Int64
 
+	// Phase 2 diagnostics (all track types)
+	diagPhase2Fallbacks  atomic.Int64 // Times Phase 2 full search was triggered
+	diagPhase2Locations  atomic.Int64 // Total locations checked in Phase 2
+	diagPhase2EarlyExits atomic.Int64 // Times Phase 2 exited early (full-frame match found)
+	diagPhase2Capped     atomic.Int64 // Times Phase 2 hit the verify attempt cap
+	diagPhase1Skips      atomic.Int64 // Times Phase 2 was skipped (Phase 1 sufficient)
+	diagTotalSyncPoints  atomic.Int64 // Total sync points processed (all track types)
+
 	// First few hash-not-found examples for debugging
 	diagExamplesMu     sync.Mutex
 	diagExamplesCount  int
@@ -251,6 +266,12 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		m.diagNALSizeMatched[i].Store(0)
 		m.diagNALSizeUnmatched[i].Store(0)
 	}
+	m.diagPhase2Fallbacks.Store(0)
+	m.diagPhase2Locations.Store(0)
+	m.diagPhase2EarlyExits.Store(0)
+	m.diagPhase2Capped.Store(0)
+	m.diagPhase1Skips.Store(0)
+	m.diagTotalSyncPoints.Store(0)
 	m.diagExamplesMu.Lock()
 	m.diagExamplesCount = 0
 	m.diagExamplesOutput = nil
@@ -354,6 +375,13 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 			}
 		}
 
+		fmt.Fprintf(w, "\nTotal sync points processed: %d\n", m.diagTotalSyncPoints.Load())
+		fmt.Fprintf(w, "Phase 1 skips (Phase 2 avoided): %d\n", m.diagPhase1Skips.Load())
+		fmt.Fprintf(w, "Phase 2 full-search fallbacks: %d\n", m.diagPhase2Fallbacks.Load())
+		fmt.Fprintf(w, "Phase 2 total locations checked: %d\n", m.diagPhase2Locations.Load())
+		fmt.Fprintf(w, "Phase 2 early exits: %d\n", m.diagPhase2EarlyExits.Load())
+		fmt.Fprintf(w, "Phase 2 capped (hit %d limit): %d\n", phase2MaxVerifyAttempts, m.diagPhase2Capped.Load())
+
 		fmt.Fprintf(w, "\nFirst hash-not-found examples:\n")
 		for _, ex := range m.diagExamplesOutput {
 			fmt.Fprintf(w, "%s\n", ex)
@@ -434,4 +462,27 @@ func ExtractProbeHashes(data []byte, isVideo bool, windowSize int, nalLengthSize
 	}
 
 	return hashes
+}
+
+// DiagStats holds a snapshot of diagnostic counters for external monitoring.
+type DiagStats struct {
+	TotalSyncPoints  int64
+	Phase1Skips      int64
+	Phase2Fallbacks  int64
+	Phase2Locations  int64
+	Phase2EarlyExits int64
+	Phase2Capped     int64
+}
+
+// DiagSnapshot returns a snapshot of current diagnostic counters.
+// Safe to call concurrently while matching is in progress.
+func (m *Matcher) DiagSnapshot() DiagStats {
+	return DiagStats{
+		TotalSyncPoints:  m.diagTotalSyncPoints.Load(),
+		Phase1Skips:      m.diagPhase1Skips.Load(),
+		Phase2Fallbacks:  m.diagPhase2Fallbacks.Load(),
+		Phase2Locations:  m.diagPhase2Locations.Load(),
+		Phase2EarlyExits: m.diagPhase2EarlyExits.Load(),
+		Phase2Capped:     m.diagPhase2Capped.Load(),
+	}
 }
