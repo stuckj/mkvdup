@@ -1,14 +1,14 @@
 Package: mkvdup
-Version: 1.3.3
+Version: 1.3.4
 Architecture: amd64
 Maintainer: stuckj <stuckj@users.noreply.github.com>
-Installed-Size: 4799
+Installed-Size: 4808
 Depends: fuse3
-Filename: pool/main/mkvdup_1.3.3_amd64.deb
-Size: 2060996
-MD5sum: 8f1c9f6be668a95fa9fc2e06cc5a5c81
-SHA1: 5b338a7e76f9bbeb0a8c62acdb0c0fea13574260
-SHA256: c3de7cc56e27a1e5acb72f9a5049a368bc277618f9d74e393873e46cefa27c76
+Filename: pool/main/mkvdup_1.3.4_amd64.deb
+Size: 2064642
+MD5sum: f9a1ea5d785cd65c58df36f1bc5a20d5
+SHA1: c4d3fb719569679135143cecbbbf32dd8adbb8d1
+SHA256: b227f88ddde70267d56fe1ea030b193b62682ad6c2a5a86d47900245ae1a3dbb
 Section: video
 Priority: optional
 Homepage: https://github.com/stuckj/mkvdup
