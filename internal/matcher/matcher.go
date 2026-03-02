@@ -464,25 +464,3 @@ func ExtractProbeHashes(data []byte, isVideo bool, windowSize int, nalLengthSize
 	return hashes
 }
 
-// DiagStats holds a snapshot of diagnostic counters for external monitoring.
-type DiagStats struct {
-	TotalSyncPoints  int64
-	Phase1Skips      int64
-	Phase2Fallbacks  int64
-	Phase2Locations  int64
-	Phase2EarlyExits int64
-	Phase2Capped     int64
-}
-
-// DiagSnapshot returns a snapshot of current diagnostic counters.
-// Safe to call concurrently while matching is in progress.
-func (m *Matcher) DiagSnapshot() DiagStats {
-	return DiagStats{
-		TotalSyncPoints:  m.diagTotalSyncPoints.Load(),
-		Phase1Skips:      m.diagPhase1Skips.Load(),
-		Phase2Fallbacks:  m.diagPhase2Fallbacks.Load(),
-		Phase2Locations:  m.diagPhase2Locations.Load(),
-		Phase2EarlyExits: m.diagPhase2EarlyExits.Load(),
-		Phase2Capped:     m.diagPhase2Capped.Load(),
-	}
-}
