@@ -206,7 +206,7 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		}
 		fullData := m.mkvData[pkt.Offset:fullEnd]
 		moreSyncPoints := source.FindVideoNALStarts(fullData)
-		for _, syncOff := range moreSyncPoints {
+		for moreIdx, syncOff := range moreSyncPoints {
 			if syncOff < int(readSize) {
 				continue // Already tried in the first pass
 			}
@@ -217,7 +217,8 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
 				continue
 			}
-			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, hint, len(fullData)-syncOff, false) {
+			moreNALSize, moreNALSizeExact := computeNALSize(moreSyncPoints, moreIdx, syncOff, len(fullData), isVideo, codecInfo.nalLengthSize)
+			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, hint, moreNALSize, moreNALSizeExact) {
 				anyMatched = true
 				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
 					return true

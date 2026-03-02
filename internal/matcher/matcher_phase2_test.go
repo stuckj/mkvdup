@@ -433,7 +433,8 @@ func TestNALSizeComputation_AudioSyncPoints(t *testing.T) {
 
 // TestNALSizeExact_PreventsShortCircuit verifies that when nalSizeExact is
 // false (last sync point in truncated buffer), the nalSize short-circuit
-// does NOT apply, even if bestMatchLen >= nalSize.
+// does NOT apply, even if bestMatchLen >= nalSize. Phase 1 finds a match
+// of nalSize bytes but must NOT skip Phase 2 because nalSizeExact is false.
 func TestNALSizeExact_PreventsShortCircuit(t *testing.T) {
 	const windowSize = 64
 	const nalSize = 512
@@ -444,12 +445,26 @@ func TestNALSizeExact_PreventsShortCircuit(t *testing.T) {
 	}
 	hash := xxhash.Sum64(correctData[:windowSize])
 
-	// Only one source file — no wrong files. With nalSizeExact=false,
-	// the match of 512 bytes shouldn't trigger the nalSize short-circuit,
-	// so Phase 2 should run (even though Phase 1 found a match).
-	files := []source.File{{RelativePath: "correct.m2ts", Size: int64(len(correctData))}}
-	rawReaders := []source.RawReader{&sliceReader{data: correctData}}
-	locations := []source.Location{{FileIndex: 0, Offset: 0}}
+	// Need at least 2 locations so Phase 1 actually runs (len(locations) > 1).
+	// One correct file (matches nalSize bytes) + one wrong file (same hash window).
+	wrongData := make([]byte, 65536)
+	copy(wrongData, correctData[:windowSize])
+	for i := windowSize; i < len(wrongData); i++ {
+		wrongData[i] = byte((i * 7) % 256)
+	}
+
+	files := []source.File{
+		{RelativePath: "correct.m2ts", Size: int64(len(correctData))},
+		{RelativePath: "wrong.m2ts", Size: int64(len(wrongData))},
+	}
+	rawReaders := []source.RawReader{
+		&sliceReader{data: correctData},
+		&sliceReader{data: wrongData},
+	}
+	locations := []source.Location{
+		{FileIndex: 0, Offset: 0},
+		{FileIndex: 1, Offset: 0},
+	}
 
 	idx := &source.Index{
 		WindowSize:      windowSize,
@@ -490,15 +505,19 @@ func TestNALSizeExact_PreventsShortCircuit(t *testing.T) {
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
-	// nalSizeExact=false: match is 512 bytes (== nalSize) but nalSize is
-	// not from a real sync point boundary, so the short-circuit must NOT fire.
-	// With only 1 location, Phase 2 has nothing new to try, but the gate
-	// decision (phase2Skipped) should be false.
+	// nalSizeExact=false: Phase 1 finds a 512-byte match (== nalSize) but
+	// the short-circuit must NOT fire because nalSizeExact is false.
+	// Phase 2 should still run.
 	m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, nalSize, false)
 
 	phase1Skips := m.diagPhase1Skips.Load()
+	phase2Fallbacks := m.diagPhase2Fallbacks.Load()
 	t.Logf("Phase 1 skips: %d (want 0 — nalSizeExact=false should prevent skip)", phase1Skips)
+	t.Logf("Phase 2 fallbacks: %d (want 1 — Phase 2 should run)", phase2Fallbacks)
 	if phase1Skips != 0 {
 		t.Errorf("Phase 1 skips = %d, want 0 (nalSizeExact=false should not short-circuit)", phase1Skips)
+	}
+	if phase2Fallbacks != 1 {
+		t.Errorf("Phase 2 fallbacks = %d, want 1 (nalSizeExact=false means Phase 2 must run)", phase2Fallbacks)
 	}
 }
