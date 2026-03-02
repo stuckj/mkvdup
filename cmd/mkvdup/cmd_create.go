@@ -53,6 +53,7 @@ type createResult struct {
 	Savings        float64
 	Duration       time.Duration
 	Err            error
+	VerifyErr      error  // non-nil if post-create verification failed
 	Skipped        bool   // true when file was skipped (e.g., codec mismatch, output exists)
 	SkipReason     string // reason for skipping (shown in summary)
 }
@@ -338,8 +339,21 @@ func createDedupWithIndex(mkvPath, sourceDir, outputPath, virtualName string,
 	// Verify reconstruction
 	verifyPrefix := phaseLabel(3, "Verifying reconstruction...")
 	if err := verifyReconstruction(outputPath, sourceDir, mkvPath, index, verifyPrefix); err != nil {
-		printInfo("  WARNING: Verification failed: %v\n", err)
-		printInfoln("  Keeping files for debugging")
+		printWarn("  ERROR: Verification failed: %v\n", err)
+
+		// Rename broken file to .mkvdup.failed
+		failedPath := outputPath + ".failed"
+		if renameErr := os.Rename(outputPath, failedPath); renameErr != nil {
+			printWarn("  ERROR: Failed to rename broken file: %v\n", renameErr)
+		} else {
+			printWarn("  Renamed to: %s\n", failedPath)
+		}
+
+		// Remove orphaned config file (it references the old path)
+		configPath := outputPath + ".yaml"
+		os.Remove(configPath)
+
+		result.VerifyErr = err
 	}
 
 	// Populate result
@@ -441,6 +455,10 @@ func createDedup(mkvPath, sourceDir, outputPath, virtualName string, warnThresho
 		printInfoln()
 		printInfo("WARNING: Space savings (%.1f%%) below %.0f%%\n", result.Savings, warnThreshold)
 		printInfoln("  This may indicate wrong source, transcoded MKV, or very small MKV file.")
+	}
+
+	if result.VerifyErr != nil {
+		return fmt.Errorf("verification failed: %w", result.VerifyErr)
 	}
 
 	return nil

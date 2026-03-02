@@ -97,6 +97,8 @@ mkvdup create --non-interactive movie.mkv /media/dvd-backups movie.mkvdup
 - `video.mkvdup` — The dedup data file (index + delta)
 - `video.mkvdup.yaml` — Config file for this mapping
 
+**Verification:** After writing, the dedup file is verified by reconstructing the MKV and comparing byte-for-byte against the original. If verification fails, the output file is renamed to `<output>.failed` and the command exits with code 1. The `.failed` file is kept for debugging.
+
 **Directory paths in `name`:**
 The `name` argument supports directory paths (e.g., `"Movies/Action/Video1.mkv"`). Each `create` command produces one `.mkvdup` file with one name stored in its config. The directory structure becomes visible when mounting multiple configs together—directories are auto-created from path components across all mounted files. See [FUSE Directory Structure](FUSE.md#directory-structure) for details.
 
@@ -170,8 +172,9 @@ Relative paths are resolved against the manifest file's directory.
 **Partial failure handling:**
 - If one file fails, processing continues for the remaining files
 - If indexing fails for one source, all files in that group are marked as failed and processing continues with the next source
+- If verification fails for a file, the output is renamed to `<output>.failed` and shown as FAIL in the summary
 - A summary at the end shows OK/FAIL status for each file
-- Exit code is 1 if any file failed, 0 if all succeeded
+- Exit code is 0 if any file succeeded, 1 if all files failed
 
 ### mount
 

@@ -262,11 +262,20 @@ func createBatch(manifestPath string, warnThreshold float64, skipCodecMismatch b
 	// Print summary
 	printBatchSummary(results, totalIndexDuration, totalStart, warnThreshold)
 
-	// Return error if any file failed
+	// Return error if all non-skipped files failed (hard error or verification failure)
+	anySucceeded := false
 	for _, r := range results {
-		if r.Err != nil {
-			return fmt.Errorf("batch create completed with errors")
+		if r.Err == nil && r.VerifyErr == nil && !r.Skipped {
+			anySucceeded = true
+			break
 		}
+		if r.Skipped && r.SkipReason == "output exists" {
+			anySucceeded = true
+			break
+		}
+	}
+	if !anySucceeded {
+		return fmt.Errorf("batch create completed with errors")
 	}
 	return nil
 }
@@ -310,6 +319,7 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 	succeeded := 0
 	cached := 0
 	skipped := 0
+	verifyFailed := 0
 	var lowSavings []string
 	for _, r := range results {
 		if r.Skipped && r.SkipReason == "output exists" {
@@ -328,24 +338,34 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 			skipped++
 		} else if r.Err != nil {
 			printWarn("  FAIL  %s: %v\n", r.MkvPath, r.Err)
+		} else if r.VerifyErr != nil {
+			printWarn("  FAIL  %s: verification failed: %v\n", r.MkvPath, r.VerifyErr)
+			verifyFailed++
 		} else {
 			printInfo("  OK    %s -> %s (%.1f%% savings)\n", r.MkvPath, filepath.Base(r.OutputPath), r.Savings)
 			if r.Savings < warnThreshold {
 				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", r.MkvPath, r.Savings))
 			}
 		}
-		if !r.Skipped && r.Err == nil || (r.Skipped && r.SkipReason == "output exists") {
+		if !r.Skipped && r.Err == nil && r.VerifyErr == nil || (r.Skipped && r.SkipReason == "output exists") {
 			succeeded++
 		}
 	}
-	switch {
-	case cached > 0 && skipped > 0:
-		printInfo("\nSucceeded: %d/%d (%d cached, %d skipped)\n", succeeded, len(results), cached, skipped)
-	case cached > 0:
-		printInfo("\nSucceeded: %d/%d (%d cached)\n", succeeded, len(results), cached)
-	case skipped > 0:
-		printInfo("\nSucceeded: %d/%d (%d skipped)\n", succeeded, len(results), skipped)
-	default:
+
+	// Build summary line with optional qualifiers
+	var qualifiers []string
+	if cached > 0 {
+		qualifiers = append(qualifiers, fmt.Sprintf("%d cached", cached))
+	}
+	if verifyFailed > 0 {
+		qualifiers = append(qualifiers, fmt.Sprintf("%d verification failed", verifyFailed))
+	}
+	if skipped > 0 {
+		qualifiers = append(qualifiers, fmt.Sprintf("%d skipped", skipped))
+	}
+	if len(qualifiers) > 0 {
+		printInfo("\nSucceeded: %d/%d (%s)\n", succeeded, len(results), strings.Join(qualifiers, ", "))
+	} else {
 		printInfo("\nSucceeded: %d/%d\n", succeeded, len(results))
 	}
 
