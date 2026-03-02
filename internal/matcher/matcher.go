@@ -463,4 +463,3 @@ func ExtractProbeHashes(data []byte, isVideo bool, windowSize int, nalLengthSize
 
 	return hashes
 }
-
