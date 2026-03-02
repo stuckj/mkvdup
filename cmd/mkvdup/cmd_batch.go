@@ -357,7 +357,7 @@ func printBatchSummary(results []*createResult, indexDuration time.Duration, tot
 				lowSavings = append(lowSavings, fmt.Sprintf("  %s: %.1f%% savings", r.MkvPath, r.Savings))
 			}
 		}
-		if !r.Skipped && r.Err == nil && r.VerifyErr == nil || (r.Skipped && r.SkipReason == "output exists") {
+		if (!r.Skipped && r.Err == nil && r.VerifyErr == nil) || (r.Skipped && r.SkipReason == "output exists") {
 			succeeded++
 		}
 	}
