@@ -272,10 +272,10 @@ github.com/stuckj/mkvdup/internal/matcher/matcher.go:231:		Match					57.1%
 github.com/stuckj/mkvdup/internal/matcher/matcher.go:424:		ExtractProbeHashes			94.4%
 github.com/stuckj/mkvdup/internal/matcher/matcher_entries.go:13:	mergeRegions				100.0%
 github.com/stuckj/mkvdup/internal/matcher/matcher_entries.go:70:	buildEntries				84.4%
-github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:13:		tryVerifyAndExpand			64.7%
-github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:92:		expandMatch				100.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:122:	expandMatchES				100.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:172:	expandMatchRaw				47.4%
+github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:13:		tryVerifyAndExpand			72.2%
+github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:102:	expandMatch				100.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:132:	expandMatchES				100.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:182:	expandMatchRaw				47.4%
 github.com/stuckj/mkvdup/internal/matcher/matcher_parallel.go:21:	computeNALSize				83.3%
 github.com/stuckj/mkvdup/internal/matcher/matcher_parallel.go:33:	matchParallel				95.2%
 github.com/stuckj/mkvdup/internal/matcher/matcher_parallel.go:73:	matchPacketParallel			80.0%
