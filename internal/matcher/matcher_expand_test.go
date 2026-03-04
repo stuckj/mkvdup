@@ -31,7 +31,7 @@ func (r *bytesRawReader) Slice(offset int64, size int) []byte {
 	return r.data[offset:end]
 }
 
-func (r *bytesRawReader) Len() int    { return len(r.data) }
+func (r *bytesRawReader) Len() int     { return len(r.data) }
 func (r *bytesRawReader) Close() error { return nil }
 
 // TestTryVerifyAndExpand_RejectsLPCMForNonPCMTrack verifies that
