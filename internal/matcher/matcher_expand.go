@@ -51,11 +51,6 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 		}
 	}
 
-	// Expand the match from the sync point
-	mkvStart, srcStart, matchLen := m.expandMatch(
-		mkvSyncOffset, loc, verifyLen,
-	)
-
 	isLPCM := source.IsLPCMSubStreamID(loc.AudioSubStreamID)
 
 	// Reject LPCM source matches when the MKV track is not PCM audio.
@@ -63,9 +58,15 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 	// MKV data (e.g., AC3) and LPCM source data produce entries flagged
 	// as LPCM. During reconstruction, the byte-swap transform is applied
 	// to these entries, corrupting the output and causing verification failure.
+	// Check before expansion to avoid unnecessary work.
 	if isLPCM && !m.isPCMTrack[int(pkt.TrackNum)] {
 		return nil
 	}
+
+	// Expand the match from the sync point
+	mkvStart, srcStart, matchLen := m.expandMatch(
+		mkvSyncOffset, loc, verifyLen,
+	)
 
 	// For LPCM entries, align boundaries to 2-byte sample pairs.
 	// The byte-swap transform operates on pairs; an unpaired byte at either

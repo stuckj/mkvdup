@@ -7,32 +7,9 @@ import (
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
-// bytesRawReader implements source.RawReader backed by an in-memory byte slice.
-type bytesRawReader struct {
-	data []byte
-}
-
-func (r *bytesRawReader) ReadAt(buf []byte, offset int64) (int, error) {
-	if offset >= int64(len(r.data)) {
-		return 0, nil
-	}
-	n := copy(buf, r.data[offset:])
-	return n, nil
-}
-
-func (r *bytesRawReader) Slice(offset int64, size int) []byte {
-	if offset < 0 || offset >= int64(len(r.data)) {
-		return nil
-	}
-	end := offset + int64(size)
-	if end > int64(len(r.data)) {
-		end = int64(len(r.data))
-	}
-	return r.data[offset:end]
-}
-
-func (r *bytesRawReader) Len() int     { return len(r.data) }
-func (r *bytesRawReader) Close() error { return nil }
+// bytesRawReader reuses the sliceReader from benchmark_test.go which
+// implements source.RawReader backed by an in-memory byte slice.
+type bytesRawReader = sliceReader
 
 // TestTryVerifyAndExpand_RejectsLPCMForNonPCMTrack verifies that
 // tryVerifyAndExpand returns nil when a source location has an LPCM
