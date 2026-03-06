@@ -19,7 +19,6 @@ const (
 
 	// MaxWindowSize is the maximum allowed window size
 	MaxWindowSize = 4096
-
 )
 
 // Indexer builds a hash index from source media files.

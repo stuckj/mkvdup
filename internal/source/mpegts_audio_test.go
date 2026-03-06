@@ -251,14 +251,14 @@ func TestSplitCombinedAudioRanges_FalsePositiveAC3(t *testing.T) {
 	// Plant fake AC3 sync at byte 50 inside the TrueHD AU
 	truehdUnit[50] = 0x0B
 	truehdUnit[51] = 0x77
-	truehdUnit[52] = 0xAA                // CRC1
-	truehdUnit[53] = 0xBB                // CRC1
-	truehdUnit[54] = (0 << 6) | 4        // fscod=0, frmsizecod=4 → 192 bytes (valid!)
+	truehdUnit[52] = 0xAA         // CRC1
+	truehdUnit[53] = 0xBB         // CRC1
+	truehdUnit[54] = (0 << 6) | 4 // fscod=0, frmsizecod=4 → 192 bytes (valid!)
 
 	var payload []byte
-	payload = append(payload, makeAC3Frame(0x11)...)  // 192 bytes AC3
-	payload = append(payload, truehdUnit...)           // 200 bytes TrueHD (with fake 0B 77)
-	payload = append(payload, makeAC3Frame(0x33)...)  // 192 bytes AC3
+	payload = append(payload, makeAC3Frame(0x11)...)       // 192 bytes AC3
+	payload = append(payload, truehdUnit...)               // 200 bytes TrueHD (with fake 0B 77)
+	payload = append(payload, makeAC3Frame(0x33)...)       // 192 bytes AC3
 	payload = append(payload, makeTrueHDUnit(50, 0x44)...) // 50 bytes TrueHD
 	// Total: 634 bytes
 

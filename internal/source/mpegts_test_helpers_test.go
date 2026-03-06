@@ -223,10 +223,10 @@ func buildTrueHDAC3M2TSData() []byte {
 
 	// Build combined TrueHD+AC3 payload (910 bytes = 174 + 4×184)
 	var audioPayload []byte
-	audioPayload = append(audioPayload, makeAC3Frame(0x11)...)              // 192 bytes AC3
+	audioPayload = append(audioPayload, makeAC3Frame(0x11)...)                 // 192 bytes AC3
 	audioPayload = append(audioPayload, makeTrueHDMajorSyncUnit(300, 0x22)...) // 300 bytes TrueHD (with major sync for detection)
-	audioPayload = append(audioPayload, makeAC3Frame(0x33)...)              // 192 bytes AC3
-	audioPayload = append(audioPayload, makeTrueHDUnit(226, 0x44)...)       // 226 bytes TrueHD
+	audioPayload = append(audioPayload, makeAC3Frame(0x33)...)                 // 192 bytes AC3
+	audioPayload = append(audioPayload, makeTrueHDUnit(226, 0x44)...)          // 226 bytes TrueHD
 	// Total: 910 bytes
 
 	var data []byte
