@@ -808,7 +808,3 @@ func (p *MPEGPSParser) IsLPCMSubStream(subStreamID byte) bool {
 	return p.lpcmSubStreams[subStreamID]
 }
 
-// IsTrueHDSubStream always returns false for MPEG-PS (TrueHD is Blu-ray only).
-func (p *MPEGPSParser) IsTrueHDSubStream(_ byte) bool {
-	return false
-}

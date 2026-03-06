@@ -147,32 +147,6 @@ func DTSCoreFrameSize(data []byte) int {
 	return frameSize
 }
 
-// FindTrueHDAUBoundaries walks TrueHD AU length fields in data to find all
-// AU start offsets. Each AU starts with a 2-byte length (in 16-bit words,
-// lower 12 bits) followed by 2 bytes of input timing. This is used for
-// MKV-side sync point detection since MKV TrueHD blocks include the full
-// AU header and the source indexes at AU boundaries.
-func FindTrueHDAUBoundaries(data []byte) []int {
-	if len(data) < 4 {
-		return nil
-	}
-
-	var offsets []int
-	offset := 0
-	for offset+4 <= len(data) {
-		offsets = append(offsets, offset)
-		auLength := ParseTrueHDAULength(data[offset:])
-		if auLength < 4 || offset+auLength > len(data) {
-			// Invalid AU length — can't walk further, but we already
-			// recorded this offset. If the data contains a major sync
-			// later, FindAudioSyncPoints will pick it up.
-			break
-		}
-		offset += auLength
-	}
-	return offsets
-}
-
 // FindAllSyncPoints finds both video start codes and audio sync patterns.
 // Returns combined offsets sorted by position.
 func FindAllSyncPoints(data []byte) []int {

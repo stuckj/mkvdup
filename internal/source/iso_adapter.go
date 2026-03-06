@@ -165,11 +165,6 @@ func (a *isoM2TSAdapter) IsLPCMSubStream(_ byte) bool {
 	return false
 }
 
-// IsTrueHDSubStream delegates to the underlying parser.
-func (a *isoM2TSAdapter) IsTrueHDSubStream(subStreamID byte) bool {
-	return a.parser.IsTrueHDSubStream(subStreamID)
-}
-
 // --- ESRangeConverter interface (for V3 format — adds baseOffset to raw ranges) ---
 
 func (a *isoM2TSAdapter) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) {
