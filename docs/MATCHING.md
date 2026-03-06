@@ -6,11 +6,12 @@
 
 ## Overview
 
-The matching process involves four stages:
+The matching process involves five stages:
 1. **Source Indexer** - Build a hash index of the source media
 2. **MKV Parser** - Extract codec data locations from the MKV
 3. **Matcher** - Find MKV packets in the source using hash lookups
-4. **Verification** - Confirm byte-perfect reconstruction
+4. **TrueHD Gap-Fill** - Fill unmatched TrueHD gaps using adjacent matched regions
+5. **Verification** - Confirm byte-perfect reconstruction
 
 ## Source Indexer
 
@@ -125,21 +126,40 @@ Unlike DVDs where audio is multiplexed in Private Stream 1 with sub-stream IDs, 
 **Problem:** On Blu-ray discs, TrueHD audio streams (PMT stream type 0x83) embed an AC3 compatibility core interleaved in the same PID. The raw PES payload data looks like:
 
 ```
-PES payload: [AC3 frame][TrueHD frame(s)][AC3 frame][TrueHD frame(s)]...
+PES payload: [AC3 frame][TrueHD AU(s)][AC3 frame][TrueHD AU(s)]...
 ```
 
 Video extraction tools split these into separate MKV tracks: one for TrueHD-only data, one for the AC3 core. If we index them as a single combined sub-stream, the interleaved AC3+TrueHD bytes don't match either MKV track.
 
-**Solution:** After parsing all PES payloads, detect combined TrueHD+AC3 streams by scanning the first 16KB of ES data for both AC3 sync words (`0B 77`) and TrueHD major sync words (`F8 72 6F BA`). When both are found, split the ranges by walking through the payload and parsing AC3 frame headers to determine frame boundaries:
+**Solution:** After parsing all PES payloads, detect combined TrueHD+AC3 streams by scanning the first 16KB of ES data for both AC3 sync words (`0B 77`) and TrueHD major sync words (`F8 72 6F BA`). When both are found, split the ranges using **AU-aware boundary parsing**:
 
-1. **AC3 frame detection**: When `0B 77` is found, read byte 4 for `fscod` (2-bit sample rate code) and `frmsizecod` (6-bit frame size code). The frame size is deterministic from these values (ATSC A/52 Table 5.18).
-2. **Range assignment**: AC3 frame bytes go to the new AC3 sub-stream; all other bytes go to the TrueHD sub-stream.
-3. **Cross-range tracking**: AC3 frames may span TS payload chunks. The `ac3Remaining` counter tracks bytes still belonging to the current AC3 frame across range boundaries.
-4. **Range merging**: After splitting, merge adjacent ranges that are contiguous in both file offset and ES offset to reduce range count.
+The interleaved stream alternates between AC3 frames and TrueHD access units at unit boundaries. At each boundary, the parser determines the unit type and size:
+
+1. **AC3 frame detection**: At a unit boundary, check for AC3 sync word (`0B 77`). If found, read byte 4 for `fscod` (2-bit sample rate code) and `frmsizecod` (6-bit frame size code). The frame size is deterministic from these values (ATSC A/52 Table 5.18).
+2. **TrueHD AU detection**: If not AC3, parse the TrueHD access unit length from the first 2 bytes. The lower 12 bits encode the length in 16-bit words (multiply by 2 for bytes). TrueHD AUs are typically 38-58 bytes for minor sync frames, larger for major sync frames.
+3. **State machine**: The parser tracks `ac3Remaining` and `truehdRemaining` counters to consume the current unit's bytes before checking the next boundary. This prevents false-positive AC3 detection inside TrueHD AU data (which may coincidentally contain `0B 77`).
+4. **Cross-boundary buffering**: When a unit boundary falls across a PES payload range boundary, up to 5 bytes are buffered (2 for type detection, 5 for full AC3 header) and resolved when the next range begins.
+5. **Range merging**: After splitting, merge adjacent ranges that are contiguous in both file offset and ES offset to reduce range count.
 
 The original sub-stream ID keeps the TrueHD-only ranges; a new sub-stream ID is assigned for the AC3 core.
 
-**Impact:** On a 40GB Blu-ray (MI7), audio delta dropped from 1.85 GB (42% of total delta) to near-zero after splitting. The matcher can now find TrueHD data in the TrueHD MKV track and AC3 data in the AC3 MKV track.
+**Impact:** On a 41GB Blu-ray, TrueHD delta dropped from ~1,685 MB to 12 MB after AU-aware splitting combined with gap-fill matching (see below). The clean separation also improves AC3 matching since the AC3 ES is no longer contaminated with misclassified TrueHD data.
+
+## TrueHD Gap-Fill Matching
+
+**Problem:** Hash-based matching for TrueHD audio relies on finding major sync frames (`F8 72 6F BA`) as sync points. However, TrueHD major syncs occur only every ~8 access units. Packets that don't contain a major sync have no sync point, so hash-based matching and expansion cannot reach them. This leaves ~46% of TrueHD data unmatched despite being byte-identical to the source.
+
+**Solution:** After parallel hash-based matching completes, a sequential gap-fill post-pass walks TrueHD packets between existing matched regions (anchors) and verifies bytes against the source ES:
+
+1. **Anchor identification**: For each TrueHD track, collect existing matched regions and sort by MKV offset. Each region provides a known mapping from MKV offset to source ES offset.
+2. **Gap enumeration**: For each pair of adjacent matched regions, compute the MKV gap (unmatched packets between them) and the corresponding source ES gap.
+3. **Segment collection**: Within each MKV gap, collect the TrueHD packet byte ranges (skipping interleaved video/audio data from other tracks).
+4. **Greedy forward comparison**: Read the expected source ES data and compare byte-by-byte against the MKV segments. On match, extend the current run. On mismatch, flush any pending run (if ≥16 bytes) and advance the MKV position by one byte (skipping extra bytes not present in the source ES).
+5. **Region recording**: Matching runs of ≥16 bytes are recorded as new matched regions, which are merged with existing regions during the normal merge pass.
+
+The MKV may contain small "extra" bytes not present in the source ES, caused by differences in how video extraction tools and the source parser split AC3 frames from the interleaved TrueHD+AC3 stream. The greedy skip-on-mismatch approach handles these transparently.
+
+**Impact:** On a 41GB Blu-ray, TrueHD tracks went from ~54% matched to effectively 100% matched. Combined with AU-aware AC3 splitting, TrueHD delta dropped from ~1,685 MB to 12 MB (expected framing differences). Overall space savings improved from 93.8% to 98.9%.
 
 ## Blu-ray DTS-HD + DTS Core Stream Splitting
 
