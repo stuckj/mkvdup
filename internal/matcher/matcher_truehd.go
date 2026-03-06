@@ -104,12 +104,9 @@ func (m *Matcher) fillTrueHDTrackGaps(trackNum int, pkts []mkv.Packet) {
 		return trackRegions[i].mkvStart < trackRegions[j].mkvStart
 	})
 
-	fileIndex := trackRegions[0].fileIndex
-	subStreamID := trackRegions[0].audioSubStreamID
-
 	if m.verboseWriter != nil {
 		fmt.Fprintf(m.verboseWriter, "\n[TrueHD gap-fill] track %d: %d matched regions, fileIndex=%d, subStreamID=0x%02X\n",
-			trackNum, len(trackRegions), fileIndex, subStreamID)
+			trackNum, len(trackRegions), trackRegions[0].fileIndex, trackRegions[0].audioSubStreamID)
 	}
 
 	// Fill gaps between adjacent matched regions.
@@ -135,6 +132,8 @@ func (m *Matcher) fillTrueHDTrackGaps(trackNum int, pkts []mkv.Packet) {
 		prevSrcEnd := prev.srcOffset + (prev.mkvEnd - prev.mkvStart)
 		nextSrcStart := next.srcOffset
 		srcGapSize := nextSrcStart - prevSrcEnd
+		// srcGapSize <= 0 means overlapping or backwards source offsets (invalid gap);
+		// srcGapSize < 16 means too small to produce a meaningful match run.
 		if srcGapSize <= 0 || srcGapSize < 16 {
 			gapsSkipped++
 			continue
@@ -164,7 +163,7 @@ func (m *Matcher) fillTrueHDTrackGaps(trackNum int, pkts []mkv.Packet) {
 			continue
 		}
 
-		regions := m.fillTrueHDGapSegments(segments, prevSrcEnd, srcGapSize, fileIndex, subStreamID)
+		regions := m.fillTrueHDGapSegments(segments, prevSrcEnd, srcGapSize, prev.fileIndex, prev.audioSubStreamID)
 		if len(regions) > 0 {
 			newRegions = append(newRegions, regions...)
 			gapsFilled++
@@ -270,12 +269,8 @@ func (m *Matcher) fillTrueHDGapSegments(
 			}
 		}
 
-		// At segment boundary: if we're in a matching run, it may continue
-		// in the next segment. DON'T flush here — let it continue across
-		// packet boundaries if the data matches.
-		// However, there's typically a gap between packets (non-TrueHD data),
-		// so if we have a run that reaches the segment end, flush it since
-		// the next segment starts at a different MKV offset.
+		// At segment boundary: flush any pending run since the next segment
+		// starts at a different MKV offset (non-TrueHD data between packets).
 		if runMKVStart >= 0 {
 			runEnd := seg.end
 			runLen := runEnd - runMKVStart
