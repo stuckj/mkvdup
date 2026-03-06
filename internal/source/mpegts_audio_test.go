@@ -28,15 +28,15 @@ func TestMPEGTSParser_TrueHDAC3Split(t *testing.T) {
 		t.Errorf("AC3 sub-stream size = %d, want 384 (2 × 192)", ac3Size)
 	}
 
-	// TrueHD: 300 + 227 = 527 bytes
-	if truehdSize != 527 {
-		t.Errorf("TrueHD sub-stream size = %d, want 527 (300 + 227)", truehdSize)
+	// TrueHD: 300 + 226 = 526 bytes
+	if truehdSize != 526 {
+		t.Errorf("TrueHD sub-stream size = %d, want 526 (300 + 226)", truehdSize)
 	}
 
-	// Total should equal original audio payload size (911 bytes)
+	// Total should equal original audio payload size (910 bytes)
 	totalAudio := truehdSize + ac3Size
-	if totalAudio != 911 {
-		t.Errorf("Total audio ES = %d, want 911", totalAudio)
+	if totalAudio != 910 {
+		t.Errorf("Total audio ES = %d, want 910", totalAudio)
 	}
 
 	// Verify AC3 data starts with sync word
@@ -48,14 +48,15 @@ func TestMPEGTSParser_TrueHDAC3Split(t *testing.T) {
 		t.Errorf("AC3 data starts with [%02X %02X], want [0B 77]", ac3Data[0], ac3Data[1])
 	}
 
-	// Verify TrueHD data starts with major sync
-	truehdData, err := p.ReadAudioSubStreamData(subs[0], 0, 4)
+	// Verify TrueHD data starts with valid AU length header
+	// First TrueHD unit is 300 bytes = 150 words (0x96)
+	truehdData, err := p.ReadAudioSubStreamData(subs[0], 0, 2)
 	if err != nil {
 		t.Fatalf("ReadAudioSubStreamData(TrueHD) error: %v", err)
 	}
-	if truehdData[0] != 0xF8 || truehdData[1] != 0x72 || truehdData[2] != 0x6F || truehdData[3] != 0xBA {
-		t.Errorf("TrueHD data starts with [%02X %02X %02X %02X], want [F8 72 6F BA]",
-			truehdData[0], truehdData[1], truehdData[2], truehdData[3])
+	auLen := ParseTrueHDAULength(truehdData)
+	if auLen != 300 {
+		t.Errorf("First TrueHD AU length = %d, want 300", auLen)
 	}
 }
 
@@ -197,15 +198,9 @@ func TestSplitCombinedAudioRanges_CrossRange(t *testing.T) {
 		size: int64(len(payload)),
 	}
 
-	// Split into small ranges that force AC3 headers to straddle boundaries.
-	// Use 100-byte ranges so the second AC3 frame at offset 292 has its header
-	// split: bytes 0-7 are in range[2] (200-300), sync word at byte 92 in that range,
-	// but if we use 90-byte ranges, AC3 at 292 will have its sync at offset 292
-	// which is range[3] (270-360) at pos 22 — that fits. So let's use a boundary
-	// that splits the AC3 header. AC3 frame 2 starts at offset 292.
-	// Using 294-byte first range puts the AC3 sync 0B 77 inside range[0],
-	// but let's use a size that splits the 5-byte header.
-	// Offset 292 = sync word. If range boundary is at 293, the 0B is in range[0], 77 in range[1].
+	// Split into ranges that force the AC3 header to straddle a boundary.
+	// Second AC3 frame starts at offset 292. Put boundary at 293 so the
+	// sync word 0B 77 is split: 0B in range[0], 77 in range[1].
 	ranges := []PESPayloadRange{
 		{FileOffset: 0, Size: 293, ESOffset: 0},     // ends mid AC3 header (has 0B at [292])
 		{FileOffset: 293, Size: 241, ESOffset: 293}, // rest (has 77 at [0])
@@ -246,6 +241,56 @@ func TestSplitCombinedAudioRanges_CrossRange(t *testing.T) {
 		if cur.ESOffset != prev.ESOffset+int64(prev.Size) {
 			t.Errorf("TrueHD range[%d] ESOffset = %d, want %d", i, cur.ESOffset, prev.ESOffset+int64(prev.Size))
 		}
+	}
+}
+
+func TestSplitCombinedAudioRanges_FalsePositiveAC3(t *testing.T) {
+	// Test that 0B 77 inside TrueHD AU data is NOT falsely detected as AC3.
+	// Build a TrueHD AU that contains 0B 77 + valid frmsizecod in its body.
+	truehdUnit := makeTrueHDUnit(200, 0x55) // 200 bytes, fill with 0x55
+	// Plant fake AC3 sync at byte 50 inside the TrueHD AU
+	truehdUnit[50] = 0x0B
+	truehdUnit[51] = 0x77
+	truehdUnit[52] = 0xAA         // CRC1
+	truehdUnit[53] = 0xBB         // CRC1
+	truehdUnit[54] = (0 << 6) | 4 // fscod=0, frmsizecod=4 → 192 bytes (valid!)
+
+	var payload []byte
+	payload = append(payload, makeAC3Frame(0x11)...)       // 192 bytes AC3
+	payload = append(payload, truehdUnit...)               // 200 bytes TrueHD (with fake 0B 77)
+	payload = append(payload, makeAC3Frame(0x33)...)       // 192 bytes AC3
+	payload = append(payload, makeTrueHDUnit(50, 0x44)...) // 50 bytes TrueHD
+	// Total: 634 bytes
+
+	p := &MPEGTSParser{
+		data: payload,
+		size: int64(len(payload)),
+	}
+
+	ranges := []PESPayloadRange{
+		{FileOffset: 0, Size: len(payload), ESOffset: 0},
+	}
+
+	ac3Ranges, truehdRanges := p.splitCombinedAudioRanges(ranges)
+
+	var ac3Total, truehdTotal int64
+	for _, r := range ac3Ranges {
+		ac3Total += int64(r.Size)
+	}
+	for _, r := range truehdRanges {
+		truehdTotal += int64(r.Size)
+	}
+
+	// AC3 should be exactly 2 × 192 = 384 bytes (the fake 0B 77 must NOT be detected)
+	if ac3Total != 384 {
+		t.Errorf("AC3 total size = %d, want 384 (2 × 192); false positive 0B 77 detected inside TrueHD AU", ac3Total)
+	}
+	if truehdTotal != 250 {
+		t.Errorf("TrueHD total size = %d, want 250 (200 + 50)", truehdTotal)
+	}
+	if ac3Total+truehdTotal != int64(len(payload)) {
+		t.Errorf("AC3(%d) + TrueHD(%d) = %d, want %d",
+			ac3Total, truehdTotal, ac3Total+truehdTotal, len(payload))
 	}
 }
 

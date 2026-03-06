@@ -190,6 +190,10 @@ All source types are referenced via a **source directory** which contains either
 │  ┌───────────────────────────────────────────────┐                  │
 │  │ Post-processing                               │                  │
 │  │                                               │                  │
+│  │  TrueHD gap-fill (verify gaps between         │                  │
+│  │  matched regions against source ES)           │                  │
+│  │             │                                 │                  │
+│  │             ▼                                 │                  │
 │  │  Merge overlapping regions                    │                  │
 │  │             │                                 │                  │
 │  │             ▼                                 │                  │

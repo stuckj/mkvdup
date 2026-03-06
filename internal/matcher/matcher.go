@@ -122,6 +122,7 @@ type Matcher struct {
 	verboseWriter  io.Writer              // Destination for diagnostic output (nil = disabled)
 	isAVCTrack     map[int]bool           // Per-track: whether this track uses H.264 NAL types
 	isPCMTrack     map[int]bool           // Per-track: whether this track uses PCM audio (A_PCM/*)
+	isTrueHDTrack  map[int]bool           // Per-track: whether this track uses TrueHD audio (A_TRUEHD)
 	// Coverage bitmap for O(1) coverage checks. Each bit represents a chunk.
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
@@ -192,13 +193,14 @@ func NewMatcher(sourceIndex *source.Index) (*Matcher, error) {
 		numWorkers = 1
 	}
 	return &Matcher{
-		sourceIndex: sourceIndex,
-		windowSize:  sourceIndex.WindowSize,
-		trackTypes:  make(map[int]int),
-		trackCodecs: make(map[int]trackCodecInfo),
-		isAVCTrack:  make(map[int]bool),
-		isPCMTrack:  make(map[int]bool),
-		numWorkers:  numWorkers,
+		sourceIndex:   sourceIndex,
+		windowSize:    sourceIndex.WindowSize,
+		trackTypes:    make(map[int]int),
+		trackCodecs:   make(map[int]trackCodecInfo),
+		isAVCTrack:    make(map[int]bool),
+		isPCMTrack:    make(map[int]bool),
+		isTrueHDTrack: make(map[int]bool),
+		numWorkers:    numWorkers,
 	}, nil
 }
 
@@ -247,6 +249,7 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.trackCodecs = make(map[int]trackCodecInfo)
 	m.isAVCTrack = make(map[int]bool)
 	m.isPCMTrack = make(map[int]bool)
+	m.isTrueHDTrack = make(map[int]bool)
 	m.diagVideoPacketsTotal.Store(0)
 	m.diagVideoPacketsCoverage.Store(0)
 	m.diagVideoNALsTotal.Store(0)
@@ -297,6 +300,9 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		}
 		if t.Type == mkv.TrackTypeAudio && strings.HasPrefix(t.CodecID, "A_PCM/") {
 			m.isPCMTrack[int(t.Number)] = true
+		}
+		if t.Type == mkv.TrackTypeAudio && t.CodecID == "A_TRUEHD" {
+			m.isTrueHDTrack[int(t.Number)] = true
 		}
 	}
 
@@ -388,6 +394,9 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		}
 		fmt.Fprintf(w, "=================================\n")
 	}
+
+	// Fill TrueHD gaps using adjacent matched regions
+	m.fillTrueHDGaps(packets)
 
 	// Merge overlapping regions and build final entries
 	m.mergeRegions()
