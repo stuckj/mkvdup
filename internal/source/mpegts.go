@@ -199,6 +199,11 @@ func (p *MPEGTSParser) IsLPCMSubStream(_ byte) bool {
 	return false
 }
 
+// IsTrueHDSubStream returns true if the given sub-stream carries TrueHD audio.
+func (p *MPEGTSParser) IsTrueHDSubStream(subStreamID byte) bool {
+	return p.subStreamCodec[subStreamID] == CodecTrueHDAudio
+}
+
 // --- Accessors for indexer ---
 
 // Data returns the raw mmap'd file data for zero-copy access.

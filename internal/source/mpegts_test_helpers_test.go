@@ -174,18 +174,34 @@ func makeAC3Frame(fillByte byte) []byte {
 	return frame
 }
 
-// makeTrueHDUnit creates a synthetic TrueHD access unit.
-// Starts with the TrueHD major sync word: F8 72 6F BA.
+// makeTrueHDUnit creates a synthetic TrueHD access unit with a valid AU header.
+// Bytes 0-1 encode the AU length (lower 12 bits = length in 16-bit words),
+// bytes 2-3 are input timing. Size must be even (AU lengths are in words).
 func makeTrueHDUnit(size int, fillByte byte) []byte {
 	unit := make([]byte, size)
-	if size >= 4 {
-		unit[0] = 0xF8
-		unit[1] = 0x72
-		unit[2] = 0x6F
-		unit[3] = 0xBA
+	if size >= 2 {
+		// Encode AU length: lower 12 bits = size/2 (length in 16-bit words)
+		// ParseTrueHDAULength: ((byte0<<8 | byte1) & 0x0FFF) * 2
+		words := size / 2
+		unit[0] = byte(words >> 8) // parity=0, length MSB
+		unit[1] = byte(words)      // length LSB
 	}
-	for i := 4; i < size; i++ {
+	for i := 2; i < size; i++ {
 		unit[i] = fillByte
+	}
+	return unit
+}
+
+// makeTrueHDMajorSyncUnit creates a TrueHD AU with a major sync header.
+// The AU header (bytes 0-3) encodes the length and timing as usual.
+// The major sync word F8 72 6F BA appears at bytes 4-7.
+func makeTrueHDMajorSyncUnit(size int, fillByte byte) []byte {
+	unit := makeTrueHDUnit(size, fillByte)
+	if size >= 8 {
+		unit[4] = 0xF8
+		unit[5] = 0x72
+		unit[6] = 0x6F
+		unit[7] = 0xBA
 	}
 	return unit
 }
@@ -194,9 +210,10 @@ func makeTrueHDUnit(size int, fillByte byte) []byte {
 // The PES payload contains: [AC3 frame][TrueHD unit][AC3 frame][TrueHD unit]
 //
 // Payload sizes are chosen so the total exactly fills M2TS packets:
-// First PUSI packet carries 175 bytes ES (184 - 9 PES header).
-// Continuations carry 184 bytes each. Total = 175 + 4×184 = 911 bytes.
-// AC3: 2 × 192 = 384 bytes. TrueHD: 300 + 227 = 527 bytes.
+// First PUSI packet carries 174 bytes ES (184 - 10 PES header with 1-byte header data).
+// Continuations carry 184 bytes each. Total = 174 + 4×184 = 910 bytes.
+// AC3: 2 × 192 = 384 bytes. TrueHD: 300 + 226 = 526 bytes.
+// TrueHD sizes must be even (AU lengths are encoded in 16-bit words).
 func buildTrueHDAC3M2TSData() []byte {
 	const (
 		pmtPID   = uint16(0x0100)
@@ -204,13 +221,13 @@ func buildTrueHDAC3M2TSData() []byte {
 		audioPID = uint16(0x1101)
 	)
 
-	// Build combined TrueHD+AC3 payload (911 bytes = 175 + 4×184)
+	// Build combined TrueHD+AC3 payload (910 bytes = 174 + 4×184)
 	var audioPayload []byte
-	audioPayload = append(audioPayload, makeAC3Frame(0x11)...)        // 192 bytes AC3
-	audioPayload = append(audioPayload, makeTrueHDUnit(300, 0x22)...) // 300 bytes TrueHD
-	audioPayload = append(audioPayload, makeAC3Frame(0x33)...)        // 192 bytes AC3
-	audioPayload = append(audioPayload, makeTrueHDUnit(227, 0x44)...) // 227 bytes TrueHD
-	// Total: 911 bytes
+	audioPayload = append(audioPayload, makeAC3Frame(0x11)...)              // 192 bytes AC3
+	audioPayload = append(audioPayload, makeTrueHDMajorSyncUnit(300, 0x22)...) // 300 bytes TrueHD (with major sync for detection)
+	audioPayload = append(audioPayload, makeAC3Frame(0x33)...)              // 192 bytes AC3
+	audioPayload = append(audioPayload, makeTrueHDUnit(226, 0x44)...)       // 226 bytes TrueHD
+	// Total: 910 bytes
 
 	var data []byte
 	data = append(data, makeM2TSPacket(0, true, 0x01, 0, 0, makePATPayload(pmtPID))...)
@@ -223,9 +240,9 @@ func buildTrueHDAC3M2TSData() []byte {
 	data = append(data, makeM2TSPacket(videoPID, true, 0x01, 0, 1,
 		makePESStart(0xE0, 0, seqBytes(0, 175)))...)
 
-	// Audio PUSI - PES header + start of audioPayload
-	pesHdr := makePESStart(0xFD, 0, nil) // 9-byte PES header
-	firstChunkSize := 184 - len(pesHdr)  // 175 bytes
+	// Audio PUSI - PES header (10 bytes: 9 + 1 header data) + start of audioPayload
+	pesHdr := makePESStart(0xFD, 1, nil) // 10-byte PES header
+	firstChunkSize := 184 - len(pesHdr)  // 174 bytes
 	firstPayload := make([]byte, 184)
 	copy(firstPayload, pesHdr)
 	copy(firstPayload[len(pesHdr):], audioPayload[:firstChunkSize])

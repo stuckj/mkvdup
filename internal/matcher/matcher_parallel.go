@@ -523,6 +523,7 @@ func (m *Matcher) isChunkCoveredParallel(absOffset int64) bool {
 	return m.coveredChunks[wordIdx]&(1<<bitIdx) != 0
 }
 
+
 // markChunksCovered marks the chunks fully contained within a region as covered.
 func (m *Matcher) markChunksCovered(start, end int64) {
 	// Only mark chunks that are fully contained within the region

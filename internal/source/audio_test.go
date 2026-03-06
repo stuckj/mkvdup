@@ -317,6 +317,48 @@ func TestDTSCoreFrameSize(t *testing.T) {
 	}
 }
 
+func TestFindTrueHDAUBoundaries(t *testing.T) {
+	// Build a buffer with 3 AUs: 100 bytes, 80 bytes, 60 bytes
+	// AU length is in 16-bit words (lower 12 bits of first 2 bytes)
+	data := make([]byte, 100+80+60)
+
+	// AU 0: 100 bytes = 50 words
+	data[0] = 0x00
+	data[1] = 0x32 // 50
+
+	// AU 1 at offset 100: 80 bytes = 40 words
+	data[100] = 0x00
+	data[101] = 0x28 // 40
+
+	// AU 2 at offset 180: 60 bytes = 30 words
+	data[180] = 0x00
+	data[181] = 0x1E // 30
+
+	boundaries := FindTrueHDAUBoundaries(data)
+
+	expected := []int{0, 100, 180}
+	if len(boundaries) != len(expected) {
+		t.Fatalf("expected %d boundaries, got %d: %v", len(expected), len(boundaries), boundaries)
+	}
+	for i, want := range expected {
+		if boundaries[i] != want {
+			t.Errorf("boundary[%d] = %d, want %d", i, boundaries[i], want)
+		}
+	}
+}
+
+func TestFindTrueHDAUBoundaries_InvalidLength(t *testing.T) {
+	// AU with zero length — should record offset 0 then stop
+	data := make([]byte, 100)
+	data[0] = 0x00
+	data[1] = 0x00 // 0 words = 0 bytes — invalid
+
+	boundaries := FindTrueHDAUBoundaries(data)
+	if len(boundaries) != 1 || boundaries[0] != 0 {
+		t.Errorf("expected [0], got %v", boundaries)
+	}
+}
+
 func BenchmarkFindAudioSyncPoints(b *testing.B) {
 	// Create test data with some sync patterns scattered throughout
 	data := make([]byte, 1024*1024) // 1MB

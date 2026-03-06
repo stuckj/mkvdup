@@ -17,6 +17,7 @@ type esDataProvider interface {
 	ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error)
 	ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
 	IsLPCMSubStream(subStreamID byte) bool
+	IsTrueHDSubStream(subStreamID byte) bool
 }
 
 // indexESData indexes the elementary stream data from an ES-aware parser.
