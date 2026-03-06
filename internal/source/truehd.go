@@ -7,5 +7,5 @@ func ParseTrueHDAULength(header []byte) int {
 	if len(header) < 2 {
 		return 0
 	}
-	return (int(header[0])<<8 | int(header[1])) & 0x0FFF * 2
+	return ((int(header[0])<<8 | int(header[1])) & 0x0FFF) * 2
 }
