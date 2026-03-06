@@ -807,4 +807,3 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 func (p *MPEGPSParser) IsLPCMSubStream(subStreamID byte) bool {
 	return p.lpcmSubStreams[subStreamID]
 }
-
