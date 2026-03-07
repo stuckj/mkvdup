@@ -133,7 +133,7 @@ mkvdup verify video.mkvdup /path/to/source/dir original.mkv
 ### Show dedup file info
 
 ```bash
-mkvdup info video.mkvdup
+mkvdup info config.yaml
 ```
 
 ## How It Works

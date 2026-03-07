@@ -82,8 +82,9 @@ _mkvdup_info() {
         '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
+        '--config-dir[Treat config argument as directory of YAML files]' \
         '--hide-unused-files[Hide unused source files]' \
-        '1:Dedup file:_files -g "*.mkvdup(-.)"'
+        '*:Config files:_files -g "*.y(a|)ml(-.)"'
 }
 
 _mkvdup_verify() {
@@ -244,7 +245,7 @@ _mkvdup() {
                 'batch-create:Create multiple dedup files from a manifest'
                 'probe:Quick test if MKV file(s) likely match source(s)'
                 'mount:Mount virtual filesystem from config files'
-                'info:Show information about a dedup file'
+                'info:Show dedup file information from config'
                 'verify:Verify a dedup file against the original MKV'
                 'extract:Rebuild original MKV from dedup + source'
                 'check:Check integrity of a dedup file and its source files'

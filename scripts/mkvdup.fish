@@ -74,7 +74,7 @@ complete -c $cmd -n __fish_mkvdup_needs_command -a create -d 'Create a dedup fil
 complete -c $cmd -n __fish_mkvdup_needs_command -a batch-create -d 'Create multiple dedup files from a manifest'
 complete -c $cmd -n __fish_mkvdup_needs_command -a probe -d 'Quick test if MKV file(s) likely match source(s)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a mount -d 'Mount virtual filesystem from config files'
-complete -c $cmd -n __fish_mkvdup_needs_command -a info -d 'Show information about a dedup file'
+complete -c $cmd -n __fish_mkvdup_needs_command -a info -d 'Show dedup file information from config'
 complete -c $cmd -n __fish_mkvdup_needs_command -a verify -d 'Verify a dedup file against the original MKV'
 complete -c $cmd -n __fish_mkvdup_needs_command -a extract -d 'Rebuild original MKV from dedup + source'
 complete -c $cmd -n __fish_mkvdup_needs_command -a check -d 'Check integrity of a dedup file and its source files'
@@ -124,8 +124,9 @@ complete -c $cmd -n '__fish_mkvdup_using_command mount' -l source-read-timeout -
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -F -d 'Mount point or config files'
 
 # info options
+complete -c $cmd -n '__fish_mkvdup_using_command info' -l config-dir -d 'Treat config argument as directory of YAML files'
 complete -c $cmd -n '__fish_mkvdup_using_command info' -l hide-unused-files -d 'Hide unused source files'
-complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Dedup file'
+complete -c $cmd -n '__fish_mkvdup_using_command info' -F -d 'Config files'
 
 # verify options
 complete -c $cmd -n '__fish_mkvdup_using_command verify' -s v -l verbose -d 'Enable verbose/debug output'

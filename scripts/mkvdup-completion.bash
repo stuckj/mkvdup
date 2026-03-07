@@ -179,12 +179,16 @@ _mkvdup() {
             ;;
 
         info)
-            # info [--hide-unused-files] <dedup-file>
-            local info_opts="--hide-unused-files"
+            # info [options] <config.yaml...>
+            local info_opts="--config-dir --hide-unused-files"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$info_opts $global_opts" -- "$cur"))
+                return
+            fi
+            if [[ "$cur" == *.yaml || "$cur" == *.yml ]]; then
+                _filedir '@(yaml|yml)'
             else
-                _filedir '@(mkvdup)'
+                _filedir
             fi
             ;;
 
