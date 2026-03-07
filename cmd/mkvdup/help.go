@@ -15,7 +15,7 @@ Commands:
   batch-create Create multiple dedup files from one source
   probe        Quick test if MKV matches source(s)
   mount        Mount dedup files as FUSE filesystem
-  info         Show dedup file information from config
+  info         Show dedup file information
   verify       Verify dedup file against original MKV
   extract      Rebuild original MKV from dedup + source
   check        Check dedup + source file integrity
@@ -262,22 +262,19 @@ Examples:
 }
 
 func printInfoUsage() {
-	fmt.Print(`Usage: mkvdup info [options] <config.yaml...>
+	fmt.Print(`Usage: mkvdup info [options] <dedup-file>
 
-Show information about dedup files defined in YAML config files.
+Show information about a dedup file.
 
 Arguments:
-    <config.yaml>  YAML config files (same format as mount/validate)
+    <dedup-file>  Path to the .mkvdup file
 
 Options:
-    --config-dir         Treat config argument as directory of YAML files (.yaml, .yml)
     --hide-unused-files  Hide source files not referenced by any index entry
 
 Examples:
-    mkvdup info config.yaml
-    mkvdup info --hide-unused-files config.yaml
-    mkvdup info --config-dir /etc/mkvdup.d/
-    mkvdup info movie1.yaml movie2.yaml
+    mkvdup info movie.mkvdup
+    mkvdup info --hide-unused-files movie.mkvdup
 `)
 }
 

@@ -390,21 +390,18 @@ mkvdup validate --strict /etc/mkvdup.conf
 
 ### info
 
-Show information about dedup files defined in YAML config files.
+Show information about a dedup file.
 
 ```bash
-mkvdup info [options] <config.yaml...>
+mkvdup info [options] <dedup-file>
 
 # Example:
-mkvdup info config.yaml
-mkvdup info --hide-unused-files config.yaml
-mkvdup info --config-dir /etc/mkvdup.d/
-mkvdup info movie1.yaml movie2.yaml
+mkvdup info movie.mkvdup
+mkvdup info --hide-unused-files movie.mkvdup
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--config-dir` | Treat config argument as directory of YAML files (`.yaml`, `.yml`) |
 | `--hide-unused-files` | Hide source files not referenced by any index entry |
 
 Source files are listed with their sizes. For V7/V8 dedup files, unused source files are marked `(unused)`. Use `--hide-unused-files` to omit them entirely.
