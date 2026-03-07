@@ -41,11 +41,12 @@ type PESPayloadRange struct {
 
 // MPEGPSParser parses MPEG Program Stream files to extract PES packet information.
 type MPEGPSParser struct {
-	data        []byte // Direct mmap'd data - zero-copy access
-	size        int64
-	packets     []PESPacket
-	videoRanges []PESPayloadRange
-	audioRanges []PESPayloadRange
+	data                []byte // Direct mmap'd data - zero-copy access
+	size                int64
+	packets             []PESPacket
+	videoRanges         []PESPayloadRange
+	audioRanges         []PESPayloadRange
+	audioRangeStreamIDs []byte // PES stream ID for each audioRange (0xBD or 0xC0-0xDF)
 	// Filtered ranges exclude user_data sections for MKV-compatible matching
 	filteredVideoRanges []PESPayloadRange
 	// Filtered audio ranges per sub-stream ID - separates interleaved audio tracks
@@ -92,6 +93,7 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 	p.packets = make([]PESPacket, 0, estimatedPackets)
 	p.videoRanges = make([]PESPayloadRange, 0, estimatedPackets*6/10)
 	p.audioRanges = make([]PESPayloadRange, 0, estimatedPackets*4/10)
+	p.audioRangeStreamIDs = make([]byte, 0, estimatedPackets*4/10)
 
 	for pos < p.size-4 {
 		// Direct slice access - zero copy
@@ -161,6 +163,7 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 						Size:       pkt.PayloadSize,
 						ESOffset:   audioESOffset,
 					})
+					p.audioRangeStreamIDs = append(p.audioRangeStreamIDs, 0xBD)
 					audioESOffset += int64(pkt.PayloadSize)
 					advance = int64(pkt.HeaderSize + pkt.PayloadSize)
 				}
@@ -189,6 +192,7 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 						Size:       pkt.PayloadSize,
 						ESOffset:   audioESOffset,
 					})
+					p.audioRangeStreamIDs = append(p.audioRangeStreamIDs, pkt.StreamID)
 					audioESOffset += int64(pkt.PayloadSize)
 					advance = int64(pkt.HeaderSize + pkt.PayloadSize)
 				}
@@ -318,9 +322,9 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error {
 	return nil
 }
 
-// buildFilteredAudioRanges creates ranges that strip Private Stream 1 headers
-// and separates audio by sub-stream ID.
-// DVD audio in Private Stream 1 has this structure:
+// buildFilteredAudioRanges creates per-sub-stream filtered audio ranges.
+//
+// For Private Stream 1 (0xBD), DVD audio has this structure:
 //
 //	Byte 0: sub-stream ID (0x80-0x87 = AC3, 0x88-0x8F = DTS, etc.)
 //	Byte 1: number of audio frames
@@ -331,7 +335,9 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error {
 // 4-byte PS header (emphasis/mute/frame_number, quant/samplerate/channels, DRC),
 // so we strip 7 bytes total. The LPCM header is parsed once per sub-stream.
 //
-// We strip headers and keep only the raw audio data.
+// For MPEG-1 audio streams (0xC0-0xDF), the PES payload is raw MP2 frame data
+// with no sub-stream header. The stream ID is used as a pseudo sub-stream ID.
+//
 // Each sub-stream ID gets its own separate filtered ES to avoid interleaving issues.
 func (p *MPEGPSParser) buildFilteredAudioRanges() error {
 	if len(p.audioRanges) == 0 {
@@ -345,16 +351,38 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error {
 	p.lpcmSubStreams = make(map[byte]bool)
 	p.lpcmInfo = make(map[byte]LPCMFrameHeader)
 
-	for _, rawRange := range p.audioRanges {
-		if rawRange.Size < 4 {
-			// Too small to have the header structure
-			continue
-		}
-
-		// Direct slice access - zero copy
+	for i, rawRange := range p.audioRanges {
 		if rawRange.FileOffset >= p.size {
 			continue
 		}
+
+		pesStreamID := p.audioRangeStreamIDs[i]
+
+		// MPEG-1 audio streams (0xC0-0xDF): payload is raw MP2 data, no sub-stream header
+		if pesStreamID >= 0xC0 && pesStreamID <= 0xDF {
+			if rawRange.Size <= 0 {
+				continue
+			}
+			// Use the PES stream ID as a pseudo sub-stream ID
+			if !seenSubStreams[pesStreamID] {
+				seenSubStreams[pesStreamID] = true
+				p.audioSubStreams = append(p.audioSubStreams, pesStreamID)
+			}
+			esOffset := esOffsetBySubStream[pesStreamID]
+			rangesBySubStream[pesStreamID] = append(rangesBySubStream[pesStreamID], PESPayloadRange{
+				FileOffset: rawRange.FileOffset,
+				Size:       rawRange.Size,
+				ESOffset:   esOffset,
+			})
+			esOffsetBySubStream[pesStreamID] += int64(rawRange.Size)
+			continue
+		}
+
+		// Private Stream 1 (0xBD): has sub-stream header
+		if rawRange.Size < 4 {
+			continue
+		}
+
 		subStreamID := p.data[rawRange.FileOffset]
 
 		// Check if this is AC3, DTS, or LPCM

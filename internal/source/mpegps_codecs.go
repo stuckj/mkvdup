@@ -25,7 +25,7 @@ func detectDVDCodecs(index *Index) (*SourceCodecs, error) {
 			}
 		}
 
-		// Audio from Private Stream 1 sub-streams
+		// Audio from sub-streams (Private Stream 1 and MPEG-1 audio)
 		for _, subStreamID := range parser.AudioSubStreams() {
 			var ct CodecType
 			switch {
@@ -35,21 +35,13 @@ func detectDVDCodecs(index *Index) (*SourceCodecs, error) {
 				ct = CodecDTSAudio
 			case subStreamID >= 0xA0 && subStreamID <= 0xA7:
 				ct = CodecLPCMAudio
+			case subStreamID >= 0xC0 && subStreamID <= 0xDF:
+				ct = CodecMPEGAudio
 			default:
 				continue
 			}
 			if !containsCodec(codecs.AudioCodecs, ct) {
 				codecs.AudioCodecs = append(codecs.AudioCodecs, ct)
-			}
-		}
-
-		// MPEG audio streams (stream IDs 0xC0-0xDF)
-		for _, pkt := range parser.Packets() {
-			if pkt.StreamID >= 0xC0 && pkt.StreamID <= 0xDF {
-				if !containsCodec(codecs.AudioCodecs, CodecMPEGAudio) {
-					codecs.AudioCodecs = append(codecs.AudioCodecs, CodecMPEGAudio)
-				}
-				break // Only need to find one
 			}
 		}
 	}
