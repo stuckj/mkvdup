@@ -53,10 +53,8 @@ func TestDetectDVDCodecs_WithMPEGAudio(t *testing.T) {
 	parser.videoRanges = []PESPayloadRange{
 		{FileOffset: 0, Size: 1000, ESOffset: 0},
 	}
-	// Add an MPEG audio packet (stream ID 0xC0)
-	parser.packets = []PESPacket{
-		{StreamID: 0xC0, IsAudio: true},
-	}
+	// MPEG-1 audio streams now appear in audioSubStreams with their stream ID
+	parser.audioSubStreams = []byte{0xC0}
 
 	index.ESReaders = []ESReader{parser}
 
