@@ -141,7 +141,7 @@
 				
 				<option value="file42">github.com/stuckj/mkvdup/internal/mmap/pread.go (77.5%)</option>
 				
-				<option value="file43">github.com/stuckj/mkvdup/internal/source/audio.go (85.1%)</option>
+				<option value="file43">github.com/stuckj/mkvdup/internal/source/audio.go (86.6%)</option>
 				
 				<option value="file44">github.com/stuckj/mkvdup/internal/source/codec.go (68.4%)</option>
 				
@@ -153,7 +153,7 @@
 				
 				<option value="file48">github.com/stuckj/mkvdup/internal/source/indexer_bluray.go (42.5%)</option>
 				
-				<option value="file49">github.com/stuckj/mkvdup/internal/source/indexer_es.go (85.2%)</option>
+				<option value="file49">github.com/stuckj/mkvdup/internal/source/indexer_es.go (86.9%)</option>
 				
 				<option value="file50">github.com/stuckj/mkvdup/internal/source/indexer_raw.go (0.0%)</option>
 				
@@ -163,9 +163,9 @@
 				
 				<option value="file53">github.com/stuckj/mkvdup/internal/source/lpcm.go (95.2%)</option>
 				
-				<option value="file54">github.com/stuckj/mkvdup/internal/source/mpegps.go (81.4%)</option>
+				<option value="file54">github.com/stuckj/mkvdup/internal/source/mpegps.go (81.6%)</option>
 				
-				<option value="file55">github.com/stuckj/mkvdup/internal/source/mpegps_codecs.go (83.1%)</option>
+				<option value="file55">github.com/stuckj/mkvdup/internal/source/mpegps_codecs.go (82.6%)</option>
 				
 				<option value="file56">github.com/stuckj/mkvdup/internal/source/mpegts.go (76.4%)</option>
 				
@@ -5480,7 +5480,7 @@ type RawEntry struct {
 //        bits 2-7: reserved
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1250638">{
+func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1251077">{
         e := Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -5535,7 +5535,7 @@ func (e *Entry) ToMatcherEntry() matcher.Entry <span class="cov0" title="0">{
 }</span>
 
 // FromMatcherEntry creates a dedup Entry from a matcher Entry.
-func FromMatcherEntry(e matcher.Entry) Entry <span class="cov8" title="152058">{
+func FromMatcherEntry(e matcher.Entry) Entry <span class="cov8" title="152297">{
         return Entry{
                 MkvOffset:        e.MkvOffset,
                 Length:           e.Length,
@@ -5636,7 +5636,7 @@ func zigzagEncode(v int64) uint64 <span class="cov3" title="46">{
         return uint64((v &lt;&lt; 1) ^ (v &gt;&gt; 63))
 }</span>
 
-func zigzagDecode(v uint64) int64 <span class="cov8" title="162249">{
+func zigzagDecode(v uint64) int64 <span class="cov8" title="162959">{
         return int64(v&gt;&gt;1) ^ -int64(v&amp;1)
 }</span>
 
@@ -5691,7 +5691,7 @@ func findDefaults(ranges []source.PESPayloadRange) (defaultGap int64, defaultSiz
         <span class="cov2" title="28">var bestSize int
         bestSizeCount := 0
         for size, count := range sizeCounts </span><span class="cov3" title="44">{
-                if count &gt; bestSizeCount </span><span class="cov2" title="29">{
+                if count &gt; bestSizeCount </span><span class="cov2" title="28">{
                         bestSize = size
                         bestSizeCount = count
                 }</span>
@@ -5885,7 +5885,7 @@ func buildStreamRangeMap(compressedData []byte, entryCount int, defaultGap int64
 }
 
 // advanceCursor moves the cursor forward by one entry.
-func (sm *StreamRangeMap) advanceCursor(c *rangeMapCursor) error <span class="cov7" title="124900">{
+func (sm *StreamRangeMap) advanceCursor(c *rangeMapCursor) error <span class="cov7" title="125914">{
         prevEnd := c.fileOff + int64(c.size)
         c.esOff += int64(c.size)
 
@@ -5896,87 +5896,87 @@ func (sm *StreamRangeMap) advanceCursor(c *rangeMapCursor) error <span class="co
                 return nil
         }</span>
 
-        <span class="cov7" title="124900">if c.pos &gt;= len(sm.compressedData) </span><span class="cov0" title="0">{
+        <span class="cov7" title="125914">if c.pos &gt;= len(sm.compressedData) </span><span class="cov0" title="0">{
                 return fmt.Errorf("unexpected end of compressed data")
         }</span>
 
-        <span class="cov7" title="124900">if sm.compressedData[c.pos] == 0x00 </span><span class="cov7" title="41407">{
+        <span class="cov7" title="125914">if sm.compressedData[c.pos] == 0x00 </span><span class="cov7" title="41711">{
                 c.pos++
                 count, n := binary.Uvarint(sm.compressedData[c.pos:])
                 if n &lt;= 0 </span><span class="cov0" title="0">{
                         return fmt.Errorf("truncated RLE count")
                 }</span>
-                <span class="cov7" title="41407">c.pos += n
+                <span class="cov7" title="41711">c.pos += n
                 c.fileOff = prevEnd + sm.defaultGap
                 c.size = sm.defaultSize
                 c.rleRem = int(count) - 1</span>
-        } else<span class="cov7" title="83493"> {
+        } else<span class="cov7" title="84203"> {
                 encoded, n := binary.Uvarint(sm.compressedData[c.pos:])
                 if n &lt;= 0 </span><span class="cov0" title="0">{
                         return fmt.Errorf("truncated explicit delta")
                 }</span>
-                <span class="cov7" title="83493">c.pos += n
+                <span class="cov7" title="84203">c.pos += n
                 szv, n := binary.Uvarint(sm.compressedData[c.pos:])
                 if n &lt;= 0 </span><span class="cov0" title="0">{
                         return fmt.Errorf("truncated explicit size")
                 }</span>
-                <span class="cov7" title="83493">c.pos += n
+                <span class="cov7" title="84203">c.pos += n
                 delta := zigzagDecode(encoded - 1)
                 c.fileOff = prevEnd + sm.defaultGap + delta
                 c.size = int(szv)
                 c.rleRem = 0</span>
         }
 
-        <span class="cov7" title="124900">return nil</span>
+        <span class="cov7" title="125914">return nil</span>
 }
 
 // seekTo positions a cursor at the entry containing esOffset.
 // Uses the cached cursor for O(1) sequential reads, falling back to
 // coarse index binary search + seek for random access.
-func (sm *StreamRangeMap) seekTo(esOffset int64) (rangeMapCursor, error) <span class="cov7" title="74351">{
+func (sm *StreamRangeMap) seekTo(esOffset int64) (rangeMapCursor, error) <span class="cov7" title="74354">{
         // Fast path: check if cached cursor is at or before the target.
         // Lock to get a consistent snapshot of the cached cursor.
         sm.cursorMu.Lock()
         cachedValid := sm.cachedCursorValid
         var cc rangeMapCursor
-        if cachedValid </span><span class="cov7" title="74327">{
+        if cachedValid </span><span class="cov7" title="74330">{
                 cc = sm.cachedCursor // Copy while holding lock
         }</span>
-        <span class="cov7" title="74351">sm.cursorMu.Unlock()
+        <span class="cov7" title="74354">sm.cursorMu.Unlock()
 
-        if cachedValid </span><span class="cov7" title="74327">{
+        if cachedValid </span><span class="cov7" title="74330">{
                 curEnd := cc.esOff + int64(cc.size)
-                if esOffset &gt;= cc.esOff &amp;&amp; esOffset &lt; curEnd </span><span class="cov7" title="38083">{
+                if esOffset &gt;= cc.esOff &amp;&amp; esOffset &lt; curEnd </span><span class="cov7" title="38081">{
                         // Target is within the cached entry — use directly
                         return cc, nil
                 }</span>
-                <span class="cov7" title="36244">if esOffset &gt;= curEnd </span><span class="cov7" title="36143">{
+                <span class="cov7" title="36249">if esOffset &gt;= curEnd </span><span class="cov7" title="36141">{
                         // Target is ahead of cached cursor — try seeking forward.
                         // Only use this path if the target is "close" (within ~2 coarse blocks).
                         maxForwardSeek := int64(rangeMapCoarseStep*2) * int64(sm.defaultSize+1)
-                        if maxForwardSeek &gt; 0 &amp;&amp; esOffset-curEnd &lt; maxForwardSeek </span><span class="cov7" title="36130">{
+                        if maxForwardSeek &gt; 0 &amp;&amp; esOffset-curEnd &lt; maxForwardSeek </span><span class="cov7" title="36125">{
                                 cur := cc
-                                for cur.esOff+int64(cur.size) &lt;= esOffset </span><span class="cov7" title="39983">{
+                                for cur.esOff+int64(cur.size) &lt;= esOffset </span><span class="cov7" title="40098">{
                                         // RLE fast path: use arithmetic to skip directly to the target entry
                                         // instead of advancing one-by-one through the RLE run.
-                                        if cur.rleRem &gt; 0 &amp;&amp; sm.defaultSize &gt; 0 </span><span class="cov4" title="829">{
+                                        if cur.rleRem &gt; 0 &amp;&amp; sm.defaultSize &gt; 0 </span><span class="cov4" title="870">{
                                                 afterCurrent := cur.esOff + int64(cur.size)
                                                 maxRLEES := afterCurrent + int64(cur.rleRem)*int64(sm.defaultSize)
-                                                if esOffset &lt; maxRLEES </span><span class="cov2" title="15">{
+                                                if esOffset &lt; maxRLEES </span><span class="cov2" title="16">{
                                                         // k = entries to skip (1-based). k-1 in offset calc positions
                                                         // relative to afterCurrent (the start of entry 1 in the run).
                                                         k := int((esOffset-afterCurrent)/int64(sm.defaultSize)) + 1
                                                         if k &gt; cur.rleRem </span><span class="cov0" title="0">{
                                                                 k = cur.rleRem
                                                         }</span>
-                                                        <span class="cov2" title="15">stride := int64(sm.defaultSize) + sm.defaultGap
+                                                        <span class="cov2" title="16">stride := int64(sm.defaultSize) + sm.defaultGap
                                                         cur.esOff = afterCurrent + int64(k-1)*int64(sm.defaultSize)
                                                         cur.fileOff = cur.fileOff + int64(cur.size) + sm.defaultGap + int64(k-1)*stride
                                                         cur.size = sm.defaultSize
                                                         cur.rleRem -= k
                                                         continue</span>
                                                 }
-                                                <span class="cov4" title="814">k := cur.rleRem
+                                                <span class="cov4" title="854">k := cur.rleRem
                                                 stride := int64(sm.defaultSize) + sm.defaultGap
                                                 cur.esOff = afterCurrent + int64(k-1)*int64(sm.defaultSize)
                                                 cur.fileOff = cur.fileOff + int64(cur.size) + sm.defaultGap + int64(k-1)*stride
@@ -5984,24 +5984,24 @@ func (sm *StreamRangeMap) seekTo(esOffset int64) (rangeMapCursor, error) <span c
                                                 cur.rleRem = 0
                                                 continue</span>
                                         }
-                                        <span class="cov7" title="39154">if err := sm.advanceCursor(&amp;cur); err != nil </span><span class="cov0" title="0">{
+                                        <span class="cov7" title="39228">if err := sm.advanceCursor(&amp;cur); err != nil </span><span class="cov0" title="0">{
                                                 return rangeMapCursor{}, fmt.Errorf("seek to ES offset %d: %w", esOffset, err)
                                         }</span>
                                 }
-                                <span class="cov7" title="36130">return cur, nil</span>
+                                <span class="cov7" title="36125">return cur, nil</span>
                         }
                 }
         }
 
         // Slow path: binary search the coarse index
-        <span class="cov3" title="138">blockIdx := sort.Search(len(sm.coarse), func(i int) bool </span><span class="cov5" title="1369">{
+        <span class="cov3" title="148">blockIdx := sort.Search(len(sm.coarse), func(i int) bool </span><span class="cov5" title="1492">{
                 return sm.coarse[i].esOffset &gt; esOffset
         }</span>) - 1
-        <span class="cov3" title="138">if blockIdx &lt; 0 </span><span class="cov0" title="0">{
+        <span class="cov3" title="148">if blockIdx &lt; 0 </span><span class="cov0" title="0">{
                 blockIdx = 0
         }</span>
 
-        <span class="cov3" title="138">ce := &amp;sm.coarse[blockIdx]
+        <span class="cov3" title="148">ce := &amp;sm.coarse[blockIdx]
         cur := rangeMapCursor{
                 esOff:   ce.esOffset,
                 fileOff: ce.fileOffset,
@@ -6010,23 +6010,23 @@ func (sm *StreamRangeMap) seekTo(esOffset int64) (rangeMapCursor, error) <span c
                 pos:     ce.byteOff,
         }
 
-        for cur.esOff+int64(cur.size) &lt;= esOffset </span><span class="cov6" title="4977">{
-                if cur.rleRem &gt; 0 &amp;&amp; sm.defaultSize &gt; 0 </span><span class="cov5" title="1031">{
+        for cur.esOff+int64(cur.size) &lt;= esOffset </span><span class="cov6" title="6129">{
+                if cur.rleRem &gt; 0 &amp;&amp; sm.defaultSize &gt; 0 </span><span class="cov5" title="1244">{
                         afterCurrent := cur.esOff + int64(cur.size)
                         maxRLEES := afterCurrent + int64(cur.rleRem)*int64(sm.defaultSize)
-                        if esOffset &lt; maxRLEES </span><span class="cov2" title="6">{
+                        if esOffset &lt; maxRLEES </span><span class="cov2" title="7">{
                                 k := int((esOffset-afterCurrent)/int64(sm.defaultSize)) + 1
                                 if k &gt; cur.rleRem </span><span class="cov0" title="0">{
                                         k = cur.rleRem
                                 }</span>
-                                <span class="cov2" title="6">stride := int64(sm.defaultSize) + sm.defaultGap
+                                <span class="cov2" title="7">stride := int64(sm.defaultSize) + sm.defaultGap
                                 cur.esOff = afterCurrent + int64(k-1)*int64(sm.defaultSize)
                                 cur.fileOff = cur.fileOff + int64(cur.size) + sm.defaultGap + int64(k-1)*stride
                                 cur.size = sm.defaultSize
                                 cur.rleRem -= k
                                 continue</span>
                         }
-                        <span class="cov5" title="1025">k := cur.rleRem
+                        <span class="cov5" title="1237">k := cur.rleRem
                         stride := int64(sm.defaultSize) + sm.defaultGap
                         cur.esOff = afterCurrent + int64(k-1)*int64(sm.defaultSize)
                         cur.fileOff = cur.fileOff + int64(cur.size) + sm.defaultGap + int64(k-1)*stride
@@ -6034,12 +6034,12 @@ func (sm *StreamRangeMap) seekTo(esOffset int64) (rangeMapCursor, error) <span c
                         cur.rleRem = 0
                         continue</span>
                 }
-                <span class="cov5" title="3946">if err := sm.advanceCursor(&amp;cur); err != nil </span><span class="cov0" title="0">{
+                <span class="cov5" title="4885">if err := sm.advanceCursor(&amp;cur); err != nil </span><span class="cov0" title="0">{
                         return rangeMapCursor{}, fmt.Errorf("seek to ES offset %d: %w", esOffset, err)
                 }</span>
         }
 
-        <span class="cov3" title="138">return cur, nil</span>
+        <span class="cov3" title="148">return cur, nil</span>
 }
 
 // ReadData reads ES data at the given offset, copying into a new buffer.
@@ -6145,46 +6145,46 @@ func (sm *StreamRangeMap) ReadData(sourceData []byte, sourceSize int64, esOffset
 // The source parameter provides read access to the source file. If source
 // implements MmapData, the mmap'd byte slice is used for zero-copy reads.
 // Otherwise, source.ReadAt is used (pread path for network filesystems).
-func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, dest []byte) (int, error) <span class="cov7" title="74303">{
+func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, dest []byte) (int, error) <span class="cov7" title="74306">{
         if sm.entryCount == 0 </span><span class="cov0" title="0">{
                 return 0, fmt.Errorf("empty range map")
         }</span>
 
-        <span class="cov7" title="74303">sourceSize := source.Size()
+        <span class="cov7" title="74306">sourceSize := source.Size()
 
         // Resolve mmap data once for the zero-copy fast path.
         var sourceData []byte
-        if md, ok := source.(mmap.MmapData); ok </span><span class="cov7" title="74303">{
+        if md, ok := source.(mmap.MmapData); ok </span><span class="cov7" title="74306">{
                 sourceData = md.Data()
         }</span>
 
-        <span class="cov7" title="74303">cur, err := sm.seekTo(esOffset)
+        <span class="cov7" title="74306">cur, err := sm.seekTo(esOffset)
         if err != nil </span><span class="cov0" title="0">{
                 return 0, err
         }</span>
 
         // Read data directly into dest, potentially spanning multiple entries
-        <span class="cov7" title="74303">written := 0
+        <span class="cov7" title="74306">written := 0
         remaining := len(dest)
 
-        for remaining &gt; 0 </span><span class="cov8" title="257398">{
+        for remaining &gt; 0 </span><span class="cov8" title="257404">{
                 offsetInEntry := esOffset - cur.esOff
                 if offsetInEntry &lt; 0 </span><span class="cov0" title="0">{
                         return written, fmt.Errorf("ES offset gap at ES %d", cur.esOff)
                 }</span>
 
-                <span class="cov8" title="257398">available := int64(cur.size) - offsetInEntry
+                <span class="cov8" title="257404">available := int64(cur.size) - offsetInEntry
                 toRead := int64(remaining)
-                if toRead &gt; available </span><span class="cov8" title="183276">{
+                if toRead &gt; available </span><span class="cov8" title="183279">{
                         toRead = available
                 }</span>
 
-                <span class="cov8" title="257398">srcStart := cur.fileOff + offsetInEntry
+                <span class="cov8" title="257404">srcStart := cur.fileOff + offsetInEntry
                 srcEnd := srcStart + toRead
                 if srcEnd &gt; sourceSize </span><span class="cov0" title="0">{
                         return written, fmt.Errorf("source read out of bounds: %d + %d &gt; %d", srcStart, toRead, sourceSize)
                 }</span>
-                <span class="cov8" title="257398">if sourceData != nil </span><span class="cov8" title="257398">{
+                <span class="cov8" title="257404">if sourceData != nil </span><span class="cov8" title="257404">{
                         copy(dest[written:], sourceData[srcStart:srcEnd])
                 }</span> else<span class="cov0" title="0"> {
                         if n, err := source.ReadAt(dest[written:written+int(toRead)], srcStart); err != nil &amp;&amp; !(n == int(toRead) &amp;&amp; err == io.EOF) </span><span class="cov0" title="0">{
@@ -6192,15 +6192,15 @@ func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, d
                         }</span>
                 }
 
-                <span class="cov8" title="257398">written += int(toRead)
+                <span class="cov8" title="257404">written += int(toRead)
                 remaining -= int(toRead)
                 esOffset += toRead
 
-                if remaining &gt; 0 </span><span class="cov8" title="183276">{
+                if remaining &gt; 0 </span><span class="cov8" title="183279">{
                         // RLE batch path: when the next entries are in an RLE run,
                         // batch-copy full entries using a single strided copy instead of
                         // calling copy()/advanceCursor per entry.
-                        if cur.rleRem &gt; 0 </span><span class="cov7" title="101478">{
+                        if cur.rleRem &gt; 0 </span><span class="cov7" title="101480">{
                                 // Advance to next RLE entry (equivalent to one advanceCursor)
                                 cur.esOff += int64(cur.size)
                                 cur.fileOff += int64(cur.size) + sm.defaultGap
@@ -6217,14 +6217,14 @@ func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, d
                                         batchCount = maxRLE
                                 }</span>
 
-                                <span class="cov7" title="101478">if batchCount &gt; 0 </span><span class="cov7" title="66702">{
+                                <span class="cov7" title="101480">if batchCount &gt; 0 </span><span class="cov7" title="66703">{
                                         // Bounds check the entire batch
                                         lastSrcEnd := cur.fileOff + int64(batchCount-1)*stride + defSz64
                                         if lastSrcEnd &gt; sourceSize </span><span class="cov0" title="0">{
                                                 return written, fmt.Errorf("source read out of bounds: %d &gt; %d",
                                                         lastSrcEnd, sourceSize)
                                         }</span>
-                                        <span class="cov7" title="66702">if sourceData != nil </span><span class="cov7" title="66702">{
+                                        <span class="cov7" title="66703">if sourceData != nil </span><span class="cov7" title="66703">{
                                                 stridedCopy(
                                                         dest[written:written+batchCount*defSz],
                                                         sourceData[cur.fileOff:lastSrcEnd],
@@ -6249,29 +6249,29 @@ func (sm *StreamRangeMap) ReadDataInto(source mmap.SourceFile, esOffset int64, d
                                                         batchCount, defSz, int(stride),
                                                 )</span>
                                         }
-                                        <span class="cov7" title="66702">copied := batchCount * defSz
+                                        <span class="cov7" title="66703">copied := batchCount * defSz
                                         written += copied
                                         remaining -= copied
                                         esOffset += int64(copied)
                                         // Position cursor at the last copied entry
-                                        if batchCount &gt; 1 </span><span class="cov7" title="46078">{
+                                        if batchCount &gt; 1 </span><span class="cov7" title="46079">{
                                                 advance := batchCount - 1
                                                 cur.esOff += int64(advance) * defSz64
                                                 cur.fileOff += int64(advance) * stride
                                                 cur.rleRem -= advance
                                         }</span>
                                 }
-                                <span class="cov7" title="101478">continue</span>
+                                <span class="cov7" title="101480">continue</span>
                         }
 
-                        <span class="cov7" title="81798">if err := sm.advanceCursor(&amp;cur); err != nil </span><span class="cov0" title="0">{
+                        <span class="cov7" title="81799">if err := sm.advanceCursor(&amp;cur); err != nil </span><span class="cov0" title="0">{
                                 return written, fmt.Errorf("read spanning entries: %w", err)
                         }</span>
                 }
         }
 
         // Update cached cursor for next sequential read
-        <span class="cov7" title="74303">sm.cursorMu.Lock()
+        <span class="cov7" title="74306">sm.cursorMu.Lock()
         sm.cachedCursor = cur
         sm.cachedCursorValid = true
         sm.cursorMu.Unlock()
@@ -6736,12 +6736,12 @@ func (r *Reader) buildBlockIndex() <span class="cov3" title="124">{
                 blockStart := int64(b) * blockSize
                 // Advance entryIdx to the last entry whose MkvOffset &lt;= blockStart.
                 // For block 0 (blockStart=0), this stays at 0 since no entry precedes it.
-                for entryIdx+1 &lt; r.entryCount </span><span class="cov9" title="7471951">{
+                for entryIdx+1 &lt; r.entryCount </span><span class="cov9" title="7475043">{
                         nextOffset, ok := r.getMkvOffset(entryIdx + 1)
                         if !ok || nextOffset &gt; blockStart </span><span class="cov7" title="175464">{
                                 break</span>
                         }
-                        <span class="cov9" title="7296487">entryIdx++</span>
+                        <span class="cov9" title="7299579">entryIdx++</span>
                 }
                 <span class="cov7" title="176685">r.blockIndex[b] = entryIdx</span>
         }
@@ -6749,19 +6749,19 @@ func (r *Reader) buildBlockIndex() <span class="cov3" title="124">{
 
 // getEntry returns the entry at the given index by parsing from mmap.
 // Uses cache for O(1) sequential access. Safe for concurrent use.
-func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1258492">{
+func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="1258929">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov2" title="10">{
                 return Entry{}, false
         }</span>
 
         // Check cache first (with lock)
-        <span class="cov8" title="1258482">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov6" title="7870">{
+        <span class="cov8" title="1258919">r.cacheMu.Lock()
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov6" title="7868">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov8" title="1250612">r.cacheMu.Unlock()
+        <span class="cov8" title="1251051">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -6772,7 +6772,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12584
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov8" title="1250612">var raw RawEntry
+        <span class="cov8" title="1251051">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -6794,35 +6794,35 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12584
 
 // getMkvOffset returns just the MkvOffset for entry at idx (for binary search).
 // This avoids full entry parsing when only the offset is needed.
-func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7472365">{
+func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7475514">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7472361">offset := r.indexStart + int64(idx)*EntrySize
+        <span class="cov9" title="7475510">offset := r.indexStart + int64(idx)*EntrySize
         data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7472361">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov9" title="7475510">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // getEntryLength returns just the Length for entry at idx (for binary search).
 // This avoids full entry parsing when only offset and length are needed.
-func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov4" title="414">{
+func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov4" title="471">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
         // Length is at offset 8 within each entry (after MkvOffset)
-        <span class="cov4" title="410">offset := r.indexStart + int64(idx)*EntrySize + 8
+        <span class="cov4" title="467">offset := r.indexStart + int64(idx)*EntrySize + 8
         data := r.dedupMmap.Slice(offset, 8)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov4" title="410">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov4" title="467">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // OriginalSize returns the size of the original MKV file.
@@ -6894,30 +6894,30 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) <span class="cov6
         startIdx := r.findStartEntry(offset)
 
         // Iterate entries directly — no []Entry allocation
-        for i := startIdx; i &lt; r.entryCount &amp;&amp; remaining &gt; 0; i++ </span><span class="cov8" title="1256204">{
+        for i := startIdx; i &lt; r.entryCount &amp;&amp; remaining &gt; 0; i++ </span><span class="cov8" title="1256641">{
                 entry, ok := r.getEntry(i)
                 if !ok || entry.MkvOffset &gt;= endOffset </span><span class="cov0" title="0">{
                         break</span>
                 }
 
                 // Calculate overlap
-                <span class="cov8" title="1256204">entryEnd := entry.MkvOffset + entry.Length
+                <span class="cov8" title="1256641">entryEnd := entry.MkvOffset + entry.Length
                 readStart := offset
                 if readStart &lt; entry.MkvOffset </span><span class="cov0" title="0">{
                         readStart = entry.MkvOffset
                 }</span>
-                <span class="cov8" title="1256204">readEnd := offset + int64(remaining)
-                if readEnd &gt; entryEnd </span><span class="cov8" title="1248293">{
+                <span class="cov8" title="1256641">readEnd := offset + int64(remaining)
+                if readEnd &gt; entryEnd </span><span class="cov8" title="1248730">{
                         readEnd = entryEnd
                 }</span>
 
-                <span class="cov8" title="1256204">readLen := int(readEnd - readStart)
+                <span class="cov8" title="1256641">readLen := int(readEnd - readStart)
                 if readLen &lt;= 0 </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
                 // Calculate offset within entry
-                <span class="cov8" title="1256204">offsetInEntry := readStart - entry.MkvOffset
+                <span class="cov8" title="1256641">offsetInEntry := readStart - entry.MkvOffset
                 sourceOffset := entry.SourceOffset + offsetInEntry
 
                 // Calculate buffer position
@@ -6951,14 +6951,14 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) <span class="cov6
                         }</span>
                         <span class="cov2" title="28">source.TransformLPCM16BE(tmp)
                         copy(buf[bufOffset:bufOffset+readLen], tmp[trimFront:trimFront+readLen])</span>
-                } else<span class="cov8" title="1256176"> {
+                } else<span class="cov8" title="1256613"> {
                         // Normal read path (non-LPCM)
                         if err := r.readEntry(entry, sourceOffset, readLen, buf[bufOffset:bufOffset+readLen]); err != nil </span><span class="cov0" title="0">{
                                 return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
                         }</span>
                 }
 
-                <span class="cov8" title="1256204">totalRead += readLen
+                <span class="cov8" title="1256641">totalRead += readLen
                 remaining -= readLen
                 offset = readEnd</span>
         }
@@ -6977,24 +6977,24 @@ func (r *Reader) findStartEntry(offset int64) int <span class="cov6" title="7914
         // Fast path: check if offset is within cached entry
         r.cacheMu.Lock()
         if r.lastEntryValid &amp;&amp; r.lastEntryIdx &gt;= 0 &amp;&amp; r.lastEntryIdx &lt; r.entryCount </span><span class="cov6" title="7894">{
-                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov6" title="7850">{
+                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov6" title="7841">{
                         idx := r.lastEntryIdx
                         r.cacheMu.Unlock()
                         return idx
                 }</span>
         }
-        <span class="cov3" title="64">r.cacheMu.Unlock()
+        <span class="cov3" title="73">r.cacheMu.Unlock()
 
         // Use block index to narrow binary search range
         var lo, hi int
-        if r.blockIndex != nil </span><span class="cov3" title="63">{
+        if r.blockIndex != nil </span><span class="cov3" title="72">{
                 blockNum := int(offset / blockSize)
                 if blockNum &gt;= len(r.blockIndex) </span><span class="cov0" title="0">{
                         blockNum = len(r.blockIndex) - 1
                 }</span>
-                <span class="cov3" title="63">lo = r.blockIndex[blockNum]
+                <span class="cov3" title="72">lo = r.blockIndex[blockNum]
 
-                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov3" title="58">{
+                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov3" title="67">{
                         hi = r.blockIndex[blockNum+1] + 1
                         if hi &gt; r.entryCount </span><span class="cov0" title="0">{
                                 hi = r.entryCount
@@ -7008,16 +7008,16 @@ func (r *Reader) findStartEntry(offset int64) int <span class="cov6" title="7914
         }</span>
 
         // Binary search within [lo, hi) for first entry whose range covers offset
-        <span class="cov3" title="64">return lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov4" title="348">{
+        <span class="cov3" title="73">return lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov4" title="405">{
                 mkvOffset, ok := r.getMkvOffset(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov4" title="348">entryLen, ok := r.getEntryLength(lo + i)
+                <span class="cov4" title="405">entryLen, ok := r.getEntryLength(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov4" title="348">return mkvOffset+entryLen &gt; offset</span>
+                <span class="cov4" title="405">return mkvOffset+entryLen &gt; offset</span>
         })
 }
 
@@ -7101,20 +7101,20 @@ func (r *Reader) findEntriesForRange(offset, length int64) []Entry <span class="
 
 // readEntry reads data from the appropriate source for a given entry into dest.
 // Handles delta, V4 range map, V1 ES reader, and V3 raw source paths.
-func (r *Reader) readEntry(entry Entry, sourceOffset int64, readLen int, dest []byte) error <span class="cov8" title="1256176">{
-        if entry.Source == 0 </span><span class="cov7" title="221401">{
+func (r *Reader) readEntry(entry Entry, sourceOffset int64, readLen int, dest []byte) error <span class="cov8" title="1256613">{
+        if entry.Source == 0 </span><span class="cov7" title="221639">{
                 // Read from delta section (zero-copy mmap slice)
                 data, err := r.readDelta(sourceOffset, readLen)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-                <span class="cov7" title="221401">copy(dest, data)
+                <span class="cov7" title="221639">copy(dest, data)
                 return nil</span>
-        } else<span class="cov8" title="1034775"> if r.rangeMapsByFile != nil </span><span class="cov7" title="74275">{
+        } else<span class="cov8" title="1034974"> if r.rangeMapsByFile != nil </span><span class="cov7" title="74278">{
                 // V4: Read via range map directly into output buffer (no allocation)
                 fileIndex := int(entry.Source - 1)
                 return r.readViaRangeMapInto(fileIndex, entry, sourceOffset, dest)
-        }</span> else<span class="cov8" title="960500"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
+        }</span> else<span class="cov8" title="960696"> if r.file.UsesESOffsets &amp;&amp; r.esReader != nil </span><span class="cov0" title="0">{
                 // V1: Read from ES via external reader
                 var data []byte
                 var err error
@@ -7130,7 +7130,7 @@ func (r *Reader) readEntry(entry Entry, sourceOffset int64, readLen int, dest []
                 return nil</span>
         }
         // V3: Read from raw source file
-        <span class="cov8" title="960500">fileIndex := int(entry.Source - 1)
+        <span class="cov8" title="960696">fileIndex := int(entry.Source - 1)
         return r.readSourceInto(fileIndex, sourceOffset, dest)</span>
 }
 
@@ -7147,34 +7147,34 @@ func (r *Reader) lpcmAlignedRead(entry Entry, alignedSrcOff int64, dest []byte) 
         return r.readSourceInto(fileIndex, alignedSrcOff, dest)</span>
 }
 
-func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="221401">{
+func (r *Reader) readDelta(offset int64, size int) ([]byte, error) <span class="cov7" title="221639">{
         fileOffset := r.file.DeltaOffset + offset
         // Zero-copy slice from mmap'd data
         data := r.dedupMmap.Slice(fileOffset, size)
         if data == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("delta offset out of range")
         }</span>
-        <span class="cov7" title="221401">return data, nil</span>
+        <span class="cov7" title="221639">return data, nil</span>
 }
 
 // readViaRangeMapInto reads via range map directly into dest, avoiding allocation.
-func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset int64, dest []byte) error <span class="cov7" title="74303">{
+func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset int64, dest []byte) error <span class="cov7" title="74306">{
         src, ok := r.rangeMapsByFile[fileIndex]
         if !ok </span><span class="cov0" title="0">{
                 return fmt.Errorf("no range map for source file %d", fileIndex)
         }</span>
 
-        <span class="cov7" title="74303">if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceFiles) || r.sourceFiles[fileIndex] == nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="74306">if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceFiles) || r.sourceFiles[fileIndex] == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("source file %d not loaded for range map read", fileIndex)
         }</span>
 
-        <span class="cov7" title="74303">sf := r.sourceFiles[fileIndex]
+        <span class="cov7" title="74306">sf := r.sourceFiles[fileIndex]
 
-        if entry.IsVideo </span><span class="cov6" title="33433">{
+        if entry.IsVideo </span><span class="cov6" title="33436">{
                 if src.VideoMap == nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("no video range map for source file %d", fileIndex)
                 }</span>
-                <span class="cov6" title="33433">_, err := src.VideoMap.ReadDataInto(sf, sourceOffset, dest)
+                <span class="cov6" title="33436">_, err := src.VideoMap.ReadDataInto(sf, sourceOffset, dest)
                 return err</span>
         }
 
@@ -7187,20 +7187,20 @@ func (r *Reader) readViaRangeMapInto(fileIndex int, entry Entry, sourceOffset in
 }
 
 // readSourceInto reads source file data directly into dest.
-func (r *Reader) readSourceInto(fileIndex int, offset int64, dest []byte) error <span class="cov8" title="960500">{
+func (r *Reader) readSourceInto(fileIndex int, offset int64, dest []byte) error <span class="cov8" title="960696">{
         if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceFiles) </span><span class="cov0" title="0">{
                 return fmt.Errorf("invalid file index: %d", fileIndex)
         }</span>
-        <span class="cov8" title="960500">if r.sourceFiles[fileIndex] == nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="960696">if r.sourceFiles[fileIndex] == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("source file %d not loaded", fileIndex)
         }</span>
 
-        <span class="cov8" title="960500">n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
-        if n == len(dest) </span><span class="cov8" title="960500">{
+        <span class="cov8" title="960696">n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
+        if n == len(dest) </span><span class="cov8" title="960696">{
                 if err == io.EOF </span><span class="cov0" title="0">{
                         return nil
                 }</span>
-                <span class="cov8" title="960500">return err</span>
+                <span class="cov8" title="960696">return err</span>
         }
         // Short read: surface as unexpected EOF so FUSE returns EIO
         // instead of silently truncating.
@@ -7459,7 +7459,7 @@ func (r *Reader) Info() map[string]any <span class="cov2" title="23">{
 // (stride &gt;= payloadSize). This avoids per-block copy() call overhead
 // when extracting many small payloads (e.g. 184-byte M2TS PES payloads
 // at 192-byte stride).
-func stridedCopy(dst, src []byte, count, payloadSize, stride int) <span class="cov7" title="66704">{
+func stridedCopy(dst, src []byte, count, payloadSize, stride int) <span class="cov7" title="66705">{
         dp := 0
         sp := 0
         for i := 0; i &lt; count; i++ </span><span class="cov10" title="4328721">{
@@ -7573,10 +7573,10 @@ func (w *Writer) computeUsedFlags() <span class="cov4" title="92">{
         for i := range w.sourceFiles </span><span class="cov3" title="68">{
                 w.sourceFiles[i].Used = false
         }</span>
-        <span class="cov4" title="92">for _, e := range w.entries </span><span class="cov10" title="553750">{
-                if e.Source &gt; 0 </span><span class="cov9" title="479881">{
+        <span class="cov4" title="92">for _, e := range w.entries </span><span class="cov10" title="553988">{
+                if e.Source &gt; 0 </span><span class="cov9" title="480000">{
                         idx := int(e.Source - 1)
-                        if idx &lt; len(w.sourceFiles) </span><span class="cov9" title="475867">{
+                        if idx &lt; len(w.sourceFiles) </span><span class="cov9" title="475986">{
                                 w.sourceFiles[idx].Used = true
                         }</span>
                 }
@@ -7604,7 +7604,7 @@ func (w *Writer) EncodeRangeMaps() (int64, error) <span class="cov0" title="0">{
 func (w *Writer) SetMatchResult(result *matcher.Result, esConverters []source.ESRangeConverter) error <span class="cov4" title="94">{
         // Convert matcher entries to dedup entries
         entries := make([]Entry, len(result.Entries))
-        for i, e := range result.Entries </span><span class="cov9" title="152058">{
+        for i, e := range result.Entries </span><span class="cov9" title="152297">{
                 entries[i] = FromMatcherEntry(e)
         }</span>
 
@@ -7637,37 +7637,37 @@ func (w *Writer) convertESToRawOffsets(entries []Entry, esConverters []source.ES
         // Pre-allocate with ~2x capacity since entries typically expand to multiple raw ranges
         result := make([]Entry, 0, len(entries)*2)
 
-        for _, entry := range entries </span><span class="cov9" title="147991">{
-                if entry.Source == 0 </span><span class="cov8" title="73820">{
+        for _, entry := range entries </span><span class="cov9" title="148230">{
+                if entry.Source == 0 </span><span class="cov8" title="73939">{
                         // Delta entry - no conversion needed
                         result = append(result, entry)
                         continue</span>
                 }
 
                 // Get the ES converter for this source file
-                <span class="cov8" title="74171">fileIndex := int(entry.Source - 1)
+                <span class="cov8" title="74291">fileIndex := int(entry.Source - 1)
                 if fileIndex &gt;= len(esConverters) || esConverters[fileIndex] == nil </span><span class="cov0" title="0">{
                         // No converter available - assume raw offsets already
                         result = append(result, entry)
                         continue</span>
                 }
-                <span class="cov8" title="74171">converter := esConverters[fileIndex]
+                <span class="cov8" title="74291">converter := esConverters[fileIndex]
 
                 // Get raw ranges for this ES region
                 var rawRanges []source.RawRange
                 var err error
-                if entry.IsVideo </span><span class="cov8" title="33511">{
+                if entry.IsVideo </span><span class="cov8" title="33512">{
                         rawRanges, err = converter.RawRangesForESRegion(entry.SourceOffset, int(entry.Length), true)
-                }</span> else<span class="cov8" title="40660"> {
+                }</span> else<span class="cov8" title="40779"> {
                         rawRanges, err = converter.RawRangesForAudioSubStream(entry.AudioSubStreamID, entry.SourceOffset, int(entry.Length))
                 }</span>
-                <span class="cov8" title="74171">if err != nil </span><span class="cov1" title="2">{
+                <span class="cov8" title="74291">if err != nil </span><span class="cov1" title="2">{
                         return nil, fmt.Errorf("convert entry at MKV offset %d: %w", entry.MkvOffset, err)
                 }</span>
 
                 // Create one entry per raw range
-                <span class="cov8" title="74169">mkvOffset := entry.MkvOffset
-                for _, rr := range rawRanges </span><span class="cov9" title="475863">{
+                <span class="cov8" title="74289">mkvOffset := entry.MkvOffset
+                for _, rr := range rawRanges </span><span class="cov9" title="475982">{
                         result = append(result, Entry{
                                 MkvOffset:        mkvOffset,
                                 Length:           int64(rr.Size),
@@ -7914,7 +7914,7 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
         // Reusable buffer for entry serialization (allocation-free per entry)
         var entryBuf [EntrySize]byte
 
-        for i, entry := range w.entries </span><span class="cov10" title="553750">{
+        for i, entry := range w.entries </span><span class="cov10" title="553988">{
                 // Serialize entry to buffer using allocation-free Put* functions
                 binary.LittleEndian.PutUint64(entryBuf[0:8], uint64(entry.MkvOffset))
                 binary.LittleEndian.PutUint64(entryBuf[8:16], uint64(entry.Length))
@@ -7926,10 +7926,10 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
                 if entry.IsVideo </span><span class="cov9" title="426208">{
                         esFlags |= 1
                 }</span>
-                <span class="cov10" title="553750">if entry.IsLPCM </span><span class="cov1" title="4">{
+                <span class="cov10" title="553988">if entry.IsLPCM </span><span class="cov1" title="4">{
                         esFlags |= 2
                 }</span>
-                <span class="cov10" title="553750">entryBuf[26] = esFlags
+                <span class="cov10" title="553988">entryBuf[26] = esFlags
                 entryBuf[27] = entry.AudioSubStreamID
 
                 // Single write per entry
@@ -7937,7 +7937,7 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
                         return 0, err
                 }</span>
 
-                <span class="cov10" title="553750">*written += EntrySize
+                <span class="cov10" title="553988">*written += EntrySize
 
                 // Report progress every 1% or 10000 entries
                 if progress != nil &amp;&amp; entryCount &gt; 0 </span><span class="cov1" title="4">{
@@ -7970,14 +7970,14 @@ func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int
                 }</span>
 
                 <span class="cov1" title="1">buf := make([]byte, chunkSize)
-                for </span><span class="cov3" title="69">{
+                for </span><span class="cov3" title="68">{
                         n, err := f.Read(buf)
-                        if n &gt; 0 </span><span class="cov3" title="68">{
+                        if n &gt; 0 </span><span class="cov3" title="67">{
                                 chunk := buf[:n]
                                 if _, werr := w.file.Write(chunk); werr != nil </span><span class="cov0" title="0">{
                                         return 0, werr
                                 }</span>
-                                <span class="cov3" title="68">hasher.Write(chunk)
+                                <span class="cov3" title="67">hasher.Write(chunk)
                                 *written += int64(n)
 
                                 if progress != nil &amp;&amp; w.header.DeltaSize &gt; 0 </span><span class="cov0" title="0">{
@@ -7988,10 +7988,10 @@ func (w *Writer) writeDeltaWithProgress(progress WriteProgressFunc, written *int
                                         }</span>
                                 }
                         }
-                        <span class="cov3" title="69">if err == io.EOF </span><span class="cov1" title="1">{
+                        <span class="cov3" title="68">if err == io.EOF </span><span class="cov1" title="1">{
                                 break</span>
                         }
-                        <span class="cov3" title="68">if err != nil </span><span class="cov0" title="0">{
+                        <span class="cov3" title="67">if err != nil </span><span class="cov0" title="0">{
                                 return 0, err
                         }</span>
                 }
@@ -11598,10 +11598,10 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
         }</span>
 
         // Calculate statistics
-        <span class="cov1" title="1">for _, e := range result.Entries </span><span class="cov9" title="147985">{
-                if e.Source == 0 </span><span class="cov8" title="73818">{
+        <span class="cov1" title="1">for _, e := range result.Entries </span><span class="cov9" title="148224">{
+                if e.Source == 0 </span><span class="cov8" title="73937">{
                         result.UnmatchedBytes += e.Length
-                }</span> else<span class="cov8" title="74167"> {
+                }</span> else<span class="cov8" title="74287"> {
                         result.MatchedBytes += e.Length
                 }</span>
         }
@@ -11683,7 +11683,7 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="13">{
         }</span>
 
         // Sort by start offset
-        <span class="cov2" title="12">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov10" title="10179563">{
+        <span class="cov2" title="12">sort.Slice(m.matchedRegions, func(i, j int) bool </span><span class="cov10" title="10357815">{
                 return m.matchedRegions[i].mkvStart &lt; m.matchedRegions[j].mkvStart
         }</span>)
 
@@ -11691,11 +11691,11 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="13">{
         // Pre-allocate with capacity since merged will be at most len(matchedRegions)
         <span class="cov2" title="12">merged := make([]matchedRegion, 1, len(m.matchedRegions))
         merged[0] = m.matchedRegions[0]
-        for i := 1; i &lt; len(m.matchedRegions); i++ </span><span class="cov8" title="580064">{
+        for i := 1; i &lt; len(m.matchedRegions); i++ </span><span class="cov8" title="580187">{
                 curr := m.matchedRegions[i]
                 last := &amp;merged[len(merged)-1]
 
-                if curr.mkvStart &gt;= last.mkvEnd </span><span class="cov7" title="74121">{
+                if curr.mkvStart &gt;= last.mkvEnd </span><span class="cov7" title="74240">{
                         // No overlap - add new region
                         merged = append(merged, curr)
                         continue</span>
@@ -11703,19 +11703,19 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="13">{
 
                 // Regions overlap. Check if they're from the same source with consistent
                 // offset mapping, meaning the overlapping bytes map to the same source bytes.
-                <span class="cov8" title="505943">expectedSrcOffset := last.srcOffset + (curr.mkvStart - last.mkvStart)
+                <span class="cov8" title="505947">expectedSrcOffset := last.srcOffset + (curr.mkvStart - last.mkvStart)
                 sameMapping := curr.fileIndex == last.fileIndex &amp;&amp;
                         curr.srcOffset == expectedSrcOffset &amp;&amp;
                         curr.isVideo == last.isVideo &amp;&amp;
                         curr.audioSubStreamID == last.audioSubStreamID
 
-                if sameMapping </span><span class="cov8" title="505535">{
+                if sameMapping </span><span class="cov8" title="505551">{
                         // Same source, consistent mapping - safe to extend since both regions
                         // were independently verified and the combined range maps correctly.
                         if curr.mkvEnd &gt; last.mkvEnd </span><span class="cov1" title="3">{
                                 last.mkvEnd = curr.mkvEnd
                         }</span>
-                } else<span class="cov4" title="408"> if curr.mkvEnd &gt; last.mkvEnd </span><span class="cov3" title="52">{
+                } else<span class="cov4" title="396"> if curr.mkvEnd &gt; last.mkvEnd </span><span class="cov3" title="53">{
                         // Different source or inconsistent mapping. The earlier region (last)
                         // keeps priority. Clip curr to start where last ends.
                         overlap := last.mkvEnd - curr.mkvStart
@@ -11723,7 +11723,7 @@ func (m *Matcher) mergeRegions() <span class="cov2" title="13">{
                         curr.srcOffset += overlap
                         // After clipping, curr may have zero or negative length if the overlap
                         // equals or exceeds the original region size. Only keep valid regions.
-                        if curr.mkvStart &lt; curr.mkvEnd </span><span class="cov3" title="52">{
+                        if curr.mkvStart &lt; curr.mkvEnd </span><span class="cov3" title="53">{
                                 merged = append(merged, curr)
                         }</span>
                 }
@@ -11746,13 +11746,13 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) <span class="cov
         pos := int64(0)
         regionIdx := 0
 
-        for pos &lt; m.mkvSize </span><span class="cov7" title="148005">{
+        for pos &lt; m.mkvSize </span><span class="cov7" title="148244">{
                 var inRegion *matchedRegion
-                if regionIdx &lt; len(m.matchedRegions) &amp;&amp; m.matchedRegions[regionIdx].mkvStart &lt;= pos </span><span class="cov7" title="74175">{
+                if regionIdx &lt; len(m.matchedRegions) &amp;&amp; m.matchedRegions[regionIdx].mkvStart &lt;= pos </span><span class="cov7" title="74295">{
                         inRegion = &amp;m.matchedRegions[regionIdx]
                 }</span>
 
-                <span class="cov7" title="148005">if inRegion != nil &amp;&amp; pos &gt;= inRegion.mkvStart &amp;&amp; pos &lt; inRegion.mkvEnd </span><span class="cov7" title="74175">{
+                <span class="cov7" title="148244">if inRegion != nil &amp;&amp; pos &gt;= inRegion.mkvStart &amp;&amp; pos &lt; inRegion.mkvEnd </span><span class="cov7" title="74295">{
                         offsetInRegion := pos - inRegion.mkvStart
                         regionLen := inRegion.mkvEnd - pos
 
@@ -11768,14 +11768,14 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) <span class="cov
 
                         pos = inRegion.mkvEnd
                         regionIdx++
-                }</span> else<span class="cov7" title="73830"> {
+                }</span> else<span class="cov7" title="73949"> {
                         gapEnd := m.mkvSize
-                        if regionIdx &lt; len(m.matchedRegions) </span><span class="cov7" title="73823">{
+                        if regionIdx &lt; len(m.matchedRegions) </span><span class="cov7" title="73942">{
                                 gapEnd = m.matchedRegions[regionIdx].mkvStart
                         }</span>
-                        <span class="cov7" title="73830">gapLen := gapEnd - pos
+                        <span class="cov7" title="73949">gapLen := gapEnd - pos
 
-                        if gapEnd &lt;= m.mkvSize </span><span class="cov7" title="73830">{
+                        if gapEnd &lt;= m.mkvSize </span><span class="cov7" title="73949">{
                                 entries = append(entries, Entry{
                                         MkvOffset:    pos,
                                         Length:       gapLen,
@@ -11787,10 +11787,10 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) <span class="cov
                                         deltaWriter.Close()
                                         return nil, nil, fmt.Errorf("write delta: %w", err)
                                 }</span>
-                                <span class="cov7" title="73830">deltaOffset += gapLen</span>
+                                <span class="cov7" title="73949">deltaOffset += gapLen</span>
                         }
 
-                        <span class="cov7" title="73830">pos = gapEnd</span>
+                        <span class="cov7" title="73949">pos = gapEnd</span>
                 }
         }
 
@@ -11815,7 +11815,7 @@ import (
 const expandChunkSize = 4096
 
 // tryVerifyAndExpand attempts to verify and expand a match, returning the matched region or nil.
-func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offsetInPacket int64, isVideo bool) *matchedRegion <span class="cov7" title="2484325">{
+func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offsetInPacket int64, isVideo bool) *matchedRegion <span class="cov7" title="2485260">{
         // The MKV offset where this sync point is
         mkvSyncOffset := pkt.Offset + offsetInPacket
 
@@ -11827,16 +11827,16 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
         }</span>
 
         // Zero-copy: slice directly into mmap'd data
-        <span class="cov7" title="2484325">endOffset := mkvSyncOffset + verifyLen
+        <span class="cov7" title="2485260">endOffset := mkvSyncOffset + verifyLen
         if endOffset &gt; m.mkvSize </span><span class="cov0" title="0">{
                 return nil
         }</span>
-        <span class="cov7" title="2484325">mkvBuf := m.mkvData[mkvSyncOffset:endOffset]
+        <span class="cov7" title="2485260">mkvBuf := m.mkvData[mkvSyncOffset:endOffset]
 
         // Read source data - use ES reader for ES-based indexes, raw slice for zero-copy
         var srcBuf []byte
         var err error
-        if m.sourceIndex.UsesESOffsets </span><span class="cov7" title="2484306">{
+        if m.sourceIndex.UsesESOffsets </span><span class="cov7" title="2485241">{
                 srcBuf, err = m.sourceIndex.ReadESDataAt(loc, int(verifyLen))
                 if err != nil || len(srcBuf) &lt; int(verifyLen) </span><span class="cov0" title="0">{
                         return nil
@@ -11850,13 +11850,13 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
         }
 
         // Check if bytes match
-        <span class="cov7" title="2484325">for i := range mkvBuf </span><span class="cov8" title="158996800">{
+        <span class="cov7" title="2485260">for i := range mkvBuf </span><span class="cov8" title="159056640">{
                 if mkvBuf[i] != srcBuf[i] </span><span class="cov0" title="0">{
                         return nil
                 }</span>
         }
 
-        <span class="cov7" title="2484325">isLPCM := source.IsLPCMSubStreamID(loc.AudioSubStreamID)
+        <span class="cov7" title="2485260">isLPCM := source.IsLPCMSubStreamID(loc.AudioSubStreamID)
 
         // Reject LPCM source matches when the MKV track is not PCM audio.
         // Without this check, coincidental byte-level matches between non-PCM
@@ -11869,7 +11869,7 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
         }</span>
 
         // Expand the match from the sync point
-        <span class="cov7" title="2484324">mkvStart, srcStart, matchLen := m.expandMatch(
+        <span class="cov7" title="2485259">mkvStart, srcStart, matchLen := m.expandMatch(
                 mkvSyncOffset, loc, verifyLen,
         )
 
@@ -11886,11 +11886,11 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
                         matchLen--
                 }</span>
         }
-        <span class="cov7" title="2484324">if matchLen &lt;= 0 </span><span class="cov0" title="0">{
+        <span class="cov7" title="2485259">if matchLen &lt;= 0 </span><span class="cov0" title="0">{
                 return nil
         }</span>
 
-        <span class="cov7" title="2484324">region := &amp;matchedRegion{
+        <span class="cov7" title="2485259">region := &amp;matchedRegion{
                 mkvStart:         mkvStart,
                 mkvEnd:           mkvStart + matchLen,
                 fileIndex:        loc.FileIndex,
@@ -11904,17 +11904,17 @@ func (m *Matcher) tryVerifyAndExpand(pkt mkv.Packet, loc source.Location, offset
 }
 
 // expandMatch expands a verified match in both directions.
-func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen int64) (mkvStart, srcStart, length int64) <span class="cov7" title="2484324">{
+func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen int64) (mkvStart, srcStart, length int64) <span class="cov7" title="2485259">{
         mkvStart = mkvOffset
         srcStart = loc.Offset
         length = initialLen
 
         // Get source size for bounds checking
         var srcSize int64
-        if m.sourceIndex.UsesESOffsets &amp;&amp; int(loc.FileIndex) &lt; len(m.sourceIndex.ESReaders) </span><span class="cov7" title="2484306">{
-                if loc.IsVideo </span><span class="cov7" title="2386283">{
+        if m.sourceIndex.UsesESOffsets &amp;&amp; int(loc.FileIndex) &lt; len(m.sourceIndex.ESReaders) </span><span class="cov7" title="2485241">{
+                if loc.IsVideo </span><span class="cov7" title="2386281">{
                         srcSize = m.sourceIndex.ESReaders[loc.FileIndex].TotalESSize(true)
-                }</span> else<span class="cov5" title="98023"> {
+                }</span> else<span class="cov5" title="98960"> {
                         srcSize = m.sourceIndex.ESReaders[loc.FileIndex].AudioSubStreamESSize(loc.AudioSubStreamID)
                 }</span>
         } else<span class="cov2" title="18"> {
@@ -11923,22 +11923,22 @@ func (m *Matcher) expandMatch(mkvOffset int64, loc source.Location, initialLen i
                 }</span>
         }
 
-        <span class="cov7" title="2484324">if m.sourceIndex.UsesESOffsets </span><span class="cov7" title="2484306">{
+        <span class="cov7" title="2485259">if m.sourceIndex.UsesESOffsets </span><span class="cov7" title="2485241">{
                 m.expandMatchES(mkvOffset, loc, srcSize, &amp;mkvStart, &amp;srcStart, &amp;length)
         }</span> else<span class="cov2" title="18"> {
                 m.expandMatchRaw(mkvOffset, loc, srcSize, &amp;mkvStart, &amp;srcStart, &amp;length)
         }</span>
 
-        <span class="cov7" title="2484324">return mkvStart, srcStart, length</span>
+        <span class="cov7" title="2485259">return mkvStart, srcStart, length</span>
 }
 
 // expandMatchES expands a match using byte-by-byte ES reads with range hints.
 // This is optimized for DVD MPEG-PS sources where ES data is non-contiguous.
-func (m *Matcher) expandMatchES(mkvOffset int64, loc source.Location, srcSize int64, mkvStart, srcStart, length *int64) <span class="cov7" title="2484306">{
+func (m *Matcher) expandMatchES(mkvOffset int64, loc source.Location, srcSize int64, mkvStart, srcStart, length *int64) <span class="cov7" title="2485241">{
         // Expand backward
         backwardHint := -1
         backwardExpanded := int64(0)
-        for *mkvStart &gt; 0 &amp;&amp; *srcStart &gt; 0 &amp;&amp; backwardExpanded &lt; MaxExpansionBytes </span><span class="cov10" title="1982879912">{
+        for *mkvStart &gt; 0 &amp;&amp; *srcStart &gt; 0 &amp;&amp; backwardExpanded &lt; MaxExpansionBytes </span><span class="cov10" title="1982856197">{
                 mkvByte := m.mkvData[*mkvStart-1]
                 readLoc := source.Location{
                         FileIndex:        loc.FileIndex,
@@ -11948,21 +11948,21 @@ func (m *Matcher) expandMatchES(mkvOffset int64, loc source.Location, srcSize in
                 }
                 srcByteVal, hint, ok := m.sourceIndex.ReadESByteWithHint(readLoc, backwardHint)
                 backwardHint = hint
-                if !ok || mkvByte != srcByteVal </span><span class="cov7" title="2484306">{
+                if !ok || mkvByte != srcByteVal </span><span class="cov7" title="2485241">{
                         break</span>
                 }
-                <span class="cov9" title="1980395606">*mkvStart--
+                <span class="cov9" title="1980370956">*mkvStart--
                 *srcStart--
                 *length++
                 backwardExpanded++</span>
         }
 
         // Expand forward
-        <span class="cov7" title="2484306">forwardHint := -1
+        <span class="cov7" title="2485241">forwardHint := -1
         mkvEnd := *mkvStart + *length
         srcEnd := *srcStart + *length
         forwardExpanded := int64(0)
-        for mkvEnd &lt; m.mkvSize &amp;&amp; srcEnd &lt; srcSize &amp;&amp; forwardExpanded &lt; MaxExpansionBytes </span><span class="cov9" title="1516074599">{
+        for mkvEnd &lt; m.mkvSize &amp;&amp; srcEnd &lt; srcSize &amp;&amp; forwardExpanded &lt; MaxExpansionBytes </span><span class="cov9" title="1515728355">{
                 mkvByte := m.mkvData[mkvEnd]
                 readLoc := source.Location{
                         FileIndex:        loc.FileIndex,
@@ -11972,10 +11972,10 @@ func (m *Matcher) expandMatchES(mkvOffset int64, loc source.Location, srcSize in
                 }
                 srcByteVal, hint, ok := m.sourceIndex.ReadESByteWithHint(readLoc, forwardHint)
                 forwardHint = hint
-                if !ok || mkvByte != srcByteVal </span><span class="cov7" title="2484306">{
+                if !ok || mkvByte != srcByteVal </span><span class="cov7" title="2485241">{
                         break</span>
                 }
-                <span class="cov9" title="1513590293">mkvEnd++
+                <span class="cov9" title="1513243114">mkvEnd++
                 srcEnd++
                 *length++
                 forwardExpanded++</span>
@@ -12135,7 +12135,7 @@ func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int
                         defer wg.Done()
                         for pkt := range workChan </span><span class="cov7" title="73486">{
                                 matched := m.matchPacketParallel(pkt)
-                                if matched </span><span class="cov7" title="73312">{
+                                if matched </span><span class="cov7" title="73431">{
                                         matchedCount.Add(1)
                                 }</span>
                                 <span class="cov7" title="73486">count := processedCount.Add(1)
@@ -12275,7 +12275,7 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool <span class="cov7" ti
                         matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize, nalSizeExact)
                 }</span>
 
-                <span class="cov8" title="481935">if matched </span><span class="cov8" title="479991">{
+                <span class="cov8" title="481935">if matched </span><span class="cov8" title="480114">{
                         anyMatched = true
                         // Early return once the packet is fully covered
                         if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) </span><span class="cov0" title="0">{
@@ -12317,7 +12317,7 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool <span class="cov7" ti
         }
 
         // Also try from packet start (in case it's already aligned)
-        <span class="cov7" title="73485">if !anyMatched </span><span class="cov3" title="173">{
+        <span class="cov7" title="73485">if !anyMatched </span><span class="cov3" title="54">{
                 if m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo, hint, len(data), false) </span><span class="cov0" title="0">{
                         anyMatched = true
                 }</span>
@@ -12332,19 +12332,19 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool <span class="cov7" ti
 //     If any produces a match &gt;= localityGoodMatchThreshold, accept immediately.
 //   - Phase 2: Fall back to trying all remaining locations (handles scene changes,
 //     chapter boundaries, multi-file sources).
-func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool, hint *trackLocalityHint, nalSize int, nalSizeExact bool, nalType ...byte) bool <span class="cov8" title="583524">{
+func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool, hint *trackLocalityHint, nalSize int, nalSizeExact bool, nalType ...byte) bool <span class="cov8" title="583405">{
         if len(data) &lt; m.windowSize </span><span class="cov0" title="0">{
                 return false
         }</span>
 
-        <span class="cov8" title="583524">m.diagTotalSyncPoints.Add(1)
+        <span class="cov8" title="583405">m.diagTotalSyncPoints.Add(1)
 
         window := data[:m.windowSize]
         hash := xxhash.Sum64(window)
 
         // Look up in source index (read-only, thread-safe)
         locations := m.sourceIndex.Lookup(hash)
-        if len(locations) == 0 </span><span class="cov5" title="3466">{
+        if len(locations) == 0 </span><span class="cov5" title="3224">{
                 if isVideo </span><span class="cov5" title="3125">{
                         m.diagVideoNALsHashNotFound.Add(1)
                         m.diagNALSizeUnmatched[nalSizeBucket(nalSize)].Add(1)
@@ -12363,10 +12363,10 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
                                 <span class="cov0" title="0">m.diagExamplesMu.Unlock()</span>
                         }
                 }
-                <span class="cov5" title="3466">return false</span>
+                <span class="cov5" title="3224">return false</span>
         }
 
-        <span class="cov8" title="580058">var bestMatch *matchedRegion
+        <span class="cov8" title="580181">var bestMatch *matchedRegion
         bestMatchLen := int64(0)
         triedVerify := false // whether any tryVerifyAndExpand was called
 
@@ -12375,12 +12375,12 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
         triedCount := 0
 
         // Phase 1: Locality-aware search — try nearby locations first (per-track hint)
-        if hint != nil &amp;&amp; hint.valid.Load() &amp;&amp; len(locations) &gt; 1 </span><span class="cov7" title="62063">{
+        if hint != nil &amp;&amp; hint.valid.Load() &amp;&amp; len(locations) &gt; 1 </span><span class="cov7" title="62084">{
                 hintFile := uint16(hint.fileIndex.Load())
                 hintOffset := hint.offset.Load()
 
                 nearby := nearbyLocationIndices(locations, hintFile, hintOffset, localityNearbyCount)
-                for _, idx := range nearby </span><span class="cov7" title="322812">{
+                for _, idx := range nearby </span><span class="cov7" title="322903">{
                         triedIndices[triedCount] = idx
                         triedCount++
                         loc := locations[idx]
@@ -12392,11 +12392,11 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
                                 <span class="cov0" title="0">continue</span>
                         }
 
-                        <span class="cov7" title="322812">triedVerify = true
+                        <span class="cov7" title="322903">triedVerify = true
                         region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
-                        if region != nil </span><span class="cov7" title="322812">{
+                        if region != nil </span><span class="cov7" title="322903">{
                                 matchLen := region.mkvEnd - region.mkvStart
-                                if matchLen &gt; bestMatchLen </span><span class="cov7" title="63248">{
+                                if matchLen &gt; bestMatchLen </span><span class="cov7" title="63313">{
                                         bestMatch = region
                                         bestMatchLen = matchLen
                                 }</span>
@@ -12405,7 +12405,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
                                 // since no improvement is possible. Only apply the nalSize check
                                 // when nalSize &gt;= windowSize to avoid false positives on LPCM
                                 // (8-byte sync intervals where short matches may be collisions).
-                                <span class="cov7" title="322812">if bestMatchLen &gt;= localityGoodMatchThreshold || (nalSizeExact &amp;&amp; nalSize &gt;= m.windowSize &amp;&amp; bestMatchLen &gt;= int64(nalSize)) </span><span class="cov6" title="14236">{
+                                <span class="cov7" title="322903">if bestMatchLen &gt;= localityGoodMatchThreshold || (nalSizeExact &amp;&amp; nalSize &gt;= m.windowSize &amp;&amp; bestMatchLen &gt;= int64(nalSize)) </span><span class="cov6" title="14236">{
                                         break</span>
                                 }
                         }
@@ -12414,70 +12414,70 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 
         // Phase 2: Full search of remaining locations (skip if Phase 1 found a good match
         // or the match already covers the entire frame/NAL)
-        <span class="cov8" title="580058">phase2Skipped := bestMatchLen &gt;= localityGoodMatchThreshold || (nalSizeExact &amp;&amp; nalSize &gt;= m.windowSize &amp;&amp; bestMatchLen &gt;= int64(nalSize))
+        <span class="cov8" title="580181">phase2Skipped := bestMatchLen &gt;= localityGoodMatchThreshold || (nalSizeExact &amp;&amp; nalSize &gt;= m.windowSize &amp;&amp; bestMatchLen &gt;= int64(nalSize))
         if phase2Skipped </span><span class="cov6" title="14236">{
                 m.diagPhase1Skips.Add(1)
         }</span>
-        <span class="cov8" title="580058">if !phase2Skipped </span><span class="cov8" title="565822">{
+        <span class="cov8" title="580181">if !phase2Skipped </span><span class="cov8" title="565945">{
                 m.diagPhase2Fallbacks.Add(1)
                 verifyAttempts := 0
-                for i, loc := range locations </span><span class="cov9" title="2302472">{
+                for i, loc := range locations </span><span class="cov9" title="2303209">{
                         // Skip indices already tried in Phase 1 (linear scan of small array)
                         alreadyTried := false
-                        for t := 0; t &lt; triedCount; t++ </span><span class="cov10" title="13672448">{
-                                if triedIndices[t] == i </span><span class="cov7" title="140962">{
+                        for t := 0; t &lt; triedCount; t++ </span><span class="cov10" title="13677808">{
+                                if triedIndices[t] == i </span><span class="cov7" title="140855">{
                                         alreadyTried = true
                                         break</span>
                                 }
                         }
-                        <span class="cov9" title="2302472">if alreadyTried </span><span class="cov7" title="140962">{
+                        <span class="cov9" title="2303209">if alreadyTried </span><span class="cov7" title="140855">{
                                 continue</span>
                         }
-                        <span class="cov8" title="2161510">if m.sourceIndex.UsesESOffsets &amp;&amp; loc.IsVideo != isVideo </span><span class="cov0" title="0">{
+                        <span class="cov8" title="2162354">if m.sourceIndex.UsesESOffsets &amp;&amp; loc.IsVideo != isVideo </span><span class="cov0" title="0">{
                                 if isVideo </span><span class="cov0" title="0">{
                                         m.diagVideoNALsSkippedIsVideo.Add(1)
                                 }</span>
                                 <span class="cov0" title="0">continue</span>
                         }
 
-                        <span class="cov8" title="2161510">triedVerify = true
+                        <span class="cov8" title="2162354">triedVerify = true
                         verifyAttempts++
                         m.diagPhase2Locations.Add(1)
                         region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
-                        if region != nil </span><span class="cov8" title="2161510">{
+                        if region != nil </span><span class="cov8" title="2162354">{
                                 matchLen := region.mkvEnd - region.mkvStart
-                                if matchLen &gt; bestMatchLen </span><span class="cov8" title="518028">{
+                                if matchLen &gt; bestMatchLen </span><span class="cov8" title="518123">{
                                         bestMatch = region
                                         bestMatchLen = matchLen
                                 }</span>
                                 // Early exit: stop searching once we have a good enough match
-                                <span class="cov8" title="2161510">if bestMatchLen &gt;= localityGoodMatchThreshold || (nalSizeExact &amp;&amp; nalSize &gt;= m.windowSize &amp;&amp; bestMatchLen &gt;= int64(nalSize)) </span><span class="cov8" title="414299">{
+                                <span class="cov8" title="2162354">if bestMatchLen &gt;= localityGoodMatchThreshold || (nalSizeExact &amp;&amp; nalSize &gt;= m.windowSize &amp;&amp; bestMatchLen &gt;= int64(nalSize)) </span><span class="cov8" title="414304">{
                                         m.diagPhase2EarlyExits.Add(1)
                                         break</span>
                                 }
                         }
 
                         // Cap verify attempts to prevent I/O thrashing on hash collisions
-                        <span class="cov8" title="1747211">if verifyAttempts &gt;= phase2MaxVerifyAttempts </span><span class="cov6" title="22958">{
+                        <span class="cov8" title="1748050">if verifyAttempts &gt;= phase2MaxVerifyAttempts </span><span class="cov6" title="22958">{
                                 m.diagPhase2Capped.Add(1)
                                 break</span>
                         }
                 }
         }
 
-        <span class="cov8" title="580058">if bestMatch != nil </span><span class="cov8" title="580058">{
+        <span class="cov8" title="580181">if bestMatch != nil </span><span class="cov8" title="580181">{
                 m.regionsMu.Lock()
                 m.matchedRegions = append(m.matchedRegions, *bestMatch)
                 m.regionsMu.Unlock()
                 // Mark chunks as covered for fast coverage checks
                 m.markChunksCovered(bestMatch.mkvStart, bestMatch.mkvEnd)
                 // Update per-track locality hint with midpoint of matched source region
-                if hint != nil </span><span class="cov8" title="580058">{
+                if hint != nil </span><span class="cov8" title="580181">{
                         hint.fileIndex.Store(uint32(bestMatch.fileIndex))
                         hint.offset.Store(bestMatch.srcOffset + bestMatchLen/2)
                         hint.valid.Store(true)
                 }</span>
-                <span class="cov8" title="580058">if isVideo </span><span class="cov8" title="536490">{
+                <span class="cov8" title="580181">if isVideo </span><span class="cov8" title="536490">{
                         m.diagVideoNALsMatched.Add(1)
                         m.diagVideoNALsMatchedBytes.Add(bestMatchLen)
                         m.diagNALSizeMatched[nalSizeBucket(nalSize)].Add(1)
@@ -12485,7 +12485,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
                                 m.diagNALTypeMatched[nalType[0]].Add(1)
                         }</span>
                 }
-                <span class="cov8" title="580058">return true</span>
+                <span class="cov8" title="580181">return true</span>
         }
 
         <span class="cov0" title="0">if isVideo </span><span class="cov0" title="0">{
@@ -12503,31 +12503,31 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 // to hintOffset within the same file as hintFileIndex. Locations must be pre-sorted
 // by (FileIndex, Offset) via SortLocationsByOffset. Returns an empty slice if no
 // locations are in the target file.
-func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hintOffset int64, maxCount int) []int <span class="cov7" title="62063">{
+func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hintOffset int64, maxCount int) []int <span class="cov7" title="62084">{
         n := len(locations)
         if n == 0 </span><span class="cov0" title="0">{
                 return nil
         }</span>
 
         // Binary search for the insertion point of (hintFileIndex, hintOffset)
-        <span class="cov7" title="62063">lo, hi := 0, n
-        for lo &lt; hi </span><span class="cov8" title="354991">{
+        <span class="cov7" title="62084">lo, hi := 0, n
+        for lo &lt; hi </span><span class="cov8" title="355190">{
                 mid := lo + (hi-lo)/2
                 loc := locations[mid]
-                if loc.FileIndex &lt; hintFileIndex || (loc.FileIndex == hintFileIndex &amp;&amp; loc.Offset &lt; hintOffset) </span><span class="cov7" title="175367">{
+                if loc.FileIndex &lt; hintFileIndex || (loc.FileIndex == hintFileIndex &amp;&amp; loc.Offset &lt; hintOffset) </span><span class="cov7" title="175576">{
                         lo = mid + 1
-                }</span> else<span class="cov7" title="179624"> {
+                }</span> else<span class="cov7" title="179614"> {
                         hi = mid
                 }</span>
         }
         // lo is now the index of the first location &gt;= (hintFileIndex, hintOffset)
 
         // Radiate outward from lo to collect the closest locations in the same file
-        <span class="cov7" title="62063">result := make([]int, 0, maxCount)
+        <span class="cov7" title="62084">result := make([]int, 0, maxCount)
         left := lo - 1
         right := lo
 
-        for len(result) &lt; maxCount &amp;&amp; (left &gt;= 0 || right &lt; n) </span><span class="cov8" title="398220">{
+        for len(result) &lt; maxCount &amp;&amp; (left &gt;= 0 || right &lt; n) </span><span class="cov8" title="398313">{
                 // Pick the closer of left and right candidates
                 useLeft := false
                 useRight := false
@@ -12535,45 +12535,45 @@ func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hi
                 leftOK := left &gt;= 0 &amp;&amp; locations[left].FileIndex == hintFileIndex
                 rightOK := right &lt; n &amp;&amp; locations[right].FileIndex == hintFileIndex
 
-                if leftOK &amp;&amp; rightOK </span><span class="cov7" title="325961">{
+                if leftOK &amp;&amp; rightOK </span><span class="cov7" title="325969">{
                         leftDist := hintOffset - locations[left].Offset
                         rightDist := locations[right].Offset - hintOffset
                         if leftDist &lt; 0 </span><span class="cov0" title="0">{
                                 leftDist = -leftDist
                         }</span>
-                        <span class="cov7" title="325961">if rightDist &lt; 0 </span><span class="cov0" title="0">{
+                        <span class="cov7" title="325969">if rightDist &lt; 0 </span><span class="cov0" title="0">{
                                 rightDist = -rightDist
                         }</span>
-                        <span class="cov7" title="325961">if leftDist &lt;= rightDist </span><span class="cov7" title="167948">{
+                        <span class="cov7" title="325969">if leftDist &lt;= rightDist </span><span class="cov7" title="167897">{
                                 useLeft = true
-                        }</span> else<span class="cov7" title="158013"> {
+                        }</span> else<span class="cov7" title="158072"> {
                                 useRight = true
                         }</span>
-                } else<span class="cov7" title="72259"> if leftOK </span><span class="cov6" title="34988">{
+                } else<span class="cov7" title="72344"> if leftOK </span><span class="cov6" title="34448">{
                         useLeft = true
-                }</span> else<span class="cov6" title="37271"> if rightOK </span><span class="cov6" title="37267">{
+                }</span> else<span class="cov6" title="37896"> if rightOK </span><span class="cov6" title="37892">{
                         useRight = true
                 }</span> else<span class="cov1" title="4"> {
                         break</span> // No more candidates in the target file
                 }
 
-                <span class="cov8" title="398216">if useLeft </span><span class="cov7" title="202936">{
+                <span class="cov8" title="398309">if useLeft </span><span class="cov7" title="202345">{
                         result = append(result, left)
                         left--
-                }</span> else<span class="cov7" title="195280"> if useRight </span><span class="cov7" title="195280">{
+                }</span> else<span class="cov7" title="195964"> if useRight </span><span class="cov7" title="195964">{
                         result = append(result, right)
                         right++
                 }</span>
         }
 
-        <span class="cov7" title="62063">return result</span>
+        <span class="cov7" title="62084">return result</span>
 }
 
 // isRangeCoveredParallel checks if a range is likely covered using a coverage bitmap.
 // This is an O(1) check using chunk-level granularity. It may have false positives
 // (multiple regions covering different chunks) but that's acceptable since we merge
 // overlapping regions at the end anyway.
-func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool <span class="cov8" title="686217">{
+func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool <span class="cov8" title="686340">{
         // Calculate chunk range
         startChunk := offset / coverageChunkSize
         endChunk := (offset + size - 1) / coverageChunkSize
@@ -12582,13 +12582,13 @@ func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool <span class="c
         defer m.coverageMu.RUnlock()
 
         // Check if all chunks in the range are covered
-        for chunk := startChunk; chunk &lt;= endChunk; chunk++ </span><span class="cov8" title="686474">{
+        for chunk := startChunk; chunk &lt;= endChunk; chunk++ </span><span class="cov8" title="686597">{
                 wordIdx := chunk / 64
                 bitIdx := uint(chunk % 64)
                 if wordIdx &gt;= int64(len(m.coveredChunks)) </span><span class="cov0" title="0">{
                         return false
                 }</span>
-                <span class="cov8" title="686474">if m.coveredChunks[wordIdx]&amp;(1&lt;&lt;bitIdx) == 0 </span><span class="cov8" title="686204">{
+                <span class="cov8" title="686597">if m.coveredChunks[wordIdx]&amp;(1&lt;&lt;bitIdx) == 0 </span><span class="cov8" title="686327">{
                         return false
                 }</span>
         }
@@ -12613,25 +12613,25 @@ func (m *Matcher) isChunkCoveredParallel(absOffset int64) bool <span class="cov8
 }
 
 // markChunksCovered marks the chunks fully contained within a region as covered.
-func (m *Matcher) markChunksCovered(start, end int64) <span class="cov8" title="580061">{
+func (m *Matcher) markChunksCovered(start, end int64) <span class="cov8" title="580184">{
         // Only mark chunks that are fully contained within the region
         // First chunk that starts at or after 'start' and is fully contained
         firstFullChunk := (start + coverageChunkSize - 1) / coverageChunkSize
         // Last chunk that ends before 'end'
         lastFullChunk := (end / coverageChunkSize) - 1
 
-        if firstFullChunk &gt; lastFullChunk </span><span class="cov7" title="287325">{
+        if firstFullChunk &gt; lastFullChunk </span><span class="cov7" title="287455">{
                 // Region doesn't fully contain any chunks
                 return
         }</span>
 
-        <span class="cov7" title="292736">m.coverageMu.Lock()
+        <span class="cov7" title="292729">m.coverageMu.Lock()
         defer m.coverageMu.Unlock()
 
-        for chunk := firstFullChunk; chunk &lt;= lastFullChunk; chunk++ </span><span class="cov8" title="1338855">{
+        for chunk := firstFullChunk; chunk &lt;= lastFullChunk; chunk++ </span><span class="cov8" title="1338747">{
                 wordIdx := chunk / 64
                 bitIdx := uint(chunk % 64)
-                if wordIdx &lt; int64(len(m.coveredChunks)) </span><span class="cov8" title="1338855">{
+                if wordIdx &lt; int64(len(m.coveredChunks)) </span><span class="cov8" title="1338747">{
                         m.coveredChunks[wordIdx] |= 1 &lt;&lt; bitIdx
                 }</span>
         }
@@ -12704,7 +12704,7 @@ func NewDeltaWriter() (*DeltaWriter, error) <span class="cov2" title="10">{
 }
 
 // Write appends data to the delta file.
-func (dw *DeltaWriter) Write(data []byte) error <span class="cov10" title="73830">{
+func (dw *DeltaWriter) Write(data []byte) error <span class="cov10" title="73949">{
         n, err := dw.buffered.Write(data)
         dw.size += int64(n)
         return err
@@ -13973,12 +13973,12 @@ func Open(path string) (*File, error) <span class="cov4" title="218">{
 
 // Data returns the raw byte slice for direct zero-copy access.
 // The slice is valid until Close() is called.
-func (m *File) Data() []byte <span class="cov7" title="74320">{
+func (m *File) Data() []byte <span class="cov7" title="74323">{
         return m.data
 }</span>
 
 // Size returns the size of the mapped file in bytes.
-func (m *File) Size() int64 <span class="cov7" title="74459">{
+func (m *File) Size() int64 <span class="cov7" title="74462">{
         return m.size
 }</span>
 
@@ -13989,15 +13989,15 @@ func (m *File) Len() int <span class="cov1" title="2">{
 
 // Slice returns a sub-slice of the mapped data without copying.
 // Returns nil if the range is out of bounds.
-func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="8944864">{
+func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="8948747">{
         if offset &lt; 0 || offset &gt;= m.size </span><span class="cov1" title="3">{
                 return nil
         }</span>
-        <span class="cov9" title="8944861">end := offset + int64(size)
+        <span class="cov9" title="8948744">end := offset + int64(size)
         if end &gt; m.size </span><span class="cov1" title="1">{
                 end = m.size
         }</span>
-        <span class="cov9" title="8944861">return m.data[offset:end]</span>
+        <span class="cov9" title="8948744">return m.data[offset:end]</span>
 }
 
 // Advise provides hints to the kernel about expected access patterns.
@@ -14011,21 +14011,21 @@ func (m *File) Advise(advice int) error <span class="cov2" title="26">{
 }
 
 // ReadAt implements io.ReaderAt by copying from the mmap'd data.
-func (m *File) ReadAt(p []byte, off int64) (int, error) <span class="cov8" title="960506">{
+func (m *File) ReadAt(p []byte, off int64) (int, error) <span class="cov8" title="960702">{
         if len(p) == 0 </span><span class="cov1" title="1">{
                 return 0, nil
         }</span>
-        <span class="cov8" title="960505">if off &lt; 0 </span><span class="cov1" title="1">{
+        <span class="cov8" title="960701">if off &lt; 0 </span><span class="cov1" title="1">{
                 return 0, os.ErrInvalid
         }</span>
-        <span class="cov8" title="960504">if off &gt;= m.size </span><span class="cov1" title="2">{
+        <span class="cov8" title="960700">if off &gt;= m.size </span><span class="cov1" title="2">{
                 return 0, io.EOF
         }</span>
-        <span class="cov8" title="960502">n := copy(p, m.data[off:])
+        <span class="cov8" title="960698">n := copy(p, m.data[off:])
         if n &lt; len(p) </span><span class="cov1" title="1">{
                 return n, io.EOF
         }</span>
-        <span class="cov8" title="960501">return n, nil</span>
+        <span class="cov8" title="960697">return n, nil</span>
 }
 
 // Close unmaps the file from memory.
@@ -14283,22 +14283,22 @@ func isRetryableError(err error) bool <span class="cov10" title="12">{
 // FindAudioSyncPoints finds all audio sync pattern positions in the data.
 // Detects AC3, DTS, TrueHD, and MPEG Audio sync patterns.
 // Returns offsets where sync patterns begin.
-func FindAudioSyncPoints(data []byte) []int <span class="cov6" title="129862">{
-        if len(data) &lt; 2 </span><span class="cov0" title="0">{
+func FindAudioSyncPoints(data []byte) []int <span class="cov6" title="136153">{
+        if len(data) &lt; 2 </span><span class="cov2" title="29">{
                 return nil
         }</span>
 
-        <span class="cov6" title="129862">var offsets []int
+        <span class="cov6" title="136124">var offsets []int
 
-        for i := 0; i &lt;= len(data)-2; i++ </span><span class="cov10" title="205550553">{
+        for i := 0; i &lt;= len(data)-2; i++ </span><span class="cov10" title="372991174">{
                 // AC3/E-AC3: 0B 77
-                if data[i] == 0x0B &amp;&amp; data[i+1] == 0x77 </span><span class="cov6" title="240665">{
+                if data[i] == 0x0B &amp;&amp; data[i+1] == 0x77 </span><span class="cov6" title="247246">{
                         offsets = append(offsets, i)
                         continue</span>
                 }
 
                 // DTS/DTS-HD: 7F FE 80 01
-                <span class="cov9" title="205309888">if i &lt;= len(data)-4 &amp;&amp;
+                <span class="cov9" title="372743928">if i &lt;= len(data)-4 &amp;&amp;
                         data[i] == 0x7F &amp;&amp; data[i+1] == 0xFE &amp;&amp;
                         data[i+2] == 0x80 &amp;&amp; data[i+3] == 0x01 </span><span class="cov1" title="6">{
                         offsets = append(offsets, i)
@@ -14306,7 +14306,7 @@ func FindAudioSyncPoints(data []byte) []int <span class="cov6" title="129862">{
                 }
 
                 // TrueHD: F8 72 6F BA
-                <span class="cov9" title="205309882">if i &lt;= len(data)-4 &amp;&amp;
+                <span class="cov9" title="372743922">if i &lt;= len(data)-4 &amp;&amp;
                         data[i] == 0xF8 &amp;&amp; data[i+1] == 0x72 &amp;&amp;
                         data[i+2] == 0x6F &amp;&amp; data[i+3] == 0xBA </span><span class="cov1" title="2">{
                         offsets = append(offsets, i)
@@ -14318,15 +14318,15 @@ func FindAudioSyncPoints(data []byte) []int <span class="cov6" title="129862">{
                 // Validate byte 2: bitrate index 1111 (upper nibble 0xF) is reserved/invalid.
                 // This eliminates massive false positives from 0xFF adaptation field padding
                 // in MPEG-TS, where every consecutive byte pair in a 0xFF run would match.
-                <span class="cov9" title="205309880">if i &lt;= len(data)-3 &amp;&amp;
+                <span class="cov9" title="372743920">if i &lt;= len(data)-3 &amp;&amp;
                         data[i] == 0xFF &amp;&amp; (data[i+1]&amp;0xF0) == 0xF0 &amp;&amp;
-                        (data[i+2]&amp;0xF0) != 0xF0 </span><span class="cov6" title="61542">{
+                        (data[i+2]&amp;0xF0) != 0xF0 </span><span class="cov6" title="290462">{
                         offsets = append(offsets, i)
                         continue</span>
                 }
         }
 
-        <span class="cov6" title="129862">return offsets</span>
+        <span class="cov6" title="136124">return offsets</span>
 }
 
 // FindAudioSyncPointsInRange finds audio sync points within a specific range of data.
@@ -14800,20 +14800,20 @@ import "fmt"
 
 // binarySearchRanges performs binary search on PES payload ranges to find the one
 // containing the given ES offset. Returns the index, or -1 if not found.
-func binarySearchRanges(ranges []PESPayloadRange, esOffset int64) int <span class="cov7" title="7649426">{
+func binarySearchRanges(ranges []PESPayloadRange, esOffset int64) int <span class="cov7" title="7652824">{
         if len(ranges) == 0 </span><span class="cov0" title="0">{
                 return -1
         }</span>
 
-        <span class="cov7" title="7649426">low, high := 0, len(ranges)-1
-        for low &lt;= high </span><span class="cov8" title="146250172">{
+        <span class="cov7" title="7652824">low, high := 0, len(ranges)-1
+        for low &lt;= high </span><span class="cov8" title="145991788">{
                 mid := (low + high) / 2
                 r := ranges[mid]
-                if esOffset &lt; r.ESOffset </span><span class="cov8" title="68149668">{
+                if esOffset &lt; r.ESOffset </span><span class="cov8" title="68046633">{
                         high = mid - 1
-                }</span> else<span class="cov8" title="78100504"> if esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov8" title="70451081">{
+                }</span> else<span class="cov8" title="77945155"> if esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov8" title="70292334">{
                         low = mid + 1
-                }</span> else<span class="cov7" title="7649423"> {
+                }</span> else<span class="cov7" title="7652821"> {
                         return mid
                 }</span>
         }
@@ -14821,50 +14821,50 @@ func binarySearchRanges(ranges []PESPayloadRange, esOffset int64) int <span clas
 }
 
 // readByteAt reads a single byte from data or multiRegion at the given file offset.
-func readByteAt(data []byte, mr *multiRegionData, fileOffset int64) byte <span class="cov10" title="3498954529">{
+func readByteAt(data []byte, mr *multiRegionData, fileOffset int64) byte <span class="cov10" title="3498584570">{
         if mr != nil </span><span class="cov1" title="5">{
                 return mr.ByteAt(fileOffset)
         }</span>
-        <span class="cov9" title="3498954524">return data[fileOffset]</span>
+        <span class="cov9" title="3498584565">return data[fileOffset]</span>
 }
 
 // readByteWithHint reads a single byte from a set of PES payload ranges using a hint
 // for O(1) sequential access. Returns the byte, the range index for the next hint,
 // and success status. Pass rangeHint=-1 to force binary search.
 // When mr is non-nil, byte reads use the multi-region data instead of data.
-func readByteWithHint(data []byte, mr *multiRegionData, dataSize int64, ranges []PESPayloadRange, esOffset int64, rangeHint int) (byte, int, bool) <span class="cov10" title="3498954529">{
+func readByteWithHint(data []byte, mr *multiRegionData, dataSize int64, ranges []PESPayloadRange, esOffset int64, rangeHint int) (byte, int, bool) <span class="cov10" title="3498584570">{
         if len(ranges) == 0 </span><span class="cov0" title="0">{
                 return 0, -1, false
         }</span>
 
         // Fast path: check if hint is still valid (O(1) check)
-        <span class="cov10" title="3498954529">if rangeHint &gt;= 0 &amp;&amp; rangeHint &lt; len(ranges) </span><span class="cov9" title="3493985915">{
+        <span class="cov10" title="3498584570">if rangeHint &gt;= 0 &amp;&amp; rangeHint &lt; len(ranges) </span><span class="cov9" title="3493614086">{
                 r := ranges[rangeHint]
-                if esOffset &gt;= r.ESOffset &amp;&amp; esOffset &lt; r.ESOffset+int64(r.Size) </span><span class="cov9" title="3490032827">{
+                if esOffset &gt;= r.ESOffset &amp;&amp; esOffset &lt; r.ESOffset+int64(r.Size) </span><span class="cov9" title="3489662194">{
                         offsetInPayload := esOffset - r.ESOffset
                         fileOffset := r.FileOffset + offsetInPayload
-                        if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov9" title="3490032827">{
+                        if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov9" title="3489662194">{
                                 return readByteAt(data, mr, fileOffset), rangeHint, true
                         }</span>
                 }
                 // Check next range (common case when crossing boundaries forward)
-                <span class="cov7" title="3953088">if rangeHint+1 &lt; len(ranges) </span><span class="cov7" title="3953086">{
+                <span class="cov7" title="3951892">if rangeHint+1 &lt; len(ranges) </span><span class="cov7" title="3951890">{
                         r = ranges[rangeHint+1]
-                        if esOffset &gt;= r.ESOffset &amp;&amp; esOffset &lt; r.ESOffset+int64(r.Size) </span><span class="cov7" title="2971706">{
+                        if esOffset &gt;= r.ESOffset &amp;&amp; esOffset &lt; r.ESOffset+int64(r.Size) </span><span class="cov7" title="2970620">{
                                 offsetInPayload := esOffset - r.ESOffset
                                 fileOffset := r.FileOffset + offsetInPayload
-                                if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov7" title="2971706">{
+                                if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov7" title="2970620">{
                                         return readByteAt(data, mr, fileOffset), rangeHint + 1, true
                                 }</span>
                         }
                 }
                 // Check previous range (common case when crossing boundaries backward)
-                <span class="cov6" title="981382">if rangeHint-1 &gt;= 0 </span><span class="cov6" title="981380">{
+                <span class="cov6" title="981272">if rangeHint-1 &gt;= 0 </span><span class="cov6" title="981270">{
                         r = ranges[rangeHint-1]
-                        if esOffset &gt;= r.ESOffset &amp;&amp; esOffset &lt; r.ESOffset+int64(r.Size) </span><span class="cov6" title="981380">{
+                        if esOffset &gt;= r.ESOffset &amp;&amp; esOffset &lt; r.ESOffset+int64(r.Size) </span><span class="cov6" title="981270">{
                                 offsetInPayload := esOffset - r.ESOffset
                                 fileOffset := r.FileOffset + offsetInPayload
-                                if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov6" title="981380">{
+                                if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov6" title="981270">{
                                         return readByteAt(data, mr, fileOffset), rangeHint - 1, true
                                 }</span>
                         }
@@ -14872,15 +14872,15 @@ func readByteWithHint(data []byte, mr *multiRegionData, dataSize int64, ranges [
         }
 
         // Slow path: binary search
-        <span class="cov7" title="4968616">rangeIdx := binarySearchRanges(ranges, esOffset)
+        <span class="cov7" title="4970486">rangeIdx := binarySearchRanges(ranges, esOffset)
         if rangeIdx &lt; 0 </span><span class="cov1" title="2">{
                 return 0, -1, false
         }</span>
 
-        <span class="cov7" title="4968614">r := ranges[rangeIdx]
+        <span class="cov7" title="4970484">r := ranges[rangeIdx]
         offsetInPayload := esOffset - r.ESOffset
         fileOffset := r.FileOffset + offsetInPayload
-        if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov7" title="4968614">{
+        if fileOffset &gt;= 0 &amp;&amp; fileOffset &lt; dataSize </span><span class="cov7" title="4970484">{
                 return readByteAt(data, mr, fileOffset), rangeIdx, true
         }</span>
 
@@ -14888,24 +14888,24 @@ func readByteWithHint(data []byte, mr *multiRegionData, dataSize int64, ranges [
 }
 
 // readSliceAt reads a byte slice from data or multiRegion at the given file offset range.
-func readSliceAt(data []byte, mr *multiRegionData, fileOffset, endOffset int64) []byte <span class="cov7" title="2783124">{
+func readSliceAt(data []byte, mr *multiRegionData, fileOffset, endOffset int64) []byte <span class="cov7" title="2785044">{
         if mr != nil </span><span class="cov1" title="5">{
                 return mr.Slice(fileOffset, endOffset)
         }</span>
-        <span class="cov7" title="2783119">return data[fileOffset:endOffset]</span>
+        <span class="cov7" title="2785039">return data[fileOffset:endOffset]</span>
 }
 
 // readFromRanges reads data from PES payload ranges starting at the given ES offset.
 // Returns a zero-copy slice when data fits in a single range (common case),
 // only copies when data spans multiple ranges.
 // When mr is non-nil, data reads use the multi-region data instead of data.
-func readFromRanges(data []byte, mr *multiRegionData, dataSize int64, ranges []PESPayloadRange, esOffset int64, size int) ([]byte, error) <span class="cov7" title="2606632">{
+func readFromRanges(data []byte, mr *multiRegionData, dataSize int64, ranges []PESPayloadRange, esOffset int64, size int) ([]byte, error) <span class="cov7" title="2608040">{
         if len(ranges) == 0 </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("no ranges available")
         }</span>
 
         // Use binary search to find starting range
-        <span class="cov7" title="2606632">rangeIdx := binarySearchRanges(ranges, esOffset)
+        <span class="cov7" title="2608040">rangeIdx := binarySearchRanges(ranges, esOffset)
         if rangeIdx &lt; 0 </span><span class="cov0" title="0">{
                 rangeIdx = 0
                 for rangeIdx &lt; len(ranges) &amp;&amp; esOffset &gt;= ranges[rangeIdx].ESOffset+int64(ranges[rangeIdx].Size) </span><span class="cov0" title="0">{
@@ -14913,52 +14913,52 @@ func readFromRanges(data []byte, mr *multiRegionData, dataSize int64, ranges []P
                 }</span>
         }
 
-        <span class="cov7" title="2606632">if rangeIdx &gt;= len(ranges) </span><span class="cov0" title="0">{
+        <span class="cov7" title="2608040">if rangeIdx &gt;= len(ranges) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("ES offset %d not found in ranges", esOffset)
         }</span>
 
-        <span class="cov7" title="2606632">r := ranges[rangeIdx]
+        <span class="cov7" title="2608040">r := ranges[rangeIdx]
         if esOffset &lt; r.ESOffset || esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("ES offset %d not in range [%d, %d)", esOffset, r.ESOffset, r.ESOffset+int64(r.Size))
         }</span>
 
-        <span class="cov7" title="2606632">offsetInPayload := esOffset - r.ESOffset
+        <span class="cov7" title="2608040">offsetInPayload := esOffset - r.ESOffset
         availableInRange := int64(r.Size) - offsetInPayload
 
         // Fast path: data fits entirely within this single range (zero-copy)
-        if int64(size) &lt;= availableInRange </span><span class="cov7" title="2430199">{
+        if int64(size) &lt;= availableInRange </span><span class="cov7" title="2431097">{
                 fileOffset := r.FileOffset + offsetInPayload
                 endOffset := fileOffset + int64(size)
                 if endOffset &gt; dataSize </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("file offset out of range")
                 }</span>
-                <span class="cov7" title="2430199">return readSliceAt(data, mr, fileOffset, endOffset), nil</span>
+                <span class="cov7" title="2431097">return readSliceAt(data, mr, fileOffset, endOffset), nil</span>
         }
 
         // Slow path: data spans multiple ranges — must copy
-        <span class="cov5" title="176433">result := make([]byte, 0, size)
+        <span class="cov5" title="176943">result := make([]byte, 0, size)
         remaining := size
 
-        for remaining &gt; 0 &amp;&amp; rangeIdx &lt; len(ranges) </span><span class="cov6" title="352923">{
+        for remaining &gt; 0 &amp;&amp; rangeIdx &lt; len(ranges) </span><span class="cov6" title="353945">{
                 r := ranges[rangeIdx]
 
                 if esOffset &lt; r.ESOffset </span><span class="cov0" title="0">{
                         break</span>
                 }
 
-                <span class="cov6" title="352923">if esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov0" title="0">{
+                <span class="cov6" title="353945">if esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov0" title="0">{
                         rangeIdx++
                         continue</span>
                 }
 
-                <span class="cov6" title="352923">offsetInPayload := esOffset - r.ESOffset
+                <span class="cov6" title="353945">offsetInPayload := esOffset - r.ESOffset
                 availableInRange := int64(r.Size) - offsetInPayload
                 toRead := remaining
-                if int64(toRead) &gt; availableInRange </span><span class="cov5" title="176490">{
+                if int64(toRead) &gt; availableInRange </span><span class="cov5" title="177002">{
                         toRead = int(availableInRange)
                 }</span>
 
-                <span class="cov6" title="352923">fileOffset := r.FileOffset + offsetInPayload
+                <span class="cov6" title="353945">fileOffset := r.FileOffset + offsetInPayload
                 endOffset := fileOffset + int64(toRead)
                 if endOffset &gt; dataSize </span><span class="cov0" title="0">{
                         if len(result) &gt; 0 </span><span class="cov0" title="0">{
@@ -14967,23 +14967,23 @@ func readFromRanges(data []byte, mr *multiRegionData, dataSize int64, ranges []P
                         <span class="cov0" title="0">return nil, fmt.Errorf("failed to read ES data: offset out of range")</span>
                 }
 
-                <span class="cov6" title="352923">result = append(result, readSliceAt(data, mr, fileOffset, endOffset)...)
+                <span class="cov6" title="353945">result = append(result, readSliceAt(data, mr, fileOffset, endOffset)...)
                 esOffset += int64(toRead)
                 remaining -= toRead
                 rangeIdx++</span>
         }
 
-        <span class="cov5" title="176433">return result, nil</span>
+        <span class="cov5" title="176943">return result, nil</span>
 }
 
 // rawRangesFromPESRanges enumerates raw file ranges for a given ES region.
-func rawRangesFromPESRanges(ranges []PESPayloadRange, esOffset int64, size int) ([]RawRange, error) <span class="cov5" title="74177">{
+func rawRangesFromPESRanges(ranges []PESPayloadRange, esOffset int64, size int) ([]RawRange, error) <span class="cov5" title="74297">{
         if len(ranges) == 0 </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("no ranges available")
         }</span>
 
         // Use binary search to find starting range
-        <span class="cov5" title="74176">rangeIdx := binarySearchRanges(ranges, esOffset)
+        <span class="cov5" title="74296">rangeIdx := binarySearchRanges(ranges, esOffset)
         if rangeIdx &lt; 0 </span><span class="cov1" title="1">{
                 rangeIdx = 0
                 for rangeIdx &lt; len(ranges) &amp;&amp; esOffset &gt;= ranges[rangeIdx].ESOffset+int64(ranges[rangeIdx].Size) </span><span class="cov1" title="1">{
@@ -14991,38 +14991,38 @@ func rawRangesFromPESRanges(ranges []PESPayloadRange, esOffset int64, size int) 
                 }</span>
         }
 
-        <span class="cov5" title="74176">if rangeIdx &gt;= len(ranges) </span><span class="cov1" title="1">{
+        <span class="cov5" title="74296">if rangeIdx &gt;= len(ranges) </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("ES offset %d not found in ranges", esOffset)
         }</span>
 
-        <span class="cov5" title="74175">r := ranges[rangeIdx]
+        <span class="cov5" title="74295">r := ranges[rangeIdx]
         if esOffset &lt; r.ESOffset || esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("ES offset %d not in range [%d, %d)", esOffset, r.ESOffset, r.ESOffset+int64(r.Size))
         }</span>
 
-        <span class="cov5" title="74175">var result []RawRange
+        <span class="cov5" title="74295">var result []RawRange
         remaining := size
 
-        for remaining &gt; 0 &amp;&amp; rangeIdx &lt; len(ranges) </span><span class="cov6" title="475872">{
+        for remaining &gt; 0 &amp;&amp; rangeIdx &lt; len(ranges) </span><span class="cov6" title="475991">{
                 r := ranges[rangeIdx]
 
                 if esOffset &lt; r.ESOffset </span><span class="cov0" title="0">{
                         break</span>
                 }
 
-                <span class="cov6" title="475872">if esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov0" title="0">{
+                <span class="cov6" title="475991">if esOffset &gt;= r.ESOffset+int64(r.Size) </span><span class="cov0" title="0">{
                         rangeIdx++
                         continue</span>
                 }
 
-                <span class="cov6" title="475872">offsetInPayload := esOffset - r.ESOffset
+                <span class="cov6" title="475991">offsetInPayload := esOffset - r.ESOffset
                 availableInRange := int64(r.Size) - offsetInPayload
                 toTake := remaining
-                if int64(toTake) &gt; availableInRange </span><span class="cov6" title="401697">{
+                if int64(toTake) &gt; availableInRange </span><span class="cov6" title="401696">{
                         toTake = int(availableInRange)
                 }</span>
 
-                <span class="cov6" title="475872">fileOffset := r.FileOffset + offsetInPayload
+                <span class="cov6" title="475991">fileOffset := r.FileOffset + offsetInPayload
                 result = append(result, RawRange{
                         FileOffset: fileOffset,
                         Size:       toTake,
@@ -15033,19 +15033,19 @@ func rawRangesFromPESRanges(ranges []PESPayloadRange, esOffset int64, size int) 
                 rangeIdx++</span>
         }
 
-        <span class="cov5" title="74175">if remaining &gt; 0 </span><span class="cov0" title="0">{
+        <span class="cov5" title="74295">if remaining &gt; 0 </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("could not map entire ES region: %d bytes remaining", remaining)
         }</span>
 
-        <span class="cov5" title="74175">return result, nil</span>
+        <span class="cov5" title="74295">return result, nil</span>
 }
 
 // totalESSizeFromRanges returns the total ES size from a range list.
-func totalESSizeFromRanges(ranges []PESPayloadRange) int64 <span class="cov7" title="2484351">{
+func totalESSizeFromRanges(ranges []PESPayloadRange) int64 <span class="cov7" title="2485304">{
         if len(ranges) == 0 </span><span class="cov0" title="0">{
                 return 0
         }</span>
-        <span class="cov7" title="2484351">last := ranges[len(ranges)-1]
+        <span class="cov7" title="2485304">last := ranges[len(ranges)-1]
         return last.ESOffset + int64(last.Size)</span>
 }
 </pre>
@@ -15060,23 +15060,23 @@ import (
 )
 
 // Lookup finds locations in the source that match the given hash.
-func (idx *Index) Lookup(hash uint64) []Location <span class="cov6" title="583528">{
+func (idx *Index) Lookup(hash uint64) []Location <span class="cov6" title="583409">{
         return idx.HashToLocations[hash]
 }</span>
 
 // ReadESDataAt reads ES data at the given location.
 // For sources that use ES offsets, this handles the translation.
 // For audio locations, uses the sub-stream ID from the location.
-func (idx *Index) ReadESDataAt(loc Location, size int) ([]byte, error) <span class="cov7" title="2484312">{
+func (idx *Index) ReadESDataAt(loc Location, size int) ([]byte, error) <span class="cov7" title="2485247">{
         if int(loc.FileIndex) &gt;= len(idx.ESReaders) || idx.ESReaders[loc.FileIndex] == nil </span><span class="cov1" title="1">{
                 // No ES reader - this shouldn't happen for ES-based indexes
                 return nil, fmt.Errorf("no ES reader for file %d", loc.FileIndex)
         }</span>
-        <span class="cov7" title="2484311">if loc.IsVideo </span><span class="cov7" title="2386283">{
+        <span class="cov7" title="2485246">if loc.IsVideo </span><span class="cov7" title="2386281">{
                 return idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, size, true)
         }</span>
         // For audio, use the sub-stream specific reader
-        <span class="cov5" title="98028">return idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, size)</span>
+        <span class="cov5" title="98965">return idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, size)</span>
 }
 
 // hintedESReader is the interface for hint-based byte reading.
@@ -15090,17 +15090,17 @@ type hintedESReader interface {
 // to avoid binary search when reading sequentially. Returns the byte, the new range
 // hint for the next call, and success status. Pass rangeHint=-1 to force binary search.
 // This is optimized for the expandMatch hot path where we read bytes sequentially.
-func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bool) <span class="cov10" title="3498954511">{
+func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bool) <span class="cov10" title="3498584552">{
         if int(loc.FileIndex) &gt;= len(idx.ESReaders) || idx.ESReaders[loc.FileIndex] == nil </span><span class="cov0" title="0">{
                 return 0, -1, false
         }</span>
 
         // Try hint-based reading (fast path for MPEGPSParser and MPEGTSParser)
-        <span class="cov10" title="3498954511">if hinted, ok := idx.ESReaders[loc.FileIndex].(hintedESReader); ok </span><span class="cov10" title="3498954511">{
-                if loc.IsVideo </span><span class="cov9" title="3464746587">{
+        <span class="cov10" title="3498584552">if hinted, ok := idx.ESReaders[loc.FileIndex].(hintedESReader); ok </span><span class="cov10" title="3498584552">{
+                if loc.IsVideo </span><span class="cov9" title="3464248763">{
                         return hinted.ReadESByteWithHint(loc.Offset, true, rangeHint)
                 }</span>
-                <span class="cov8" title="34207924">return hinted.ReadAudioByteWithHint(loc.AudioSubStreamID, loc.Offset, rangeHint)</span>
+                <span class="cov8" title="34335789">return hinted.ReadAudioByteWithHint(loc.AudioSubStreamID, loc.Offset, rangeHint)</span>
         }
 
         // Fallback: use ReadESData (allocates, but works for any ESReader)
@@ -15428,9 +15428,9 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 
         // Index each audio sub-stream separately
         <span class="cov1" title="1">audioSubStreams := parser.AudioSubStreams()
-        for _, subStreamID := range audioSubStreams </span><span class="cov5" title="24">{
+        for _, subStreamID := range audioSubStreams </span><span class="cov6" title="40">{
                 subStreamSize := parser.AudioSubStreamESSize(subStreamID)
-                if subStreamSize &gt; 0 </span><span class="cov5" title="24">{
+                if subStreamSize &gt; 0 </span><span class="cov6" title="40">{
                         if parser.IsLPCMSubStream(subStreamID) </span><span class="cov1" title="1">{
                                 // LPCM has no natural sync patterns; use fixed-interval sync points.
                                 // The indexer forces the slow path (ReadAudioSubStreamData) for LPCM
@@ -15438,7 +15438,7 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
                                 if err := idx.indexSubStream(fileIndex, parser, subStreamID, subStreamSize, FindLPCMIndexSyncPoints); err != nil </span><span class="cov0" title="0">{
                                         return 0, fmt.Errorf("index LPCM sub-stream 0x%02X: %w", subStreamID, err)
                                 }</span>
-                        } else<span class="cov5" title="23"> {
+                        } else<span class="cov6" title="39"> {
                                 if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil </span><span class="cov0" title="0">{
                                         return 0, fmt.Errorf("index audio sub-stream 0x%02X: %w", subStreamID, err)
                                 }</span>
@@ -15804,7 +15804,7 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 type syncPointFinder func(data []byte) []int
 
 // indexAudioSubStream indexes a specific audio sub-stream.
-func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64) error <span class="cov2" title="25">{
+func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64) error <span class="cov3" title="41">{
         return idx.indexSubStream(fileIndex, parser, subStreamID, esSize, FindAudioSyncPoints)
 }</span>
 
@@ -15812,39 +15812,39 @@ func (idx *Indexer) indexAudioSubStream(fileIndex uint16, parser esDataProvider,
 // Uses zero-copy iteration through PES payload ranges.
 // For LPCM sub-streams, always uses the slow path (ReadAudioSubStreamData) because
 // the raw data is big-endian but the read method returns byte-swapped little-endian data.
-func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64, findSyncPoints syncPointFinder) error <span class="cov2" title="26">{
+func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subStreamID byte, esSize int64, findSyncPoints syncPointFinder) error <span class="cov3" title="42">{
         ranges := parser.FilteredAudioRanges(subStreamID)
         if len(ranges) == 0 </span><span class="cov0" title="0">{
                 return nil
         }</span>
 
-        <span class="cov2" title="26">dataSize := parser.DataSize()
+        <span class="cov3" title="42">dataSize := parser.DataSize()
         isLPCM := parser.IsLPCMSubStream(subStreamID)
 
         // Iterate through each PES payload range (zero-copy when within one region)
-        for _, r := range ranges </span><span class="cov7" title="89027">{
+        for _, r := range ranges </span><span class="cov7" title="95312">{
                 endOffset := r.FileOffset + int64(r.Size)
-                if endOffset &gt; dataSize </span><span class="cov0" title="0">{
+                if endOffset &gt; dataSize </span><span class="cov1" title="1">{
                         continue</span>
                 }
-                <span class="cov7" title="89027">rangeData := parser.DataSlice(r.FileOffset, r.Size)
+                <span class="cov7" title="95311">rangeData := parser.DataSlice(r.FileOffset, r.Size)
 
                 // Find sync points in this range (uses raw data — LPCM sync points
                 // are fixed-interval so data content doesn't matter)
                 syncPoints := findSyncPoints(rangeData)
 
                 // Add each sync point to the index
-                for _, offsetInRange := range syncPoints </span><span class="cov8" title="257986">{
+                for _, offsetInRange := range syncPoints </span><span class="cov8" title="493414">{
                         syncESOffset := r.ESOffset + int64(offsetInRange)
 
                         // Ensure we have enough data for the window
-                        if syncESOffset+int64(idx.windowSize) &gt; esSize </span><span class="cov2" title="7">{
+                        if syncESOffset+int64(idx.windowSize) &gt; esSize </span><span class="cov1" title="1">{
                                 continue</span>
                         }
 
                         // For LPCM, always use ReadAudioSubStreamData which applies the transform.
                         // For non-LPCM, use the zero-copy fast path when possible.
-                        <span class="cov8" title="257979">if !isLPCM &amp;&amp; offsetInRange+idx.windowSize &lt;= len(rangeData) </span><span class="cov8" title="256420">{
+                        <span class="cov8" title="493413">if !isLPCM &amp;&amp; offsetInRange+idx.windowSize &lt;= len(rangeData) </span><span class="cov8" title="491381">{
                                 window := rangeData[offsetInRange : offsetInRange+idx.windowSize]
                                 hash := xxhash.Sum64(window)
 
@@ -15854,13 +15854,13 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
                                         IsVideo:          false,
                                         AudioSubStreamID: subStreamID,
                                 })
-                        }</span> else<span class="cov5" title="1559"> {
+                        }</span> else<span class="cov5" title="2032"> {
                                 // Window spans range boundary or LPCM - use ReadAudioSubStreamData
                                 window, err := parser.ReadAudioSubStreamData(subStreamID, syncESOffset, idx.windowSize)
                                 if err != nil || len(window) &lt; idx.windowSize </span><span class="cov0" title="0">{
                                         continue</span>
                                 }
-                                <span class="cov5" title="1559">hash := xxhash.Sum64(window)
+                                <span class="cov5" title="2032">hash := xxhash.Sum64(window)
 
                                 idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
                                         FileIndex:        fileIndex,
@@ -15872,7 +15872,7 @@ func (idx *Indexer) indexSubStream(fileIndex uint16, parser esDataProvider, subS
                 }
         }
 
-        <span class="cov2" title="26">return nil</span>
+        <span class="cov3" title="42">return nil</span>
 }
 </pre>
 		
@@ -16502,11 +16502,11 @@ type LPCMFrameHeader struct {
 }
 
 // ParseLPCMFrameHeader parses a 3-byte DVD LPCM frame header.
-func ParseLPCMFrameHeader(data []byte) LPCMFrameHeader <span class="cov2" title="12">{
+func ParseLPCMFrameHeader(data []byte) LPCMFrameHeader <span class="cov1" title="5">{
         if len(data) &lt; LPCMHeaderSize </span><span class="cov1" title="1">{
                 return LPCMFrameHeader{}
         }</span>
-        <span class="cov2" title="11">return LPCMFrameHeader{
+        <span class="cov1" title="4">return LPCMFrameHeader{
                 Emphasis:     data[0]&amp;0x80 != 0,
                 Mute:         data[0]&amp;0x40 != 0,
                 FrameNumber:  data[0] &amp; 0x1F,
@@ -16521,16 +16521,16 @@ func ParseLPCMFrameHeader(data []byte) LPCMFrameHeader <span class="cov2" title=
 // 20-bit (code 1) and 24-bit (code 2) use grouped big-endian packing that
 // changes data size during transform, making in-place FUSE reconstruction
 // infeasible without significant complexity.
-func IsLPCM16Bit(quantization byte) bool <span class="cov2" title="12">{
+func IsLPCM16Bit(quantization byte) bool <span class="cov1" title="5">{
         return quantization == 0
 }</span>
 
 // TransformLPCM16BE performs an in-place byte swap for 16-bit big-endian PCM
 // samples, converting to little-endian. Each pair of bytes [HI][LO] becomes
 // [LO][HI]. If len(data) is odd, the last byte is left unchanged.
-func TransformLPCM16BE(data []byte) <span class="cov4" title="189">{
+func TransformLPCM16BE(data []byte) <span class="cov3" title="116">{
         n := len(data) &amp;^ 1 // round down to even
-        for i := 0; i &lt; n; i += 2 </span><span class="cov6" title="6455">{
+        for i := 0; i &lt; n; i += 2 </span><span class="cov6" title="4036">{
                 data[i], data[i+1] = data[i+1], data[i]
         }</span>
 }
@@ -16543,15 +16543,15 @@ func InverseTransformLPCM16(data []byte) <span class="cov1" title="1">{
 
 // FindLPCMIndexSyncPoints returns sync points for source-side LPCM indexing.
 // Uses a large interval to keep the source hash map small.
-func FindLPCMIndexSyncPoints(data []byte) []int <span class="cov2" title="14">{
+func FindLPCMIndexSyncPoints(data []byte) []int <span class="cov2" title="7">{
         if len(data) == 0 </span><span class="cov1" title="1">{
                 return nil
         }</span>
-        <span class="cov2" title="13">var offsets []int
-        for off := 0; off &lt; len(data); off += lpcmIndexSyncInterval </span><span class="cov4" title="140">{
+        <span class="cov2" title="6">var offsets []int
+        for off := 0; off &lt; len(data); off += lpcmIndexSyncInterval </span><span class="cov3" title="67">{
                 offsets = append(offsets, off)
         }</span>
-        <span class="cov2" title="13">return offsets</span>
+        <span class="cov2" title="6">return offsets</span>
 }
 
 // FindLPCMMatchSyncPoints returns sync points for MKV-side LPCM matching.
@@ -16570,7 +16570,7 @@ func FindLPCMMatchSyncPoints(data []byte) []int <span class="cov1" title="1">{
 }
 
 // IsLPCMSubStreamID returns true if the sub-stream ID is in the LPCM range (0xA0-0xA7).
-func IsLPCMSubStreamID(subStreamID byte) bool <span class="cov10" title="2484340">{
+func IsLPCMSubStreamID(subStreamID byte) bool <span class="cov10" title="2485275">{
         return subStreamID &gt;= 0xA0 &amp;&amp; subStreamID &lt;= 0xA7
 }</span>
 </pre>
@@ -16618,11 +16618,12 @@ type PESPayloadRange struct {
 
 // MPEGPSParser parses MPEG Program Stream files to extract PES packet information.
 type MPEGPSParser struct {
-        data        []byte // Direct mmap'd data - zero-copy access
-        size        int64
-        packets     []PESPacket
-        videoRanges []PESPayloadRange
-        audioRanges []PESPayloadRange
+        data                []byte // Direct mmap'd data - zero-copy access
+        size                int64
+        packets             []PESPacket
+        videoRanges         []PESPayloadRange
+        audioRanges         []PESPayloadRange
+        audioRangeStreamIDs []byte // PES stream ID for each audioRange (0xBD or 0xC0-0xDF)
         // Filtered ranges exclude user_data sections for MKV-compatible matching
         filteredVideoRanges []PESPayloadRange
         // Filtered audio ranges per sub-stream ID - separates interleaved audio tracks
@@ -16638,7 +16639,7 @@ type MPEGPSParser struct {
 
 // NewMPEGPSParser creates a parser for the given memory-mapped data.
 // The data slice should be from a zero-copy mmap (unix.Mmap).
-func NewMPEGPSParser(data []byte) *MPEGPSParser <span class="cov1" title="1">{
+func NewMPEGPSParser(data []byte) *MPEGPSParser <span class="cov1" title="2">{
         return &amp;MPEGPSParser{
                 data: data,
                 size: int64(len(data)),
@@ -16649,12 +16650,12 @@ func NewMPEGPSParser(data []byte) *MPEGPSParser <span class="cov1" title="1">{
 type MPEGPSProgressFunc func(processed, total int64)
 
 // Parse scans the file and extracts all PES packet information.
-func (p *MPEGPSParser) Parse() error <span class="cov0" title="0">{
+func (p *MPEGPSParser) Parse() error <span class="cov1" title="1">{
         return p.ParseWithProgress(nil)
 }</span>
 
 // ParseWithProgress scans the file with progress reporting.
-func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <span class="cov1" title="1">{
+func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <span class="cov1" title="2">{
         pos := int64(0)
         var videoESOffset, audioESOffset int64
         lastProgress := int64(0)
@@ -16663,51 +16664,52 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <spa
         // Estimate: average PES packet ~2KB, so ~size/2048 packets
         // We split roughly 60% video, 40% audio
         estimatedPackets := int(p.size / 2048)
-        if estimatedPackets &lt; 1000 </span><span class="cov0" title="0">{
+        if estimatedPackets &lt; 1000 </span><span class="cov1" title="1">{
                 estimatedPackets = 1000
         }</span>
-        <span class="cov1" title="1">p.packets = make([]PESPacket, 0, estimatedPackets)
+        <span class="cov1" title="2">p.packets = make([]PESPacket, 0, estimatedPackets)
         p.videoRanges = make([]PESPayloadRange, 0, estimatedPackets*6/10)
         p.audioRanges = make([]PESPayloadRange, 0, estimatedPackets*4/10)
+        p.audioRangeStreamIDs = make([]byte, 0, estimatedPackets*4/10)
 
-        for pos &lt; p.size-4 </span><span class="cov4" title="1922">{
+        for pos &lt; p.size-4 </span><span class="cov4" title="1923">{
                 // Direct slice access - zero copy
                 end := pos + 4*1024*1024 // Process in ~4MB logical chunks for progress
-                if end &gt; p.size </span><span class="cov1" title="1">{
+                if end &gt; p.size </span><span class="cov1" title="2">{
                         end = p.size
                 }</span>
-                <span class="cov4" title="1922">chunkData := p.data[pos:end]
+                <span class="cov4" title="1923">chunkData := p.data[pos:end]
                 if len(chunkData) &lt; 4 </span><span class="cov0" title="0">{
                         break</span>
                 }
 
                 // Scan for start codes within this chunk
-                <span class="cov4" title="1922">i := 0
-                for i &lt; len(chunkData)-4 </span><span class="cov9" title="637120853">{
+                <span class="cov4" title="1923">i := 0
+                for i &lt; len(chunkData)-4 </span><span class="cov9" title="637121078">{
                         // Fast scan for 00 00 01 prefix
                         if chunkData[i] != 0 </span><span class="cov9" title="586130268">{
                                 i++
                                 continue</span>
                         }
-                        <span class="cov8" title="50990585">if chunkData[i+1] != 0 </span><span class="cov7" title="25266964">{
+                        <span class="cov8" title="50990810">if chunkData[i+1] != 0 </span><span class="cov7" title="25266964">{
                                 i += 2
                                 continue</span>
                         }
-                        <span class="cov7" title="25723621">if chunkData[i+2] != 1 </span><span class="cov7" title="22775619">{
+                        <span class="cov7" title="25723846">if chunkData[i+2] != 1 </span><span class="cov7" title="22775842">{
                                 i++
                                 continue</span>
                         }
 
                         // Found potential start code at pos + i
-                        <span class="cov7" title="2948002">startCodePos := pos + int64(i)
+                        <span class="cov7" title="2948004">startCodePos := pos + int64(i)
                         startCode := uint32(0x00000100) | uint32(chunkData[i+3])
 
                         advance := int64(1)
 
                         switch </span>{
-                        case startCode == PackStartCode:<span class="cov6" title="1392933">
+                        case startCode == PackStartCode:<span class="cov6" title="1392934">
                                 packSize, err := p.parsePackHeader(startCodePos)
-                                if err == nil </span><span class="cov6" title="1392933">{
+                                if err == nil </span><span class="cov6" title="1392934">{
                                         advance = int64(packSize)
                                 }</span>
 
@@ -16738,6 +16740,7 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <spa
                                                 Size:       pkt.PayloadSize,
                                                 ESOffset:   audioESOffset,
                                         })
+                                        p.audioRangeStreamIDs = append(p.audioRangeStreamIDs, 0xBD)
                                         audioESOffset += int64(pkt.PayloadSize)
                                         advance = int64(pkt.HeaderSize + pkt.PayloadSize)
                                 }</span>
@@ -16756,9 +16759,9 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <spa
                                         advance = int64(pkt.HeaderSize + pkt.PayloadSize)
                                 }</span>
 
-                        case startCode &gt;= AudioStreamMinCode &amp;&amp; startCode &lt;= AudioStreamMaxCode:<span class="cov4" title="7816">
+                        case startCode &gt;= AudioStreamMinCode &amp;&amp; startCode &lt;= AudioStreamMaxCode:<span class="cov4" title="7817">
                                 pkt, err := p.parsePESPacket(startCodePos, byte(startCode&amp;0xFF))
-                                if err == nil </span><span class="cov4" title="7816">{
+                                if err == nil </span><span class="cov4" title="7817">{
                                         pkt.IsAudio = true
                                         p.packets = append(p.packets, pkt)
                                         p.audioRanges = append(p.audioRanges, PESPayloadRange{
@@ -16766,46 +16769,47 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <spa
                                                 Size:       pkt.PayloadSize,
                                                 ESOffset:   audioESOffset,
                                         })
+                                        p.audioRangeStreamIDs = append(p.audioRangeStreamIDs, pkt.StreamID)
                                         audioESOffset += int64(pkt.PayloadSize)
                                         advance = int64(pkt.HeaderSize + pkt.PayloadSize)
                                 }</span>
                         }
 
                         // Move forward by the packet size (or 1 if unknown)
-                        <span class="cov7" title="2948002">newPos := startCodePos + advance
+                        <span class="cov7" title="2948004">newPos := startCodePos + advance
                         i = int(newPos - pos)</span>
                 }
 
                 // Move to next chunk, but back up slightly to catch start codes at boundaries
-                <span class="cov4" title="1922">pos += int64(len(chunkData)) - 3
+                <span class="cov4" title="1923">pos += int64(len(chunkData)) - 3
                 if pos &lt; 0 </span><span class="cov0" title="0">{
                         pos = 0
                 }</span>
 
                 // Report progress
-                <span class="cov4" title="1922">if progress != nil &amp;&amp; pos-lastProgress &gt; 100*1024*1024 </span><span class="cov2" title="73">{ // Every 100MB
+                <span class="cov4" title="1923">if progress != nil &amp;&amp; pos-lastProgress &gt; 100*1024*1024 </span><span class="cov2" title="73">{ // Every 100MB
                         progress(pos, p.size)
                         lastProgress = pos
                 }</span>
         }
 
-        <span class="cov1" title="1">if progress != nil </span><span class="cov1" title="1">{
+        <span class="cov1" title="2">if progress != nil </span><span class="cov1" title="1">{
                 progress(p.size, p.size)
         }</span>
 
         // Build filtered video ranges that exclude user_data (B2) sections
         // This makes the ES compatible with what MKV tools produce
-        <span class="cov1" title="1">if err := p.buildFilteredVideoRanges(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="2">if err := p.buildFilteredVideoRanges(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("build filtered video ranges: %w", err)
         }</span>
 
         // Build filtered audio ranges that strip Private Stream 1 headers
         // (sub-stream ID and 2-byte pointer, keeping frame count byte)
-        <span class="cov1" title="1">if err := p.buildFilteredAudioRanges(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="2">if err := p.buildFilteredAudioRanges(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("build filtered audio ranges: %w", err)
         }</span>
 
-        <span class="cov1" title="1">p.filterUserData = true
+        <span class="cov1" title="2">p.filterUserData = true
 
         return nil</span>
 }
@@ -16813,8 +16817,8 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error <spa
 // buildFilteredVideoRanges scans the video ES and creates ranges that exclude user_data sections.
 // User_data (00 00 01 B2) is used for closed captions etc. and is stripped by MKV tools.
 // Optimized to use bytes.IndexByte for fast scanning (uses SIMD on x86).
-func (p *MPEGPSParser) buildFilteredVideoRanges() error <span class="cov1" title="1">{
-        if len(p.videoRanges) == 0 </span><span class="cov0" title="0">{
+func (p *MPEGPSParser) buildFilteredVideoRanges() error <span class="cov1" title="2">{
+        if len(p.videoRanges) == 0 </span><span class="cov1" title="1">{
                 return nil
         }</span>
 
@@ -16895,9 +16899,9 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error <span class="cov1" title
         return nil</span>
 }
 
-// buildFilteredAudioRanges creates ranges that strip Private Stream 1 headers
-// and separates audio by sub-stream ID.
-// DVD audio in Private Stream 1 has this structure:
+// buildFilteredAudioRanges creates per-sub-stream filtered audio ranges.
+//
+// For Private Stream 1 (0xBD), DVD audio has this structure:
 //
 //        Byte 0: sub-stream ID (0x80-0x87 = AC3, 0x88-0x8F = DTS, etc.)
 //        Byte 1: number of audio frames
@@ -16908,54 +16912,78 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error <span class="cov1" title
 // 4-byte PS header (emphasis/mute/frame_number, quant/samplerate/channels, DRC),
 // so we strip 7 bytes total. The LPCM header is parsed once per sub-stream.
 //
-// We strip headers and keep only the raw audio data.
+// For MPEG-1 audio streams (0xC0-0xDF), the PES payload is raw MP2 frame data
+// with no sub-stream header. The stream ID is used as a pseudo sub-stream ID.
+//
 // Each sub-stream ID gets its own separate filtered ES to avoid interleaving issues.
-func (p *MPEGPSParser) buildFilteredAudioRanges() error <span class="cov1" title="1">{
+func (p *MPEGPSParser) buildFilteredAudioRanges() error <span class="cov1" title="5">{
         if len(p.audioRanges) == 0 </span><span class="cov0" title="0">{
                 return nil
         }</span>
 
         // Map to track ranges per sub-stream
-        <span class="cov1" title="1">rangesBySubStream := make(map[byte][]PESPayloadRange)
+        <span class="cov1" title="5">rangesBySubStream := make(map[byte][]PESPayloadRange)
         esOffsetBySubStream := make(map[byte]int64)
         seenSubStreams := make(map[byte]bool)
         p.lpcmSubStreams = make(map[byte]bool)
         p.lpcmInfo = make(map[byte]LPCMFrameHeader)
 
-        for _, rawRange := range p.audioRanges </span><span class="cov5" title="96715">{
-                if rawRange.Size &lt; 4 </span><span class="cov3" title="1296">{
-                        // Too small to have the header structure
+        for i, rawRange := range p.audioRanges </span><span class="cov5" title="96723">{
+                if rawRange.FileOffset &gt;= p.size </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
-                // Direct slice access - zero copy
-                <span class="cov5" title="95419">if rawRange.FileOffset &gt;= p.size </span><span class="cov0" title="0">{
+                <span class="cov5" title="96723">pesStreamID := p.audioRangeStreamIDs[i]
+
+                // MPEG-1 audio streams (0xC0-0xDF): payload is raw MP2 data, no sub-stream header
+                if pesStreamID &gt;= 0xC0 &amp;&amp; pesStreamID &lt;= 0xDF </span><span class="cov4" title="7823">{
+                        if rawRange.Size &lt;= 0 </span><span class="cov3" title="1242">{
+                                continue</span>
+                        }
+                        // Use the PES stream ID as a pseudo sub-stream ID
+                        <span class="cov4" title="6581">if !seenSubStreams[pesStreamID] </span><span class="cov2" title="37">{
+                                seenSubStreams[pesStreamID] = true
+                                p.audioSubStreams = append(p.audioSubStreams, pesStreamID)
+                        }</span>
+                        <span class="cov4" title="6581">esOffset := esOffsetBySubStream[pesStreamID]
+                        rangesBySubStream[pesStreamID] = append(rangesBySubStream[pesStreamID], PESPayloadRange{
+                                FileOffset: rawRange.FileOffset,
+                                Size:       rawRange.Size,
+                                ESOffset:   esOffset,
+                        })
+                        esOffsetBySubStream[pesStreamID] += int64(rawRange.Size)
                         continue</span>
                 }
-                <span class="cov5" title="95419">subStreamID := p.data[rawRange.FileOffset]
+
+                // Private Stream 1 (0xBD): has sub-stream header
+                <span class="cov5" title="88900">if rawRange.Size &lt; 4 </span><span class="cov1" title="9">{
+                        continue</span>
+                }
+
+                <span class="cov5" title="88891">subStreamID := p.data[rawRange.FileOffset]
 
                 // Check if this is AC3, DTS, or LPCM
                 isAC3 := subStreamID &gt;= 0x80 &amp;&amp; subStreamID &lt;= 0x87
                 isDTS := subStreamID &gt;= 0x88 &amp;&amp; subStreamID &lt;= 0x8F
                 isLPCM := subStreamID &gt;= 0xA0 &amp;&amp; subStreamID &lt;= 0xA7
 
-                if isAC3 || isDTS || isLPCM </span><span class="cov5" title="89025">{
+                if isAC3 || isDTS || isLPCM </span><span class="cov5" title="88737">{
                         // Track sub-stream order
-                        if !seenSubStreams[subStreamID] </span><span class="cov2" title="24">{
+                        if !seenSubStreams[subStreamID] </span><span class="cov1" title="9">{
                                 seenSubStreams[subStreamID] = true
                                 p.audioSubStreams = append(p.audioSubStreams, subStreamID)
                         }</span>
 
-                        <span class="cov5" title="89025">if isLPCM </span><span class="cov2" title="67">{
+                        <span class="cov5" title="88737">if isLPCM </span><span class="cov1" title="2">{
                                 // Strip 7 bytes: 4-byte PS header + 3-byte LPCM frame header
-                                if rawRange.Size &gt; LPCMTotalHeaderSize </span><span class="cov2" title="67">{
+                                if rawRange.Size &gt; LPCMTotalHeaderSize </span><span class="cov1" title="2">{
                                         // Parse LPCM header on first packet to get bit depth
-                                        if _, ok := p.lpcmInfo[subStreamID]; !ok </span><span class="cov1" title="8">{
+                                        if _, ok := p.lpcmInfo[subStreamID]; !ok </span><span class="cov1" title="1">{
                                                 headerEnd := rawRange.FileOffset + 4 + LPCMHeaderSize
                                                 if headerEnd &gt; p.size </span><span class="cov0" title="0">{
                                                         continue</span>
                                                 }
-                                                <span class="cov1" title="8">headerData := p.data[rawRange.FileOffset+4 : headerEnd]
+                                                <span class="cov1" title="1">headerData := p.data[rawRange.FileOffset+4 : headerEnd]
                                                 info := ParseLPCMFrameHeader(headerData)
                                                 p.lpcmInfo[subStreamID] = info
                                                 // Only 16-bit LPCM is supported for byte-swap matching.
@@ -16965,7 +16993,7 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error <span class="cov1" title
                                                         p.lpcmSubStreams[subStreamID] = true
                                                 }</span>
                                         }
-                                        <span class="cov2" title="67">esOffset := esOffsetBySubStream[subStreamID]
+                                        <span class="cov1" title="2">esOffset := esOffsetBySubStream[subStreamID]
                                         rangesBySubStream[subStreamID] = append(rangesBySubStream[subStreamID], PESPayloadRange{
                                                 FileOffset: rawRange.FileOffset + LPCMTotalHeaderSize,
                                                 Size:       rawRange.Size - LPCMTotalHeaderSize,
@@ -16973,9 +17001,9 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error <span class="cov1" title
                                         })
                                         esOffsetBySubStream[subStreamID] += int64(rawRange.Size - LPCMTotalHeaderSize)</span>
                                 }
-                        } else<span class="cov5" title="88958"> {
+                        } else<span class="cov5" title="88735"> {
                                 // Strip the entire 4-byte header, keep only raw audio data
-                                if rawRange.Size &gt; 4 </span><span class="cov5" title="88958">{
+                                if rawRange.Size &gt; 4 </span><span class="cov5" title="88735">{
                                         esOffset := esOffsetBySubStream[subStreamID]
                                         rangesBySubStream[subStreamID] = append(rangesBySubStream[subStreamID], PESPayloadRange{
                                                 FileOffset: rawRange.FileOffset + 4, // Skip header (1 + 1 + 2)
@@ -16989,21 +17017,21 @@ func (p *MPEGPSParser) buildFilteredAudioRanges() error <span class="cov1" title
                 // Skip unknown sub-stream types (like subtitles 0x20-0x3F)
         }
 
-        <span class="cov1" title="1">p.filteredAudioBySubStream = rangesBySubStream
+        <span class="cov1" title="5">p.filteredAudioBySubStream = rangesBySubStream
         return nil</span>
 }
 
 // parsePackHeader parses an MPEG-2 pack header and returns its size.
-func (p *MPEGPSParser) parsePackHeader(pos int64) (int, error) <span class="cov6" title="1392933">{
+func (p *MPEGPSParser) parsePackHeader(pos int64) (int, error) <span class="cov6" title="1392934">{
         // MPEG-2 pack header is 14 bytes minimum
         // Format: 00 00 01 BA + SCR (6 bytes) + mux_rate (3 bytes) + stuffing
         if pos+14 &gt; p.size </span><span class="cov0" title="0">{
                 return 0, fmt.Errorf("failed to read pack header")
         }</span>
-        <span class="cov6" title="1392933">buf := p.data[pos : pos+14]
+        <span class="cov6" title="1392934">buf := p.data[pos : pos+14]
 
         // Check if this is MPEG-2 (starts with 01) or MPEG-1 (starts with 0010)
-        if buf[4]&amp;0xC0 == 0x40 </span><span class="cov6" title="1392822">{
+        if buf[4]&amp;0xC0 == 0x40 </span><span class="cov6" title="1392823">{
                 // MPEG-2 pack header
                 stuffingLen := int(buf[13] &amp; 0x07)
                 return 14 + stuffingLen, nil
@@ -17023,15 +17051,15 @@ func (p *MPEGPSParser) parseSystemHeader(pos int64) (int, error) <span class="co
 }
 
 // readPESLength reads the 2-byte PES packet length field.
-func (p *MPEGPSParser) readPESLength(pos int64) (uint16, error) <span class="cov6" title="1412872">{
+func (p *MPEGPSParser) readPESLength(pos int64) (uint16, error) <span class="cov6" title="1412873">{
         if pos+2 &gt; p.size </span><span class="cov0" title="0">{
                 return 0, fmt.Errorf("failed to read PES length")
         }</span>
-        <span class="cov6" title="1412872">return binary.BigEndian.Uint16(p.data[pos : pos+2]), nil</span>
+        <span class="cov6" title="1412873">return binary.BigEndian.Uint16(p.data[pos : pos+2]), nil</span>
 }
 
 // parsePESPacket parses a PES packet header and returns packet info.
-func (p *MPEGPSParser) parsePESPacket(pos int64, streamID byte) (PESPacket, error) <span class="cov6" title="1395621">{
+func (p *MPEGPSParser) parsePESPacket(pos int64, streamID byte) (PESPacket, error) <span class="cov6" title="1395622">{
         pkt := PESPacket{
                 StreamID: streamID,
                 Offset:   pos,
@@ -17061,13 +17089,13 @@ func (p *MPEGPSParser) parsePESPacket(pos int64, streamID byte) (PESPacket, erro
         // Then optional fields based on flags
 
         // Direct slice access for PES header fields
-        <span class="cov6" title="1395621">if pos+9 &gt; p.size </span><span class="cov0" title="0">{
+        <span class="cov6" title="1395622">if pos+9 &gt; p.size </span><span class="cov0" title="0">{
                 return pkt, fmt.Errorf("failed to read PES header")
         }</span>
-        <span class="cov6" title="1395621">buf := p.data[pos+6 : pos+9]
+        <span class="cov6" title="1395622">buf := p.data[pos+6 : pos+9]
 
         // Check for MPEG-2 PES (starts with 10)
-        if buf[0]&amp;0xC0 == 0x80 </span><span class="cov6" title="1386220">{
+        if buf[0]&amp;0xC0 == 0x80 </span><span class="cov6" title="1386221">{
                 // MPEG-2 PES header
                 headerDataLen := int(buf[2])
                 pkt.HeaderSize = 6 + 3 + headerDataLen // start code(4) + length(2) + flags(2) + header_len(1) + header_data
@@ -17112,11 +17140,11 @@ func (p *MPEGPSParser) parsePESPacket(pos int64, streamID byte) (PESPacket, erro
                 pkt.PayloadSize = int(length) - headerLen</span>
         }
 
-        <span class="cov6" title="1395621">if pkt.PayloadSize &lt; 0 </span><span class="cov3" title="244">{
+        <span class="cov6" title="1395622">if pkt.PayloadSize &lt; 0 </span><span class="cov3" title="244">{
                 pkt.PayloadSize = 0
         }</span>
 
-        <span class="cov6" title="1395621">return pkt, nil</span>
+        <span class="cov6" title="1395622">return pkt, nil</span>
 }
 
 // VideoRanges returns all video payload ranges found in the stream.
@@ -17144,7 +17172,7 @@ func (p *MPEGPSParser) AudioRanges() []PESPayloadRange <span class="cov0" title=
 }</span>
 
 // Packets returns all parsed PES packets.
-func (p *MPEGPSParser) Packets() []PESPacket <span class="cov1" title="2">{
+func (p *MPEGPSParser) Packets() []PESPacket <span class="cov0" title="0">{
         return p.packets
 }</span>
 
@@ -17185,18 +17213,18 @@ func (p *MPEGPSParser) ESOffsetToFileOffset(esOffset int64, isVideo bool) (fileO
 // TotalESSize returns the total size of the elementary stream.
 // For video, returns filtered ES size when filtering is enabled.
 // For audio, this returns 0 - use AudioSubStreamESSize instead.
-func (p *MPEGPSParser) TotalESSize(isVideo bool) int64 <span class="cov7" title="2386286">{
+func (p *MPEGPSParser) TotalESSize(isVideo bool) int64 <span class="cov7" title="2386284">{
         if !isVideo </span><span class="cov0" title="0">{
                 return 0
         }</span>
-        <span class="cov7" title="2386286">if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov7" title="2386284">{
+        <span class="cov7" title="2386284">if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov7" title="2386282">{
                 return totalESSizeFromRanges(p.filteredVideoRanges)
         }</span>
         <span class="cov1" title="2">return totalESSizeFromRanges(p.videoRanges)</span>
 }
 
 // AudioSubStreams returns the list of audio sub-stream IDs in order of appearance.
-func (p *MPEGPSParser) AudioSubStreams() []byte <span class="cov1" title="3">{
+func (p *MPEGPSParser) AudioSubStreams() []byte <span class="cov1" title="4">{
         return p.audioSubStreams
 }</span>
 
@@ -17206,7 +17234,7 @@ func (p *MPEGPSParser) AudioSubStreamCount() int <span class="cov0" title="0">{
 }</span>
 
 // AudioSubStreamESSize returns the total ES size for a specific audio sub-stream.
-func (p *MPEGPSParser) AudioSubStreamESSize(subStreamID byte) int64 <span class="cov5" title="98047">{
+func (p *MPEGPSParser) AudioSubStreamESSize(subStreamID byte) int64 <span class="cov5" title="99002">{
         return totalESSizeFromRanges(p.filteredAudioBySubStream[subStreamID])
 }</span>
 
@@ -17221,7 +17249,7 @@ func (p *MPEGPSParser) FilteredVideoRanges() []PESPayloadRange <span class="cov1
 
 // FilteredAudioRanges returns the filtered audio payload ranges for a specific sub-stream.
 // Returns nil if the sub-stream doesn't exist.
-func (p *MPEGPSParser) FilteredAudioRanges(subStreamID byte) []PESPayloadRange <span class="cov2" title="24">{
+func (p *MPEGPSParser) FilteredAudioRanges(subStreamID byte) []PESPayloadRange <span class="cov2" title="46">{
         return p.filteredAudioBySubStream[subStreamID]
 }</span>
 
@@ -17231,12 +17259,12 @@ func (p *MPEGPSParser) Data() []byte <span class="cov0" title="0">{
 }</span>
 
 // DataSlice returns a sub-slice of the backing data at the given offset and size.
-func (p *MPEGPSParser) DataSlice(off int64, size int) []byte <span class="cov6" title="1387375">{
+func (p *MPEGPSParser) DataSlice(off int64, size int) []byte <span class="cov6" title="1393659">{
         return p.data[off : off+int64(size)]
 }</span>
 
 // DataSize returns the total size of the backing data.
-func (p *MPEGPSParser) DataSize() int64 <span class="cov2" title="25">{
+func (p *MPEGPSParser) DataSize() int64 <span class="cov2" title="41">{
         return p.size
 }</span>
 
@@ -17244,29 +17272,29 @@ func (p *MPEGPSParser) DataSize() int64 <span class="cov2" title="25">{
 // to avoid binary search when reading sequentially. Returns the byte, the range
 // index where it was found (for use as hint on next call), and success status.
 // Pass rangeHint=-1 to force binary search.
-func (p *MPEGPSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHint int) (byte, int, bool) <span class="cov10" title="3464746591">{
+func (p *MPEGPSParser) ReadESByteWithHint(esOffset int64, isVideo bool, rangeHint int) (byte, int, bool) <span class="cov10" title="3464248767">{
         if !isVideo </span><span class="cov0" title="0">{
                 // Audio doesn't use this method - it goes through sub-stream reader
                 return 0, -1, false
         }</span>
-        <span class="cov10" title="3464746591">var ranges []PESPayloadRange
-        if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov10" title="3464746591">{
+        <span class="cov10" title="3464248767">var ranges []PESPayloadRange
+        if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov10" title="3464248767">{
                 ranges = p.filteredVideoRanges
         }</span> else<span class="cov0" title="0"> {
                 ranges = p.videoRanges
         }</span>
-        <span class="cov10" title="3464746591">return readByteWithHint(p.data, nil, p.size, ranges, esOffset, rangeHint)</span>
+        <span class="cov10" title="3464248767">return readByteWithHint(p.data, nil, p.size, ranges, esOffset, rangeHint)</span>
 }
 
 // ReadAudioByteWithHint reads a single byte from an audio sub-stream, using a range hint.
 // For LPCM sub-streams (16-bit only), swaps even/odd byte positions to convert big-endian to little-endian.
-func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) <span class="cov8" title="34207925">{
+func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) <span class="cov8" title="34335790">{
         if p.lpcmSubStreams[subStreamID] </span><span class="cov0" title="0">{
                 // Swap even/odd byte position: XOR with 1
                 swappedOffset := esOffset ^ 1
                 return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], swappedOffset, rangeHint)
         }</span>
-        <span class="cov8" title="34207925">return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)</span>
+        <span class="cov8" title="34335790">return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)</span>
 }
 
 // Video start codes that should be KEPT (not user_data)
@@ -17283,77 +17311,77 @@ type RawRange struct {
 
 // RawRangesForESRegion returns the raw file ranges that contain the given ES region.
 // For video streams only - audio should use RawRangesForAudioSubStream.
-func (p *MPEGPSParser) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) <span class="cov5" title="33513">{
+func (p *MPEGPSParser) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) <span class="cov5" title="33514">{
         if !isVideo </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("audio uses per-sub-stream methods, use RawRangesForAudioSubStream")
         }</span>
-        <span class="cov5" title="33512">var ranges []PESPayloadRange
-        if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov5" title="33511">{
+        <span class="cov5" title="33513">var ranges []PESPayloadRange
+        if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov5" title="33512">{
                 ranges = p.filteredVideoRanges
         }</span> else<span class="cov1" title="1"> {
                 ranges = p.videoRanges
         }</span>
-        <span class="cov5" title="33512">return rawRangesFromPESRanges(ranges, esOffset, size)</span>
+        <span class="cov5" title="33513">return rawRangesFromPESRanges(ranges, esOffset, size)</span>
 }
 
 // RawRangesForAudioSubStream returns the raw file ranges for audio data from a specific sub-stream.
-func (p *MPEGPSParser) RawRangesForAudioSubStream(subStreamID byte, esOffset int64, size int) ([]RawRange, error) <span class="cov5" title="40663">{
+func (p *MPEGPSParser) RawRangesForAudioSubStream(subStreamID byte, esOffset int64, size int) ([]RawRange, error) <span class="cov5" title="40782">{
         ranges, ok := p.filteredAudioBySubStream[subStreamID]
         if !ok </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
         }</span>
-        <span class="cov5" title="40662">return rawRangesFromPESRanges(ranges, esOffset, size)</span>
+        <span class="cov5" title="40781">return rawRangesFromPESRanges(ranges, esOffset, size)</span>
 }
 
 // ReadESData reads elementary stream data at the given ES offset.
 // For video, returns FILTERED ES data (excludes user_data sections).
 // For audio, returns error - use ReadAudioSubStreamData instead.
-func (p *MPEGPSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error) <span class="cov7" title="2507033">{
+func (p *MPEGPSParser) ReadESData(esOffset int64, size int, isVideo bool) ([]byte, error) <span class="cov7" title="2507031">{
         if !isVideo </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("audio uses per-sub-stream methods, use ReadAudioSubStreamData")
         }</span>
-        <span class="cov7" title="2507033">var ranges []PESPayloadRange
-        if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov7" title="2507033">{
+        <span class="cov7" title="2507031">var ranges []PESPayloadRange
+        if p.filterUserData &amp;&amp; len(p.filteredVideoRanges) &gt; 0 </span><span class="cov7" title="2507031">{
                 ranges = p.filteredVideoRanges
         }</span> else<span class="cov0" title="0"> {
                 ranges = p.videoRanges
         }</span>
-        <span class="cov7" title="2507033">return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)</span>
+        <span class="cov7" title="2507031">return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)</span>
 }
 
 // ReadAudioSubStreamData reads audio data from a specific sub-stream.
 // For LPCM sub-streams, the data is byte-swapped to match MKV little-endian format.
 // Handles alignment: if esOffset is odd, reads from the pair-aligned offset,
 // swaps, and returns only the requested portion.
-func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error) <span class="cov5" title="99582">{
+func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error) <span class="cov5" title="100992">{
         ranges, ok := p.filteredAudioBySubStream[subStreamID]
         if !ok </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("audio sub-stream 0x%02X not found", subStreamID)
         }</span>
 
-        <span class="cov5" title="99582">if !p.lpcmSubStreams[subStreamID] </span><span class="cov5" title="99449">{
+        <span class="cov5" title="100992">if !p.lpcmSubStreams[subStreamID] </span><span class="cov5" title="100932">{
                 return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)
         }</span>
 
         // LPCM 16-bit forward transform (DVD big-endian → MKV little-endian).
         // Byte-swap pairs are aligned to the ES start (pairs at offsets 0-1, 2-3, ...).
         // If esOffset is odd, we must read one extra byte before to complete the pair.
-        <span class="cov3" title="133">alignedOffset := esOffset
+        <span class="cov2" title="60">alignedOffset := esOffset
         trimFront := 0
-        if esOffset%2 == 1 </span><span class="cov2" title="83">{
+        if esOffset%2 == 1 </span><span class="cov0" title="0">{
                 alignedOffset = esOffset - 1
                 trimFront = 1
         }</span>
-        <span class="cov3" title="133">alignedSize := size + trimFront
+        <span class="cov2" title="60">alignedSize := size + trimFront
         // If alignedSize is odd, extend by 1 to complete the trailing pair
         // (if data is available).
         trimBack := 0
-        if alignedSize%2 == 1 </span><span class="cov2" title="83">{
+        if alignedSize%2 == 1 </span><span class="cov0" title="0">{
                 alignedSize++
                 trimBack = 1
         }</span>
 
-        <span class="cov3" title="133">data, err := readFromRanges(p.data, nil, p.size, ranges, alignedOffset, alignedSize)
+        <span class="cov2" title="60">data, err := readFromRanges(p.data, nil, p.size, ranges, alignedOffset, alignedSize)
         if err != nil </span><span class="cov0" title="0">{
                 // If extending caused an out-of-range error, retry without the trailing extension
                 if trimBack &gt; 0 </span><span class="cov0" title="0">{
@@ -17367,7 +17395,7 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
         }
 
         // readFromRanges may return a zero-copy mmap slice, so clone first
-        <span class="cov3" title="133">result := make([]byte, len(data))
+        <span class="cov2" title="60">result := make([]byte, len(data))
         copy(result, data)
         TransformLPCM16BE(result)
 
@@ -17377,11 +17405,11 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
         if end &gt; len(result) </span><span class="cov0" title="0">{
                 end = len(result)
         }</span>
-        <span class="cov3" title="133">return result[start:end], nil</span>
+        <span class="cov2" title="60">return result[start:end], nil</span>
 }
 
 // IsLPCMSubStream returns true if the given sub-stream ID is an LPCM sub-stream.
-func (p *MPEGPSParser) IsLPCMSubStream(subStreamID byte) bool <span class="cov2" title="48">{
+func (p *MPEGPSParser) IsLPCMSubStream(subStreamID byte) bool <span class="cov2" title="81">{
         return p.lpcmSubStreams[subStreamID]
 }</span>
 </pre>
@@ -17413,8 +17441,8 @@ func detectDVDCodecs(index *Index) (*SourceCodecs, error) <span class="cov1" tit
                         }</span>
                 }
 
-                // Audio from Private Stream 1 sub-streams
-                <span class="cov1" title="2">for _, subStreamID := range parser.AudioSubStreams() </span><span class="cov1" title="2">{
+                // Audio from sub-streams (Private Stream 1 and MPEG-1 audio)
+                <span class="cov1" title="2">for _, subStreamID := range parser.AudioSubStreams() </span><span class="cov2" title="3">{
                         var ct CodecType
                         switch </span>{
                         case subStreamID &gt;= 0x80 &amp;&amp; subStreamID &lt;= 0x87:<span class="cov1" title="1">
@@ -17423,22 +17451,14 @@ func detectDVDCodecs(index *Index) (*SourceCodecs, error) <span class="cov1" tit
                                 ct = CodecDTSAudio</span>
                         case subStreamID &gt;= 0xA0 &amp;&amp; subStreamID &lt;= 0xA7:<span class="cov0" title="0">
                                 ct = CodecLPCMAudio</span>
+                        case subStreamID &gt;= 0xC0 &amp;&amp; subStreamID &lt;= 0xDF:<span class="cov1" title="1">
+                                ct = CodecMPEGAudio</span>
                         default:<span class="cov0" title="0">
                                 continue</span>
                         }
-                        <span class="cov1" title="2">if !containsCodec(codecs.AudioCodecs, ct) </span><span class="cov1" title="2">{
+                        <span class="cov2" title="3">if !containsCodec(codecs.AudioCodecs, ct) </span><span class="cov2" title="3">{
                                 codecs.AudioCodecs = append(codecs.AudioCodecs, ct)
                         }</span>
-                }
-
-                // MPEG audio streams (stream IDs 0xC0-0xDF)
-                <span class="cov1" title="2">for _, pkt := range parser.Packets() </span><span class="cov1" title="1">{
-                        if pkt.StreamID &gt;= 0xC0 &amp;&amp; pkt.StreamID &lt;= 0xDF </span><span class="cov1" title="1">{
-                                if !containsCodec(codecs.AudioCodecs, CodecMPEGAudio) </span><span class="cov1" title="1">{
-                                        codecs.AudioCodecs = append(codecs.AudioCodecs, CodecMPEGAudio)
-                                }</span>
-                                <span class="cov1" title="1">break</span> // Only need to find one
-                        }
                 }
         }
 
@@ -20054,15 +20074,15 @@ func NewIndex(sourceDir string, sourceType Type, windowSize int) *Index <span cl
 // for nearby locations during matching. Must be called before concurrent access.
 func (idx *Index) SortLocationsByOffset() <span class="cov2" title="6">{
         idx.sortOnce.Do(func() </span><span class="cov2" title="6">{
-                for hash, locs := range idx.HashToLocations </span><span class="cov10" title="3727478">{
-                        if len(locs) &gt; 1 </span><span class="cov7" title="122560">{
-                                sort.Slice(locs, func(i, j int) bool </span><span class="cov8" title="418279">{
+                for hash, locs := range idx.HashToLocations </span><span class="cov10" title="3959846">{
+                        if len(locs) &gt; 1 </span><span class="cov7" title="124942">{
+                                sort.Slice(locs, func(i, j int) bool </span><span class="cov8" title="467639">{
                                         if locs[i].FileIndex != locs[j].FileIndex </span><span class="cov4" title="395">{
                                                 return locs[i].FileIndex &lt; locs[j].FileIndex
                                         }</span>
-                                        <span class="cov8" title="417884">return locs[i].Offset &lt; locs[j].Offset</span>
+                                        <span class="cov8" title="467244">return locs[i].Offset &lt; locs[j].Offset</span>
                                 })
-                                <span class="cov7" title="122560">idx.HashToLocations[hash] = locs</span>
+                                <span class="cov7" title="124942">idx.HashToLocations[hash] = locs</span>
                         }
                 }
         })
