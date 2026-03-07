@@ -263,13 +263,13 @@ github.com/stuckj/mkvdup/internal/fuse/watcher_linux.go:18:		IsNetworkFS				100.
 github.com/stuckj/mkvdup/internal/fuse/watcher_linux.go:23:		isNetworkFS				83.3%
 github.com/stuckj/mkvdup/internal/matcher/matcher.go:44:		detectNALLengthSize			100.0%
 github.com/stuckj/mkvdup/internal/matcher/matcher.go:77:		NALLengthSizeForTrack			0.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:173:		nalSizeBucket				83.3%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:189:		NewMatcher				75.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:207:		SetVerboseWriter			0.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:212:		SetNumWorkers				100.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:220:		Close					100.0%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:231:		Match					57.1%
-github.com/stuckj/mkvdup/internal/matcher/matcher.go:424:		ExtractProbeHashes			94.4%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:174:		nalSizeBucket				83.3%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:190:		NewMatcher				75.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:209:		SetVerboseWriter			0.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:214:		SetNumWorkers				100.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:222:		Close					100.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:233:		Match					57.8%
+github.com/stuckj/mkvdup/internal/matcher/matcher.go:433:		ExtractProbeHashes			94.4%
 github.com/stuckj/mkvdup/internal/matcher/matcher_entries.go:13:	mergeRegions				100.0%
 github.com/stuckj/mkvdup/internal/matcher/matcher_entries.go:70:	buildEntries				84.4%
 github.com/stuckj/mkvdup/internal/matcher/matcher_expand.go:13:		tryVerifyAndExpand			72.2%
@@ -292,6 +292,9 @@ github.com/stuckj/mkvdup/internal/matcher/matcher_result.go:74:		Flush					100.0
 github.com/stuckj/mkvdup/internal/matcher/matcher_result.go:79:		Size					100.0%
 github.com/stuckj/mkvdup/internal/matcher/matcher_result.go:84:		File					100.0%
 github.com/stuckj/mkvdup/internal/matcher/matcher_result.go:89:		Close					100.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher_truehd.go:23:		fillTrueHDGaps				54.5%
+github.com/stuckj/mkvdup/internal/matcher/matcher_truehd.go:48:		fillTrueHDTrackGaps			0.0%
+github.com/stuckj/mkvdup/internal/matcher/matcher_truehd.go:203:	fillTrueHDGapSegments			90.0%
 github.com/stuckj/mkvdup/internal/mkv/ebml.go:72:			ReadElementHeader			93.3%
 github.com/stuckj/mkvdup/internal/mkv/ebml.go:105:			readVINT				97.3%
 github.com/stuckj/mkvdup/internal/mkv/ebml.go:173:			isUnknownSize				75.0%
@@ -505,7 +508,7 @@ github.com/stuckj/mkvdup/internal/source/mpegts_parse.go:424:		reassemblePSISect
 github.com/stuckj/mkvdup/internal/source/mpegts_parse.go:505:		buildFilteredVideoRanges		11.9%
 github.com/stuckj/mkvdup/internal/source/mpegts_truehd.go:7:		splitTrueHDAC3Streams			88.9%
 github.com/stuckj/mkvdup/internal/source/mpegts_truehd.go:46:		detectCombinedTrueHDAC3			87.0%
-github.com/stuckj/mkvdup/internal/source/mpegts_truehd.go:89:		splitCombinedAudioRanges		73.4%
+github.com/stuckj/mkvdup/internal/source/mpegts_truehd.go:93:		splitCombinedAudioRanges		69.9%
 github.com/stuckj/mkvdup/internal/source/mpegts_util.go:5:		mergeAdjacentRanges			100.0%
 github.com/stuckj/mkvdup/internal/source/multi_region.go:25:		newMultiRegionData			47.6%
 github.com/stuckj/mkvdup/internal/source/multi_region.go:64:		Len					100.0%
@@ -523,6 +526,7 @@ github.com/stuckj/mkvdup/internal/source/source.go:398:			ReadRawDataAt				28.6%
 github.com/stuckj/mkvdup/internal/source/source.go:412:			RawSlice				100.0%
 github.com/stuckj/mkvdup/internal/source/subtitle.go:7:			FindPGSSyncPoints			100.0%
 github.com/stuckj/mkvdup/internal/source/subtitle.go:22:		isValidPGSSegmentType			100.0%
+github.com/stuckj/mkvdup/internal/source/truehd.go:6:			ParseTrueHDAULength			100.0%
 github.com/stuckj/mkvdup/internal/source/udf.go:88:			isUDFImage				93.8%
 github.com/stuckj/mkvdup/internal/source/udf.go:118:			detectUDFISOType			68.8%
 github.com/stuckj/mkvdup/internal/source/udf.go:148:			findBlurayM2TSInUDF			71.1%
@@ -559,4 +563,4 @@ github.com/stuckj/mkvdup/testdata/testdata.go:84:			checkPaths				60.0%
 github.com/stuckj/mkvdup/testdata/testdata.go:113:			SkipIfNotAvailable			75.0%
 github.com/stuckj/mkvdup/testdata/testdata.go:127:			CreateBlurayData			76.9%
 github.com/stuckj/mkvdup/testdata/testdata.go:159:			findLocalTestdataDir			0.0%
-total:									(statements)				65.1%
+total:									(statements)				64.6%
