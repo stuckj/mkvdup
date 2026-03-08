@@ -124,6 +124,41 @@ mkvdup create video.mkv /path/to/source/dir video.mkvdup
 mkvdup mount /mnt/videos config.yaml
 ```
 
+### Organize with config includes
+
+Each `.mkvdup` file gets a companion YAML config:
+
+```yaml
+# /data/dedup/video1.mkvdup.yaml
+name: "Movies/Video 1.mkv"
+dedup_file: video1.mkvdup
+source_dir: /data/sources/Video1_DVD
+```
+
+A top-level config includes them all using glob patterns:
+
+```yaml
+# /etc/mkvdup.conf
+includes:
+  - "/data/dedup/**/*.mkvdup.yaml"
+```
+
+### Mount via fstab
+
+```
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  nofail  0  0
+```
+
+`nofail` lets the system boot normally if the mount fails (e.g., source media unavailable). The mount helper automatically enables `allow_other` so that non-root users can access the filesystem.
+
+For a directory of config files instead of a single file:
+
+```
+/etc/mkvdup.d  /mnt/videos  fuse.mkvdup  config_dir,nofail  0  0
+```
+
+See [docs/FUSE.md](docs/FUSE.md) for full configuration details including source watching, error notifications, and permissions.
+
 ### Verify reconstruction
 
 ```bash
