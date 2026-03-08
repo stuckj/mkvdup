@@ -1,534 +1,534 @@
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection3793919298/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection352170819/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection1089191561/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection4023701177/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection2294198674/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection3469509858/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection688934993/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection2783660630/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection1594865868/001/a.yaml (cycle detection)
-2026/03/08 00:47:20 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection3512428029/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection3953176277/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection1449506672/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection3919694404/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection2251703591/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection1128308543/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection221284030/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection1549689294/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection4282442931/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection1499043906/001/a.yaml (cycle detection)
+2026/03/08 18:48:06 warning: skipping already-seen config /tmp/TestResolveConfigs_CycleDetection2453738792/001/a.yaml (cycle detection)
 goos: linux
 goarch: amd64
 pkg: github.com/stuckj/mkvdup/internal/dedup
 cpu: AMD EPYC 7763 64-Core Processor                
-BenchmarkGetEntry_Sequential-4       	31938009	        37.42 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31933532	        37.58 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31842159	        37.46 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31929660	        37.46 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31898024	        37.44 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31977736	        37.45 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31902700	        37.44 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31910586	        37.41 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31929140	        37.42 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Sequential-4       	31976022	        37.45 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	28484278	        40.68 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	29518191	        40.66 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	29127136	        40.66 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	28773032	        41.40 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	27672674	        40.63 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	29449881	        41.08 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	29213888	        40.73 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	29446684	        40.86 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	28503636	        40.69 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetEntry_Random-4           	29392293	        40.64 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.64 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.65 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.65 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.70 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.50 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.52 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.62 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.52 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.49 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetMkvOffset-4              	100000000	        10.65 ns/op	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34593	     34992 ns/op	1872.88 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34389	     34915 ns/op	1877.01 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34179	     34620 ns/op	1892.99 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34362	     34605 ns/op	1893.82 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34374	     34773 ns/op	1884.70 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34501	     34743 ns/op	1886.29 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34396	     34923 ns/op	1876.57 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34660	     34680 ns/op	1889.72 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34406	     34862 ns/op	1879.89 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Sequential-4         	   34268	     35143 ns/op	1864.85 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31676	     37806 ns/op	1733.49 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31555	     38045 ns/op	1722.58 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31622	     38305 ns/op	1710.89 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31438	     38160 ns/op	1717.41 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31486	     38205 ns/op	1715.36 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31446	     38163 ns/op	1717.25 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31432	     38180 ns/op	1716.52 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31446	     38164 ns/op	1717.24 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31498	     38273 ns/op	1712.31 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Random-4             	   31447	     37996 ns/op	1724.81 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3494930	       345.0 ns/op	 742.14 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3509236	       344.0 ns/op	 744.20 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3483746	       345.1 ns/op	 741.81 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3485672	       344.9 ns/op	 742.27 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3484947	       343.4 ns/op	 745.42 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3470140	       344.5 ns/op	 743.19 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3492999	       344.1 ns/op	 743.90 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3489337	       346.3 ns/op	 739.34 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3484162	       344.1 ns/op	 744.04 MB/s	       0 B/op	       0 allocs/op
-BenchmarkReadAt_Small-4              	 3493245	       344.5 ns/op	 743.18 MB/s	       0 B/op	       0 allocs/op
-BenchmarkFindEntriesForRange-4       	 1358338	       880.2 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1363711	       903.3 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1339873	       900.6 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1339513	       896.7 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1363794	       896.5 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1342879	       887.9 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1366924	       881.6 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1273152	       891.0 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1352744	       882.1 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkFindEntriesForRange-4       	 1320355	       894.4 ns/op	    1248 B/op	       5 allocs/op
-BenchmarkNewReader-4                 	    2778	    456027 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2704	    438575 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2749	    437895 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2754	    444635 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2733	    433476 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2760	    436453 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2774	    440245 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2778	    434436 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2727	    434219 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReader-4                 	    2726	    438495 ns/op	    2408 B/op	      28 allocs/op
-BenchmarkNewReaderLazy-4             	   29637	     40520 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29434	     40473 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29985	     40079 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29623	     40112 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29611	     40484 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29150	     40551 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29307	     40307 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29612	     40548 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29283	     40524 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkNewReaderLazy-4             	   29493	     40433 ns/op	    1128 B/op	      27 allocs/op
-BenchmarkWriter_Write-4              	    1162	   1039465 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1165	   1032650 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1185	   1038584 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1112	   1056822 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1161	   1046339 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1177	   1034396 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1077	   1054272 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1158	   1039455 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1128	   1077400 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write-4              	    1138	   1100305 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     184	   6457365 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     186	   6388457 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     189	   6366000 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     186	   6625668 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     178	   6732374 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     178	   6791195 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     178	   6720563 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     176	   6764641 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     175	   6737848 ns/op	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeIndex-4   	     178	   6753931 ns/op	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     506	   2558577 ns/op	 409.83 MB/s	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     474	   2550614 ns/op	 411.11 MB/s	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     481	   2595704 ns/op	 403.97 MB/s	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     510	   2531383 ns/op	 414.23 MB/s	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     475	   2621007 ns/op	 400.07 MB/s	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     475	   2547553 ns/op	 411.60 MB/s	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     474	   2569173 ns/op	 408.14 MB/s	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     459	   2563029 ns/op	 409.12 MB/s	   66232 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     471	   2558971 ns/op	 409.76 MB/s	   66248 B/op	      24 allocs/op
-BenchmarkWriter_Write_LargeDelta-4   	     444	   2587172 ns/op	 405.30 MB/s	   66232 B/op	      24 allocs/op
+BenchmarkGetEntry_Sequential-4       	32377261	        36.92 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32373516	        36.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32150955	        37.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32392575	        36.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32377820	        37.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32393575	        37.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32330950	        36.92 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32032879	        37.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32398550	        36.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Sequential-4       	32368106	        36.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29501950	        40.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29504406	        40.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29612396	        41.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29549043	        40.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29612924	        40.75 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29623296	        40.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29455887	        41.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29447112	        40.75 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29322774	        40.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetEntry_Random-4           	29606694	        40.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.45 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.58 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkGetMkvOffset-4              	100000000	        10.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   33789	     35233 ns/op	1860.08 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34038	     35357 ns/op	1853.56 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   33903	     35376 ns/op	1852.58 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34129	     34983 ns/op	1873.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34303	     35062 ns/op	1869.12 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34346	     34926 ns/op	1876.45 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34340	     34752 ns/op	1885.80 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34255	     35036 ns/op	1870.52 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34234	     34904 ns/op	1877.60 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Sequential-4         	   34369	     34878 ns/op	1879.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31887	     37997 ns/op	1724.76 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31834	     37706 ns/op	1738.09 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31340	     38018 ns/op	1723.81 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31422	     38014 ns/op	1723.98 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31851	     37749 ns/op	1736.09 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31725	     38194 ns/op	1715.87 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31614	     37689 ns/op	1738.85 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31672	     38157 ns/op	1717.54 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31616	     37751 ns/op	1735.99 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Random-4             	   31809	     37763 ns/op	1735.44 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3482665	       346.8 ns/op	 738.27 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3453997	       346.3 ns/op	 739.32 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3471014	       350.4 ns/op	 730.54 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3470115	       346.5 ns/op	 738.74 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3465546	       347.0 ns/op	 737.79 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3467406	       348.1 ns/op	 735.35 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3468615	       345.9 ns/op	 740.10 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3470149	       348.5 ns/op	 734.68 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3471231	       344.9 ns/op	 742.34 MB/s	       0 B/op	       0 allocs/op
+BenchmarkReadAt_Small-4              	 3459646	       345.8 ns/op	 740.31 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFindEntriesForRange-4       	 1301994	       910.8 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1297951	       926.9 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1290919	       932.1 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1304510	       915.1 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1304690	       919.6 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1301935	       919.2 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1320265	       913.5 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1310886	       928.0 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1293679	       934.0 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkFindEntriesForRange-4       	 1299798	       918.2 ns/op	    1248 B/op	       5 allocs/op
+BenchmarkNewReader-4                 	    2763	    435591 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2728	    439300 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2722	    436368 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2722	    433971 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2760	    437776 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2721	    439816 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2750	    433603 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2749	    438431 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2732	    434566 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReader-4                 	    2770	    436947 ns/op	    2408 B/op	      28 allocs/op
+BenchmarkNewReaderLazy-4             	   29617	     40922 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29154	     40817 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29082	     40736 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29552	     40588 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29269	     40662 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29394	     40592 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29355	     40781 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   27979	     40768 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29175	     40566 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkNewReaderLazy-4             	   29424	     40555 ns/op	    1128 B/op	      27 allocs/op
+BenchmarkWriter_Write-4              	    1125	   1067874 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1124	   1067355 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1134	   1095244 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1088	   1116211 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1075	   1132371 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1065	   1146107 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1005	   1128195 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1088	   1125123 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1022	   1172632 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write-4              	    1096	   1119141 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     190	   6407937 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     182	   6531708 ns/op	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     183	   6507336 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     184	   6344176 ns/op	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     177	   6736625 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     175	   6807829 ns/op	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     177	   6745488 ns/op	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     178	   6769477 ns/op	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     177	   6760806 ns/op	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeIndex-4   	     172	   6758324 ns/op	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     468	   2565308 ns/op	 408.75 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     464	   2577210 ns/op	 406.86 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     466	   2567199 ns/op	 408.45 MB/s	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     468	   2566516 ns/op	 408.56 MB/s	   66232 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     466	   2565014 ns/op	 408.80 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     463	   2549649 ns/op	 411.26 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     445	   2565975 ns/op	 408.65 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     465	   2580795 ns/op	 406.30 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     468	   2565330 ns/op	 408.75 MB/s	   66248 B/op	      24 allocs/op
+BenchmarkWriter_Write_LargeDelta-4   	     441	   2580547 ns/op	 406.34 MB/s	   66248 B/op	      24 allocs/op
 PASS
-ok  	github.com/stuckj/mkvdup/internal/dedup	214.385s
+ok  	github.com/stuckj/mkvdup/internal/dedup	214.274s
 goos: linux
 goarch: amd64
 pkg: github.com/stuckj/mkvdup/internal/mkv
 cpu: AMD EPYC 7763 64-Core Processor                
-BenchmarkReadVINT/1-byte-4          	18527422	        65.67 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18050746	        66.15 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	17460298	        65.56 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18564428	        67.23 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18318324	        65.54 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18211564	        65.61 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18229453	        65.46 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18073923	        65.53 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18555356	        65.16 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/1-byte-4          	18408618	        65.19 ns/op	      49 B/op	       2 allocs/op
-BenchmarkReadVINT/2-byte-4          	15636777	        75.70 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	16138006	        74.78 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	15885300	        77.22 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	16129828	        74.71 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	15686074	        74.82 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	15883749	        75.11 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	15732579	        75.00 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	15902608	        74.89 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	16005199	        74.79 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/2-byte-4          	15760902	        75.05 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	15262190	        79.70 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	14834437	        79.54 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	15063031	        79.32 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	14965672	        79.33 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	15137034	        79.37 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	15169591	        79.83 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	14445598	        79.79 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	15022405	        79.27 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	14715921	        79.81 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/4-byte-4          	15168169	        79.26 ns/op	      52 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14502300	        83.84 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14115452	        83.74 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14275102	        83.68 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14418345	        83.88 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14464116	        83.25 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14362624	        83.76 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14024804	        83.56 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14324941	        83.40 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14375641	        83.77 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadVINT/8-byte-4          	14218570	        83.75 ns/op	      56 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	13948010	        84.12 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	13977471	        83.87 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14401159	        83.85 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14326872	        84.12 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14529090	        83.48 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14278623	        83.65 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	13999864	        83.57 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14339732	        83.57 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14313936	        83.58 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/SimpleBlock-4         	14222206	        83.70 ns/op	      50 B/op	       3 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9466436	       125.9 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9463320	       126.7 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9516115	       127.5 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9320274	       126.4 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9498511	       125.8 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9479842	       126.4 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9395187	       126.2 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9506944	       126.0 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9460863	       126.3 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Cluster-4             	 9537370	       126.1 ns/op	      54 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9138753	       131.6 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 8997574	       131.7 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9033372	       131.6 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9028525	       131.9 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9151868	       131.8 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9143942	       131.5 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9085726	       131.3 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9029131	       131.8 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9050907	       131.0 ns/op	      64 B/op	       5 allocs/op
-BenchmarkReadElementHeader/Segment-4             	 9027465	       131.8 ns/op	      64 B/op	       5 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226040118	         5.309 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226450995	         5.294 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226399246	         5.313 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226569786	         5.297 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226509268	         5.299 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226060876	         5.307 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	225968271	         5.301 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226546744	         5.294 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226437405	         5.300 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseSimpleBlockHeader-4                	226120274	         5.304 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParser_Parse-4                          	     807	   1497535 ns/op	6862.07 MB/s	 1011665 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     802	   1487594 ns/op	6907.93 MB/s	 1011668 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     805	   1483492 ns/op	6927.03 MB/s	 1011668 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     796	   1485401 ns/op	6918.12 MB/s	 1011669 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     807	   1479113 ns/op	6947.54 MB/s	 1011666 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     804	   1486572 ns/op	6912.68 MB/s	 1011667 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     805	   1488484 ns/op	6903.80 MB/s	 1011669 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     805	   1484172 ns/op	6923.86 MB/s	 1011668 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     794	   1484082 ns/op	6924.27 MB/s	 1011667 B/op	   21063 allocs/op
-BenchmarkParser_Parse-4                          	     801	   1484758 ns/op	6921.12 MB/s	 1011667 B/op	   21063 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6361	    180199 ns/op	5705.57 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6255	    180195 ns/op	5705.68 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6152	    180853 ns/op	5684.95 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6054	    180762 ns/op	5687.81 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6136	    180464 ns/op	5697.19 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6184	    180123 ns/op	5707.97 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6427	    180655 ns/op	5691.17 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6466	    180132 ns/op	5707.71 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    6014	    180066 ns/op	5709.78 MB/s	   78072 B/op	    2557 allocs/op
-BenchmarkParser_Parse_Small-4                    	    5953	    180655 ns/op	5691.18 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkReadVINT/1-byte-4          	18489304	        64.71 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18474074	        64.94 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18515247	        65.10 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18072381	        64.99 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	17940506	        64.88 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18645736	        64.78 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18576766	        65.61 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18782115	        64.71 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18123807	        64.60 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/1-byte-4          	18590763	        64.75 ns/op	      49 B/op	       2 allocs/op
+BenchmarkReadVINT/2-byte-4          	16107820	        74.37 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16195819	        74.71 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16122493	        74.23 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16187468	        74.54 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	15814707	        74.53 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16092786	        74.41 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16102329	        74.26 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16116837	        75.85 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	15925848	        74.53 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/2-byte-4          	16180958	        76.11 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15185737	        78.89 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15171901	        78.96 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15179895	        78.89 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15122180	        78.98 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15073869	        78.91 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	14985066	        78.94 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15064300	        78.99 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15203524	        78.63 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15203082	        78.49 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/4-byte-4          	15362395	        78.65 ns/op	      52 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14301777	        83.28 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14268734	        84.72 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14458520	        83.22 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14528674	        83.02 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14372151	        83.33 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14469657	        83.40 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	13795165	        83.27 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14617680	        82.67 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14353893	        83.28 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadVINT/8-byte-4          	14365249	        83.13 ns/op	      56 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14040739	        83.52 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14147371	        83.06 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14560705	        83.22 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14546049	        83.20 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14089598	        83.24 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14201353	        83.24 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14206141	        83.53 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14112220	        83.29 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14200016	        83.03 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/SimpleBlock-4         	14216492	        83.26 ns/op	      50 B/op	       3 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9367754	       125.9 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9398774	       127.7 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9420271	       125.8 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9356104	       127.3 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9522987	       125.3 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9347335	       127.6 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9307977	       126.1 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9569792	       125.4 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9531667	       125.6 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Cluster-4             	 9557860	       125.5 ns/op	      54 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 8740580	       136.1 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9156248	       131.5 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9171138	       134.7 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9134034	       131.3 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9113212	       131.0 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9112869	       131.1 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9149449	       131.7 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 8826430	       135.2 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 9205706	       131.6 ns/op	      64 B/op	       5 allocs/op
+BenchmarkReadElementHeader/Segment-4             	 8948024	       131.7 ns/op	      64 B/op	       5 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226339270	         5.299 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226185957	         5.300 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226770721	         5.294 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226191612	         5.301 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226469487	         5.296 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226564490	         5.297 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226169967	         5.308 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226588851	         5.296 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226220580	         5.303 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseSimpleBlockHeader-4                	226468238	         5.297 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParser_Parse-4                          	     813	   1470722 ns/op	6987.17 MB/s	 1011668 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     810	   1497520 ns/op	6862.14 MB/s	 1011665 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     805	   1482240 ns/op	6932.88 MB/s	 1011668 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     796	   1481911 ns/op	6934.42 MB/s	 1011667 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     814	   1484237 ns/op	6923.55 MB/s	 1011667 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     804	   1477217 ns/op	6956.45 MB/s	 1011667 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     808	   1478984 ns/op	6948.14 MB/s	 1011667 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     807	   1480043 ns/op	6943.17 MB/s	 1011667 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     810	   1481128 ns/op	6938.08 MB/s	 1011669 B/op	   21063 allocs/op
+BenchmarkParser_Parse-4                          	     792	   1507244 ns/op	6817.87 MB/s	 1011666 B/op	   21063 allocs/op
+BenchmarkParser_Parse_Small-4                    	    5818	    182728 ns/op	5626.59 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    6135	    184182 ns/op	5582.19 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    6055	    183351 ns/op	5607.50 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    5706	    184374 ns/op	5576.38 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    5835	    184333 ns/op	5577.62 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    6081	    184105 ns/op	5584.53 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    6278	    183115 ns/op	5614.70 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    5746	    185412 ns/op	5545.14 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    6008	    185504 ns/op	5542.40 MB/s	   78072 B/op	    2557 allocs/op
+BenchmarkParser_Parse_Small-4                    	    6410	    184714 ns/op	5566.09 MB/s	   78072 B/op	    2557 allocs/op
 PASS
-ok  	github.com/stuckj/mkvdup/internal/mkv	119.700s
+ok  	github.com/stuckj/mkvdup/internal/mkv	119.657s
 goos: linux
 goarch: amd64
 pkg: github.com/stuckj/mkvdup/internal/source
 cpu: AMD EPYC 7763 64-Core Processor                
-BenchmarkFindAudioSyncPoints-4         	     518	   2308036 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     517	   2317329 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     517	   2327331 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     518	   2312658 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     517	   2304537 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     518	   2302195 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     518	   2304540 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     516	   2308172 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     518	   2305431 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAudioSyncPoints-4         	     516	   2309584 ns/op	   25208 B/op	      12 allocs/op
-BenchmarkFindAllSyncPoints-4           	     504	   2359274 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     507	   2356489 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     504	   2357163 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     508	   2353478 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     507	   2365714 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     507	   2359295 ns/op	   83961 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     504	   2357631 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     504	   2362323 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     505	   2363880 ns/op	   83960 B/op	      17 allocs/op
-BenchmarkFindAllSyncPoints-4           	     504	   2362710 ns/op	   83961 B/op	      17 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     925	   1305147 ns/op	8034.16 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     925	   1307696 ns/op	8018.50 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     926	   1306812 ns/op	8023.92 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     927	   1308523 ns/op	8013.43 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     927	   1305473 ns/op	8032.16 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     922	   1311835 ns/op	7993.20 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     916	   1310175 ns/op	8003.33 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     924	   1307095 ns/op	8022.19 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     926	   1299207 ns/op	8070.89 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindVideoStartCodes_Large-4   	     927	   1309033 ns/op	8010.31 MB/s	   49152 B/op	       1 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      51	  23217971 ns/op	 451.62 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      50	  23215702 ns/op	 451.67 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      51	  23238465 ns/op	 451.22 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      51	  23254886 ns/op	 450.91 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      51	  23216133 ns/op	 451.66 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      50	  23343791 ns/op	 449.19 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      50	  23258301 ns/op	 450.84 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      51	  23242988 ns/op	 451.14 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      50	  23284396 ns/op	 450.33 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAudioSyncPoints_Large-4   	      50	  23254228 ns/op	 450.92 MB/s	  128248 B/op	      16 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23933877 ns/op	 438.11 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23928133 ns/op	 438.22 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23875978 ns/op	 439.18 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23961735 ns/op	 437.60 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23818246 ns/op	 440.24 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23891890 ns/op	 438.88 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23921279 ns/op	 438.34 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23959532 ns/op	 437.64 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      48	  23891968 ns/op	 438.88 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindAllSyncPoints_Large-4     	      49	  23819154 ns/op	 440.22 MB/s	  115320 B/op	      15 allocs/op
-BenchmarkFindVideoStartCodes-4         	   38478	     31071 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39050	     30700 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39326	     30523 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39504	     30635 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39140	     30561 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39616	     30482 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39001	     30799 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39175	     30535 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39036	     30473 ns/op	   21888 B/op	       3 allocs/op
-BenchmarkFindVideoStartCodes-4         	   39368	     30386 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     517	   2309994 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     518	   2310173 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     518	   2309466 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     517	   2310219 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     516	   2312004 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     516	   2318604 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     517	   2313297 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     517	   2311902 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     518	   2311268 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAudioSyncPoints-4         	     518	   2310045 ns/op	   25208 B/op	      12 allocs/op
+BenchmarkFindAllSyncPoints-4           	     504	   2367973 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     504	   2367570 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     504	   2375009 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     505	   2373400 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     501	   2376338 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     506	   2388797 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     506	   2363448 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     506	   2368766 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     502	   2368367 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindAllSyncPoints-4           	     502	   2371861 ns/op	   83960 B/op	      17 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     918	   1311720 ns/op	7993.90 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     916	   1312151 ns/op	7991.27 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     924	   1310015 ns/op	8004.31 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     922	   1310410 ns/op	8001.89 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     919	   1312174 ns/op	7991.13 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     924	   1302938 ns/op	8047.78 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     925	   1306642 ns/op	8024.97 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     926	   1313609 ns/op	7982.40 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     915	   1312149 ns/op	7991.29 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindVideoStartCodes_Large-4   	     921	   1304010 ns/op	8041.17 MB/s	   49152 B/op	       1 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23302165 ns/op	 449.99 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23298013 ns/op	 450.07 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      51	  23279965 ns/op	 450.42 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23280143 ns/op	 450.42 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23254815 ns/op	 450.91 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23252136 ns/op	 450.96 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23319650 ns/op	 449.65 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23268004 ns/op	 450.65 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      50	  23282907 ns/op	 450.36 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAudioSyncPoints_Large-4   	      51	  23236668 ns/op	 451.26 MB/s	  128248 B/op	      16 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  23939057 ns/op	 438.02 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24080098 ns/op	 435.45 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24075582 ns/op	 435.54 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24115763 ns/op	 434.81 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24064941 ns/op	 435.73 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  23984124 ns/op	 437.20 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24022799 ns/op	 436.49 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24019534 ns/op	 436.55 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  24001387 ns/op	 436.88 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindAllSyncPoints_Large-4     	      49	  23978430 ns/op	 437.30 MB/s	  115320 B/op	      15 allocs/op
+BenchmarkFindVideoStartCodes-4         	   38160	     31473 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   37669	     31463 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   37702	     31553 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   38413	     31324 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   37876	     31516 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   37982	     31661 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   38395	     31405 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   38080	     31524 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   37975	     31513 ns/op	   21888 B/op	       3 allocs/op
+BenchmarkFindVideoStartCodes-4         	   37486	     31727 ns/op	   21888 B/op	       3 allocs/op
 PASS
-ok  	github.com/stuckj/mkvdup/internal/source	81.074s
+ok  	github.com/stuckj/mkvdup/internal/source	81.189s
 goos: linux
 goarch: amd64
 pkg: github.com/stuckj/mkvdup/internal/matcher
 cpu: AMD EPYC 7763 64-Core Processor                
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     276	   4321154 ns/op	 919.92 MB/s	  340346 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     276	   4349914 ns/op	 913.84 MB/s	  340320 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     277	   4393231 ns/op	 904.83 MB/s	  340322 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     274	   4341857 ns/op	 915.53 MB/s	  340322 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     274	   4311320 ns/op	 922.02 MB/s	  340327 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     273	   4321575 ns/op	 919.83 MB/s	  340325 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     272	   4336167 ns/op	 916.73 MB/s	  340322 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     276	   4330427 ns/op	 917.95 MB/s	  340325 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     276	   4304717 ns/op	 923.43 MB/s	  340322 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     277	   4308390 ns/op	 922.64 MB/s	  340320 B/op	     696 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      67	  17127334 ns/op	 919.49 MB/s	  569377 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      67	  17011335 ns/op	 925.76 MB/s	  569368 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      66	  17221612 ns/op	 914.46 MB/s	  569368 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      67	  17211603 ns/op	 914.99 MB/s	  569368 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      66	  17142260 ns/op	 918.69 MB/s	  569368 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      68	  17279085 ns/op	 911.42 MB/s	  569368 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      64	  17260755 ns/op	 912.38 MB/s	  569376 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      63	  17392421 ns/op	 905.48 MB/s	  569378 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      68	  17270249 ns/op	 911.88 MB/s	  569377 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      64	  17207791 ns/op	 915.19 MB/s	  569386 B/op	    2725 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  34895417 ns/op	 926.66 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      32	  34917291 ns/op	 926.08 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      32	  35016646 ns/op	 923.46 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  34991183 ns/op	 924.13 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      32	  34699813 ns/op	 931.89 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  34910405 ns/op	 926.27 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      32	  34877853 ns/op	 927.13 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      32	  35236728 ns/op	 917.69 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  35147662 ns/op	 920.01 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      32	  35336839 ns/op	 915.09 MB/s	  868416 B/op	    5445 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      67	  17414807 ns/op	 904.31 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      70	  17158036 ns/op	 917.85 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      68	  16987830 ns/op	 927.04 MB/s	  569335 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      69	  16960444 ns/op	 928.54 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      70	  17042075 ns/op	 924.09 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      72	  17049323 ns/op	 923.70 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      70	  16969665 ns/op	 928.03 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      72	  17041830 ns/op	 924.10 MB/s	  569335 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      72	  16995941 ns/op	 926.60 MB/s	  569335 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_1-4               	      69	  17121486 ns/op	 919.80 MB/s	  569336 B/op	    2725 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      98	  11877132 ns/op	1325.95 MB/s	  569546 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      96	  12165573 ns/op	1294.51 MB/s	  569519 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      91	  12097786 ns/op	1301.76 MB/s	  569501 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      90	  11946513 ns/op	1318.24 MB/s	  569516 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      91	  11984434 ns/op	1314.07 MB/s	  569515 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      93	  11952962 ns/op	1317.53 MB/s	  569562 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      90	  12011225 ns/op	1311.14 MB/s	  569497 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      87	  12112767 ns/op	1300.15 MB/s	  569534 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      90	  12077103 ns/op	1303.99 MB/s	  569508 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_2-4               	      92	  12029725 ns/op	1309.13 MB/s	  569566 B/op	    2726 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     126	   9557659 ns/op	1647.73 MB/s	  569827 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     127	   9485265 ns/op	1660.30 MB/s	  569802 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     126	   9571388 ns/op	1645.37 MB/s	  569823 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     123	   9594535 ns/op	1641.40 MB/s	  569799 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     126	   9479461 ns/op	1661.32 MB/s	  569797 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     124	   9508609 ns/op	1656.23 MB/s	  569787 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     124	   9523630 ns/op	1653.62 MB/s	  569891 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     123	   9674725 ns/op	1627.79 MB/s	  569862 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     123	   9626218 ns/op	1635.99 MB/s	  569794 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_4-4               	     126	   9459154 ns/op	1664.89 MB/s	  569785 B/op	    2728 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     135	   8908563 ns/op	1767.79 MB/s	  570372 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     134	   8925327 ns/op	1764.47 MB/s	  570368 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     134	   8895536 ns/op	1770.37 MB/s	  570359 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     133	   8930878 ns/op	1763.37 MB/s	  570359 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     135	   8834863 ns/op	1782.53 MB/s	  570375 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     134	   8857667 ns/op	1777.94 MB/s	  570360 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     134	   8902904 ns/op	1768.91 MB/s	  570419 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     132	   8954286 ns/op	1758.76 MB/s	  570360 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     134	   8870154 ns/op	1775.44 MB/s	  570360 B/op	    2732 allocs/op
-BenchmarkMatch_Parallel/Workers_8-4               	     132	   8956052 ns/op	1758.41 MB/s	  570360 B/op	    2732 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4290201	       277.4 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4367031	       276.3 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4333645	       275.6 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4352293	       277.7 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4131559	       283.9 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4313544	       276.0 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4375466	       275.0 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4360476	       274.9 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4325076	       275.4 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_1KB-4           	 4354719	       275.4 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1869174	       640.4 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1838670	       647.3 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1865912	       642.7 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1873760	       639.7 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1856500	       646.4 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1863390	       645.6 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1868607	       641.0 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1867363	       641.4 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1874283	       640.8 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Video_4KB-4           	 1877036	       639.5 ns/op	     408 B/op	       7 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  463249	      2598 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  461875	      2600 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  460779	      2625 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  460045	      2597 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  461359	      2601 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  461590	      2599 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  461642	      2685 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  456636	      2622 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  459566	      2599 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_1KB-4           	  449193	      2598 ns/op	     168 B/op	       6 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  118158	     10030 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  118434	     10012 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  119554	     10034 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  119499	     10018 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  119104	     10025 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  119420	     10026 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  119306	     10042 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  119110	     10015 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  118665	     10051 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes/Audio_4KB-4           	  118674	     10039 ns/op	     744 B/op	      10 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3681933	       319.9 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3769464	       317.1 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3770544	       317.1 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3780674	       317.3 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3778783	       316.3 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3762837	       317.7 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3786890	       316.9 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3759939	       317.9 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3775928	       316.8 ns/op	      40 B/op	       2 allocs/op
-BenchmarkExtractProbeHashes_NoSync-4              	 3772224	       317.5 ns/op	      40 B/op	       2 allocs/op
-BenchmarkHashLookup-4                             	   95220	     12646 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   96099	     12498 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   96328	     12439 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   96688	     12452 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   95472	     12597 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   96057	     12507 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   95944	     12532 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   96950	     12382 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   94707	     12636 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHashLookup-4                             	   98077	     12269 ns/op	       0 B/op	       0 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  374599	      3113 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  389228	      3139 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  371120	      3161 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  371812	      3147 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  363644	      3140 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  359203	      3168 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  367718	      3166 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  371284	      3111 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  352740	      3149 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_NoOverlap-4             	  391915	      3129 ns/op	   14808 B/op	      12 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  547456	      2257 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  553777	      2240 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  563217	      2258 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  540262	      2267 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  470172	      2281 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  514890	      2265 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  535790	      2260 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  533481	      2290 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  508122	      2262 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/100_50pctOverlap-4          	  542182	      2250 ns/op	    9432 B/op	      11 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   52119	     23230 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   54188	     23106 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   50020	     23332 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   53721	     23084 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   51691	     22849 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   53739	     23013 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   53985	     23093 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   52440	     22913 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   53978	     22460 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_NoOverlap-4            	   53010	     22622 ns/op	  125272 B/op	      15 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   72319	     16938 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   71883	     16882 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   71710	     16779 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   71419	     17084 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   71662	     17086 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   68625	     16923 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   72259	     17046 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   67551	     17059 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   70202	     16765 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/1000_50pctOverlap-4         	   70783	     16884 ns/op	   84312 B/op	      14 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1962	    660555 ns/op	 2238820 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1360	    804672 ns/op	 2238820 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1767	    837944 ns/op	 2238817 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1300	    964571 ns/op	 2238822 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1299	    964953 ns/op	 2238825 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1177	    989829 ns/op	 2238824 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1220	    972684 ns/op	 2238821 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1155	    965978 ns/op	 2238822 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1195	    941215 ns/op	 2238823 B/op	      23 allocs/op
-BenchmarkMergeRegions/10000_10pctOverlap-4        	    1620	    930354 ns/op	 2238826 B/op	      23 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.85 ns/op	5400.67 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.85 ns/op	5399.71 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5403.42 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5403.89 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5405.38 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.86 ns/op	5394.66 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5406.43 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5404.17 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5403.89 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/64B-4                             	100000000	        11.86 ns/op	5395.20 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44354176	        27.06 ns/op	9459.57 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44383530	        27.49 ns/op	9313.85 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44392545	        27.02 ns/op	9476.15 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44361848	        27.04 ns/op	9466.84 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44370525	        27.04 ns/op	9467.48 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44167978	        27.12 ns/op	9437.99 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44298597	        27.08 ns/op	9452.04 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44074360	        27.04 ns/op	9468.03 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44110298	        27.03 ns/op	9470.19 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/256B-4                            	44388811	        27.04 ns/op	9468.64 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13820187	        86.90 ns/op	11783.33 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13813321	        86.84 ns/op	11791.42 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13797427	        86.86 ns/op	11788.51 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13713864	        86.99 ns/op	11771.51 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13770008	        86.96 ns/op	11775.90 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13799719	        86.94 ns/op	11777.86 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13802571	        86.90 ns/op	11783.77 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13788964	        86.86 ns/op	11788.80 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13763143	        86.97 ns/op	11774.49 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/1KB-4                             	13770796	        87.05 ns/op	11762.74 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3663975	       327.7 ns/op	12497.84 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3663775	       327.5 ns/op	12505.67 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3664742	       327.5 ns/op	12507.99 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3655820	       327.9 ns/op	12489.86 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3657288	       328.0 ns/op	12488.55 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3661797	       327.7 ns/op	12499.40 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3664850	       327.6 ns/op	12504.56 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3662636	       327.5 ns/op	12506.94 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3664441	       327.3 ns/op	12513.14 MB/s	       0 B/op	       0 allocs/op
-BenchmarkXXHash/4KB-4                             	 3659010	       327.8 ns/op	12493.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     289	   4162631 ns/op	 954.95 MB/s	  340324 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     282	   4196171 ns/op	 947.32 MB/s	  340330 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     285	   4164266 ns/op	 954.58 MB/s	  340324 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     284	   4195328 ns/op	 947.51 MB/s	  340322 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     286	   4169492 ns/op	 953.38 MB/s	  340320 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     285	   4276955 ns/op	 929.43 MB/s	  340320 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     283	   4187112 ns/op	 949.37 MB/s	  340320 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     286	   4220909 ns/op	 941.77 MB/s	  340323 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     285	   4182183 ns/op	 950.49 MB/s	  340322 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Small_125V_125A-4         	     283	   4175607 ns/op	 951.98 MB/s	  340325 B/op	     696 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      69	  16669801 ns/op	 944.73 MB/s	  569368 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      68	  16620942 ns/op	 947.51 MB/s	  569367 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      72	  16734666 ns/op	 941.07 MB/s	  569367 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      67	  16994321 ns/op	 926.69 MB/s	  569368 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      68	  16979271 ns/op	 927.51 MB/s	  569368 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      69	  16753157 ns/op	 940.03 MB/s	  569368 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      68	  17011048 ns/op	 925.78 MB/s	  569368 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      63	  17182398 ns/op	 916.54 MB/s	  569368 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      70	  16795488 ns/op	 937.66 MB/s	  569374 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Medium_500V_500A-4        	      70	  16684122 ns/op	 943.92 MB/s	  569373 B/op	    2725 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  33937390 ns/op	 952.82 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  34086920 ns/op	 948.64 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  33936412 ns/op	 952.85 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  33853372 ns/op	 955.19 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  33765914 ns/op	 957.66 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  34183938 ns/op	 945.95 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  34167933 ns/op	 946.39 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      34	  34151177 ns/op	 946.86 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  34080671 ns/op	 948.82 MB/s	  868416 B/op	    5445 allocs/op
+BenchmarkMatch_EndToEnd/Large_1000V_1000A-4       	      33	  34584992 ns/op	 934.98 MB/s	  868415 B/op	    5445 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      68	  16866747 ns/op	 933.70 MB/s	  569342 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      72	  16682759 ns/op	 943.99 MB/s	  569336 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      69	  16740725 ns/op	 940.73 MB/s	  569335 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      69	  16529704 ns/op	 952.74 MB/s	  569335 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      69	  16633317 ns/op	 946.80 MB/s	  569336 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      72	  16472040 ns/op	 956.07 MB/s	  569337 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      72	  16519283 ns/op	 953.34 MB/s	  569336 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      70	  16619411 ns/op	 947.59 MB/s	  569336 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      70	  16815751 ns/op	 936.53 MB/s	  569342 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_1-4               	      73	  17678823 ns/op	 890.81 MB/s	  569336 B/op	    2725 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	     100	  11908710 ns/op	1322.43 MB/s	  569551 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      91	  11915778 ns/op	1321.64 MB/s	  569583 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      88	  11844006 ns/op	1329.65 MB/s	  569496 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      93	  11982141 ns/op	1314.33 MB/s	  569550 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      92	  11901571 ns/op	1323.22 MB/s	  569535 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      92	  11819913 ns/op	1332.36 MB/s	  569506 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      90	  11873563 ns/op	1326.34 MB/s	  569517 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      92	  11934509 ns/op	1319.57 MB/s	  569499 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      92	  11971960 ns/op	1315.44 MB/s	  569560 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_2-4               	      93	  11942419 ns/op	1318.70 MB/s	  569519 B/op	    2726 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     126	   9448354 ns/op	1666.79 MB/s	  569814 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     126	   9500634 ns/op	1657.62 MB/s	  569846 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     126	   9429134 ns/op	1670.19 MB/s	  569784 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     128	   9279977 ns/op	1697.03 MB/s	  569805 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     127	   9407754 ns/op	1673.98 MB/s	  569882 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     128	   9454975 ns/op	1665.62 MB/s	  569805 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     124	   9535805 ns/op	1651.50 MB/s	  569785 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     126	   9462462 ns/op	1664.31 MB/s	  569801 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     128	   9310610 ns/op	1691.45 MB/s	  569784 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_4-4               	     128	   9308677 ns/op	1691.80 MB/s	  569784 B/op	    2728 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     135	   8885585 ns/op	1772.36 MB/s	  570409 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     134	   8789020 ns/op	1791.83 MB/s	  570366 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     135	   8752039 ns/op	1799.40 MB/s	  570384 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     135	   8750643 ns/op	1799.69 MB/s	  570404 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     136	   8698549 ns/op	1810.47 MB/s	  570381 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     134	   8782079 ns/op	1793.25 MB/s	  570362 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     135	   8778973 ns/op	1793.88 MB/s	  570360 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     135	   8790190 ns/op	1791.59 MB/s	  570378 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     134	   8817691 ns/op	1786.00 MB/s	  570386 B/op	    2732 allocs/op
+BenchmarkMatch_Parallel/Workers_8-4               	     134	   8821704 ns/op	1785.19 MB/s	  570360 B/op	    2732 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4329129	       283.4 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4376462	       274.3 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4321273	       275.2 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4404294	       276.5 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4147617	       279.6 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4365051	       276.2 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4353000	       275.2 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4375827	       274.9 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4349844	       274.6 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_1KB-4           	 4378017	       275.3 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1879318	       638.8 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1883750	       637.7 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1868114	       642.2 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1868319	       639.7 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1876725	       640.2 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1872481	       644.8 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1883374	       636.9 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1877085	       638.2 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1871731	       649.4 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Video_4KB-4           	 1876826	       637.9 ns/op	     408 B/op	       7 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  466279	      2600 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  463446	      2615 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  458950	      2601 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  455001	      2610 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  449479	      2603 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  456196	      2623 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  407005	      2649 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  454962	      2630 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  450470	      2604 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_1KB-4           	  449768	      2597 ns/op	     168 B/op	       6 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  116943	     10065 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  117723	     10237 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  118790	     10071 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  118639	     10035 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  119278	     10037 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  118850	     10045 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  117458	     10068 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  117336	     10050 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  117686	     10041 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes/Audio_4KB-4           	  118237	     10039 ns/op	     744 B/op	      10 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3780934	       317.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3722980	       318.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3780118	       317.2 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3746522	       317.7 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3767455	       318.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3783432	       317.8 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3750657	       318.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3757389	       318.4 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3759580	       319.0 ns/op	      40 B/op	       2 allocs/op
+BenchmarkExtractProbeHashes_NoSync-4              	 3774286	       317.9 ns/op	      40 B/op	       2 allocs/op
+BenchmarkHashLookup-4                             	   91274	     13153 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   91827	     13115 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   91898	     13187 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   91749	     13144 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   92295	     13029 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   92965	     12925 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   93430	     12869 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   91177	     13167 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   92325	     13032 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHashLookup-4                             	   92704	     12935 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  390433	      3008 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  402500	      3027 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  379072	      2994 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  407574	      2985 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  373816	      3017 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  392580	      3013 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  388898	      2999 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  377876	      3002 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  390169	      3012 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_NoOverlap-4             	  418992	      2986 ns/op	   14808 B/op	      12 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  556670	      2193 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  540008	      2187 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  570278	      2197 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  541666	      2218 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  551396	      2211 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  554505	      2162 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  566842	      2219 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  516690	      2203 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  530312	      2211 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/100_50pctOverlap-4          	  569127	      2225 ns/op	    9432 B/op	      11 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   52730	     22344 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   55008	     22176 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   53730	     22786 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   48109	     24755 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   48786	     24645 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   48726	     24529 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   47450	     25085 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   50209	     24736 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   46929	     25149 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_NoOverlap-4            	   48003	     24840 ns/op	  125272 B/op	      15 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   64658	     17947 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   65898	     18403 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   66430	     17844 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   67364	     17683 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   66741	     17787 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   68956	     18003 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   68334	     18006 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   68292	     18108 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   63896	     18287 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/1000_50pctOverlap-4         	   67449	     18072 ns/op	   84312 B/op	      14 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1639	    716363 ns/op	 2238820 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1575	    745754 ns/op	 2238818 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1561	    743504 ns/op	 2238820 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1694	    750199 ns/op	 2238819 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1586	    754778 ns/op	 2238817 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1504	    761158 ns/op	 2238818 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1670	    736485 ns/op	 2238818 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1543	    758725 ns/op	 2238818 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1551	    760382 ns/op	 2238819 B/op	      23 allocs/op
+BenchmarkMergeRegions/10000_10pctOverlap-4        	    1856	    732811 ns/op	 2238818 B/op	      23 allocs/op
+BenchmarkXXHash/64B-4                             	95562369	        11.87 ns/op	5393.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.85 ns/op	5399.85 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5403.68 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.84 ns/op	5403.21 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.85 ns/op	5398.82 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	99828178	        11.85 ns/op	5401.37 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.88 ns/op	5388.68 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.90 ns/op	5378.98 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	100000000	        11.85 ns/op	5401.79 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/64B-4                             	96313287	        11.86 ns/op	5396.28 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	43914808	        27.02 ns/op	9474.98 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44304210	        27.06 ns/op	9462.20 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44314158	        27.01 ns/op	9478.02 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44196451	        27.02 ns/op	9472.98 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44329682	        27.01 ns/op	9478.88 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44333605	        27.08 ns/op	9452.17 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	43948317	        27.10 ns/op	9447.69 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44272351	        27.05 ns/op	9465.06 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44344453	        27.15 ns/op	9427.44 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/256B-4                            	44362539	        27.01 ns/op	9477.59 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13802428	        86.85 ns/op	11790.54 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13777044	        87.04 ns/op	11764.29 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13811786	        86.93 ns/op	11779.72 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13792484	        86.94 ns/op	11778.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13773409	        87.06 ns/op	11761.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13752666	        86.99 ns/op	11770.95 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13803842	        86.93 ns/op	11779.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13813627	        86.87 ns/op	11787.88 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13793179	        86.91 ns/op	11781.84 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/1KB-4                             	13802875	        88.53 ns/op	11566.13 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3662766	       327.8 ns/op	12495.87 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3656858	       328.8 ns/op	12455.89 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3661712	       327.8 ns/op	12495.85 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3630110	       329.0 ns/op	12450.18 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3596367	       329.4 ns/op	12435.22 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3659679	       327.8 ns/op	12496.90 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3661159	       327.9 ns/op	12489.95 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3662200	       327.8 ns/op	12494.86 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3659190	       328.0 ns/op	12489.64 MB/s	       0 B/op	       0 allocs/op
+BenchmarkXXHash/4KB-4                             	 3660692	       328.0 ns/op	12489.03 MB/s	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/stuckj/mkvdup/internal/matcher	267.975s
+ok  	github.com/stuckj/mkvdup/internal/matcher	267.552s
