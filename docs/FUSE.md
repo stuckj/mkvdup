@@ -392,6 +392,9 @@ mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 ### fstab Options
 
 ```
+# Use a directory of config files instead of a single file
+/etc/mkvdup.d  /mnt/videos  fuse.mkvdup  config_dir  0  0
+
 # Disable source watching
 /etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  no_source_watch  0  0
 

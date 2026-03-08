@@ -149,7 +149,7 @@ includes:
 /etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  nofail  0  0
 ```
 
-`nofail` lets the system boot normally if the mount fails (e.g., source media unavailable). The mount helper automatically enables `allow_other` so that all users can access the mount.
+`nofail` lets the system boot normally if the mount fails (e.g., source media unavailable). The mount helper automatically enables `allow_other` so that non-root users can access the filesystem.
 
 For a directory of config files instead of a single file:
 
