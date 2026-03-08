@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-// fileStatFunc is used for os.Stat calls, exported for testing.
+// fileStatFunc is a package-level var for os.Stat, allowing test injection.
 var fileStatFunc = os.Stat
 
 // Geteuid returns the effective user ID. Exported for testing.

@@ -15,6 +15,7 @@ import (
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
 	"github.com/stuckj/mkvdup/internal/mkv"
+	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 	"github.com/stuckj/mkvdup/testdata"
 )
@@ -33,6 +34,10 @@ var (
 // TestMain sets up shared test fixtures before running tests.
 // This creates the dedup file ONCE, which is then reused by all tests.
 func TestMain(m *testing.M) {
+	// Disable root security checks for integration tests. These tests
+	// run as root (sudo -E) in CI with test data owned by a non-root user.
+	security.Geteuid = func() int { return 1000 }
+
 	// Find test data
 	sharedTestPaths = testdata.Find()
 	if !sharedTestPaths.Available {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
+	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
@@ -116,6 +117,11 @@ func TestDedupReaderAdapter_Close_WithIndex(t *testing.T) {
 }
 
 func TestDefaultReaderFactory_NewReaderLazy_Success(t *testing.T) {
+	// Disable security checks so fake source dir doesn't fail EvalSymlinks
+	old := security.Geteuid
+	defer func() { security.Geteuid = old }()
+	security.Geteuid = func() int { return 1000 }
+
 	dir := t.TempDir()
 	const wantSize int64 = 9999
 

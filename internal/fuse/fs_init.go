@@ -212,12 +212,13 @@ func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verb
 		go func() {
 			defer wg.Done()
 			for idx := range jobs {
-				// Skip work if another worker already failed
+				// Skip work if another worker already failed,
+				// but keep draining jobs to avoid deadlocking the sender.
 				errMu.Lock()
 				failed := first != nil
 				errMu.Unlock()
 				if failed {
-					return
+					continue
 				}
 
 				cfg := configs[idx]
@@ -228,7 +229,7 @@ func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verb
 						first = fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)
 					}
 					errMu.Unlock()
-					return
+					continue
 				}
 
 				results[idx] = &MKVFile{
