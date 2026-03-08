@@ -160,8 +160,16 @@ func TestDefaultReaderFactory_NewReaderLazy_RejectsNonRootOwned(t *testing.T) {
 	dir := t.TempDir()
 	path := createTestDedupFile(t, dir, 100)
 
-	// The temp dir and dedup file are owned by the current (non-root) user,
-	// so the ownership check should reject them when euid == 0.
+	// When actually running as root (CI), the temp file is root-owned.
+	// Chown it to a non-root user so the ownership check rejects it.
+	if os.Geteuid() == 0 {
+		if err := os.Chown(path, 1000, 1000); err != nil {
+			t.Fatalf("chown: %v", err)
+		}
+	}
+
+	// The dedup file is owned by a non-root user,
+	// so the ownership check should reject it when euid == 0.
 	factory := &DefaultReaderFactory{}
 	_, err := factory.NewReaderLazy(path, dir)
 	if err == nil {

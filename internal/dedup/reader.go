@@ -117,6 +117,11 @@ func (r *Reader) LoadSourceFiles() error {
 	for i, sf := range r.file.SourceFiles {
 		path, err := security.CheckPathConfinement(r.sourceDir, sf.RelativePath)
 		if err != nil {
+			for j := 0; j < i; j++ {
+				if r.sourceFiles[j] != nil {
+					r.sourceFiles[j].Close()
+				}
+			}
 			return fmt.Errorf("source file %s: %w", sf.RelativePath, err)
 		}
 		m, err := mmap.Open(path)
@@ -144,6 +149,11 @@ func (r *Reader) LoadSourceFilesPread(timeout time.Duration) error {
 	for i, sf := range r.file.SourceFiles {
 		path, err := security.CheckPathConfinement(r.sourceDir, sf.RelativePath)
 		if err != nil {
+			for j := 0; j < i; j++ {
+				if r.sourceFiles[j] != nil {
+					r.sourceFiles[j].Close()
+				}
+			}
 			return fmt.Errorf("source file %s: %w", sf.RelativePath, err)
 		}
 		pf, err := mmap.OpenPread(path, timeout)

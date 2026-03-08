@@ -111,11 +111,29 @@ func TestCheckFileOwnership_ResolvesSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// When not root, the symlink target's ownership (current user) should fail
 	if os.Geteuid() != 0 {
+		// Non-root: symlink target is owned by current user, should fail
 		err := CheckFileOwnership(link)
 		if err == nil {
 			t.Fatal("expected error: symlink target is not root-owned")
+		}
+	} else {
+		// Root: symlink target is owned by root, should pass
+		if err := CheckFileOwnership(link); err != nil {
+			t.Fatalf("expected nil for root-owned symlink target, got: %v", err)
+		}
+	}
+}
+
+func TestCheckPathConfinement_AbsolutePathBlocked(t *testing.T) {
+	// Absolute relPath should be rejected regardless of euid
+	for _, euid := range []int{0, 1000} {
+		old := Geteuid
+		Geteuid = func() int { return euid }
+		_, err := CheckPathConfinement("/some/dir", "/etc/shadow")
+		Geteuid = old
+		if err == nil {
+			t.Fatalf("euid=%d: expected error for absolute relPath, got nil", euid)
 		}
 	}
 }

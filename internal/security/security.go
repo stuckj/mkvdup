@@ -63,9 +63,17 @@ func CheckFileOwnership(path string) error {
 // When not running as root, returns the simple joined path without
 // canonicalization (preserving existing behavior).
 func CheckPathConfinement(sourceDir, relPath string) (string, error) {
-	joined := filepath.Join(sourceDir, relPath)
+	// Reject absolute paths regardless of euid — filepath.Join would
+	// silently drop sourceDir for absolute relPath, allowing escape.
+	if filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("security: absolute source path %q not allowed", relPath)
+	}
+
 	if Geteuid() != 0 {
-		return joined, nil
+		// Preserve previous non-root behavior: simple concatenation so
+		// sourceDir is always prepended (filepath.Join would drop it for
+		// absolute relPath, but we've already rejected that above).
+		return filepath.Join(sourceDir, relPath), nil
 	}
 
 	// Canonicalize sourceDir
@@ -75,6 +83,7 @@ func CheckPathConfinement(sourceDir, relPath string) (string, error) {
 	}
 
 	// Canonicalize the full path
+	joined := filepath.Join(sourceDir, relPath)
 	canonical, err := filepath.EvalSymlinks(joined)
 	if err != nil {
 		return "", fmt.Errorf("security: resolve source path %s: %w", joined, err)
