@@ -112,7 +112,9 @@ func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (Reade
 	// When running as root, resolve symlinks once and use the canonical
 	// paths for both security checks and subsequent opens. This closes
 	// the TOCTOU window where a symlink could be swapped between the
-	// ownership check and the actual open/mmap.
+	// ownership check and the actual open/mmap. We use the Resolved
+	// variants to avoid redundant EvalSymlinks calls inside the
+	// security functions.
 	if security.Geteuid() == 0 {
 		resolved, err := filepath.EvalSymlinks(dedupPath)
 		if err != nil {
@@ -127,10 +129,10 @@ func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (Reade
 		sourceDir = resolved
 	}
 
-	if err := security.CheckFileOwnership(dedupPath); err != nil {
+	if err := security.CheckFileOwnershipResolved(dedupPath); err != nil {
 		return nil, fmt.Errorf("dedup file %s: %w", dedupPath, err)
 	}
-	if err := security.CheckDirectory(sourceDir); err != nil {
+	if err := security.CheckDirectoryResolved(sourceDir); err != nil {
 		return nil, fmt.Errorf("source dir %s: %w", sourceDir, err)
 	}
 

@@ -19,21 +19,36 @@ var Geteuid = os.Geteuid
 // CheckFileOwnership validates that a file is root-owned and not
 // group-writable or world-writable. Returns nil if safe, or an error
 // describing the violation. Only checks when running as root (euid == 0).
+// The path is resolved via EvalSymlinks before checking.
 func CheckFileOwnership(path string) error {
 	if Geteuid() != 0 {
 		return nil
 	}
 
-	// Resolve symlinks so ownership is checked on the actual target,
-	// not a symlink placeholder that could point to user-writable files.
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", path, err)
 	}
 
-	info, err := fileStatFunc(resolved)
+	return checkOwnership(resolved)
+}
+
+// CheckFileOwnershipResolved is like CheckFileOwnership but skips symlink
+// resolution, assuming the caller already canonicalized the path.
+// Only checks when running as root (euid == 0).
+func CheckFileOwnershipResolved(path string) error {
+	if Geteuid() != 0 {
+		return nil
+	}
+	return checkOwnership(path)
+}
+
+// checkOwnership performs the actual ownership and permission checks on
+// an already-resolved path.
+func checkOwnership(path string) error {
+	info, err := fileStatFunc(path)
 	if err != nil {
-		return fmt.Errorf("stat %s: %w", resolved, err)
+		return fmt.Errorf("stat %s: %w", path, err)
 	}
 
 	stat, ok := info.Sys().(*syscall.Stat_t)
@@ -70,9 +85,10 @@ func CheckPathConfinement(sourceDir, relPath string) (string, error) {
 	}
 
 	if Geteuid() != 0 {
-		// Preserve previous non-root behavior: simple concatenation so
-		// sourceDir is always prepended (filepath.Join would drop it for
-		// absolute relPath, but we've already rejected that above).
+		// Non-root: return cleaned join without canonicalization.
+		// Absolute relPath is already rejected above, so Join always
+		// prepends sourceDir. Note that Join cleans ".." components,
+		// but confinement is not enforced in non-root mode.
 		return filepath.Join(sourceDir, relPath), nil
 	}
 
@@ -101,12 +117,34 @@ func CheckPathConfinement(sourceDir, relPath string) (string, error) {
 // CheckDirectory validates that a path is a directory, is root-owned,
 // and is not group-writable or world-writable. Returns nil if safe.
 // Only checks when running as root (euid == 0).
+// The path is resolved via EvalSymlinks before checking.
 func CheckDirectory(dir string) error {
 	if Geteuid() != 0 {
 		return nil
 	}
 
-	if err := CheckFileOwnership(dir); err != nil {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", dir, err)
+	}
+
+	return checkDirectory(resolved)
+}
+
+// CheckDirectoryResolved is like CheckDirectory but skips symlink
+// resolution, assuming the caller already canonicalized the path.
+// Only checks when running as root (euid == 0).
+func CheckDirectoryResolved(dir string) error {
+	if Geteuid() != 0 {
+		return nil
+	}
+	return checkDirectory(dir)
+}
+
+// checkDirectory performs ownership and directory checks on an
+// already-resolved path.
+func checkDirectory(dir string) error {
+	if err := checkOwnership(dir); err != nil {
 		return err
 	}
 
