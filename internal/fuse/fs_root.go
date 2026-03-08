@@ -149,32 +149,41 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 			reader.Close()
 		}
 	} else {
-		var (
-			wg  sync.WaitGroup
-			sem = make(chan struct{}, maxParallelReaders)
-		)
-		for i, config := range configs {
-			wg.Add(1)
-			go func(idx int, cfg dedup.Config) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				reader, err := r.readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
-				if err != nil {
-					results[idx] = reloadResult{err: fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)}
-					return
-				}
-				results[idx] = reloadResult{file: &MKVFile{
-					Name:          cfg.Name,
-					DedupPath:     cfg.DedupFile,
-					SourceDir:     cfg.SourceDir,
-					Size:          reader.OriginalSize(),
-					readerFactory: r.readerFactory,
-				}}
-				reader.Close()
-			}(i, config)
+		// Fixed-size worker pool to bound goroutine count and open file concurrency.
+		numWorkers := maxParallelReaders
+		if len(configs) < numWorkers {
+			numWorkers = len(configs)
 		}
+		jobs := make(chan int)
+		var wg sync.WaitGroup
+
+		wg.Add(numWorkers)
+		for range numWorkers {
+			go func() {
+				defer wg.Done()
+				for idx := range jobs {
+					cfg := configs[idx]
+					reader, err := r.readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
+					if err != nil {
+						results[idx] = reloadResult{err: fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)}
+						continue
+					}
+					results[idx] = reloadResult{file: &MKVFile{
+						Name:          cfg.Name,
+						DedupPath:     cfg.DedupFile,
+						SourceDir:     cfg.SourceDir,
+						Size:          reader.OriginalSize(),
+						readerFactory: r.readerFactory,
+					}}
+					reader.Close()
+				}
+			}()
+		}
+
+		for i := range configs {
+			jobs <- i
+		}
+		close(jobs)
 		wg.Wait()
 	}
 

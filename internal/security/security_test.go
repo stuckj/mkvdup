@@ -29,13 +29,18 @@ func TestCheckFileOwnership_RootMode(t *testing.T) {
 	}
 	f.Close()
 
-	// If running as non-root, the file won't be root-owned
 	if os.Geteuid() != 0 {
+		// Non-root: file is owned by current user, should fail
 		err := CheckFileOwnership(f.Name())
 		if err == nil {
 			t.Fatal("expected error for non-root-owned file")
 		}
 		t.Logf("got expected error: %v", err)
+	} else {
+		// Root: file is owned by root, should pass
+		if err := CheckFileOwnership(f.Name()); err != nil {
+			t.Fatalf("expected nil for root-owned file, got: %v", err)
+		}
 	}
 }
 
@@ -53,7 +58,9 @@ func TestCheckFileOwnership_GroupWritable(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.Close()
-	os.Chmod(f.Name(), 0664)
+	if err := os.Chmod(f.Name(), 0664); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
 
 	err = CheckFileOwnership(f.Name())
 	if err == nil {
@@ -75,11 +82,41 @@ func TestCheckFileOwnership_WorldWritable(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.Close()
-	os.Chmod(f.Name(), 0646)
+	if err := os.Chmod(f.Name(), 0646); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
 
 	err = CheckFileOwnership(f.Name())
 	if err == nil {
 		t.Fatal("expected error for world-writable file")
+	}
+}
+
+func TestCheckFileOwnership_ResolvesSymlinks(t *testing.T) {
+	old := Geteuid
+	defer func() { Geteuid = old }()
+	Geteuid = func() int { return 0 }
+
+	dir := t.TempDir()
+
+	// Create a target file (owned by current user)
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink to the target
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	// When not root, the symlink target's ownership (current user) should fail
+	if os.Geteuid() != 0 {
+		err := CheckFileOwnership(link)
+		if err == nil {
+			t.Fatal("expected error: symlink target is not root-owned")
+		}
 	}
 }
 
@@ -107,7 +144,9 @@ func TestCheckPathConfinement_ValidPath(t *testing.T) {
 	// Create a real directory structure
 	dir := t.TempDir()
 	subdir := filepath.Join(dir, "subdir")
-	os.MkdirAll(subdir, 0755)
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	f, err := os.Create(filepath.Join(subdir, "file.txt"))
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +183,9 @@ func TestCheckPathConfinement_SymlinkBlocked(t *testing.T) {
 	dir := t.TempDir()
 	// Create a symlink that points outside the source dir
 	link := filepath.Join(dir, "escape")
-	os.Symlink("/etc", link)
+	if err := os.Symlink("/etc", link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
 
 	_, err := CheckPathConfinement(dir, "escape/passwd")
 	if err == nil {
@@ -161,8 +202,12 @@ func TestCheckPathConfinement_PrefixAttackBlocked(t *testing.T) {
 	parent := t.TempDir()
 	sourceDir := filepath.Join(parent, "source")
 	evilDir := filepath.Join(parent, "source-evil")
-	os.MkdirAll(sourceDir, 0755)
-	os.MkdirAll(evilDir, 0755)
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := os.MkdirAll(evilDir, 0755); err != nil {
+		t.Fatalf("mkdir evil: %v", err)
+	}
 
 	// Create a file in the evil dir
 	f, err := os.Create(filepath.Join(evilDir, "data"))
@@ -173,7 +218,9 @@ func TestCheckPathConfinement_PrefixAttackBlocked(t *testing.T) {
 
 	// Create symlink inside sourceDir pointing to evil dir
 	link := filepath.Join(sourceDir, "link")
-	os.Symlink(evilDir, link)
+	if err := os.Symlink(evilDir, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
 
 	_, err = CheckPathConfinement(sourceDir, "link/data")
 	if err == nil {
@@ -188,5 +235,27 @@ func TestCheckDirectory_SkipsWhenNotRoot(t *testing.T) {
 
 	if err := CheckDirectory("/nonexistent"); err != nil {
 		t.Fatalf("expected nil when not root, got: %v", err)
+	}
+}
+
+func TestCheckDirectory_RejectsNonDirectory(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root")
+	}
+
+	old := Geteuid
+	defer func() { Geteuid = old }()
+	Geteuid = func() int { return 0 }
+
+	// Create a regular file
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	err = CheckDirectory(f.Name())
+	if err == nil {
+		t.Fatal("expected error for non-directory path")
 	}
 }

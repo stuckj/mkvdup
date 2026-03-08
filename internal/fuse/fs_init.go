@@ -165,9 +165,10 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 // exhausting file descriptors when mounting thousands of files.
 const maxParallelReaders = 64
 
-// readConfigHeaders reads dedup file headers in parallel using a bounded
-// worker pool. Returns a slice of MKVFile (indexed by config position) and
-// the first error encountered. On error, nil entries may exist in the slice.
+// readConfigHeaders reads dedup file headers in parallel with concurrency
+// bounded by maxParallelReaders. It returns a slice of MKVFile (indexed by
+// config position) and the first error encountered. On error, no partial
+// results are returned and the slice is nil.
 func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verbose bool) ([]*MKVFile, error) {
 	results := make([]*MKVFile, len(configs))
 
@@ -197,44 +198,55 @@ func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verb
 		wg    sync.WaitGroup
 		errMu sync.Mutex
 		first error
-		sem   = make(chan struct{}, maxParallelReaders)
 	)
 
-	for i, config := range configs {
-		wg.Add(1)
-		go func(idx int, cfg dedup.Config) {
-			defer wg.Done()
-			sem <- struct{}{}        // acquire
-			defer func() { <-sem }() // release
-
-			// Skip work if another goroutine already failed
-			errMu.Lock()
-			failed := first != nil
-			errMu.Unlock()
-			if failed {
-				return
-			}
-
-			reader, err := readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
-			if err != nil {
-				errMu.Lock()
-				if first == nil {
-					first = fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)
-				}
-				errMu.Unlock()
-				return
-			}
-
-			results[idx] = &MKVFile{
-				Name:          cfg.Name,
-				DedupPath:     cfg.DedupFile,
-				SourceDir:     cfg.SourceDir,
-				Size:          reader.OriginalSize(),
-				readerFactory: readerFactory,
-			}
-			reader.Close()
-		}(i, config)
+	// Fixed-size worker pool pulling jobs from a channel.
+	numWorkers := maxParallelReaders
+	if len(configs) < numWorkers {
+		numWorkers = len(configs)
 	}
+	jobs := make(chan int)
+
+	wg.Add(numWorkers)
+	for range numWorkers {
+		go func() {
+			defer wg.Done()
+			for idx := range jobs {
+				// Skip work if another worker already failed
+				errMu.Lock()
+				failed := first != nil
+				errMu.Unlock()
+				if failed {
+					return
+				}
+
+				cfg := configs[idx]
+				reader, err := readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
+				if err != nil {
+					errMu.Lock()
+					if first == nil {
+						first = fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)
+					}
+					errMu.Unlock()
+					return
+				}
+
+				results[idx] = &MKVFile{
+					Name:          cfg.Name,
+					DedupPath:     cfg.DedupFile,
+					SourceDir:     cfg.SourceDir,
+					Size:          reader.OriginalSize(),
+					readerFactory: readerFactory,
+				}
+				reader.Close()
+			}
+		}()
+	}
+
+	for i := range configs {
+		jobs <- i
+	}
+	close(jobs)
 
 	wg.Wait()
 

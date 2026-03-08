@@ -10,6 +10,9 @@ import (
 	"syscall"
 )
 
+// fileStatFunc is used for os.Stat calls, exported for testing.
+var fileStatFunc = os.Stat
+
 // Geteuid returns the effective user ID. Exported for testing.
 var Geteuid = os.Geteuid
 
@@ -21,9 +24,16 @@ func CheckFileOwnership(path string) error {
 		return nil
 	}
 
-	info, err := os.Lstat(path)
+	// Resolve symlinks so ownership is checked on the actual target,
+	// not a symlink placeholder that could point to user-writable files.
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return fmt.Errorf("stat %s: %w", path, err)
+		return fmt.Errorf("resolve %s: %w", path, err)
+	}
+
+	info, err := fileStatFunc(resolved)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", resolved, err)
 	}
 
 	stat, ok := info.Sys().(*syscall.Stat_t)
@@ -79,9 +89,26 @@ func CheckPathConfinement(sourceDir, relPath string) (string, error) {
 	return canonical, nil
 }
 
-// CheckDirectory validates that a directory is root-owned and not
-// group-writable or world-writable. Returns nil if safe. Only checks
-// when running as root (euid == 0).
+// CheckDirectory validates that a path is a directory, is root-owned,
+// and is not group-writable or world-writable. Returns nil if safe.
+// Only checks when running as root (euid == 0).
 func CheckDirectory(dir string) error {
-	return CheckFileOwnership(dir)
+	if Geteuid() != 0 {
+		return nil
+	}
+
+	if err := CheckFileOwnership(dir); err != nil {
+		return err
+	}
+
+	info, err := fileStatFunc(dir)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", dir, err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("security: %s is not a directory", dir)
+	}
+
+	return nil
 }
