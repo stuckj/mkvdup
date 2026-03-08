@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/stuckj/mkvdup/internal/security"
 	"gopkg.in/yaml.v3"
 )
 
@@ -169,6 +170,11 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, *ErrorCom
 		return nil, nil, nil
 	}
 	seen[realPath] = true
+
+	// When running as root, verify config file ownership and permissions.
+	if err := security.CheckFileOwnership(realPath); err != nil {
+		return nil, nil, fmt.Errorf("config file %s: %w", realPath, err)
+	}
 
 	data, err := os.ReadFile(realPath)
 	if err != nil {

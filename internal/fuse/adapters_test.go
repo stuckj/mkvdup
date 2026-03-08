@@ -3,10 +3,12 @@ package fuse
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stuckj/mkvdup/internal/dedup"
 	"github.com/stuckj/mkvdup/internal/matcher"
+	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
@@ -116,6 +118,11 @@ func TestDedupReaderAdapter_Close_WithIndex(t *testing.T) {
 }
 
 func TestDefaultReaderFactory_NewReaderLazy_Success(t *testing.T) {
+	// Disable security checks so fake source dir doesn't fail EvalSymlinks
+	old := security.Geteuid
+	defer func() { security.Geteuid = old }()
+	security.Geteuid = func() int { return 1000 }
+
 	dir := t.TempDir()
 	const wantSize int64 = 9999
 
@@ -141,6 +148,35 @@ func TestDefaultReaderFactory_NewReaderLazy_NotFound(t *testing.T) {
 	_, err := factory.NewReaderLazy("/nonexistent/path/test.mkvdup", "/fake/source")
 	if err == nil {
 		t.Fatal("expected error for nonexistent path, got nil")
+	}
+}
+
+func TestDefaultReaderFactory_NewReaderLazy_RejectsNonRootOwned(t *testing.T) {
+	// Simulate running as root so security checks are enforced.
+	old := security.Geteuid
+	defer func() { security.Geteuid = old }()
+	security.Geteuid = func() int { return 0 }
+
+	dir := t.TempDir()
+	path := createTestDedupFile(t, dir, 100)
+
+	// When actually running as root (CI), the temp file is root-owned.
+	// Chown it to a non-root user so the ownership check rejects it.
+	if os.Geteuid() == 0 {
+		if err := os.Chown(path, 1000, 1000); err != nil {
+			t.Fatalf("chown: %v", err)
+		}
+	}
+
+	// The dedup file is owned by a non-root user,
+	// so the ownership check should reject it when euid == 0.
+	factory := &DefaultReaderFactory{}
+	_, err := factory.NewReaderLazy(path, dir)
+	if err == nil {
+		t.Fatal("expected security error for non-root-owned file, got nil")
+	}
+	if !strings.Contains(err.Error(), "security") {
+		t.Errorf("expected security error, got: %v", err)
 	}
 }
 

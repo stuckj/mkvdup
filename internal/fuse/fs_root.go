@@ -2,9 +2,11 @@ package fuse
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"path"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -121,27 +123,79 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 		logFn = func(string, ...interface{}) {}
 	}
 
-	// Build new file set from configs
+	// Build new file set from configs (parallel header reads with soft failure)
 	newFiles := make(map[string]*MKVFile)
-	for _, config := range configs {
-		reader, err := r.readerFactory.NewReaderLazy(config.DedupFile, config.SourceDir)
-		if err != nil {
-			logFn("warning: skipping %s: %v", config.Name, err)
-			continue
+	type reloadResult struct {
+		file *MKVFile
+		err  error
+	}
+	results := make([]reloadResult, len(configs))
+
+	if len(configs) <= 4 {
+		// Sequential for small counts
+		for i, config := range configs {
+			reader, err := r.readerFactory.NewReaderLazy(config.DedupFile, config.SourceDir)
+			if err != nil {
+				results[i] = reloadResult{err: fmt.Errorf("open dedup file %s: %w", config.DedupFile, err)}
+				continue
+			}
+			results[i] = reloadResult{file: &MKVFile{
+				Name:          config.Name,
+				DedupPath:     config.DedupFile,
+				SourceDir:     config.SourceDir,
+				Size:          reader.OriginalSize(),
+				readerFactory: r.readerFactory,
+			}}
+			reader.Close()
+		}
+	} else {
+		// Fixed-size worker pool to bound goroutine count and open file concurrency.
+		numWorkers := maxParallelReaders
+		if len(configs) < numWorkers {
+			numWorkers = len(configs)
+		}
+		jobs := make(chan int)
+		var wg sync.WaitGroup
+
+		wg.Add(numWorkers)
+		for range numWorkers {
+			go func() {
+				defer wg.Done()
+				for idx := range jobs {
+					cfg := configs[idx]
+					reader, err := r.readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
+					if err != nil {
+						results[idx] = reloadResult{err: fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)}
+						continue
+					}
+					results[idx] = reloadResult{file: &MKVFile{
+						Name:          cfg.Name,
+						DedupPath:     cfg.DedupFile,
+						SourceDir:     cfg.SourceDir,
+						Size:          reader.OriginalSize(),
+						readerFactory: r.readerFactory,
+					}}
+					reader.Close()
+				}
+			}()
 		}
 
-		mkvFile := &MKVFile{
-			Name:          config.Name,
-			DedupPath:     config.DedupFile,
-			SourceDir:     config.SourceDir,
-			Size:          reader.OriginalSize(),
-			readerFactory: r.readerFactory,
+		for i := range configs {
+			jobs <- i
 		}
-		reader.Close()
-		if existing, ok := newFiles[config.Name]; ok {
-			logFn("warning: duplicate name %q (dedup: %s replaced by %s)", config.Name, existing.DedupPath, mkvFile.DedupPath)
+		close(jobs)
+		wg.Wait()
+	}
+
+	for i, res := range results {
+		if res.err != nil {
+			logFn("warning: skipping %s: %v", configs[i].Name, res.err)
+			continue
 		}
-		newFiles[config.Name] = mkvFile
+		if existing, ok := newFiles[res.file.Name]; ok {
+			logFn("warning: duplicate name %q (dedup: %s replaced by %s)", res.file.Name, existing.DedupPath, res.file.DedupPath)
+		}
+		newFiles[res.file.Name] = res.file
 	}
 
 	// Snapshot old file names for change detection

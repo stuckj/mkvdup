@@ -11,6 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/mmap"
+	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 	"golang.org/x/sys/unix"
 )
@@ -114,7 +115,15 @@ func (r *Reader) SetESReader(esReader ESReader) {
 func (r *Reader) LoadSourceFiles() error {
 	r.sourceFiles = make([]mmap.SourceFile, len(r.file.SourceFiles))
 	for i, sf := range r.file.SourceFiles {
-		path := r.sourceDir + "/" + sf.RelativePath
+		path, err := security.CheckPathConfinement(r.sourceDir, sf.RelativePath)
+		if err != nil {
+			for j := 0; j < i; j++ {
+				if r.sourceFiles[j] != nil {
+					r.sourceFiles[j].Close()
+				}
+			}
+			return fmt.Errorf("source file %s: %w", sf.RelativePath, err)
+		}
 		m, err := mmap.Open(path)
 		if err != nil {
 			// Clean up already opened files
@@ -138,7 +147,15 @@ func (r *Reader) LoadSourceFiles() error {
 func (r *Reader) LoadSourceFilesPread(timeout time.Duration) error {
 	r.sourceFiles = make([]mmap.SourceFile, len(r.file.SourceFiles))
 	for i, sf := range r.file.SourceFiles {
-		path := r.sourceDir + "/" + sf.RelativePath
+		path, err := security.CheckPathConfinement(r.sourceDir, sf.RelativePath)
+		if err != nil {
+			for j := 0; j < i; j++ {
+				if r.sourceFiles[j] != nil {
+					r.sourceFiles[j].Close()
+				}
+			}
+			return fmt.Errorf("source file %s: %w", sf.RelativePath, err)
+		}
 		pf, err := mmap.OpenPread(path, timeout)
 		if err != nil {
 			// Clean up already opened files

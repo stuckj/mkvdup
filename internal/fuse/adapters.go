@@ -2,9 +2,11 @@ package fuse
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/stuckj/mkvdup/internal/dedup"
+	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
@@ -107,6 +109,33 @@ type DefaultReaderFactory struct {
 }
 
 func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (ReaderInitializer, error) {
+	// When running as root, resolve symlinks once and use the canonical
+	// paths for both security checks and subsequent opens. This closes
+	// the TOCTOU window where a symlink could be swapped between the
+	// ownership check and the actual open/mmap. We use the Resolved
+	// variants to avoid redundant EvalSymlinks calls inside the
+	// security functions.
+	if security.Geteuid() == 0 {
+		resolved, err := filepath.EvalSymlinks(dedupPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolve dedup path %s: %w", dedupPath, err)
+		}
+		dedupPath = resolved
+
+		resolved, err = filepath.EvalSymlinks(sourceDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve source dir %s: %w", sourceDir, err)
+		}
+		sourceDir = resolved
+	}
+
+	if err := security.CheckFileOwnershipResolved(dedupPath); err != nil {
+		return nil, fmt.Errorf("dedup file %s: %w", dedupPath, err)
+	}
+	if err := security.CheckDirectoryResolved(sourceDir); err != nil {
+		return nil, fmt.Errorf("source dir %s: %w", sourceDir, err)
+	}
+
 	reader, err := dedup.NewReaderLazy(dedupPath, sourceDir)
 	if err != nil {
 		return nil, err
