@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stuckj/mkvdup/internal/dedup"
+	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
@@ -107,6 +108,14 @@ type DefaultReaderFactory struct {
 }
 
 func (f *DefaultReaderFactory) NewReaderLazy(dedupPath, sourceDir string) (ReaderInitializer, error) {
+	// When running as root, verify dedup file and source dir ownership.
+	if err := security.CheckFileOwnership(dedupPath); err != nil {
+		return nil, fmt.Errorf("dedup file %s: %w", dedupPath, err)
+	}
+	if err := security.CheckDirectory(sourceDir); err != nil {
+		return nil, fmt.Errorf("source dir %s: %w", sourceDir, err)
+	}
+
 	reader, err := dedup.NewReaderLazy(dedupPath, sourceDir)
 	if err != nil {
 		return nil, err

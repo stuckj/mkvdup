@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sync"
 
 	"github.com/stuckj/mkvdup/internal/dedup"
 )
@@ -160,8 +161,92 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 	return root, nil
 }
 
+// maxParallelReaders limits concurrent dedup header reads to avoid
+// exhausting file descriptors when mounting thousands of files.
+const maxParallelReaders = 64
+
+// readConfigHeaders reads dedup file headers in parallel using a bounded
+// worker pool. Returns a slice of MKVFile (indexed by config position) and
+// the first error encountered. On error, nil entries may exist in the slice.
+func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verbose bool) ([]*MKVFile, error) {
+	results := make([]*MKVFile, len(configs))
+
+	// For small counts, read sequentially to avoid goroutine overhead
+	if len(configs) <= 4 {
+		for i, config := range configs {
+			if verbose {
+				log.Printf("Opening dedup file: %s", config.DedupFile)
+			}
+			reader, err := readerFactory.NewReaderLazy(config.DedupFile, config.SourceDir)
+			if err != nil {
+				return nil, fmt.Errorf("open dedup file %s: %w", config.DedupFile, err)
+			}
+			results[i] = &MKVFile{
+				Name:          config.Name,
+				DedupPath:     config.DedupFile,
+				SourceDir:     config.SourceDir,
+				Size:          reader.OriginalSize(),
+				readerFactory: readerFactory,
+			}
+			reader.Close()
+		}
+		return results, nil
+	}
+
+	var (
+		wg    sync.WaitGroup
+		errMu sync.Mutex
+		first error
+		sem   = make(chan struct{}, maxParallelReaders)
+	)
+
+	for i, config := range configs {
+		wg.Add(1)
+		go func(idx int, cfg dedup.Config) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire
+			defer func() { <-sem }() // release
+
+			// Skip work if another goroutine already failed
+			errMu.Lock()
+			failed := first != nil
+			errMu.Unlock()
+			if failed {
+				return
+			}
+
+			reader, err := readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
+			if err != nil {
+				errMu.Lock()
+				if first == nil {
+					first = fmt.Errorf("open dedup file %s: %w", cfg.DedupFile, err)
+				}
+				errMu.Unlock()
+				return
+			}
+
+			results[idx] = &MKVFile{
+				Name:          cfg.Name,
+				DedupPath:     cfg.DedupFile,
+				SourceDir:     cfg.SourceDir,
+				Size:          reader.OriginalSize(),
+				readerFactory: readerFactory,
+			}
+			reader.Close()
+		}(i, config)
+	}
+
+	wg.Wait()
+
+	if first != nil {
+		return nil, first
+	}
+	return results, nil
+}
+
 // NewMKVFSFromConfigs creates a new MKVFS root from already-resolved configs.
 // Paths in configs must already be absolute (as returned by dedup.ResolveConfigs).
+// Dedup file headers are read in parallel for faster startup with many files.
 func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) (*MKVFSRoot, error) {
 	root := &MKVFSRoot{
 		files:         make(map[string]*MKVFile),
@@ -174,37 +259,18 @@ func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory Rea
 		log.Printf("Creating MKVFS with %d resolved configs", len(configs))
 	}
 
-	for _, config := range configs {
+	mkvFiles, err := readConfigHeaders(configs, readerFactory, verbose)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, mkvFile := range mkvFiles {
+		if mkvFile == nil {
+			continue
+		}
+		root.files[mkvFile.Name] = mkvFile
 		if verbose {
-			log.Printf("Config: name=%s, dedup=%s, source=%s", config.Name, config.DedupFile, config.SourceDir)
-		}
-
-		// Open dedup file to get size (lazy loading - only reads header)
-		if verbose {
-			log.Printf("Opening dedup file: %s", config.DedupFile)
-		}
-		reader, err := root.readerFactory.NewReaderLazy(config.DedupFile, config.SourceDir)
-		if err != nil {
-			if verbose {
-				log.Printf("Failed to open dedup file: %v", err)
-			}
-			return nil, fmt.Errorf("open dedup file %s: %w", config.DedupFile, err)
-		}
-
-		mkvFile := &MKVFile{
-			Name:          config.Name,
-			DedupPath:     config.DedupFile,
-			SourceDir:     config.SourceDir,
-			Size:          reader.OriginalSize(),
-			readerFactory: root.readerFactory,
-		}
-
-		// Don't keep reader open - we'll open it lazily
-		reader.Close()
-
-		root.files[config.Name] = mkvFile
-		if verbose {
-			log.Printf("Added file: %s (size=%d)", config.Name, mkvFile.Size)
+			log.Printf("Added file: %s (size=%d)", mkvFile.Name, mkvFile.Size)
 		}
 	}
 
