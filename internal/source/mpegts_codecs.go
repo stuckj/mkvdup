@@ -80,176 +80,66 @@ func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 }
 
 // parseTSCodecs scans MPEG-TS data to find the PAT and PMT and extract stream types.
+// This uses reassemblePSISection to correctly handle PMTs that span multiple TS
+// packets (common on Blu-rays with many audio and subtitle streams).
 func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 	// Detect TS packet size: 188 (standard) or 192 (M2TS with 4-byte timestamp)
-	packetSize, offset := detectTSPacketSize(data)
+	packetSize, startOffset := detectTSPacketSize(data)
 	if packetSize == 0 {
 		return nil, fmt.Errorf("cannot detect TS packet size")
 	}
+	tsOffset := 0
+	if packetSize == 192 {
+		tsOffset = 4
+	}
 
 	// Step 1: Find PAT (PID 0x0000) to get PMT PID
+	patSection, err := reassemblePSISection(data, startOffset, packetSize, tsOffset, 0, 0x00)
+	if err != nil {
+		return nil, fmt.Errorf("find PAT: %w", err)
+	}
+
 	pmtPID := uint16(0)
-	for i := offset; i+packetSize <= len(data); i += packetSize {
-		tsOffset := i
-		if packetSize == 192 {
-			tsOffset += 4 // Skip 4-byte M2TS timestamp
+	if len(patSection) >= 8 {
+		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
+		progsEnd := 3 + sectionLen - 4 // -4 for CRC
+		if progsEnd > len(patSection) {
+			progsEnd = len(patSection)
 		}
-		if tsOffset+188 > len(data) {
-			break
-		}
-		pkt := data[tsOffset : tsOffset+188]
-		if pkt[0] != 0x47 {
-			continue // Not a valid TS sync byte
-		}
-
-		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
-		if pid != 0x0000 {
-			continue
-		}
-
-		// PAT found — parse it
-		payloadStart := pkt[1]&0x40 != 0
-		if !payloadStart {
-			continue
-		}
-
-		// Skip adaptation field if present
-		adaptationFieldControl := (pkt[3] >> 4) & 0x03
-		headerLen := 4
-		switch adaptationFieldControl {
-		case 0x02, 0x03: // Adaptation field present
-			adaptLen := int(pkt[4])
-			if adaptLen > 183 {
-				continue
-			}
-			headerLen = 5 + adaptLen
-		case 0x01: // Payload only, no adaptation field
-		default: // 0x00 is reserved/invalid
-			continue
-		}
-		if headerLen >= 188 {
-			continue
-		}
-
-		// Skip pointer field
-		pointerField := int(pkt[headerLen])
-		headerLen += 1 + pointerField
-		if headerLen+8 > 188 {
-			continue
-		}
-
-		payload := pkt[headerLen:]
-		// PAT: table_id(1) + flags+length(2) + tsid(2) + version(1) + section(1) + last_section(1)
-		// then 4 bytes per program: program_number(2) + PMT_PID(2)
-		if len(payload) < 12 {
-			continue
-		}
-		if payload[0] != 0x00 { // table_id for PAT
-			continue
-		}
-
-		sectionLength := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLength < 9 {
-			continue
-		}
-
-		// Programs start at offset 8, each is 4 bytes
-		programsEnd := 8 + sectionLength - 4 // -4 for CRC
-		if programsEnd > len(payload) {
-			programsEnd = len(payload) - 4
-		}
-
-		for j := 8; j+4 <= programsEnd; j += 4 {
-			progNum := uint16(payload[j])<<8 | uint16(payload[j+1])
+		for j := 8; j+4 <= progsEnd; j += 4 {
+			progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
 			if progNum == 0 {
 				continue // Network PID, skip
 			}
-			pmtPID = uint16(payload[j+2]&0x1F)<<8 | uint16(payload[j+3])
+			pmtPID = uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
 			break // Use the first program
 		}
-		break
 	}
 
 	if pmtPID == 0 {
 		return nil, fmt.Errorf("PMT PID not found in PAT")
 	}
 
-	// Step 2: Find PMT and extract stream types
+	// Step 2: Reassemble complete PMT section (may span multiple TS packets)
+	pmtSection, err := reassemblePSISection(data, startOffset, packetSize, tsOffset, pmtPID, 0x02)
+	if err != nil {
+		return nil, fmt.Errorf("find PMT: %w", err)
+	}
+
+	// Step 3: Extract stream types from the reassembled PMT
 	codecs := &SourceCodecs{}
-	for i := offset; i+packetSize <= len(data); i += packetSize {
-		tsOffset := i
-		if packetSize == 192 {
-			tsOffset += 4
-		}
-		if tsOffset+188 > len(data) {
-			break
-		}
-		pkt := data[tsOffset : tsOffset+188]
-		if pkt[0] != 0x47 {
-			continue
-		}
-
-		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
-		if pid != pmtPID {
-			continue
-		}
-
-		payloadStart := pkt[1]&0x40 != 0
-		if !payloadStart {
-			continue
-		}
-
-		// Skip adaptation field
-		adaptationFieldControl := (pkt[3] >> 4) & 0x03
-		headerLen := 4
-		switch adaptationFieldControl {
-		case 0x02, 0x03: // Adaptation field present
-			adaptLen := int(pkt[4])
-			if adaptLen > 183 {
-				continue
-			}
-			headerLen = 5 + adaptLen
-		case 0x01: // Payload only, no adaptation field
-		default: // 0x00 is reserved/invalid
-			continue
-		}
-		if headerLen >= 188 {
-			continue
-		}
-
-		// Skip pointer field
-		pointerField := int(pkt[headerLen])
-		headerLen += 1 + pointerField
-		if headerLen+12 > 188 {
-			continue
-		}
-
-		payload := pkt[headerLen:]
-		if len(payload) < 12 || payload[0] != 0x02 { // table_id for PMT
-			continue
-		}
-
-		sectionLength := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLength < 13 {
-			continue
-		}
-
-		// Program info length at offset 10
-		progInfoLen := int(payload[10]&0x0F)<<8 | int(payload[11])
-
-		// Stream descriptors start after program info
+	if len(pmtSection) >= 12 {
+		progInfoLen := int(pmtSection[10]&0x0F)<<8 | int(pmtSection[11])
 		streamsStart := 12 + progInfoLen
-		streamsEnd := 3 + sectionLength - 4 // section starts at byte 3, -4 for CRC
-		if streamsEnd > len(payload) {
-			streamsEnd = len(payload) - 4
-		}
-		if streamsStart > streamsEnd {
-			continue
+		sectionLen := int(pmtSection[1]&0x0F)<<8 | int(pmtSection[2])
+		streamsEnd := 3 + sectionLen - 4 // exclude CRC32
+		if streamsEnd > len(pmtSection) {
+			streamsEnd = len(pmtSection)
 		}
 
 		for j := streamsStart; j+5 <= streamsEnd; {
-			streamType := payload[j]
-			esInfoLen := int(payload[j+3]&0x0F)<<8 | int(payload[j+4])
+			streamType := pmtSection[j]
+			esInfoLen := int(pmtSection[j+3]&0x0F)<<8 | int(pmtSection[j+4])
 
 			ct := tsStreamTypeToCodecType(streamType)
 			if ct != CodecUnknown {
@@ -274,8 +164,6 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 			}
 			j = next
 		}
-
-		break // Found and parsed PMT
 	}
 
 	return codecs, nil

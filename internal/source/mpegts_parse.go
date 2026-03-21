@@ -422,12 +422,19 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 // section is larger than a single TS payload (~170 bytes). This happens on
 // Blu-ray discs with many audio and subtitle streams in the PMT.
 func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, targetPID uint16, tableID byte) ([]byte, error) {
+	return reassemblePSISection(data, startOffset, p.packetSize, p.tsOffset, targetPID, tableID)
+}
+
+// reassemblePSISection collects a complete PSI section (PAT, PMT, etc.) from
+// one or more TS packets. packetSize is 188 (standard TS) or 192 (M2TS).
+// tsOffset is the offset from packet start to TS sync byte (4 for M2TS, 0 for TS).
+func reassemblePSISection(data []byte, startOffset, packetSize, tsOffset int, targetPID uint16, tableID byte) ([]byte, error) {
 	var section []byte
 	sectionLen := -1
 	collecting := false
 
-	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
-		tsStart := i + p.tsOffset
+	for i := startOffset; i+packetSize <= len(data); i += packetSize {
+		tsStart := i + tsOffset
 		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
 			continue
 		}
