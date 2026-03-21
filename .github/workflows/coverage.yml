@@ -75,7 +75,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse-dev fuse3 nfs-kernel-server nfs-common
+          sudo apt-get install -y libfuse-dev fuse3 nfs-kernel-server nfs-common ffmpeg
 
       - name: Start NFS services
         run: |
