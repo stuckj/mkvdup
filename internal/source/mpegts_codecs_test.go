@@ -62,8 +62,8 @@ func TestParseTSCodecs_MultiPacketPMT(t *testing.T) {
 	const packetSize = 192
 	const tsPayloadStart = 4
 
-	// 1 video (H.264) + 3 audio (DTS-HD, AC3, DTS) + 17 PGS subtitles = 21 streams
-	// With 6-byte ES info descriptors on audio streams, the PMT exceeds one TS packet.
+	// 1 video (H.264) + 3 audio (DTS-HD, AC3, DTS) + 20 PGS subtitles = 24 streams
+	// With 16-byte ES info descriptors on audio streams, the PMT exceeds one TS packet.
 
 	// Build PMT section manually
 	pmtSection := make([]byte, 0, 300)
