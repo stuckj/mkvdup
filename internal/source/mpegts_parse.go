@@ -347,23 +347,7 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 		return fmt.Errorf("reassemble PAT: %w", err)
 	}
 
-	pmtPID := uint16(0)
-	if len(patSection) >= 8 {
-		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
-		progsEnd := 3 + sectionLen - 4 // section_length counts from byte 3; subtract 4 for CRC
-		if progsEnd > len(patSection) {
-			progsEnd = len(patSection)
-		}
-		for j := 8; j+4 <= progsEnd; j += 4 {
-			progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
-			if progNum == 0 {
-				continue
-			}
-			pmtPID = uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
-			break
-		}
-	}
-
+	pmtPID := pmtPIDFromPAT(patSection)
 	if pmtPID == 0 {
 		return fmt.Errorf("PMT PID not found in PAT")
 	}
@@ -464,12 +448,28 @@ func reassemblePSISection(data []byte, startOffset, packetSize, tsOffset int, ta
 		payload := data[tsStart+hdrLen : tsStart+188]
 
 		if pusi {
-			// PUSI packet: skip pointer field, find section start
+			// PUSI packet: pointer_field indicates how many bytes at the start
+			// of the payload belong to the tail of a previous section.
 			pointerField := int(payload[0])
 			sectionStart := 1 + pointerField
 			if sectionStart >= len(payload) {
 				continue
 			}
+
+			// If we're mid-collection, the bytes before sectionStart are the
+			// tail of the section we're assembling.
+			if collecting && pointerField > 0 {
+				tail := payload[1:sectionStart]
+				remaining := sectionLen - len(section)
+				if len(tail) > remaining {
+					tail = tail[:remaining]
+				}
+				section = append(section, tail...)
+				if len(section) >= sectionLen {
+					return section, nil
+				}
+			}
+
 			payload = payload[sectionStart:]
 			if len(payload) < 3 || payload[0] != tableID {
 				continue
@@ -504,6 +504,27 @@ func reassemblePSISection(data []byte, startOffset, packetSize, tsOffset int, ta
 		return nil, fmt.Errorf("truncated PSI section for table ID 0x%02X on PID 0x%04X: got %d of %d bytes", tableID, targetPID, len(section), sectionLen)
 	}
 	return nil, fmt.Errorf("PSI section with table ID 0x%02X not found on PID 0x%04X", tableID, targetPID)
+}
+
+// pmtPIDFromPAT extracts the PMT PID from a reassembled PAT section.
+// Returns the PID of the first non-zero program, or 0 if none found.
+func pmtPIDFromPAT(patSection []byte) uint16 {
+	if len(patSection) < 8 {
+		return 0
+	}
+	sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
+	progsEnd := 3 + sectionLen - 4 // section_length counts from byte 3; subtract 4 for CRC
+	if progsEnd > len(patSection) {
+		progsEnd = len(patSection)
+	}
+	for j := 8; j+4 <= progsEnd; j += 4 {
+		progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
+		if progNum == 0 {
+			continue // Network PID, skip
+		}
+		return uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
+	}
+	return 0
 }
 
 // buildFilteredVideoRanges creates filtered video ranges.

@@ -99,23 +99,7 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 		return nil, fmt.Errorf("find PAT: %w", err)
 	}
 
-	pmtPID := uint16(0)
-	if len(patSection) >= 8 {
-		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
-		progsEnd := 3 + sectionLen - 4 // -4 for CRC
-		if progsEnd > len(patSection) {
-			progsEnd = len(patSection)
-		}
-		for j := 8; j+4 <= progsEnd; j += 4 {
-			progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
-			if progNum == 0 {
-				continue // Network PID, skip
-			}
-			pmtPID = uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
-			break // Use the first program
-		}
-	}
-
+	pmtPID := pmtPIDFromPAT(patSection)
 	if pmtPID == 0 {
 		return nil, fmt.Errorf("PMT PID not found in PAT")
 	}

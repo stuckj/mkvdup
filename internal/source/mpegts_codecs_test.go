@@ -69,7 +69,7 @@ func TestParseTSCodecs_MultiPacketPMT(t *testing.T) {
 	pmtSection := make([]byte, 0, 300)
 	pmtSection = append(pmtSection, 0x02)       // table_id
 	pmtSection = append(pmtSection, 0xB0, 0x00) // section_length placeholder
-	pmtSection = append(pmtSection, 0x00, 0x01) // TSID
+	pmtSection = append(pmtSection, 0x00, 0x01) // program_number
 	pmtSection = append(pmtSection, 0xC1)       // version 0, current
 	pmtSection = append(pmtSection, 0x00, 0x00) // section/last section
 	pmtSection = append(pmtSection, 0xE1, 0x01) // PCR PID = 0x101
