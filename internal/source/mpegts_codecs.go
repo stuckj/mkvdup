@@ -7,62 +7,99 @@ import (
 	"strings"
 )
 
-// detectBlurayCodecs performs a lightweight scan of the first M2TS file
-// to detect codecs via the MPEG-TS Program Map Table (PMT).
+// blurayCodecScan describes a single M2TS region to scan for codec detection.
+type blurayCodecScan struct {
+	path   string // file path (M2TS file or ISO containing M2TS)
+	offset int64  // byte offset within path to start reading
+	size   int64  // size of the M2TS data (for significance filtering)
+}
+
+// detectBlurayCodecsFromScans scans PMTs from multiple M2TS regions and unions
+// their codec information. Only scans files of significant size (>10% of the
+// largest) to skip tiny menu/intro clips. This is necessary because different
+// episodes or playlist entries may reference different M2TS files with different
+// audio tracks.
+func detectBlurayCodecsFromScans(scans []blurayCodecScan) (*SourceCodecs, error) {
+	if len(scans) == 0 {
+		return nil, fmt.Errorf("no M2TS files to scan")
+	}
+
+	var largestSize int64
+	for _, s := range scans {
+		if s.size > largestSize {
+			largestSize = s.size
+		}
+	}
+	minSize := largestSize / 10
+
+	merged := &SourceCodecs{}
+	for _, s := range scans {
+		if s.size < minSize {
+			continue
+		}
+		codecs, err := scanM2TSCodecs(s.path, s.offset)
+		if err != nil {
+			continue
+		}
+		mergeSourceCodecs(merged, codecs)
+	}
+
+	return merged, nil
+}
+
+// detectBlurayCodecs scans PMTs from indexed M2TS files to detect codecs.
+// This is a fallback for when the pre-index DetectSourceCodecsFromDir check
+// was skipped (e.g., detection failure).
 func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 	if len(index.Files) == 0 {
 		return nil, fmt.Errorf("no source files in index")
 	}
-
-	// Find the largest M2TS file (most likely the main feature)
-	var largestFile string
-	var largestSize int64
-	for _, f := range index.Files {
-		if f.Size > largestSize {
-			largestSize = f.Size
-			largestFile = f.RelativePath
+	scans := make([]blurayCodecScan, len(index.Files))
+	for i, f := range index.Files {
+		scans[i] = blurayCodecScan{
+			path:   filepath.Join(index.SourceDir, f.RelativePath),
+			offset: 0,
+			size:   f.Size,
 		}
 	}
-
-	if largestFile == "" {
-		return nil, fmt.Errorf("no valid M2TS files found")
-	}
-
-	fullPath := filepath.Join(index.SourceDir, largestFile)
-	return detectBlurayCodecsFromFile(fullPath)
+	return detectBlurayCodecsFromScans(scans)
 }
 
-// detectBlurayCodecsFromFile parses the PMT from an M2TS file (or Blu-ray ISO)
-// to detect codecs. For ISOs, it finds the largest M2TS file within the ISO
-// and reads from that region.
+// detectBlurayCodecsFromFile detects codecs from a single M2TS file or a
+// Blu-ray ISO (scanning all significant M2TS files within it).
 func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
+	if strings.HasSuffix(strings.ToLower(path), ".iso") {
+		return detectBlurayCodecsFromISO(path)
+	}
+	return scanM2TSCodecs(path, 0)
+}
+
+// detectBlurayCodecsFromISO scans all significant M2TS files within a Blu-ray
+// ISO and unions their PMT codec information.
+func detectBlurayCodecsFromISO(path string) (*SourceCodecs, error) {
+	m2tsFiles, err := findBlurayM2TSInISO(path)
+	if err != nil {
+		return nil, fmt.Errorf("find M2TS in ISO: %w", err)
+	}
+	if len(m2tsFiles) == 0 {
+		return nil, fmt.Errorf("no M2TS files found in Blu-ray ISO")
+	}
+	scans := make([]blurayCodecScan, len(m2tsFiles))
+	for i, m := range m2tsFiles {
+		scans[i] = blurayCodecScan{path: path, offset: m.Offset, size: m.Size}
+	}
+	return detectBlurayCodecsFromScans(scans)
+}
+
+// scanM2TSCodecs reads 2MB of M2TS data at the given offset and parses the
+// PAT/PMT to extract codec information from a single M2TS stream.
+func scanM2TSCodecs(path string, readOffset int64) (*SourceCodecs, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
 
-	// Determine read offset: for ISOs, find the largest M2TS within
-	readOffset := int64(0)
-	if strings.HasSuffix(strings.ToLower(path), ".iso") {
-		m2tsFiles, err := findBlurayM2TSInISO(path)
-		if err != nil {
-			return nil, fmt.Errorf("find M2TS in ISO: %w", err)
-		}
-		// Find the largest M2TS (most likely the main feature)
-		var largest isoFileExtent
-		for _, m := range m2tsFiles {
-			if m.Size > largest.Size {
-				largest = m
-			}
-		}
-		if largest.Size == 0 {
-			return nil, fmt.Errorf("no M2TS files found in Blu-ray ISO")
-		}
-		readOffset = largest.Offset
-	}
-
-	// Read 2MB from the M2TS data — enough to find PAT + PMT
 	const scanSize = 2 * 1024 * 1024
 	buf := make([]byte, scanSize)
 	n, err := f.ReadAt(buf, readOffset)
@@ -71,7 +108,6 @@ func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 	}
 	buf = buf[:n]
 
-	// Need at least enough data for TS packet size detection (4 sync bytes at regular intervals)
 	if len(buf) < 192*4 {
 		return nil, fmt.Errorf("M2TS data too small to detect TS structure (%d bytes)", len(buf))
 	}
