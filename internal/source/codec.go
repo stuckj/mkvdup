@@ -227,7 +227,7 @@ func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 				Size:   fi.size,
 			}
 		}
-		return detectBlurayCodecsFromFiles(significantFiles(extents))
+		return detectBlurayCodecsMulti(significantFiles(extents))
 	case TypeDVD:
 		// For DVDs, use the largest file (main feature)
 		var largestFile string

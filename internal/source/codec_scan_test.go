@@ -214,7 +214,7 @@ func TestReadISODirectory_Found(t *testing.T) {
 	dir[off] = 42
 	dir[off+2] = 100
 	dir[off+10] = 0
-	dir[off+11] = 16 // 4096
+	dir[off+11] = 16   // 4096
 	dir[off+25] = 0x02 // directory flag
 	dir[off+32] = 8
 	copy(dir[off+33:], "VIDEO_TS")
