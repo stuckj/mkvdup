@@ -446,7 +446,7 @@ func reassemblePSISection(data []byte, startOffset, packetSize, tsOffset int, ta
 			// of the payload belong to the tail of a previous section.
 			pointerField := int(payload[0])
 			sectionStart := 1 + pointerField
-			if sectionStart >= len(payload) {
+			if sectionStart > len(payload) {
 				continue
 			}
 
