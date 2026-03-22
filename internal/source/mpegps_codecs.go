@@ -65,12 +65,27 @@ func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
 	}
 
 	merged := &SourceCodecs{}
+	var lastErr error
+	anySuccess := false
 	for _, v := range significantFiles(vobs) {
 		codecs, err := scanDVDRegion(f, v.Offset)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		mergeSourceCodecs(merged, codecs)
+		anySuccess = true
+	}
+	if !anySuccess {
+		// Fall back to scanning from start of ISO
+		fallback, err := scanDVDRegion(f, 0)
+		if err == nil {
+			return fallback, nil
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to scan any DVD VOBs: %w", lastErr)
+		}
+		return nil, err
 	}
 	return merged, nil
 }

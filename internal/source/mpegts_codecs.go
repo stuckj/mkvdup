@@ -14,13 +14,21 @@ func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 	if len(index.Files) == 0 {
 		return nil, fmt.Errorf("no source files in index")
 	}
-	extents := make([]isoFileExtent, len(index.Files))
-	for i, f := range index.Files {
-		extents[i] = isoFileExtent{
-			Name:   filepath.Join(index.SourceDir, f.RelativePath),
+	// Deduplicate by path — for ISOs the indexer creates multiple entries
+	// sharing the same RelativePath, and we only need to scan each file once.
+	seen := make(map[string]struct{})
+	var extents []isoFileExtent
+	for _, f := range index.Files {
+		fullPath := filepath.Join(index.SourceDir, f.RelativePath)
+		if _, ok := seen[fullPath]; ok {
+			continue
+		}
+		seen[fullPath] = struct{}{}
+		extents = append(extents, isoFileExtent{
+			Name:   fullPath,
 			Offset: 0,
 			Size:   f.Size,
-		}
+		})
 	}
 	return detectBlurayCodecsMulti(significantFiles(extents))
 }
@@ -35,6 +43,7 @@ func detectBlurayCodecsMulti(files []isoFileExtent) (*SourceCodecs, error) {
 	}
 	merged := &SourceCodecs{}
 	var lastErr error
+	anySuccess := false
 	for _, f := range files {
 		codecs, err := detectBlurayCodecsFromFile(f.Name)
 		if err != nil {
@@ -42,10 +51,13 @@ func detectBlurayCodecsMulti(files []isoFileExtent) (*SourceCodecs, error) {
 			continue
 		}
 		mergeSourceCodecs(merged, codecs)
-		lastErr = nil
+		anySuccess = true
 	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("failed to scan any Blu-ray codecs: %w", lastErr)
+	if !anySuccess {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to scan any Blu-ray codecs: %w", lastErr)
+		}
+		return nil, fmt.Errorf("failed to scan any Blu-ray codecs")
 	}
 	return merged, nil
 }
@@ -71,12 +83,22 @@ func detectBlurayCodecsFromISO(path string) (*SourceCodecs, error) {
 	}
 
 	merged := &SourceCodecs{}
+	var lastErr error
+	anySuccess := false
 	for _, m := range significantFiles(m2tsFiles) {
 		codecs, err := scanM2TSCodecs(path, m.Offset)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		mergeSourceCodecs(merged, codecs)
+		anySuccess = true
+	}
+	if !anySuccess {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to scan any M2TS in ISO: %w", lastErr)
+		}
+		return nil, fmt.Errorf("failed to scan any M2TS in ISO")
 	}
 	return merged, nil
 }
