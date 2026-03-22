@@ -424,12 +424,14 @@ func reassemblePSISection(data []byte, startOffset, packetSize, tsOffset int, ta
 		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
 		hdrLen := 4
 		switch adaptFieldCtrl {
-		case 0x02, 0x03:
+		case 0x02: // Adaptation field only, no payload
+			continue
+		case 0x03: // Adaptation field + payload
 			if tsStart+4 >= len(data) {
 				continue
 			}
 			hdrLen = 5 + int(data[tsStart+4])
-		case 0x01:
+		case 0x01: // Payload only
 		default:
 			continue
 		}
