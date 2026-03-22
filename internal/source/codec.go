@@ -219,15 +219,15 @@ func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 
 	switch sourceType {
 	case TypeBluray:
-		scans := make([]blurayCodecScan, len(infos))
+		extents := make([]isoFileExtent, len(infos))
 		for i, fi := range infos {
-			scans[i] = blurayCodecScan{
-				path:   filepath.Join(sourceDir, fi.relPath),
-				offset: 0,
-				size:   fi.size,
+			extents[i] = isoFileExtent{
+				Name:   filepath.Join(sourceDir, fi.relPath),
+				Offset: 0,
+				Size:   fi.size,
 			}
 		}
-		return detectBlurayCodecsFromScans(scans)
+		return detectBlurayCodecsFromFiles(significantFiles(extents))
 	case TypeDVD:
 		// For DVDs, use the largest file (main feature)
 		var largestFile string
@@ -351,6 +351,27 @@ func containsCodec(codecs []CodecType, ct CodecType) bool {
 		}
 	}
 	return false
+}
+
+// significantFiles returns the subset of files whose size is at least 10% of
+// the largest file. This filters out tiny menu clips and intro bumpers that
+// would add noise to codec detection.
+func significantFiles(files []isoFileExtent) []isoFileExtent {
+	var largestSize int64
+	for _, f := range files {
+		if f.Size > largestSize {
+			largestSize = f.Size
+		}
+	}
+	minSize := largestSize / 10
+
+	var result []isoFileExtent
+	for _, f := range files {
+		if f.Size >= minSize {
+			result = append(result, f)
+		}
+	}
+	return result
 }
 
 // mergeSourceCodecs adds all codecs from src into dst, deduplicating.

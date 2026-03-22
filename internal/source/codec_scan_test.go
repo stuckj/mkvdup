@@ -181,67 +181,82 @@ func TestScanPESCodecs_NoCodecs(t *testing.T) {
 	}
 }
 
-func TestFindDirEntry_Found(t *testing.T) {
-	const sectorSize = 2048
-	// Build a minimal directory with two entries: "." and "VIDEO_TS"
-	dir := make([]byte, sectorSize)
+// parseTestISODir writes directory bytes at LBA 0 in a temp file and returns
+// the parsed entries via readISODirectory.
+func parseTestISODir(t *testing.T, dir []byte) []isoFileExtent {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "dir.bin")
+	if err := os.WriteFile(path, dir, 0644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	entries, err := readISODirectory(f, 0, uint32(len(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestReadISODirectory_Found(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
 	// First entry: "." (self)
-	dir[0] = 34 // record length
-	dir[32] = 1 // name length
-	dir[33] = 0 // name = 0x00 (current dir)
+	dir[0] = 34
+	dir[32] = 1
+	dir[33] = 0
 
-	// Second entry: "VIDEO_TS"
+	// Second entry: "VIDEO_TS" at sector 100, size 4096
 	off := 34
-	dir[off] = 42 // record length
-	// Extent location (LE): sector 100
+	dir[off] = 42
 	dir[off+2] = 100
-	dir[off+3] = 0
-	dir[off+4] = 0
-	dir[off+5] = 0
-	// Data length (LE): 4096
 	dir[off+10] = 0
-	dir[off+11] = 16
-	dir[off+12] = 0
-	dir[off+13] = 0
-	dir[off+32] = 8 // name length
+	dir[off+11] = 16 // 4096
+	dir[off+25] = 0x02 // directory flag
+	dir[off+32] = 8
 	copy(dir[off+33:], "VIDEO_TS")
 
-	extent, dataLen := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 100 {
-		t.Errorf("extent = %d, want 100", extent)
+	entries := parseTestISODir(t, dir)
+	e, err := findISOEntry(entries, "VIDEO_TS")
+	if err != nil {
+		t.Fatalf("findISOEntry: %v", err)
 	}
-	if dataLen != 4096 {
-		t.Errorf("dataLen = %d, want 4096", dataLen)
+	if e.Offset != 100*isoSectorSize {
+		t.Errorf("offset = %d, want %d", e.Offset, 100*isoSectorSize)
+	}
+	if e.Size != 4096 {
+		t.Errorf("size = %d, want 4096", e.Size)
 	}
 }
 
-func TestFindDirEntry_WithSemicolon(t *testing.T) {
-	const sectorSize = 2048
-	dir := make([]byte, sectorSize)
+func TestReadISODirectory_WithSemicolon(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
 	// Entry with ISO9660 version suffix: "VIDEO_TS;1"
 	dir[0] = 44
-	dir[2] = 50 // extent = 50
+	dir[2] = 50
 	dir[10] = 0
-	dir[11] = 8 // data length = 2048
+	dir[11] = 8 // 2048
+	dir[25] = 0x02
 	dir[32] = 10
 	copy(dir[33:], "VIDEO_TS;1")
 
-	extent, dataLen := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 50 {
-		t.Errorf("extent = %d, want 50", extent)
+	entries := parseTestISODir(t, dir)
+	e, err := findISOEntry(entries, "VIDEO_TS")
+	if err != nil {
+		t.Fatalf("findISOEntry: %v", err)
 	}
-	if dataLen != 2048 {
-		t.Errorf("dataLen = %d, want 2048", dataLen)
+	if e.Offset != 50*isoSectorSize {
+		t.Errorf("offset = %d, want %d", e.Offset, 50*isoSectorSize)
 	}
 }
 
-func TestFindDirEntry_NotFound(t *testing.T) {
-	const sectorSize = 2048
-	dir := make([]byte, sectorSize)
+func TestReadISODirectory_NotFound(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
-	// Entry: "AUDIO_TS"
 	dir[0] = 42
 	dir[2] = 50
 	dir[10] = 0
@@ -249,15 +264,15 @@ func TestFindDirEntry_NotFound(t *testing.T) {
 	dir[32] = 8
 	copy(dir[33:], "AUDIO_TS")
 
-	extent, dataLen := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 0 || dataLen != 0 {
-		t.Errorf("expected (0, 0), got (%d, %d)", extent, dataLen)
+	entries := parseTestISODir(t, dir)
+	_, err := findISOEntry(entries, "VIDEO_TS")
+	if err == nil {
+		t.Error("expected error for missing entry, got nil")
 	}
 }
 
-func TestFindDirEntry_CaseInsensitive(t *testing.T) {
-	const sectorSize = 2048
-	dir := make([]byte, sectorSize)
+func TestReadISODirectory_CaseInsensitive(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
 	dir[0] = 42
 	dir[2] = 75
@@ -266,14 +281,18 @@ func TestFindDirEntry_CaseInsensitive(t *testing.T) {
 	dir[32] = 8
 	copy(dir[33:], "video_ts")
 
-	extent, _ := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 75 {
-		t.Errorf("extent = %d, want 75", extent)
+	entries := parseTestISODir(t, dir)
+	e, err := findISOEntry(entries, "VIDEO_TS")
+	if err != nil {
+		t.Fatalf("findISOEntry: %v", err)
+	}
+	if e.Offset != 75*isoSectorSize {
+		t.Errorf("offset = %d, want %d", e.Offset, 75*isoSectorSize)
 	}
 }
 
-func TestFindMainVOBOffset_NoISO(t *testing.T) {
-	// Non-ISO file should return 0 (fallback to scanning from start)
+func TestFindContentVOBs_NoISO(t *testing.T) {
+	// Non-ISO file should return nil (fallback to scanning from start)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.iso")
 	buf := make([]byte, 256)
@@ -287,13 +306,13 @@ func TestFindMainVOBOffset_NoISO(t *testing.T) {
 	}
 	defer f.Close()
 
-	offset := findMainVOBOffset(f)
-	if offset != 0 {
-		t.Errorf("offset = %d, want 0 for non-ISO file", offset)
+	vobs := findContentVOBs(f)
+	if len(vobs) != 0 {
+		t.Errorf("got %d VOBs, want 0 for non-ISO file", len(vobs))
 	}
 }
 
-func TestFindMainVOBOffset_ValidISO(t *testing.T) {
+func TestFindContentVOBs_ValidISO(t *testing.T) {
 	const sectorSize = 2048
 
 	// Build a minimal ISO9660 with VIDEO_TS directory containing a VTS_01_1.VOB
@@ -396,10 +415,13 @@ func TestFindMainVOBOffset_ValidISO(t *testing.T) {
 	}
 	defer f.Close()
 
-	offset := findMainVOBOffset(f)
+	vobs := findContentVOBs(f)
+	if len(vobs) != 1 {
+		t.Fatalf("got %d VOBs, want 1", len(vobs))
+	}
 	want := int64(vobSector) * sectorSize
-	if offset != want {
-		t.Errorf("offset = %d, want %d", offset, want)
+	if vobs[0].Offset != want {
+		t.Errorf("VOB offset = %d, want %d", vobs[0].Offset, want)
 	}
 }
 
