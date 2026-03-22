@@ -342,7 +342,7 @@ func (p *MPEGTSParser) finalizeParse() error {
 // and extracts video/audio PIDs and stream types.
 func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 	// Find PAT (PID 0) and extract PMT PID
-	patSection, err := p.reassemblePSISection(data, startOffset, 0, 0x00)
+	patSection, err := reassemblePSISection(data, startOffset, p.packetSize, p.tsOffset, 0, 0x00)
 	if err != nil {
 		return fmt.Errorf("reassemble PAT: %w", err)
 	}
@@ -354,7 +354,7 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 
 	// Find PMT and extract stream types.
 	// PMT sections can span multiple TS packets, so we must reassemble.
-	pmtSection, err := p.reassemblePSISection(data, startOffset, pmtPID, 0x02)
+	pmtSection, err := reassemblePSISection(data, startOffset, p.packetSize, p.tsOffset, pmtPID, 0x02)
 	if err != nil {
 		return fmt.Errorf("reassemble PMT: %w", err)
 	}
@@ -399,14 +399,6 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 	}
 
 	return nil
-}
-
-// reassemblePSISection collects a complete PSI section (PAT, PMT, etc.) from
-// one or more TS packets. PSI sections can span multiple TS packets when the
-// section is larger than a single TS payload (~170 bytes). This happens on
-// Blu-ray discs with many audio and subtitle streams in the PMT.
-func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, targetPID uint16, tableID byte) ([]byte, error) {
-	return reassemblePSISection(data, startOffset, p.packetSize, p.tsOffset, targetPID, tableID)
 }
 
 // reassemblePSISection collects a complete PSI section (PAT, PMT, etc.) from
