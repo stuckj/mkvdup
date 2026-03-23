@@ -39,7 +39,7 @@ func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 // be scanned.
 func detectBlurayCodecsMulti(targets []codecScanTarget) (*SourceCodecs, error) {
 	if len(targets) == 0 {
-		return nil, fmt.Errorf("no M2TS files to scan")
+		return nil, fmt.Errorf("no Blu-ray media files to scan")
 	}
 	merged := &SourceCodecs{}
 	var lastErr error

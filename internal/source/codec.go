@@ -357,9 +357,8 @@ func containsCodec(codecs []CodecType, ct CodecType) bool {
 // uppercase ISO filename), this is used for on-disk paths that may be
 // M2TS files, ISOs, or other media files.
 type codecScanTarget struct {
-	Path   string // filesystem path
-	Offset int64  // byte offset within Path (0 for standalone files)
-	Size   int64  // file/region size in bytes
+	Path string // filesystem path
+	Size int64  // file size in bytes
 }
 
 // significantFiles returns the subset of ISO file extents whose size is at

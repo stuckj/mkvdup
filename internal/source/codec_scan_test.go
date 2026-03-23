@@ -425,6 +425,128 @@ func TestFindContentVOBs_ValidISO(t *testing.T) {
 	}
 }
 
+func TestDetectDVDCodecsFromFile_MultiVTS(t *testing.T) {
+	// Build a minimal ISO9660 with two VTS entries containing different audio codecs.
+	// VTS_01_1.VOB has AC3 audio, VTS_02_1.VOB has DTS audio.
+	// detectDVDCodecsFromFile should union both into the detected codecs.
+	const sectorSize = 2048
+
+	rootSector := uint32(20)
+	videoTSSector := uint32(30)
+	vob1Sector := uint32(500)
+	vob2Sector := uint32(600)
+
+	iso := make([]byte, int(vob2Sector+4)*sectorSize)
+
+	// PVD at sector 16
+	pvd := iso[16*sectorSize:]
+	pvd[0] = 1
+	copy(pvd[1:6], "CD001")
+	rootRec := pvd[156:]
+	rootRec[0] = 34
+	rootRec[2] = byte(rootSector)
+	rootRec[10] = 0x00
+	rootRec[11] = 0x08
+	rootRec[32] = 1
+	rootRec[33] = 0
+
+	// Root directory
+	rootDir := iso[rootSector*sectorSize:]
+	rootDir[0] = 34
+	rootDir[2] = byte(rootSector)
+	rootDir[32] = 1
+	rootDir[33] = 0
+	off := 34
+	rootDir[off] = 42
+	rootDir[off+2] = byte(videoTSSector)
+	rootDir[off+10] = 0x00
+	rootDir[off+11] = 0x10 // 4096 bytes (2 sectors for more entries)
+	rootDir[off+32] = 8
+	copy(rootDir[off+33:], "VIDEO_TS")
+
+	// VIDEO_TS directory with two VTS entries
+	vtsDir := iso[videoTSSector*sectorSize:]
+	vtsDir[0] = 34
+	vtsDir[2] = byte(videoTSSector)
+	vtsDir[32] = 1
+	vtsDir[33] = 0
+
+	// VTS_01_1.VOB
+	off = 34
+	vob1Size := uint32(4 * 1024 * 1024)
+	vtsDir[off] = 46
+	vtsDir[off+2] = byte(vob1Sector)
+	vtsDir[off+3] = byte(vob1Sector >> 8)
+	vtsDir[off+10] = byte(vob1Size)
+	vtsDir[off+11] = byte(vob1Size >> 8)
+	vtsDir[off+12] = byte(vob1Size >> 16)
+	vtsDir[off+13] = byte(vob1Size >> 24)
+	vtsDir[off+32] = 12
+	copy(vtsDir[off+33:], "VTS_01_1.VOB")
+
+	// VTS_02_1.VOB
+	off += 46
+	vob2Size := uint32(4 * 1024 * 1024)
+	vtsDir[off] = 46
+	vtsDir[off+2] = byte(vob2Sector)
+	vtsDir[off+3] = byte(vob2Sector >> 8)
+	vtsDir[off+10] = byte(vob2Size)
+	vtsDir[off+11] = byte(vob2Size >> 8)
+	vtsDir[off+12] = byte(vob2Size >> 16)
+	vtsDir[off+13] = byte(vob2Size >> 24)
+	vtsDir[off+32] = 12
+	copy(vtsDir[off+33:], "VTS_02_1.VOB")
+
+	// Embed PES data in VTS_01: video (MPEG-2) + AC3 audio (Private Stream 1, sub-stream 0x80)
+	vob1 := iso[vob1Sector*sectorSize:]
+	// Video PES start code
+	copy(vob1[0:4], []byte{0x00, 0x00, 0x01, 0xE0})
+	// Private Stream 1 with AC3 sub-stream
+	copy(vob1[100:104], []byte{0x00, 0x00, 0x01, 0xBD})
+	vob1[108] = 3    // PES header data length
+	vob1[112] = 0x80 // AC3 sub-stream ID
+
+	// Embed PES data in VTS_02: video (MPEG-2) + DTS audio (Private Stream 1, sub-stream 0x88)
+	vob2 := iso[vob2Sector*sectorSize:]
+	copy(vob2[0:4], []byte{0x00, 0x00, 0x01, 0xE0})
+	copy(vob2[100:104], []byte{0x00, 0x00, 0x01, 0xBD})
+	vob2[108] = 3
+	vob2[112] = 0x88 // DTS sub-stream ID
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.iso")
+	if err := os.WriteFile(path, iso, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	codecs, err := detectDVDCodecsFromFile(path)
+	if err != nil {
+		t.Fatalf("detectDVDCodecsFromFile: %v", err)
+	}
+
+	// Should detect MPEG-2 video
+	if len(codecs.VideoCodecs) != 1 || codecs.VideoCodecs[0] != CodecMPEG2Video {
+		t.Errorf("video codecs = %v, want [MPEG-2]", codecs.VideoCodecs)
+	}
+
+	// Should detect both AC3 and DTS (union from two VTS entries)
+	if len(codecs.AudioCodecs) != 2 {
+		t.Fatalf("audio codecs = %v (len %d), want 2 (AC3, DTS)", codecs.AudioCodecs, len(codecs.AudioCodecs))
+	}
+	hasAC3, hasDTS := false, false
+	for _, c := range codecs.AudioCodecs {
+		if c == CodecAC3Audio {
+			hasAC3 = true
+		}
+		if c == CodecDTSAudio {
+			hasDTS = true
+		}
+	}
+	if !hasAC3 || !hasDTS {
+		t.Errorf("expected AC3 and DTS, got %v", codecs.AudioCodecs)
+	}
+}
+
 func TestDetectDVDCodecsFromFile_BoundaryStartCode(t *testing.T) {
 	// Test that a start code at the very end of the buffer is detected
 	// (verifies the i+3 < len(buf) fix)
