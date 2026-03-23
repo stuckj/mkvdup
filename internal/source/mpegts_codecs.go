@@ -18,35 +18,34 @@ func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 	// Deduplicate by path — for ISOs the indexer creates multiple entries
 	// sharing the same RelativePath, and we only need to scan each file once.
 	seen := make(map[string]struct{})
-	var extents []isoFileExtent
+	var targets []codecScanTarget
 	for _, f := range index.Files {
 		fullPath := filepath.Join(index.SourceDir, f.RelativePath)
 		if _, ok := seen[fullPath]; ok {
 			continue
 		}
 		seen[fullPath] = struct{}{}
-		extents = append(extents, isoFileExtent{
-			Name:   fullPath,
-			Offset: 0,
-			Size:   f.Size,
+		targets = append(targets, codecScanTarget{
+			Path: fullPath,
+			Size: f.Size,
 		})
 	}
-	return detectBlurayCodecsMulti(significantFiles(extents))
+	return detectBlurayCodecsMulti(significantTargets(targets))
 }
 
 // detectBlurayCodecsMulti scans multiple M2TS files or ISOs and unions their
-// codec information. Each extent's Name is used as the file path; ISO files
-// are handled correctly via detectBlurayCodecsFromFile which parses their
-// internal M2TS structure. Returns an error if no file could be scanned.
-func detectBlurayCodecsMulti(files []isoFileExtent) (*SourceCodecs, error) {
-	if len(files) == 0 {
+// codec information. ISO files are handled correctly via detectBlurayCodecsFromFile
+// which parses their internal M2TS structure. Returns an error if no file could
+// be scanned.
+func detectBlurayCodecsMulti(targets []codecScanTarget) (*SourceCodecs, error) {
+	if len(targets) == 0 {
 		return nil, fmt.Errorf("no M2TS files to scan")
 	}
 	merged := &SourceCodecs{}
 	var lastErr error
 	anySuccess := false
-	for _, f := range files {
-		codecs, err := detectBlurayCodecsFromFile(f.Name)
+	for _, t := range targets {
+		codecs, err := detectBlurayCodecsFromFile(t.Path)
 		if err != nil {
 			lastErr = err
 			continue

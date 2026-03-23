@@ -219,15 +219,14 @@ func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 
 	switch sourceType {
 	case TypeBluray:
-		extents := make([]isoFileExtent, len(infos))
+		targets := make([]codecScanTarget, len(infos))
 		for i, fi := range infos {
-			extents[i] = isoFileExtent{
-				Name:   filepath.Join(sourceDir, fi.relPath),
-				Offset: 0,
-				Size:   fi.size,
+			targets[i] = codecScanTarget{
+				Path: filepath.Join(sourceDir, fi.relPath),
+				Size: fi.size,
 			}
 		}
-		return detectBlurayCodecsMulti(significantFiles(extents))
+		return detectBlurayCodecsMulti(significantTargets(targets))
 	case TypeDVD:
 		// For DVDs, use the largest file (main feature)
 		var largestFile string
@@ -353,9 +352,18 @@ func containsCodec(codecs []CodecType, ct CodecType) bool {
 	return false
 }
 
-// significantFiles returns the subset of files whose size is at least 10% of
-// the largest file. This filters out tiny menu clips and intro bumpers that
-// would add noise to codec detection.
+// codecScanTarget describes a file to scan for codec detection.
+// Unlike isoFileExtent (which represents an ISO directory entry with an
+// uppercase ISO filename), this is used for on-disk paths that may be
+// M2TS files, ISOs, or other media files.
+type codecScanTarget struct {
+	Path   string // filesystem path
+	Offset int64  // byte offset within Path (0 for standalone files)
+	Size   int64  // file/region size in bytes
+}
+
+// significantFiles returns the subset of ISO file extents whose size is at
+// least 10% of the largest. Used for filtering M2TS/VOB entries within ISOs.
 func significantFiles(files []isoFileExtent) []isoFileExtent {
 	var largestSize int64
 	for _, f := range files {
@@ -369,6 +377,26 @@ func significantFiles(files []isoFileExtent) []isoFileExtent {
 	for _, f := range files {
 		if f.Size >= minSize {
 			result = append(result, f)
+		}
+	}
+	return result
+}
+
+// significantTargets returns the subset of scan targets whose size is at
+// least 10% of the largest. Used for filtering on-disk files for codec detection.
+func significantTargets(targets []codecScanTarget) []codecScanTarget {
+	var largestSize int64
+	for _, t := range targets {
+		if t.Size > largestSize {
+			largestSize = t.Size
+		}
+	}
+	minSize := largestSize / 10
+
+	var result []codecScanTarget
+	for _, t := range targets {
+		if t.Size >= minSize {
+			result = append(result, t)
 		}
 	}
 	return result
