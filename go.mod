@@ -2,6 +2,8 @@ module github.com/stuckj/mkvdup
 
 go 1.25.0
 
+toolchain go1.25.8
+
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/hanwen/go-fuse/v2 v2.9.0
