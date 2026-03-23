@@ -181,67 +181,82 @@ func TestScanPESCodecs_NoCodecs(t *testing.T) {
 	}
 }
 
-func TestFindDirEntry_Found(t *testing.T) {
-	const sectorSize = 2048
-	// Build a minimal directory with two entries: "." and "VIDEO_TS"
-	dir := make([]byte, sectorSize)
+// parseTestISODir writes directory bytes at LBA 0 in a temp file and returns
+// the parsed entries via readISODirectory.
+func parseTestISODir(t *testing.T, dir []byte) []isoFileExtent {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "dir.bin")
+	if err := os.WriteFile(path, dir, 0644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	entries, err := readISODirectory(f, 0, uint32(len(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestReadISODirectory_Found(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
 	// First entry: "." (self)
-	dir[0] = 34 // record length
-	dir[32] = 1 // name length
-	dir[33] = 0 // name = 0x00 (current dir)
+	dir[0] = 34
+	dir[32] = 1
+	dir[33] = 0
 
-	// Second entry: "VIDEO_TS"
+	// Second entry: "VIDEO_TS" at sector 100, size 4096
 	off := 34
-	dir[off] = 42 // record length
-	// Extent location (LE): sector 100
+	dir[off] = 42
 	dir[off+2] = 100
-	dir[off+3] = 0
-	dir[off+4] = 0
-	dir[off+5] = 0
-	// Data length (LE): 4096
 	dir[off+10] = 0
-	dir[off+11] = 16
-	dir[off+12] = 0
-	dir[off+13] = 0
-	dir[off+32] = 8 // name length
+	dir[off+11] = 16   // 4096
+	dir[off+25] = 0x02 // directory flag
+	dir[off+32] = 8
 	copy(dir[off+33:], "VIDEO_TS")
 
-	extent, dataLen := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 100 {
-		t.Errorf("extent = %d, want 100", extent)
+	entries := parseTestISODir(t, dir)
+	e, err := findISOEntry(entries, "VIDEO_TS")
+	if err != nil {
+		t.Fatalf("findISOEntry: %v", err)
 	}
-	if dataLen != 4096 {
-		t.Errorf("dataLen = %d, want 4096", dataLen)
+	if e.Offset != 100*isoSectorSize {
+		t.Errorf("offset = %d, want %d", e.Offset, 100*isoSectorSize)
+	}
+	if e.Size != 4096 {
+		t.Errorf("size = %d, want 4096", e.Size)
 	}
 }
 
-func TestFindDirEntry_WithSemicolon(t *testing.T) {
-	const sectorSize = 2048
-	dir := make([]byte, sectorSize)
+func TestReadISODirectory_WithSemicolon(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
 	// Entry with ISO9660 version suffix: "VIDEO_TS;1"
 	dir[0] = 44
-	dir[2] = 50 // extent = 50
+	dir[2] = 50
 	dir[10] = 0
-	dir[11] = 8 // data length = 2048
+	dir[11] = 8 // 2048
+	dir[25] = 0x02
 	dir[32] = 10
 	copy(dir[33:], "VIDEO_TS;1")
 
-	extent, dataLen := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 50 {
-		t.Errorf("extent = %d, want 50", extent)
+	entries := parseTestISODir(t, dir)
+	e, err := findISOEntry(entries, "VIDEO_TS")
+	if err != nil {
+		t.Fatalf("findISOEntry: %v", err)
 	}
-	if dataLen != 2048 {
-		t.Errorf("dataLen = %d, want 2048", dataLen)
+	if e.Offset != 50*isoSectorSize {
+		t.Errorf("offset = %d, want %d", e.Offset, 50*isoSectorSize)
 	}
 }
 
-func TestFindDirEntry_NotFound(t *testing.T) {
-	const sectorSize = 2048
-	dir := make([]byte, sectorSize)
+func TestReadISODirectory_NotFound(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
-	// Entry: "AUDIO_TS"
 	dir[0] = 42
 	dir[2] = 50
 	dir[10] = 0
@@ -249,15 +264,15 @@ func TestFindDirEntry_NotFound(t *testing.T) {
 	dir[32] = 8
 	copy(dir[33:], "AUDIO_TS")
 
-	extent, dataLen := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 0 || dataLen != 0 {
-		t.Errorf("expected (0, 0), got (%d, %d)", extent, dataLen)
+	entries := parseTestISODir(t, dir)
+	_, err := findISOEntry(entries, "VIDEO_TS")
+	if err == nil {
+		t.Error("expected error for missing entry, got nil")
 	}
 }
 
-func TestFindDirEntry_CaseInsensitive(t *testing.T) {
-	const sectorSize = 2048
-	dir := make([]byte, sectorSize)
+func TestReadISODirectory_CaseInsensitive(t *testing.T) {
+	dir := make([]byte, isoSectorSize)
 
 	dir[0] = 42
 	dir[2] = 75
@@ -266,14 +281,18 @@ func TestFindDirEntry_CaseInsensitive(t *testing.T) {
 	dir[32] = 8
 	copy(dir[33:], "video_ts")
 
-	extent, _ := findDirEntry(dir, "VIDEO_TS", sectorSize)
-	if extent != 75 {
-		t.Errorf("extent = %d, want 75", extent)
+	entries := parseTestISODir(t, dir)
+	e, err := findISOEntry(entries, "VIDEO_TS")
+	if err != nil {
+		t.Fatalf("findISOEntry: %v", err)
+	}
+	if e.Offset != 75*isoSectorSize {
+		t.Errorf("offset = %d, want %d", e.Offset, 75*isoSectorSize)
 	}
 }
 
-func TestFindMainVOBOffset_NoISO(t *testing.T) {
-	// Non-ISO file should return 0 (fallback to scanning from start)
+func TestFindContentVOBs_NoISO(t *testing.T) {
+	// Non-ISO file should return nil (fallback to scanning from start)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.iso")
 	buf := make([]byte, 256)
@@ -287,13 +306,13 @@ func TestFindMainVOBOffset_NoISO(t *testing.T) {
 	}
 	defer f.Close()
 
-	offset := findMainVOBOffset(f)
-	if offset != 0 {
-		t.Errorf("offset = %d, want 0 for non-ISO file", offset)
+	vobs := findContentVOBs(f)
+	if len(vobs) != 0 {
+		t.Errorf("got %d VOBs, want 0 for non-ISO file", len(vobs))
 	}
 }
 
-func TestFindMainVOBOffset_ValidISO(t *testing.T) {
+func TestFindContentVOBs_ValidISO(t *testing.T) {
 	const sectorSize = 2048
 
 	// Build a minimal ISO9660 with VIDEO_TS directory containing a VTS_01_1.VOB
@@ -396,10 +415,135 @@ func TestFindMainVOBOffset_ValidISO(t *testing.T) {
 	}
 	defer f.Close()
 
-	offset := findMainVOBOffset(f)
+	vobs := findContentVOBs(f)
+	if len(vobs) != 1 {
+		t.Fatalf("got %d VOBs, want 1", len(vobs))
+	}
 	want := int64(vobSector) * sectorSize
-	if offset != want {
-		t.Errorf("offset = %d, want %d", offset, want)
+	if vobs[0].Offset != want {
+		t.Errorf("VOB offset = %d, want %d", vobs[0].Offset, want)
+	}
+}
+
+func TestDetectDVDCodecsFromFile_MultiVTS(t *testing.T) {
+	// Build a minimal ISO9660 with two VTS entries containing different audio codecs.
+	// VTS_01_1.VOB has AC3 audio, VTS_02_1.VOB has DTS audio.
+	// detectDVDCodecsFromFile should union both into the detected codecs.
+	const sectorSize = 2048
+
+	rootSector := uint32(20)
+	videoTSSector := uint32(30)
+	vob1Sector := uint32(500)
+	vob2Sector := uint32(600)
+
+	iso := make([]byte, int(vob2Sector+4)*sectorSize)
+
+	// PVD at sector 16
+	pvd := iso[16*sectorSize:]
+	pvd[0] = 1
+	copy(pvd[1:6], "CD001")
+	rootRec := pvd[156:]
+	rootRec[0] = 34
+	rootRec[2] = byte(rootSector)
+	rootRec[10] = 0x00
+	rootRec[11] = 0x08
+	rootRec[32] = 1
+	rootRec[33] = 0
+
+	// Root directory
+	rootDir := iso[rootSector*sectorSize:]
+	rootDir[0] = 34
+	rootDir[2] = byte(rootSector)
+	rootDir[32] = 1
+	rootDir[33] = 0
+	off := 34
+	rootDir[off] = 42
+	rootDir[off+2] = byte(videoTSSector)
+	rootDir[off+10] = 0x00
+	rootDir[off+11] = 0x10 // 4096 bytes (2 sectors for more entries)
+	rootDir[off+32] = 8
+	copy(rootDir[off+33:], "VIDEO_TS")
+
+	// VIDEO_TS directory with two VTS entries
+	vtsDir := iso[videoTSSector*sectorSize:]
+	vtsDir[0] = 34
+	vtsDir[2] = byte(videoTSSector)
+	vtsDir[32] = 1
+	vtsDir[33] = 0
+
+	// VTS_01_1.VOB
+	off = 34
+	vob1Size := uint32(4 * 1024 * 1024)
+	vtsDir[off] = 46
+	vtsDir[off+2] = byte(vob1Sector)
+	vtsDir[off+3] = byte(vob1Sector >> 8)
+	vtsDir[off+10] = byte(vob1Size)
+	vtsDir[off+11] = byte(vob1Size >> 8)
+	vtsDir[off+12] = byte(vob1Size >> 16)
+	vtsDir[off+13] = byte(vob1Size >> 24)
+	vtsDir[off+32] = 12
+	copy(vtsDir[off+33:], "VTS_01_1.VOB")
+
+	// VTS_02_1.VOB
+	off += 46
+	vob2Size := uint32(4 * 1024 * 1024)
+	vtsDir[off] = 46
+	vtsDir[off+2] = byte(vob2Sector)
+	vtsDir[off+3] = byte(vob2Sector >> 8)
+	vtsDir[off+10] = byte(vob2Size)
+	vtsDir[off+11] = byte(vob2Size >> 8)
+	vtsDir[off+12] = byte(vob2Size >> 16)
+	vtsDir[off+13] = byte(vob2Size >> 24)
+	vtsDir[off+32] = 12
+	copy(vtsDir[off+33:], "VTS_02_1.VOB")
+
+	// Embed PES data in VTS_01: video (MPEG-2) + AC3 audio (Private Stream 1, sub-stream 0x80)
+	vob1 := iso[vob1Sector*sectorSize:]
+	// Video PES start code
+	copy(vob1[0:4], []byte{0x00, 0x00, 0x01, 0xE0})
+	// Private Stream 1 with AC3 sub-stream
+	copy(vob1[100:104], []byte{0x00, 0x00, 0x01, 0xBD})
+	vob1[108] = 3    // PES header data length
+	vob1[112] = 0x80 // AC3 sub-stream ID
+
+	// Embed PES data in VTS_02: video (MPEG-2) + DTS audio (Private Stream 1, sub-stream 0x88)
+	vob2 := iso[vob2Sector*sectorSize:]
+	copy(vob2[0:4], []byte{0x00, 0x00, 0x01, 0xE0})
+	copy(vob2[100:104], []byte{0x00, 0x00, 0x01, 0xBD})
+	vob2[108] = 3
+	vob2[112] = 0x88 // DTS sub-stream ID
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.iso")
+	if err := os.WriteFile(path, iso, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	codecs, err := detectDVDCodecsFromFile(path)
+	if err != nil {
+		t.Fatalf("detectDVDCodecsFromFile: %v", err)
+	}
+
+	// Should detect MPEG-2 video
+	if len(codecs.VideoCodecs) != 1 || codecs.VideoCodecs[0] != CodecMPEG2Video {
+		t.Errorf("video codecs = %v, want [MPEG-2]", codecs.VideoCodecs)
+	}
+
+	// Should detect both AC3 and DTS (union from two VTS entries)
+	if len(codecs.AudioCodecs) != 2 {
+		t.Fatalf("audio codecs = %v (len %d), want 2 (AC3, DTS)", codecs.AudioCodecs, len(codecs.AudioCodecs))
+	}
+	hasAC3, hasDTS := false, false
+	for _, c := range codecs.AudioCodecs {
+		if c == CodecAC3Audio {
+			hasAC3 = true
+		}
+		if c == CodecDTSAudio {
+			hasDTS = true
+		}
+	}
+	if !hasAC3 || !hasDTS {
+		t.Errorf("expected AC3 and DTS, got %v", codecs.AudioCodecs)
 	}
 }
 

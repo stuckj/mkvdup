@@ -342,35 +342,19 @@ func (p *MPEGTSParser) finalizeParse() error {
 // and extracts video/audio PIDs and stream types.
 func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 	// Find PAT (PID 0) and extract PMT PID
-	patSection, err := p.reassemblePSISection(data, startOffset, 0, 0x00)
+	patSection, err := reassemblePSISection(data, startOffset, p.packetSize, p.tsOffset, 0, 0x00)
 	if err != nil {
 		return fmt.Errorf("reassemble PAT: %w", err)
 	}
 
-	pmtPID := uint16(0)
-	if len(patSection) >= 8 {
-		sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
-		progsEnd := 3 + sectionLen - 4 // section_length counts from byte 3; subtract 4 for CRC
-		if progsEnd > len(patSection) {
-			progsEnd = len(patSection)
-		}
-		for j := 8; j+4 <= progsEnd; j += 4 {
-			progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
-			if progNum == 0 {
-				continue
-			}
-			pmtPID = uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
-			break
-		}
-	}
-
+	pmtPID := pmtPIDFromPAT(patSection)
 	if pmtPID == 0 {
 		return fmt.Errorf("PMT PID not found in PAT")
 	}
 
 	// Find PMT and extract stream types.
 	// PMT sections can span multiple TS packets, so we must reassemble.
-	pmtSection, err := p.reassemblePSISection(data, startOffset, pmtPID, 0x02)
+	pmtSection, err := reassemblePSISection(data, startOffset, p.packetSize, p.tsOffset, pmtPID, 0x02)
 	if err != nil {
 		return fmt.Errorf("reassemble PMT: %w", err)
 	}
@@ -418,16 +402,15 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 }
 
 // reassemblePSISection collects a complete PSI section (PAT, PMT, etc.) from
-// one or more TS packets. PSI sections can span multiple TS packets when the
-// section is larger than a single TS payload (~170 bytes). This happens on
-// Blu-ray discs with many audio and subtitle streams in the PMT.
-func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, targetPID uint16, tableID byte) ([]byte, error) {
+// one or more TS packets. packetSize is 188 (standard TS) or 192 (M2TS).
+// tsOffset is the offset from packet start to TS sync byte (4 for M2TS, 0 for TS).
+func reassemblePSISection(data []byte, startOffset, packetSize, tsOffset int, targetPID uint16, tableID byte) ([]byte, error) {
 	var section []byte
 	sectionLen := -1
 	collecting := false
 
-	for i := startOffset; i+p.packetSize <= len(data); i += p.packetSize {
-		tsStart := i + p.tsOffset
+	for i := startOffset; i+packetSize <= len(data); i += packetSize {
+		tsStart := i + tsOffset
 		if tsStart+188 > len(data) || data[tsStart] != 0x47 {
 			continue
 		}
@@ -441,12 +424,14 @@ func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, target
 		adaptFieldCtrl := (data[tsStart+3] >> 4) & 0x03
 		hdrLen := 4
 		switch adaptFieldCtrl {
-		case 0x02, 0x03:
+		case 0x02: // Adaptation field only, no payload
+			continue
+		case 0x03: // Adaptation field + payload
 			if tsStart+4 >= len(data) {
 				continue
 			}
 			hdrLen = 5 + int(data[tsStart+4])
-		case 0x01:
+		case 0x01: // Payload only
 		default:
 			continue
 		}
@@ -457,12 +442,28 @@ func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, target
 		payload := data[tsStart+hdrLen : tsStart+188]
 
 		if pusi {
-			// PUSI packet: skip pointer field, find section start
+			// PUSI packet: pointer_field indicates how many bytes at the start
+			// of the payload belong to the tail of a previous section.
 			pointerField := int(payload[0])
 			sectionStart := 1 + pointerField
-			if sectionStart >= len(payload) {
+			if sectionStart > len(payload) {
 				continue
 			}
+
+			// If we're mid-collection, the bytes before sectionStart are the
+			// tail of the section we're assembling.
+			if collecting && pointerField > 0 {
+				tail := payload[1:sectionStart]
+				remaining := sectionLen - len(section)
+				if len(tail) > remaining {
+					tail = tail[:remaining]
+				}
+				section = append(section, tail...)
+				if len(section) >= sectionLen {
+					return section, nil
+				}
+			}
+
 			payload = payload[sectionStart:]
 			if len(payload) < 3 || payload[0] != tableID {
 				continue
@@ -497,6 +498,27 @@ func (p *MPEGTSParser) reassemblePSISection(data []byte, startOffset int, target
 		return nil, fmt.Errorf("truncated PSI section for table ID 0x%02X on PID 0x%04X: got %d of %d bytes", tableID, targetPID, len(section), sectionLen)
 	}
 	return nil, fmt.Errorf("PSI section with table ID 0x%02X not found on PID 0x%04X", tableID, targetPID)
+}
+
+// pmtPIDFromPAT extracts the PMT PID from a reassembled PAT section.
+// Returns the PID of the first non-zero program, or 0 if none found.
+func pmtPIDFromPAT(patSection []byte) uint16 {
+	if len(patSection) < 8 {
+		return 0
+	}
+	sectionLen := int(patSection[1]&0x0F)<<8 | int(patSection[2])
+	progsEnd := 3 + sectionLen - 4 // section_length counts from byte 3; subtract 4 for CRC
+	if progsEnd > len(patSection) {
+		progsEnd = len(patSection)
+	}
+	for j := 8; j+4 <= progsEnd; j += 4 {
+		progNum := uint16(patSection[j])<<8 | uint16(patSection[j+1])
+		if progNum == 0 {
+			continue // Network PID, skip
+		}
+		return uint16(patSection[j+2]&0x1F)<<8 | uint16(patSection[j+3])
+	}
+	return 0
 }
 
 // buildFilteredVideoRanges creates filtered video ranges.

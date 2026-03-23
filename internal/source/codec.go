@@ -175,6 +175,12 @@ func DetectSourceCodecs(index *Index) (*SourceCodecs, error) {
 // DetectSourceCodecsFromDir performs a lightweight codec detection from a source
 // directory without building the full hash index. This allows codec compatibility
 // checks to run before the expensive indexing step.
+//
+// For Blu-ray sources, this scans the PMTs of all M2TS files of significant size
+// (>10% of the largest) and unions their codecs. This is necessary because
+// different episodes or playlist entries may reference different M2TS files with
+// different audio tracks (e.g., a stereo AC3 track may only appear in certain
+// episode M2TS files, not in the largest one).
 func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 	sourceType, err := DetectType(sourceDir)
 	if err != nil {
@@ -189,8 +195,12 @@ func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 		return nil, fmt.Errorf("no media files found in %s", sourceDir)
 	}
 
-	// Find the largest file (most likely the main feature)
-	var largestFile string
+	// Stat all files to get sizes
+	type fileInfo struct {
+		relPath string
+		size    int64
+	}
+	var infos []fileInfo
 	var largestSize int64
 	for _, f := range files {
 		fullPath := filepath.Join(sourceDir, f)
@@ -198,22 +208,35 @@ func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 		if err != nil {
 			continue
 		}
+		infos = append(infos, fileInfo{f, info.Size()})
 		if info.Size() > largestSize {
 			largestSize = info.Size()
-			largestFile = f
 		}
 	}
-	if largestFile == "" {
+	if len(infos) == 0 {
 		return nil, fmt.Errorf("no accessible media files found")
 	}
 
-	fullPath := filepath.Join(sourceDir, largestFile)
-
 	switch sourceType {
 	case TypeBluray:
-		return detectBlurayCodecsFromFile(fullPath)
+		targets := make([]codecScanTarget, len(infos))
+		for i, fi := range infos {
+			targets[i] = codecScanTarget{
+				Path: filepath.Join(sourceDir, fi.relPath),
+				Size: fi.size,
+			}
+		}
+		return detectBlurayCodecsMulti(significantTargets(targets))
 	case TypeDVD:
-		return detectDVDCodecsFromFile(fullPath)
+		// For DVDs, use the largest file (main feature)
+		var largestFile string
+		for _, fi := range infos {
+			if fi.size == largestSize {
+				largestFile = fi.relPath
+				break
+			}
+		}
+		return detectDVDCodecsFromFile(filepath.Join(sourceDir, largestFile))
 	default:
 		return nil, fmt.Errorf("unknown source type")
 	}
@@ -327,4 +350,72 @@ func containsCodec(codecs []CodecType, ct CodecType) bool {
 		}
 	}
 	return false
+}
+
+// codecScanTarget describes a file to scan for codec detection.
+// Unlike isoFileExtent (which represents an ISO directory entry with an
+// uppercase ISO filename), this is used for on-disk paths that may be
+// M2TS files, ISOs, or other media files.
+type codecScanTarget struct {
+	Path string // filesystem path
+	Size int64  // file size in bytes
+}
+
+// significantFiles returns the subset of ISO file extents whose size is at
+// least 10% of the largest. Used for filtering M2TS/VOB entries within ISOs.
+func significantFiles(files []isoFileExtent) []isoFileExtent {
+	var largestSize int64
+	for _, f := range files {
+		if f.Size > largestSize {
+			largestSize = f.Size
+		}
+	}
+	minSize := largestSize / 10
+
+	var result []isoFileExtent
+	for _, f := range files {
+		if f.Size >= minSize {
+			result = append(result, f)
+		}
+	}
+	return result
+}
+
+// significantTargets returns the subset of scan targets whose size is at
+// least 10% of the largest. Used for filtering on-disk files for codec detection.
+func significantTargets(targets []codecScanTarget) []codecScanTarget {
+	var largestSize int64
+	for _, t := range targets {
+		if t.Size > largestSize {
+			largestSize = t.Size
+		}
+	}
+	minSize := largestSize / 10
+
+	var result []codecScanTarget
+	for _, t := range targets {
+		if t.Size >= minSize {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// mergeSourceCodecs adds all codecs from src into dst, deduplicating.
+func mergeSourceCodecs(dst, src *SourceCodecs) {
+	for _, c := range src.VideoCodecs {
+		if !containsCodec(dst.VideoCodecs, c) {
+			dst.VideoCodecs = append(dst.VideoCodecs, c)
+		}
+	}
+	for _, c := range src.AudioCodecs {
+		if !containsCodec(dst.AudioCodecs, c) {
+			dst.AudioCodecs = append(dst.AudioCodecs, c)
+		}
+	}
+	for _, c := range src.SubtitleCodecs {
+		if !containsCodec(dst.SubtitleCodecs, c) {
+			dst.SubtitleCodecs = append(dst.SubtitleCodecs, c)
+		}
+	}
 }

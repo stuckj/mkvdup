@@ -2,76 +2,129 @@ package source
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// detectBlurayCodecs performs a lightweight scan of the first M2TS file
-// to detect codecs via the MPEG-TS Program Map Table (PMT).
+// detectBlurayCodecs scans PMTs from indexed M2TS files to detect codecs.
+// This is a fallback for when the pre-index DetectSourceCodecsFromDir check
+// was skipped (e.g., detection failure).
 func detectBlurayCodecs(index *Index) (*SourceCodecs, error) {
 	if len(index.Files) == 0 {
 		return nil, fmt.Errorf("no source files in index")
 	}
-
-	// Find the largest M2TS file (most likely the main feature)
-	var largestFile string
-	var largestSize int64
+	// Deduplicate by path — for ISOs the indexer creates multiple entries
+	// sharing the same RelativePath, and we only need to scan each file once.
+	seen := make(map[string]struct{})
+	var targets []codecScanTarget
 	for _, f := range index.Files {
-		if f.Size > largestSize {
-			largestSize = f.Size
-			largestFile = f.RelativePath
+		fullPath := filepath.Join(index.SourceDir, f.RelativePath)
+		if _, ok := seen[fullPath]; ok {
+			continue
 		}
+		seen[fullPath] = struct{}{}
+		targets = append(targets, codecScanTarget{
+			Path: fullPath,
+			Size: f.Size,
+		})
 	}
-
-	if largestFile == "" {
-		return nil, fmt.Errorf("no valid M2TS files found")
-	}
-
-	fullPath := filepath.Join(index.SourceDir, largestFile)
-	return detectBlurayCodecsFromFile(fullPath)
+	return detectBlurayCodecsMulti(significantTargets(targets))
 }
 
-// detectBlurayCodecsFromFile parses the PMT from an M2TS file (or Blu-ray ISO)
-// to detect codecs. For ISOs, it finds the largest M2TS file within the ISO
-// and reads from that region.
+// detectBlurayCodecsMulti scans multiple M2TS files or ISOs and unions their
+// codec information. ISO files are handled correctly via detectBlurayCodecsFromFile
+// which parses their internal M2TS structure. Returns an error if no file could
+// be scanned.
+func detectBlurayCodecsMulti(targets []codecScanTarget) (*SourceCodecs, error) {
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("no Blu-ray media files to scan")
+	}
+	merged := &SourceCodecs{}
+	var lastErr error
+	anySuccess := false
+	for _, t := range targets {
+		codecs, err := detectBlurayCodecsFromFile(t.Path)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		mergeSourceCodecs(merged, codecs)
+		anySuccess = true
+	}
+	if !anySuccess {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to scan any Blu-ray codecs: %w", lastErr)
+		}
+		return nil, fmt.Errorf("failed to scan any Blu-ray codecs")
+	}
+	return merged, nil
+}
+
+// detectBlurayCodecsFromFile detects codecs from a single M2TS file or a
+// Blu-ray ISO (scanning all significant M2TS files within it).
 func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
+	if strings.HasSuffix(strings.ToLower(path), ".iso") {
+		return detectBlurayCodecsFromISO(path)
+	}
+	return scanM2TSCodecs(path, 0)
+}
+
+// detectBlurayCodecsFromISO scans all significant M2TS files within a Blu-ray
+// ISO and unions their PMT codec information.
+func detectBlurayCodecsFromISO(path string) (*SourceCodecs, error) {
+	m2tsFiles, err := findBlurayM2TSInISO(path)
+	if err != nil {
+		return nil, fmt.Errorf("find M2TS in ISO: %w", err)
+	}
+	if len(m2tsFiles) == 0 {
+		return nil, fmt.Errorf("no M2TS files found in Blu-ray ISO")
+	}
+
+	merged := &SourceCodecs{}
+	var lastErr error
+	anySuccess := false
+	for _, m := range significantFiles(m2tsFiles) {
+		codecs, err := scanM2TSCodecs(path, m.Offset)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		mergeSourceCodecs(merged, codecs)
+		anySuccess = true
+	}
+	if !anySuccess {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to scan any M2TS in ISO: %w", lastErr)
+		}
+		return nil, fmt.Errorf("failed to scan any M2TS in ISO")
+	}
+	return merged, nil
+}
+
+// scanM2TSCodecs reads 2MB of M2TS data at the given offset and parses the
+// PAT/PMT to extract codec information from a single M2TS stream.
+func scanM2TSCodecs(path string, readOffset int64) (*SourceCodecs, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
 
-	// Determine read offset: for ISOs, find the largest M2TS within
-	readOffset := int64(0)
-	if strings.HasSuffix(strings.ToLower(path), ".iso") {
-		m2tsFiles, err := findBlurayM2TSInISO(path)
-		if err != nil {
-			return nil, fmt.Errorf("find M2TS in ISO: %w", err)
-		}
-		// Find the largest M2TS (most likely the main feature)
-		var largest isoFileExtent
-		for _, m := range m2tsFiles {
-			if m.Size > largest.Size {
-				largest = m
-			}
-		}
-		if largest.Size == 0 {
-			return nil, fmt.Errorf("no M2TS files found in Blu-ray ISO")
-		}
-		readOffset = largest.Offset
-	}
-
-	// Read 2MB from the M2TS data — enough to find PAT + PMT
 	const scanSize = 2 * 1024 * 1024
 	buf := make([]byte, scanSize)
 	n, err := f.ReadAt(buf, readOffset)
-	if err != nil && n == 0 {
-		return nil, fmt.Errorf("read M2TS data: %w", err)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		buf = buf[:n]
+	} else if err != nil {
+		return nil, fmt.Errorf("read M2TS data from %s: %w", path, err)
+	}
+	if n == 0 {
+		return nil, fmt.Errorf("no M2TS data at offset %d in %s", readOffset, path)
 	}
 	buf = buf[:n]
 
-	// Need at least enough data for TS packet size detection (4 sync bytes at regular intervals)
 	if len(buf) < 192*4 {
 		return nil, fmt.Errorf("M2TS data too small to detect TS structure (%d bytes)", len(buf))
 	}
@@ -80,176 +133,50 @@ func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 }
 
 // parseTSCodecs scans MPEG-TS data to find the PAT and PMT and extract stream types.
+// This uses reassemblePSISection to correctly handle PMTs that span multiple TS
+// packets (common on Blu-rays with many audio and subtitle streams).
 func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 	// Detect TS packet size: 188 (standard) or 192 (M2TS with 4-byte timestamp)
-	packetSize, offset := detectTSPacketSize(data)
+	packetSize, startOffset := detectTSPacketSize(data)
 	if packetSize == 0 {
 		return nil, fmt.Errorf("cannot detect TS packet size")
 	}
-
-	// Step 1: Find PAT (PID 0x0000) to get PMT PID
-	pmtPID := uint16(0)
-	for i := offset; i+packetSize <= len(data); i += packetSize {
-		tsOffset := i
-		if packetSize == 192 {
-			tsOffset += 4 // Skip 4-byte M2TS timestamp
-		}
-		if tsOffset+188 > len(data) {
-			break
-		}
-		pkt := data[tsOffset : tsOffset+188]
-		if pkt[0] != 0x47 {
-			continue // Not a valid TS sync byte
-		}
-
-		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
-		if pid != 0x0000 {
-			continue
-		}
-
-		// PAT found — parse it
-		payloadStart := pkt[1]&0x40 != 0
-		if !payloadStart {
-			continue
-		}
-
-		// Skip adaptation field if present
-		adaptationFieldControl := (pkt[3] >> 4) & 0x03
-		headerLen := 4
-		switch adaptationFieldControl {
-		case 0x02, 0x03: // Adaptation field present
-			adaptLen := int(pkt[4])
-			if adaptLen > 183 {
-				continue
-			}
-			headerLen = 5 + adaptLen
-		case 0x01: // Payload only, no adaptation field
-		default: // 0x00 is reserved/invalid
-			continue
-		}
-		if headerLen >= 188 {
-			continue
-		}
-
-		// Skip pointer field
-		pointerField := int(pkt[headerLen])
-		headerLen += 1 + pointerField
-		if headerLen+8 > 188 {
-			continue
-		}
-
-		payload := pkt[headerLen:]
-		// PAT: table_id(1) + flags+length(2) + tsid(2) + version(1) + section(1) + last_section(1)
-		// then 4 bytes per program: program_number(2) + PMT_PID(2)
-		if len(payload) < 12 {
-			continue
-		}
-		if payload[0] != 0x00 { // table_id for PAT
-			continue
-		}
-
-		sectionLength := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLength < 9 {
-			continue
-		}
-
-		// Programs start at offset 8, each is 4 bytes
-		programsEnd := 8 + sectionLength - 4 // -4 for CRC
-		if programsEnd > len(payload) {
-			programsEnd = len(payload) - 4
-		}
-
-		for j := 8; j+4 <= programsEnd; j += 4 {
-			progNum := uint16(payload[j])<<8 | uint16(payload[j+1])
-			if progNum == 0 {
-				continue // Network PID, skip
-			}
-			pmtPID = uint16(payload[j+2]&0x1F)<<8 | uint16(payload[j+3])
-			break // Use the first program
-		}
-		break
+	tsOffset := 0
+	if packetSize == 192 {
+		tsOffset = 4
 	}
 
+	// Step 1: Find PAT (PID 0x0000) to get PMT PID
+	patSection, err := reassemblePSISection(data, startOffset, packetSize, tsOffset, 0, 0x00)
+	if err != nil {
+		return nil, fmt.Errorf("find PAT: %w", err)
+	}
+
+	pmtPID := pmtPIDFromPAT(patSection)
 	if pmtPID == 0 {
 		return nil, fmt.Errorf("PMT PID not found in PAT")
 	}
 
-	// Step 2: Find PMT and extract stream types
+	// Step 2: Reassemble complete PMT section (may span multiple TS packets)
+	pmtSection, err := reassemblePSISection(data, startOffset, packetSize, tsOffset, pmtPID, 0x02)
+	if err != nil {
+		return nil, fmt.Errorf("find PMT: %w", err)
+	}
+
+	// Step 3: Extract stream types from the reassembled PMT
 	codecs := &SourceCodecs{}
-	for i := offset; i+packetSize <= len(data); i += packetSize {
-		tsOffset := i
-		if packetSize == 192 {
-			tsOffset += 4
-		}
-		if tsOffset+188 > len(data) {
-			break
-		}
-		pkt := data[tsOffset : tsOffset+188]
-		if pkt[0] != 0x47 {
-			continue
-		}
-
-		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
-		if pid != pmtPID {
-			continue
-		}
-
-		payloadStart := pkt[1]&0x40 != 0
-		if !payloadStart {
-			continue
-		}
-
-		// Skip adaptation field
-		adaptationFieldControl := (pkt[3] >> 4) & 0x03
-		headerLen := 4
-		switch adaptationFieldControl {
-		case 0x02, 0x03: // Adaptation field present
-			adaptLen := int(pkt[4])
-			if adaptLen > 183 {
-				continue
-			}
-			headerLen = 5 + adaptLen
-		case 0x01: // Payload only, no adaptation field
-		default: // 0x00 is reserved/invalid
-			continue
-		}
-		if headerLen >= 188 {
-			continue
-		}
-
-		// Skip pointer field
-		pointerField := int(pkt[headerLen])
-		headerLen += 1 + pointerField
-		if headerLen+12 > 188 {
-			continue
-		}
-
-		payload := pkt[headerLen:]
-		if len(payload) < 12 || payload[0] != 0x02 { // table_id for PMT
-			continue
-		}
-
-		sectionLength := int(payload[1]&0x0F)<<8 | int(payload[2])
-		if sectionLength < 13 {
-			continue
-		}
-
-		// Program info length at offset 10
-		progInfoLen := int(payload[10]&0x0F)<<8 | int(payload[11])
-
-		// Stream descriptors start after program info
+	if len(pmtSection) >= 12 {
+		progInfoLen := int(pmtSection[10]&0x0F)<<8 | int(pmtSection[11])
 		streamsStart := 12 + progInfoLen
-		streamsEnd := 3 + sectionLength - 4 // section starts at byte 3, -4 for CRC
-		if streamsEnd > len(payload) {
-			streamsEnd = len(payload) - 4
-		}
-		if streamsStart > streamsEnd {
-			continue
+		sectionLen := int(pmtSection[1]&0x0F)<<8 | int(pmtSection[2])
+		streamsEnd := 3 + sectionLen - 4 // exclude CRC32
+		if streamsEnd > len(pmtSection) {
+			streamsEnd = len(pmtSection)
 		}
 
 		for j := streamsStart; j+5 <= streamsEnd; {
-			streamType := payload[j]
-			esInfoLen := int(payload[j+3]&0x0F)<<8 | int(payload[j+4])
+			streamType := pmtSection[j]
+			esInfoLen := int(pmtSection[j+3]&0x0F)<<8 | int(pmtSection[j+4])
 
 			ct := tsStreamTypeToCodecType(streamType)
 			if ct != CodecUnknown {
@@ -274,8 +201,6 @@ func parseTSCodecs(data []byte) (*SourceCodecs, error) {
 			}
 			j = next
 		}
-
-		break // Found and parsed PMT
 	}
 
 	return codecs, nil

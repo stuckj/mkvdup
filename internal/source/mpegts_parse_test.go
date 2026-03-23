@@ -462,7 +462,7 @@ func TestMPEGTSParser_MultiPacketPMT(t *testing.T) {
 	pmtSection = append(pmtSection, 0x02) // table_id
 	// Placeholder for section_length (fill later)
 	pmtSection = append(pmtSection, 0xB0, 0x00)
-	pmtSection = append(pmtSection, 0x00, 0x01) // TSID
+	pmtSection = append(pmtSection, 0x00, 0x01) // program_number
 	pmtSection = append(pmtSection, 0xC1)       // version 0, current
 	pmtSection = append(pmtSection, 0x00, 0x00) // section/last section
 	pmtSection = append(pmtSection, 0xE1, 0x01) // PCR PID = 0x101
