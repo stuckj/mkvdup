@@ -36,12 +36,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev fuse3
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.0
-
       - name: Run unit tests with coverage
         run: |
-          gotestsum --junitfile unit-results.xml -- \
+          go tool gotestsum --junitfile unit-results.xml -- \
             -coverprofile=unit-coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
@@ -83,9 +80,6 @@ jobs:
           sudo systemctl start rpcbind
           sudo systemctl start nfs-server
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.0
-
       - name: Restore testdata cache
         id: cache-testdata
         uses: actions/cache/restore@v5
@@ -123,8 +117,9 @@ jobs:
           # Run dedup DVD tests (skip Blu-ray) and all FUSE tests
           # FUSE tests use DVD testdata, so they run here
           # sudo -E preserves MKVDUP_TESTDATA and enables NFS integration test
-          GOTESTSUM=$(go env GOPATH)/bin/gotestsum
-          sudo -E "$GOTESTSUM" --junitfile dvd-results.xml -- \
+          # Use full path to go binary — sudo resolves to system Go, not setup-go's
+          GO=$(which go)
+          sudo -E "$GO" tool gotestsum --junitfile dvd-results.xml -- \
             -tags=integration \
             -skip 'TestFullDedupCycle_Bluray' \
             -coverprofile=dvd-coverage.out \
@@ -163,9 +158,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev fuse3 ffmpeg
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.0
-
       - name: Restore testdata cache
         id: cache-testdata
         uses: actions/cache/restore@v5
@@ -196,7 +188,7 @@ jobs:
           MKVDUP_TESTDATA: /tmp/mkvdup-testdata
         run: |
           # Only run the Blu-ray dedup test (no FUSE tests - they run in DVD job)
-          gotestsum --junitfile bluray-results.xml -- \
+          go tool gotestsum --junitfile bluray-results.xml -- \
             -tags=integration \
             -run 'TestFullDedupCycle_Bluray' \
             -coverprofile=bluray-coverage.out \
@@ -231,9 +223,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install gocovmerge
-        run: go install github.com/wadey/gocovmerge@latest
-
       - name: Download all coverage artifacts
         uses: actions/download-artifact@v8
         with:
@@ -244,7 +233,7 @@ jobs:
         run: ls -la *.out || echo "No .out files found"
 
       - name: Merge coverage profiles
-        run: gocovmerge unit-coverage.out dvd-coverage.out bluray-coverage.out > merged-coverage.out
+        run: go tool gocovmerge unit-coverage.out dvd-coverage.out bluray-coverage.out > merged-coverage.out
 
       - name: Generate coverage reports
         id: coverage
