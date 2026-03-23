@@ -2,6 +2,7 @@ package source
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,8 +116,13 @@ func scanM2TSCodecs(path string, readOffset int64) (*SourceCodecs, error) {
 	const scanSize = 2 * 1024 * 1024
 	buf := make([]byte, scanSize)
 	n, err := f.ReadAt(buf, readOffset)
-	if err != nil && n == 0 {
-		return nil, fmt.Errorf("read M2TS data: %w", err)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		buf = buf[:n]
+	} else if err != nil {
+		return nil, fmt.Errorf("read M2TS data from %s: %w", path, err)
+	}
+	if n == 0 {
+		return nil, fmt.Errorf("no M2TS data at offset %d in %s", readOffset, path)
 	}
 	buf = buf[:n]
 

@@ -98,10 +98,10 @@ func scanDVDRegion(f *os.File, offset int64) (*SourceCodecs, error) {
 	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		buf = buf[:n]
 	} else if err != nil {
-		return nil, fmt.Errorf("read ISO file: %w", err)
+		return nil, fmt.Errorf("read %s at offset %d: %w", f.Name(), offset, err)
 	}
 	if n == 0 {
-		return nil, fmt.Errorf("no data at offset %d", offset)
+		return nil, fmt.Errorf("no data at offset %d in %s", offset, f.Name())
 	}
 	return scanPESCodecs(buf)
 }
