@@ -3,7 +3,9 @@ package source
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -69,6 +71,11 @@ func parseBlurayClipInfoCodecs(data []byte) (*SourceCodecs, error) {
 			break
 		}
 		// SPN(4) + program_map_PID(2) + num_streams(1) + num_groups(1)
+		//
+		// num_groups (pi[off+7]) is not processed. The Blu-ray spec is proprietary
+		// and the group entry format is undocumented. In practice num_groups is
+		// always 0 on real discs, and no open-source parser (libbluray, MKVToolNix)
+		// processes group entries either — the field is effectively reserved.
 		numStreams := int(pi[off+6])
 		off += 8
 
@@ -204,12 +211,16 @@ func findCLPIsInUDF(f *os.File) ([]isoFileExtent, error) {
 			continue
 		}
 
-		clpis = append(clpis, isoFileExtent{
+		clpi := isoFileExtent{
 			Name:   name,
 			Offset: extents[0].ISOOffset,
 			Size:   int64(fe.InfoLength),
 			IsDir:  false,
-		})
+		}
+		if !extentsContiguous(extents) {
+			clpi.Extents = extents
+		}
+		clpis = append(clpis, clpi)
 	}
 
 	if len(clpis) == 0 {
@@ -226,9 +237,16 @@ func detectBlurayCodecsFromCLPIs(f *os.File, clpis []isoFileExtent) (*SourceCode
 	anySuccess := false
 
 	for _, clpi := range clpis {
-		data := make([]byte, clpi.Size)
+		if clpi.Size <= 0 {
+			continue
+		}
+		// Cap read size to prevent excessive allocation from malformed metadata.
+		// Real CLPI files are ~64-78KB.
+		const maxCLPISize = 8 * 1024 * 1024
+		readSize := min(clpi.Size, maxCLPISize)
+		data := make([]byte, readSize)
 		n, err := f.ReadAt(data, clpi.Offset)
-		if err != nil {
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			lastErr = err
 			continue
 		}
@@ -260,8 +278,8 @@ func detectBlurayCodecsFromCLPIDir(sourceDir string) (*SourceCodecs, error) {
 	if !strings.HasSuffix(strings.ToUpper(sourceDir), "CLIPINF") {
 		// Look for BDMV/CLIPINF relative to sourceDir
 		candidates := []string{
-			sourceDir + "/BDMV/CLIPINF",
-			sourceDir + "/bdmv/clipinf",
+			filepath.Join(sourceDir, "BDMV", "CLIPINF"),
+			filepath.Join(sourceDir, "bdmv", "clipinf"),
 		}
 		found := false
 		for _, c := range candidates {
@@ -294,7 +312,7 @@ func detectBlurayCodecsFromCLPIDir(sourceDir string) (*SourceCodecs, error) {
 			continue
 		}
 
-		data, err := os.ReadFile(clipinfDir + "/" + entry.Name())
+		data, err := os.ReadFile(filepath.Join(clipinfDir, entry.Name()))
 		if err != nil {
 			lastErr = err
 			continue

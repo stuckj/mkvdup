@@ -149,29 +149,25 @@ func findIFOsInUDF(f *os.File) ([]isoFileExtent, error) {
 		}
 
 		fe, err := ctx.readFileEntryAt(fid.ICBLocation)
-		if err != nil {
+		if err != nil || fe.InfoLength == 0 {
 			continue
 		}
 
-		ifoData, err := ctx.readFileData(fe)
-		if err != nil || len(ifoData) == 0 {
-			continue
-		}
-
-		// For UDF IFOs we store the data inline using Offset=-1 as a sentinel;
-		// the caller reads via readIFOData which handles both cases.
-		// Actually, we need to resolve the physical offset for consistency.
 		extents, err := ctx.resolveAllExtents(fe)
 		if err != nil || len(extents) == 0 {
 			continue
 		}
 
-		ifos = append(ifos, isoFileExtent{
+		ifo := isoFileExtent{
 			Name:   name,
 			Offset: extents[0].ISOOffset,
 			Size:   int64(fe.InfoLength),
 			IsDir:  false,
-		})
+		}
+		if !extentsContiguous(extents) {
+			ifo.Extents = extents
+		}
+		ifos = append(ifos, ifo)
 	}
 
 	if len(ifos) == 0 {
@@ -188,7 +184,14 @@ func detectDVDCodecsFromIFOs(f *os.File, ifos []isoFileExtent) (*SourceCodecs, e
 	anySuccess := false
 
 	for _, ifo := range ifos {
-		data := make([]byte, ifo.Size)
+		if ifo.Size <= 0 {
+			continue
+		}
+		// We only need the first 0x244 bytes for VTS_MAT parsing, so cap the
+		// read to avoid excessive allocation from malformed metadata.
+		const maxIFOReadSize int64 = 0x244
+		readSize := min(ifo.Size, maxIFOReadSize)
+		data := make([]byte, readSize)
 		n, err := f.ReadAt(data, ifo.Offset)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			lastErr = err
