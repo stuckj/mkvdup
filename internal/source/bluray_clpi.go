@@ -3,7 +3,6 @@ package source
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,20 +236,14 @@ func detectBlurayCodecsFromCLPIs(f *os.File, clpis []isoFileExtent) (*SourceCode
 	anySuccess := false
 
 	for _, clpi := range clpis {
-		if clpi.Size <= 0 {
-			continue
-		}
 		// Cap read size to prevent excessive allocation from malformed metadata.
 		// Real CLPI files are ~64-78KB.
-		const maxCLPISize = 8 * 1024 * 1024
-		readSize := min(clpi.Size, maxCLPISize)
-		data := make([]byte, readSize)
-		n, err := f.ReadAt(data, clpi.Offset)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		const maxCLPISize int64 = 8 * 1024 * 1024
+		data, err := readISOFileExtent(f, clpi, maxCLPISize)
+		if err != nil {
 			lastErr = err
 			continue
 		}
-		data = data[:n]
 
 		codecs, err := parseBlurayClipInfoCodecs(data)
 		if err != nil {

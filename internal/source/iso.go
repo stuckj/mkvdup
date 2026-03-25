@@ -3,6 +3,7 @@ package source
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -198,4 +199,54 @@ func findISOEntry(entries []isoFileExtent, name string) (*isoFileExtent, error) 
 		}
 	}
 	return nil, fmt.Errorf("%q not found", name)
+}
+
+// readISOFileExtent reads up to maxBytes from an isoFileExtent, handling both
+// contiguous files (single ReadAt from Offset) and non-contiguous UDF files
+// (stitching reads across Extents). Returns the data read and any error.
+// io.EOF and io.ErrUnexpectedEOF are treated as non-fatal (partial read OK).
+func readISOFileExtent(f *os.File, ext isoFileExtent, maxBytes int64) ([]byte, error) {
+	readSize := min(ext.Size, maxBytes)
+	if readSize <= 0 {
+		return nil, fmt.Errorf("file %s has non-positive size %d", ext.Name, ext.Size)
+	}
+
+	data := make([]byte, readSize)
+
+	if len(ext.Extents) == 0 {
+		// Contiguous: single read from Offset.
+		n, err := f.ReadAt(data, ext.Offset)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+		return data[:n], nil
+	}
+
+	// Non-contiguous: stitch reads across physical extents.
+	var totalRead int
+	for _, pe := range ext.Extents {
+		if int64(totalRead) >= readSize {
+			break
+		}
+		remaining := int(readSize) - totalRead
+		chunkSize := min(int(pe.Length), remaining)
+		if chunkSize <= 0 {
+			continue
+		}
+		n, err := f.ReadAt(data[totalRead:totalRead+chunkSize], pe.ISOOffset)
+		totalRead += n
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			if totalRead == 0 {
+				return nil, err
+			}
+			break // keep what we have
+		}
+		if n < chunkSize {
+			break // short read
+		}
+	}
+	if totalRead == 0 {
+		return nil, fmt.Errorf("no data read from %s extents", ext.Name)
+	}
+	return data[:totalRead], nil
 }

@@ -3,7 +3,6 @@ package source
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 )
@@ -184,20 +183,13 @@ func detectDVDCodecsFromIFOs(f *os.File, ifos []isoFileExtent) (*SourceCodecs, e
 	anySuccess := false
 
 	for _, ifo := range ifos {
-		if ifo.Size <= 0 {
-			continue
-		}
-		// We only need the first 0x244 bytes for VTS_MAT parsing, so cap the
-		// read to avoid excessive allocation from malformed metadata.
+		// We only need the first 0x244 bytes for VTS_MAT parsing.
 		const maxIFOReadSize int64 = 0x244
-		readSize := min(ifo.Size, maxIFOReadSize)
-		data := make([]byte, readSize)
-		n, err := f.ReadAt(data, ifo.Offset)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		data, err := readISOFileExtent(f, ifo, maxIFOReadSize)
+		if err != nil {
 			lastErr = err
 			continue
 		}
-		data = data[:n]
 
 		codecs, err := parseDVDIFOCodecs(data)
 		if err != nil {
