@@ -49,9 +49,10 @@ func detectDVDCodecs(index *Index) (*SourceCodecs, error) {
 	return codecs, nil
 }
 
-// detectDVDCodecsFromFile scans all significant content VOBs in a DVD ISO to
-// detect MPEG-PS stream types. Different title sets (VTS_01 vs VTS_02) may have
-// different audio tracks, so we scan all significant VOBs and union their codecs.
+// detectDVDCodecsFromFile detects codecs from a DVD ISO by parsing VTS IFO
+// metadata files. IFO files authoritatively declare every stream in each title
+// set, unlike PES scanning which can miss audio streams that appear later in
+// the VOB data. Falls back to PES scanning if IFO parsing fails.
 func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -59,6 +60,27 @@ func detectDVDCodecsFromFile(path string) (*SourceCodecs, error) {
 	}
 	defer f.Close()
 
+	// Try IFO-based detection first (ISO9660, then UDF).
+	if ifos := findIFOsInISO(f); len(ifos) > 0 {
+		codecs, err := detectDVDCodecsFromIFOs(f, ifos)
+		if err == nil {
+			return codecs, nil
+		}
+	}
+	if ifos, err := findIFOsInUDF(f); err == nil && len(ifos) > 0 {
+		codecs, err := detectDVDCodecsFromIFOs(f, ifos)
+		if err == nil {
+			return codecs, nil
+		}
+	}
+
+	// Fallback: scan PES data from VOBs.
+	return detectDVDCodecsFromFilePES(f)
+}
+
+// detectDVDCodecsFromFilePES scans PES start codes in VOB data to detect codecs.
+// This is the legacy approach, kept as a fallback for ISOs where IFO parsing fails.
+func detectDVDCodecsFromFilePES(f *os.File) (*SourceCodecs, error) {
 	vobs := findContentVOBs(f)
 	if len(vobs) == 0 {
 		return scanDVDRegion(f, 0) // fallback: scan from start of ISO

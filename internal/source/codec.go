@@ -219,6 +219,11 @@ func DetectSourceCodecsFromDir(sourceDir string) (*SourceCodecs, error) {
 
 	switch sourceType {
 	case TypeBluray:
+		// Try CLPI metadata first for extracted Blu-ray directories.
+		if codecs, err := detectBlurayCodecsFromCLPIDir(sourceDir); err == nil {
+			return codecs, nil
+		}
+		// Fallback: scan PMT from M2TS data.
 		targets := make([]codecScanTarget, len(infos))
 		for i, fi := range infos {
 			targets[i] = codecScanTarget{
