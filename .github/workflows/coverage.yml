@@ -233,7 +233,16 @@ jobs:
         run: ls -la *.out || echo "No .out files found"
 
       - name: Merge coverage profiles
-        run: go tool gocovmerge unit-coverage.out dvd-coverage.out bluray-coverage.out > merged-coverage.out
+        run: |
+          # gocovmerge can fail with "OVERLAP MERGE" when the same package is
+          # instrumented by different test suites (unit vs integration) and Go
+          # produces slightly different coverage block boundaries for the same
+          # source line. Simply concatenate profiles instead — go tool cover
+          # handles overlapping blocks correctly.
+          head -1 unit-coverage.out > merged-coverage.out
+          for f in unit-coverage.out dvd-coverage.out bluray-coverage.out; do
+            tail -n +2 "$f" >> merged-coverage.out
+          done
 
       - name: Generate coverage reports
         id: coverage
