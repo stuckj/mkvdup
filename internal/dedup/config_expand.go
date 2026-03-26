@@ -58,6 +58,9 @@ func ReadExpandConfig(configPath string) (*ExpandConfig, error) {
 		if s.Pattern == "" {
 			return nil, fmt.Errorf("expand config %s: sources[%d] missing required 'pattern' field", configPath, i)
 		}
+		if filepath.IsAbs(s.Pattern) {
+			return nil, fmt.Errorf("expand config %s: sources[%d] pattern must be relative, got %q", configPath, i, s.Pattern)
+		}
 		s.Path = resolveRelative(configDir, s.Path)
 	}
 

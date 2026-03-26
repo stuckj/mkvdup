@@ -79,6 +79,19 @@ func TestReadExpandConfig_MissingPattern(t *testing.T) {
 	}
 }
 
+func TestReadExpandConfig_AbsolutePattern(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "expand.yaml")
+	writeYAML(t, cfgPath, `sources:
+  - path: /data
+    pattern: "/absolute/path/*.yaml"
+`)
+	_, err := ReadExpandConfig(cfgPath)
+	if err == nil {
+		t.Fatal("expected error for absolute pattern")
+	}
+}
+
 func TestResolveExpandConfig_MatchesFiles(t *testing.T) {
 	dir := t.TempDir()
 

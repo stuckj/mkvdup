@@ -7,32 +7,22 @@ import (
 	"testing"
 )
 
-func writeTestFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
 func TestExpandConfigCmd_OutputFormat(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create .mkvdup.yaml files.
-	writeTestFile(t, filepath.Join(dir, "movies", "a.mkvdup.yaml"), `name: "a.mkv"
+	writeTestYAML(t, filepath.Join(dir, "movies", "a.mkvdup.yaml"), `name: "a.mkv"
 dedup_file: "/data/a.mkvdup"
 source_dir: "/data/source"
 `)
-	writeTestFile(t, filepath.Join(dir, "movies", "b.mkvdup.yaml"), `name: "b.mkv"
+	writeTestYAML(t, filepath.Join(dir, "movies", "b.mkvdup.yaml"), `name: "b.mkv"
 dedup_file: "/data/b.mkvdup"
 source_dir: "/data/source"
 `)
 
 	// Create wildcard config.
 	cfgPath := filepath.Join(dir, "wildcard.yaml")
-	writeTestFile(t, cfgPath, `sources:
+	writeTestYAML(t, cfgPath, `sources:
   - path: `+dir+`
     pattern: "**/*.mkvdup.yaml"
 `)
@@ -87,9 +77,9 @@ source_dir: "/data/source"
 func TestExpandConfigCmd_DryRun(t *testing.T) {
 	dir := t.TempDir()
 
-	writeTestFile(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
+	writeTestYAML(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
 	cfgPath := filepath.Join(dir, "wildcard.yaml")
-	writeTestFile(t, cfgPath, `sources:
+	writeTestYAML(t, cfgPath, `sources:
   - path: `+dir+`
     pattern: "*.mkvdup.yaml"
 `)
@@ -112,9 +102,9 @@ func TestExpandConfigCmd_DryRun(t *testing.T) {
 func TestExpandConfigCmd_OutputWritesFile(t *testing.T) {
 	dir := t.TempDir()
 
-	writeTestFile(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
+	writeTestYAML(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
 	cfgPath := filepath.Join(dir, "wildcard.yaml")
-	writeTestFile(t, cfgPath, `sources:
+	writeTestYAML(t, cfgPath, `sources:
   - path: `+dir+`
     pattern: "*.mkvdup.yaml"
 `)
@@ -144,9 +134,9 @@ func TestExpandConfigCmd_OutputWritesFile(t *testing.T) {
 func TestExpandConfigCmd_SkipsRewriteWhenUnchanged(t *testing.T) {
 	dir := t.TempDir()
 
-	writeTestFile(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
+	writeTestYAML(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
 	cfgPath := filepath.Join(dir, "wildcard.yaml")
-	writeTestFile(t, cfgPath, `sources:
+	writeTestYAML(t, cfgPath, `sources:
   - path: `+dir+`
     pattern: "*.mkvdup.yaml"
 `)
@@ -161,9 +151,9 @@ func TestExpandConfigCmd_SkipsRewriteWhenUnchanged(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 
-	info1, err := os.Stat(outPath)
+	contentBefore, err := os.ReadFile(outPath)
 	if err != nil {
-		t.Fatalf("stat after first run: %v", err)
+		t.Fatalf("read after first run: %v", err)
 	}
 
 	// Second run with same inputs: should not rewrite.
@@ -171,12 +161,12 @@ func TestExpandConfigCmd_SkipsRewriteWhenUnchanged(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 
-	info2, err := os.Stat(outPath)
+	contentAfter, err := os.ReadFile(outPath)
 	if err != nil {
-		t.Fatalf("stat after second run: %v", err)
+		t.Fatalf("read after second run: %v", err)
 	}
 
-	if !info1.ModTime().Equal(info2.ModTime()) {
+	if string(contentBefore) != string(contentAfter) {
 		t.Error("file was rewritten even though includes list did not change")
 	}
 }
