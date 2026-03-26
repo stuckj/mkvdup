@@ -63,7 +63,8 @@ func detectBlurayCodecsMulti(targets []codecScanTarget) (*SourceCodecs, error) {
 }
 
 // detectBlurayCodecsFromFile detects codecs from a single M2TS file or a
-// Blu-ray ISO (scanning all significant M2TS files within it).
+// Blu-ray ISO. For ISOs, it first tries parsing CLPI metadata files which
+// authoritatively declare all streams, falling back to PMT scanning.
 func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 	if strings.HasSuffix(strings.ToLower(path), ".iso") {
 		return detectBlurayCodecsFromISO(path)
@@ -71,9 +72,34 @@ func detectBlurayCodecsFromFile(path string) (*SourceCodecs, error) {
 	return scanM2TSCodecs(path, 0)
 }
 
-// detectBlurayCodecsFromISO scans all significant M2TS files within a Blu-ray
-// ISO and unions their PMT codec information.
+// detectBlurayCodecsFromISO detects codecs from a Blu-ray ISO. Tries CLPI
+// metadata first (fast, authoritative), falls back to PMT scanning from M2TS data.
 func detectBlurayCodecsFromISO(path string) (*SourceCodecs, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open ISO: %w", err)
+	}
+	defer f.Close()
+
+	// Try CLPI-based detection (ISO9660, then UDF).
+	if clpis, err := findCLPIsInISO(f); err == nil && len(clpis) > 0 {
+		if codecs, err := detectBlurayCodecsFromCLPIs(f, clpis); err == nil {
+			return codecs, nil
+		}
+	}
+	if clpis, err := findCLPIsInUDF(f); err == nil && len(clpis) > 0 {
+		if codecs, err := detectBlurayCodecsFromCLPIs(f, clpis); err == nil {
+			return codecs, nil
+		}
+	}
+
+	// Fallback: scan PMT from M2TS data.
+	return detectBlurayCodecsFromISOPMT(path)
+}
+
+// detectBlurayCodecsFromISOPMT scans PMT data from M2TS files within a Blu-ray ISO.
+// This is the legacy approach, kept as a fallback for ISOs where CLPI parsing fails.
+func detectBlurayCodecsFromISOPMT(path string) (*SourceCodecs, error) {
 	m2tsFiles, err := findBlurayM2TSInISO(path)
 	if err != nil {
 		return nil, fmt.Errorf("find M2TS in ISO: %w", err)
