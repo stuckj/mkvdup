@@ -150,15 +150,13 @@ matched by wildcards. Use `expand-config` to generate an explicit file list
 that the watcher can monitor:
 
 ```bash
-# Create a wildcard config (source of truth)
-cat > wildcard.yaml <<EOF
-sources:
-  - path: /data/dedup
-    pattern: "**/*.mkvdup.yaml"
-EOF
+# Use an existing mount config with include globs as the source of truth
+# e.g., /etc/mkvdup.conf contains:
+#   includes:
+#     - "/data/dedup/**/*.mkvdup.yaml"
 
 # Expand to explicit file list
-mkvdup expand-config wildcard.yaml --output expanded.yaml
+mkvdup expand-config /etc/mkvdup.conf --output expanded.yaml
 
 # Mount using the expanded config
 mkvdup mount /mnt/videos expanded.yaml
@@ -166,7 +164,9 @@ mkvdup mount /mnt/videos expanded.yaml
 
 When new `.mkvdup.yaml` files are added, re-run `expand-config` to regenerate the
 explicit config. The mount detects the change and adds the new virtual files.
-See [docs/CLI.md](docs/CLI.md#expand-config) for full details.
+If the file list hasn't changed, the output file is not rewritten (avoiding
+unnecessary mount reloads). See [docs/CLI.md](docs/CLI.md#expand-config) for
+full details.
 
 ### Mount via fstab
 

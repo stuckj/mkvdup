@@ -6,110 +6,45 @@ import (
 	"testing"
 )
 
-func TestReadExpandConfig_Basic(t *testing.T) {
+func TestResolveIncludePaths_DirectConfig(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, `sources:
-  - path: /data/isos/dvds
-    pattern: "**/*.mkvdup.yaml"
+	cfgPath := filepath.Join(dir, "movie.mkvdup.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
 `)
-	cfg, err := ReadExpandConfig(cfgPath)
+
+	files, err := ResolveIncludePaths([]string{cfgPath})
 	if err != nil {
-		t.Fatalf("ReadExpandConfig: %v", err)
+		t.Fatalf("ResolveIncludePaths: %v", err)
 	}
-	if len(cfg.Sources) != 1 {
-		t.Fatalf("got %d sources, want 1", len(cfg.Sources))
-	}
-	if cfg.Sources[0].Path != "/data/isos/dvds" {
-		t.Errorf("Path = %q, want %q", cfg.Sources[0].Path, "/data/isos/dvds")
-	}
-	if cfg.Sources[0].Pattern != "**/*.mkvdup.yaml" {
-		t.Errorf("Pattern = %q, want %q", cfg.Sources[0].Pattern, "**/*.mkvdup.yaml")
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
 	}
 }
 
-func TestReadExpandConfig_RelativePath(t *testing.T) {
+func TestResolveIncludePaths_IncludesGlob(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, `sources:
-  - path: ./isos
-    pattern: "*.yaml"
+
+	// Create two config files.
+	writeYAML(t, filepath.Join(dir, "configs", "a.mkvdup.yaml"), `name: "a.mkv"
+dedup_file: "/data/a.mkvdup"
+source_dir: "/data/source"
 `)
-	cfg, err := ReadExpandConfig(cfgPath)
+	writeYAML(t, filepath.Join(dir, "configs", "b.mkvdup.yaml"), `name: "b.mkv"
+dedup_file: "/data/b.mkvdup"
+source_dir: "/data/source"
+`)
+
+	// Create a parent config with includes glob.
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/configs/*.mkvdup.yaml"
+`, dir))
+
+	files, err := ResolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ReadExpandConfig: %v", err)
-	}
-	want := filepath.Join(dir, "isos")
-	if cfg.Sources[0].Path != want {
-		t.Errorf("Path = %q, want %q", cfg.Sources[0].Path, want)
-	}
-}
-
-func TestReadExpandConfig_EmptySources(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, `sources: []`)
-	_, err := ReadExpandConfig(cfgPath)
-	if err == nil {
-		t.Fatal("expected error for empty sources")
-	}
-}
-
-func TestReadExpandConfig_MissingPath(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, `sources:
-  - pattern: "*.yaml"
-`)
-	_, err := ReadExpandConfig(cfgPath)
-	if err == nil {
-		t.Fatal("expected error for missing path")
-	}
-}
-
-func TestReadExpandConfig_MissingPattern(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, `sources:
-  - path: /data
-`)
-	_, err := ReadExpandConfig(cfgPath)
-	if err == nil {
-		t.Fatal("expected error for missing pattern")
-	}
-}
-
-func TestReadExpandConfig_AbsolutePattern(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, `sources:
-  - path: /data
-    pattern: "/absolute/path/*.yaml"
-`)
-	_, err := ReadExpandConfig(cfgPath)
-	if err == nil {
-		t.Fatal("expected error for absolute pattern")
-	}
-}
-
-func TestResolveExpandConfig_MatchesFiles(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create some .mkvdup.yaml files in a directory tree.
-	writeYAML(t, filepath.Join(dir, "movies", "movie1", "movie1.mkvdup.yaml"), "name: movie1")
-	writeYAML(t, filepath.Join(dir, "movies", "movie2", "movie2.mkvdup.yaml"), "name: movie2")
-	// Non-matching file
-	writeYAML(t, filepath.Join(dir, "movies", "other.txt"), "not a yaml")
-
-	cfg := &ExpandConfig{
-		Sources: []ExpandSource{
-			{Path: dir, Pattern: "**/*.mkvdup.yaml"},
-		},
-	}
-
-	files, err := ResolveExpandConfig(cfg)
-	if err != nil {
-		t.Fatalf("ResolveExpandConfig: %v", err)
+		t.Fatalf("ResolveIncludePaths: %v", err)
 	}
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2: %v", len(files), files)
@@ -124,82 +59,121 @@ func TestResolveExpandConfig_MatchesFiles(t *testing.T) {
 	}
 }
 
-func TestResolveExpandConfig_Deduplicates(t *testing.T) {
+func TestResolveIncludePaths_RecursiveGlob(t *testing.T) {
 	dir := t.TempDir()
 
-	writeYAML(t, filepath.Join(dir, "sub", "test.mkvdup.yaml"), "name: test")
+	writeYAML(t, filepath.Join(dir, "movies", "movie1", "movie1.mkvdup.yaml"), `name: "movie1.mkv"
+dedup_file: "/data/movie1.mkvdup"
+source_dir: "/data/source"
+`)
+	writeYAML(t, filepath.Join(dir, "movies", "movie2", "movie2.mkvdup.yaml"), `name: "movie2.mkv"
+dedup_file: "/data/movie2.mkvdup"
+source_dir: "/data/source"
+`)
 
-	cfg := &ExpandConfig{
-		Sources: []ExpandSource{
-			{Path: dir, Pattern: "**/*.mkvdup.yaml"},
-			{Path: filepath.Join(dir, "sub"), Pattern: "*.mkvdup.yaml"},
-		},
-	}
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/movies/**/*.mkvdup.yaml"
+`, dir))
 
-	files, err := ResolveExpandConfig(cfg)
+	files, err := ResolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveExpandConfig: %v", err)
+		t.Fatalf("ResolveIncludePaths: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("got %d files, want 2: %v", len(files), files)
+	}
+}
+
+func TestResolveIncludePaths_Deduplicates(t *testing.T) {
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "movie.mkvdup.yaml")
+	writeYAML(t, cfgPath, `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
+`)
+
+	// Two includes that both match the same file.
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/*.mkvdup.yaml"
+  - "%s/movie.mkvdup.yaml"
+`, dir, dir))
+
+	files, err := ResolveIncludePaths([]string{mainPath})
+	if err != nil {
+		t.Fatalf("ResolveIncludePaths: %v", err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1 (dedup failed): %v", len(files), files)
 	}
 }
 
-func TestResolveExpandConfig_NoMatches(t *testing.T) {
+func TestResolveIncludePaths_NoMatches(t *testing.T) {
 	dir := t.TempDir()
 
-	cfg := &ExpandConfig{
-		Sources: []ExpandSource{
-			{Path: dir, Pattern: "**/*.mkvdup.yaml"},
-		},
-	}
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/nonexistent/**/*.mkvdup.yaml"
+`, dir))
 
-	files, err := ResolveExpandConfig(cfg)
+	files, err := ResolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveExpandConfig: %v", err)
+		t.Fatalf("ResolveIncludePaths: %v", err)
 	}
 	if len(files) != 0 {
 		t.Fatalf("got %d files, want 0", len(files))
 	}
 }
 
-func TestResolveExpandConfig_MultipleSources(t *testing.T) {
+func TestResolveIncludePaths_IncludesOnly(t *testing.T) {
 	dir := t.TempDir()
 
-	writeYAML(t, filepath.Join(dir, "dvds", "a.mkvdup.yaml"), "name: a")
-	writeYAML(t, filepath.Join(dir, "blurays", "b.mkvdup.yaml"), "name: b")
+	// A config with only includes (no name/dedup_file/source_dir) should
+	// not include itself in the output.
+	writeYAML(t, filepath.Join(dir, "a.mkvdup.yaml"), `name: "a.mkv"
+dedup_file: "/data/a.mkvdup"
+source_dir: "/data/source"
+`)
 
-	cfg := &ExpandConfig{
-		Sources: []ExpandSource{
-			{Path: filepath.Join(dir, "dvds"), Pattern: "*.mkvdup.yaml"},
-			{Path: filepath.Join(dir, "blurays"), Pattern: "*.mkvdup.yaml"},
-		},
-	}
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s/a.mkvdup.yaml"
+`, dir))
 
-	files, err := ResolveExpandConfig(cfg)
+	files, err := ResolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveExpandConfig: %v", err)
+		t.Fatalf("ResolveIncludePaths: %v", err)
 	}
-	if len(files) != 2 {
-		t.Fatalf("got %d files, want 2", len(files))
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1: %v", len(files), files)
+	}
+	// Should be the included file, not main.yaml
+	if filepath.Base(files[0]) != "a.mkvdup.yaml" {
+		t.Errorf("expected a.mkvdup.yaml, got %s", files[0])
 	}
 }
 
-func TestReadExpandConfig_MultipleSources(t *testing.T) {
+func TestResolveIncludePaths_MultipleInputPaths(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "expand.yaml")
-	writeYAML(t, cfgPath, fmt.Sprintf(`sources:
-  - path: %s/dvds
-    pattern: "**/*.mkvdup.yaml"
-  - path: %s/blurays
-    pattern: "**/*.mkvdup.yaml"
-`, dir, dir))
 
-	cfg, err := ReadExpandConfig(cfgPath)
+	aPath := filepath.Join(dir, "a.mkvdup.yaml")
+	writeYAML(t, aPath, `name: "a.mkv"
+dedup_file: "/data/a.mkvdup"
+source_dir: "/data/source"
+`)
+	bPath := filepath.Join(dir, "b.mkvdup.yaml")
+	writeYAML(t, bPath, `name: "b.mkv"
+dedup_file: "/data/b.mkvdup"
+source_dir: "/data/source"
+`)
+
+	files, err := ResolveIncludePaths([]string{aPath, bPath})
 	if err != nil {
-		t.Fatalf("ReadExpandConfig: %v", err)
+		t.Fatalf("ResolveIncludePaths: %v", err)
 	}
-	if len(cfg.Sources) != 2 {
-		t.Fatalf("got %d sources, want 2", len(cfg.Sources))
+	if len(files) != 2 {
+		t.Fatalf("got %d files, want 2", len(files))
 	}
 }

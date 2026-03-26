@@ -584,6 +584,7 @@ func main() {
 	case "expand-config":
 		outputPath := ""
 		dryRun := false
+		configDir := false
 		var expandArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -596,6 +597,8 @@ func main() {
 				}
 			case "--dry-run":
 				dryRun = true
+			case "--config-dir":
+				configDir = true
 			default:
 				expandArgs = append(expandArgs, args[i])
 			}
@@ -604,7 +607,7 @@ func main() {
 			printCommandUsage("expand-config")
 			os.Exit(1)
 		}
-		if err := expandConfigCmd(expandArgs[0], outputPath, dryRun); err != nil {
+		if err := expandConfigCmd(expandArgs, configDir, outputPath, dryRun); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

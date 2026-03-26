@@ -264,8 +264,8 @@ _mkvdup() {
             ;;
 
         expand-config)
-            # expand-config [options] <wildcard-config.yaml>
-            local expand_config_opts="--output --dry-run"
+            # expand-config [options] <config-file>...
+            local expand_config_opts="--config-dir --output --dry-run"
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "$expand_config_opts $global_opts" -- "$cur"))
                 return
