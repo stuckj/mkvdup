@@ -433,7 +433,7 @@ walks the filesystem to resolve all matching .mkvdup.yaml files, and writes
 an expanded config with each file explicitly listed.
 
 This is useful with the FUSE mount's file watcher: point the mount at the
-expanded config, then re-run expand-config when new .mkvdup files are added.
+expanded config, then re-run expand-config when new .mkvdup.yaml files are added.
 The mount detects the config change and adds the new virtual files.
 
 Arguments:

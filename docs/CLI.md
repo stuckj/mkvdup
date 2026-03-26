@@ -546,7 +546,7 @@ The output is deterministic: files are sorted alphabetically and deduplicated ac
 1. Keep a simple wildcard config (e.g., `wildcard.yaml`) as the source of truth
 2. Run `mkvdup expand-config wildcard.yaml --output expanded.yaml` to generate an explicit config
 3. Point the FUSE mount at `expanded.yaml`
-4. When new `.mkvdup` files are added, re-run `expand-config` to regenerate
+4. When new `.mkvdup.yaml` files are added, re-run `expand-config` to regenerate
 5. The mount detects the config file change and adds the new virtual files
 
 **Examples:**

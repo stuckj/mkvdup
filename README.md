@@ -164,7 +164,7 @@ mkvdup expand-config wildcard.yaml --output expanded.yaml
 mkvdup mount /mnt/videos expanded.yaml
 ```
 
-When new `.mkvdup` files are added, re-run `expand-config` to regenerate the
+When new `.mkvdup.yaml` files are added, re-run `expand-config` to regenerate the
 explicit config. The mount detects the change and adds the new virtual files.
 See [docs/CLI.md](docs/CLI.md#expand-config) for full details.
 
