@@ -39,8 +39,9 @@ source_dir: "/data/source"
 
 	// Capture output by writing to a file via --output.
 	outPath := filepath.Join(dir, "expanded.yaml")
+	oldQuiet := quiet
 	quiet = true
-	defer func() { quiet = false }()
+	defer func() { quiet = oldQuiet }()
 
 	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
 		t.Fatalf("expandConfigCmd: %v", err)
@@ -95,8 +96,9 @@ func TestExpandConfigCmd_DryRun(t *testing.T) {
 
 	// --dry-run should not create a file.
 	outPath := filepath.Join(dir, "should-not-exist.yaml")
+	oldQuiet := quiet
 	quiet = true
-	defer func() { quiet = false }()
+	defer func() { quiet = oldQuiet }()
 
 	if err := expandConfigCmd(cfgPath, outPath, true); err != nil {
 		t.Fatalf("expandConfigCmd --dry-run: %v", err)
@@ -118,8 +120,9 @@ func TestExpandConfigCmd_OutputWritesFile(t *testing.T) {
 `)
 
 	outPath := filepath.Join(dir, "expanded.yaml")
+	oldQuiet := quiet
 	quiet = true
-	defer func() { quiet = false }()
+	defer func() { quiet = oldQuiet }()
 
 	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
 		t.Fatalf("expandConfigCmd: %v", err)
@@ -135,5 +138,45 @@ func TestExpandConfigCmd_OutputWritesFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "test.mkvdup.yaml") {
 		t.Error("output file should contain the matched file")
+	}
+}
+
+func TestExpandConfigCmd_SkipsRewriteWhenUnchanged(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dir, "test.mkvdup.yaml"), "name: test")
+	cfgPath := filepath.Join(dir, "wildcard.yaml")
+	writeTestFile(t, cfgPath, `sources:
+  - path: `+dir+`
+    pattern: "*.mkvdup.yaml"
+`)
+
+	outPath := filepath.Join(dir, "expanded.yaml")
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
+	// First run: creates the file.
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+
+	info1, err := os.Stat(outPath)
+	if err != nil {
+		t.Fatalf("stat after first run: %v", err)
+	}
+
+	// Second run with same inputs: should not rewrite.
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+
+	info2, err := os.Stat(outPath)
+	if err != nil {
+		t.Fatalf("stat after second run: %v", err)
+	}
+
+	if !info1.ModTime().Equal(info2.ModTime()) {
+		t.Error("file was rewritten even though includes list did not change")
 	}
 }

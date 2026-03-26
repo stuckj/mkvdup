@@ -10,6 +10,19 @@ import (
 	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
+// yamlContent extracts the non-comment lines from a YAML string for comparison.
+// This allows the header comments (timestamp, etc.) to change without triggering
+// a rewrite when the actual includes list is unchanged.
+func yamlContent(s string) string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		if !strings.HasPrefix(line, "#") {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // expandConfigCmd reads a wildcard config file, resolves all glob patterns,
 // and writes an expanded config with each matched .mkvdup.yaml explicitly listed.
 func expandConfigCmd(configPath string, outputPath string, dryRun bool) error {
@@ -64,6 +77,17 @@ func expandConfigCmd(configPath string, outputPath string, dryRun bool) error {
 		// Default: write to stdout
 		fmt.Print(output)
 		return nil
+	}
+
+	// Skip rewrite if the includes list is unchanged, to avoid triggering
+	// unnecessary mount reloads from the file watcher.
+	if existing, err := os.ReadFile(outputPath); err == nil {
+		if yamlContent(string(existing)) == yamlContent(output) {
+			if !quiet {
+				fmt.Fprintf(os.Stderr, "No changes to %s\n", outputPath)
+			}
+			return nil
+		}
 	}
 
 	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
