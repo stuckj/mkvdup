@@ -581,6 +581,33 @@ func main() {
 			log.Fatalf("Error: %v", err)
 		}
 
+	case "expand-config":
+		outputPath := ""
+		dryRun := false
+		var expandArgs []string
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--output":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					outputPath = args[i+1]
+					i++
+				} else {
+					log.Fatalf("Error: --output requires a path argument")
+				}
+			case "--dry-run":
+				dryRun = true
+			default:
+				expandArgs = append(expandArgs, args[i])
+			}
+		}
+		if len(expandArgs) < 1 {
+			printCommandUsage("expand-config")
+			os.Exit(1)
+		}
+		if err := expandConfigCmd(expandArgs[0], outputPath, dryRun); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
 	case "deltadiag":
 		if len(args) < 2 {
 			printCommandUsage("deltadiag")

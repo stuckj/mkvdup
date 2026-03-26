@@ -212,6 +212,8 @@ See [CLI reload command](CLI.md#reload) for more details.
 - Daemon watches config file and include directories via inotify
 - Automatically reloads when changes detected
 
+**Workaround:** The file watcher does not detect new files added to directories matched by include wildcards. Use `mkvdup expand-config` to generate an explicit config from wildcard patterns, then point the mount at the expanded config. When new `.mkvdup` files are added, re-run `expand-config` to regenerate the explicit config — the mount detects the config file change and picks up the new virtual files. See [expand-config](CLI.md#expand-config) for details.
+
 ## Permissions and Ownership
 
 Virtual files and directories support `chmod` and `chown` operations. Permission metadata is stored in a separate YAML file, keeping `.mkvdup` files immutable while allowing customization.
