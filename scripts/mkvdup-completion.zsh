@@ -181,7 +181,7 @@ _mkvdup_expand_config() {
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
         '--config-dir[Treat arguments as directories of config files]' \
-        '--output=[Write expanded config to file]:output file:_files -g "*.y(a|)ml(-.)"' \
+        '--output[Write expanded config to file]:output file:_files -g "*.y(a|)ml(-.)"' \
         '--dry-run[Preview expanded output without writing]' \
         '*:Config file:_files'
 }
