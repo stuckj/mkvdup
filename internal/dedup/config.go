@@ -187,7 +187,7 @@ func walkConfig(configPath string, seen map[string]bool, visit configVisitor) er
 	seen[realPath] = true
 
 	// When running as root, verify config file ownership and permissions.
-	if err := security.CheckFileOwnership(realPath); err != nil {
+	if err := security.CheckFileOwnershipResolved(realPath); err != nil {
 		return fmt.Errorf("config file %s: %w", realPath, err)
 	}
 

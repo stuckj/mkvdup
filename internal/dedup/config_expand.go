@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/stuckj/mkvdup/internal/security"
 	"gopkg.in/yaml.v3"
 )
 
@@ -67,14 +68,40 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 		return nil, fmt.Errorf("resolve path %s: %w", configPath, err)
 	}
 
-	data, err := os.ReadFile(absPath)
+	// Resolve symlinks for consistent behavior with mount/validate.
+	realPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("read config file %s: %w", absPath, err)
+		return nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+	}
+
+	// When running as root, verify config file ownership and permissions.
+	if err := security.CheckFileOwnershipResolved(realPath); err != nil {
+		return nil, fmt.Errorf("config file %s: %w", realPath, err)
+	}
+
+	data, err := os.ReadFile(realPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config file %s: %w", realPath, err)
 	}
 
 	var cf configFile
 	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", absPath, err)
+		return nil, fmt.Errorf("parse config %s: %w", realPath, err)
+	}
+
+	// Validate partial top-level fields (same rules as resolveConfig).
+	hasName := cf.Name != ""
+	hasDedup := cf.DedupFile != ""
+	hasSource := cf.SourceDir != ""
+	if (hasName || hasDedup || hasSource) && !(hasName && hasDedup && hasSource) {
+		return nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+	}
+
+	// Validate virtual_files entries.
+	for _, vf := range cf.VirtualFiles {
+		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
+			return nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
+		}
 	}
 
 	// If there are no includes, nothing to expand.
@@ -83,7 +110,7 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 	}
 
 	// Resolve each include glob pattern to explicit paths (single level only).
-	configDir := filepath.Dir(absPath)
+	configDir := filepath.Dir(realPath)
 	seen := make(map[string]bool)
 	var resolved []string
 	for _, pattern := range cf.Includes {
@@ -105,7 +132,8 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 		}
 	}
 
-	// Replace includes with the resolved explicit paths.
+	// Replace includes with the resolved explicit paths (sorted globally).
+	sort.Strings(resolved)
 	cf.Includes = resolved
 
 	out, err := yaml.Marshal(&cf)
