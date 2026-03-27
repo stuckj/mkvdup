@@ -168,16 +168,58 @@ type configVisitor func(phase string, realPath string, cf *configFile, configDir
 // The visitor is called twice per file: once with phase "pre" before processing
 // includes, and once with phase "post" after. This preserves the original
 // ordering: top-level entries → included configs → virtual_files.
-func walkConfig(configPath string, seen map[string]bool, visit configVisitor) error {
+// openConfigFile resolves a config path (abs, symlinks, ownership check),
+// reads and parses the YAML. Returns the canonical real path, raw data,
+// parsed config, and any error.
+func openConfigFile(configPath string) (realPath string, data []byte, cf *configFile, err error) {
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return fmt.Errorf("resolve path %s: %w", configPath, err)
+		return "", nil, nil, fmt.Errorf("resolve path %s: %w", configPath, err)
 	}
 
-	// Resolve symlinks for reliable cycle detection.
-	realPath, err := filepath.EvalSymlinks(absPath)
+	realPath, err = filepath.EvalSymlinks(absPath)
 	if err != nil {
-		return fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+		return "", nil, nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+	}
+
+	if err := security.CheckFileOwnershipResolved(realPath); err != nil {
+		return "", nil, nil, fmt.Errorf("config file %s: %w", realPath, err)
+	}
+
+	data, err = os.ReadFile(realPath)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("read config file %s: %w", realPath, err)
+	}
+
+	cf = &configFile{}
+	if err := yaml.Unmarshal(data, cf); err != nil {
+		return "", nil, nil, fmt.Errorf("parse config %s: %w", realPath, err)
+	}
+
+	return realPath, data, cf, nil
+}
+
+// validateConfigFields checks for partial top-level fields and invalid
+// virtual_files entries. Returns an error if validation fails.
+func validateConfigFields(realPath string, cf *configFile) error {
+	hasName := cf.Name != ""
+	hasDedup := cf.DedupFile != ""
+	hasSource := cf.SourceDir != ""
+	if (hasName || hasDedup || hasSource) && !(hasName && hasDedup && hasSource) {
+		return fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+	}
+	for _, vf := range cf.VirtualFiles {
+		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
+			return fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
+		}
+	}
+	return nil
+}
+
+func walkConfig(configPath string, seen map[string]bool, visit configVisitor) error {
+	realPath, _, cf, err := openConfigFile(configPath)
+	if err != nil {
+		return err
 	}
 
 	if seen[realPath] {
@@ -186,25 +228,10 @@ func walkConfig(configPath string, seen map[string]bool, visit configVisitor) er
 	}
 	seen[realPath] = true
 
-	// When running as root, verify config file ownership and permissions.
-	if err := security.CheckFileOwnershipResolved(realPath); err != nil {
-		return fmt.Errorf("config file %s: %w", realPath, err)
-	}
-
-	data, err := os.ReadFile(realPath)
-	if err != nil {
-		return fmt.Errorf("read config file %s: %w", realPath, err)
-	}
-
-	var cf configFile
-	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return fmt.Errorf("parse config %s: %w", realPath, err)
-	}
-
 	configDir := filepath.Dir(realPath)
 
 	// Pre-includes visit (top-level config entries).
-	if err := visit("pre", realPath, &cf, configDir); err != nil {
+	if err := visit("pre", realPath, cf, configDir); err != nil {
 		return err
 	}
 
@@ -224,7 +251,7 @@ func walkConfig(configPath string, seen map[string]bool, visit configVisitor) er
 	}
 
 	// Post-includes visit (virtual_files).
-	if err := visit("post", realPath, &cf, configDir); err != nil {
+	if err := visit("post", realPath, cf, configDir); err != nil {
 		return err
 	}
 
@@ -244,14 +271,11 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, *ErrorCom
 				errorCmd = cf.OnErrorCommand
 			}
 
-			// If top-level name/dedup_file/source_dir are set, add as a Config entry.
-			hasName := cf.Name != ""
-			hasDedup := cf.DedupFile != ""
-			hasSource := cf.SourceDir != ""
-			if hasName || hasDedup || hasSource {
-				if !hasName || !hasDedup || !hasSource {
-					return fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
-				}
+			// Validate fields and add top-level config entry if present.
+			if err := validateConfigFields(realPath, cf); err != nil {
+				return err
+			}
+			if cf.Name != "" && cf.DedupFile != "" && cf.SourceDir != "" {
 				configs = append(configs, Config{
 					Name:      cf.Name,
 					DedupFile: resolveRelative(configDir, cf.DedupFile),
@@ -260,10 +284,8 @@ func resolveConfig(configPath string, seen map[string]bool) ([]Config, *ErrorCom
 			}
 		} else {
 			// Process virtual_files after includes have been resolved.
+			// Validation was already done in the "pre" phase.
 			for _, vf := range cf.VirtualFiles {
-				if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
-					return fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
-				}
 				configs = append(configs, Config{
 					Name:      vf.Name,
 					DedupFile: resolveRelative(configDir, vf.DedupFile),

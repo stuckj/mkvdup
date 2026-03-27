@@ -2,12 +2,10 @@ package dedup
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/stuckj/mkvdup/internal/security"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,23 +24,12 @@ func ResolveIncludePaths(configPaths []string) ([]string, error) {
 				return nil
 			}
 
-			// Validate partial top-level fields (same rules as resolveConfig).
-			hasName := cf.Name != ""
-			hasDedup := cf.DedupFile != ""
-			hasSource := cf.SourceDir != ""
-			hasDirectMapping := hasName && hasDedup && hasSource
-			if (hasName || hasDedup || hasSource) && !hasDirectMapping {
-				return fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
-			}
-
-			// Validate virtual_files entries.
-			for _, vf := range cf.VirtualFiles {
-				if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
-					return fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
-				}
+			if err := validateConfigFields(realPath, cf); err != nil {
+				return err
 			}
 
 			// Collect paths of configs that contribute any mappings.
+			hasDirectMapping := cf.Name != "" && cf.DedupFile != "" && cf.SourceDir != ""
 			if hasDirectMapping || len(cf.VirtualFiles) > 0 {
 				files = append(files, realPath)
 			}
@@ -63,45 +50,13 @@ func ResolveIncludePaths(configPaths []string) ([]string, error) {
 // top-level name/dedup_file/source_dir) are preserved unchanged. The included
 // files themselves are not modified — they can still contain their own globs.
 func ExpandConfigFile(configPath string) ([]byte, error) {
-	absPath, err := filepath.Abs(configPath)
+	realPath, data, cf, err := openConfigFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve path %s: %w", configPath, err)
+		return nil, err
 	}
 
-	// Resolve symlinks for consistent behavior with mount/validate.
-	realPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
-	}
-
-	// When running as root, verify config file ownership and permissions.
-	if err := security.CheckFileOwnershipResolved(realPath); err != nil {
-		return nil, fmt.Errorf("config file %s: %w", realPath, err)
-	}
-
-	data, err := os.ReadFile(realPath)
-	if err != nil {
-		return nil, fmt.Errorf("read config file %s: %w", realPath, err)
-	}
-
-	var cf configFile
-	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", realPath, err)
-	}
-
-	// Validate partial top-level fields (same rules as resolveConfig).
-	hasName := cf.Name != ""
-	hasDedup := cf.DedupFile != ""
-	hasSource := cf.SourceDir != ""
-	if (hasName || hasDedup || hasSource) && !(hasName && hasDedup && hasSource) {
-		return nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
-	}
-
-	// Validate virtual_files entries.
-	for _, vf := range cf.VirtualFiles {
-		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
-			return nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
-		}
+	if err := validateConfigFields(realPath, cf); err != nil {
+		return nil, err
 	}
 
 	// If there are no includes, nothing to expand.
@@ -117,7 +72,7 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 		pattern = resolveRelative(configDir, pattern)
 		matches, err := doublestar.FilepathGlob(pattern)
 		if err != nil {
-			return nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, absPath, err)
+			return nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
 		}
 		sort.Strings(matches)
 		for _, match := range matches {
@@ -136,7 +91,7 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 	sort.Strings(resolved)
 	cf.Includes = resolved
 
-	out, err := yaml.Marshal(&cf)
+	out, err := yaml.Marshal(cf)
 	if err != nil {
 		return nil, fmt.Errorf("marshal expanded config: %w", err)
 	}
