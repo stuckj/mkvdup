@@ -14,9 +14,9 @@ dedup_file: "/data/movie.mkvdup"
 source_dir: "/data/source"
 `)
 
-	files, err := ResolveIncludePaths([]string{cfgPath})
+	files, err := resolveIncludePaths([]string{cfgPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1", len(files))
@@ -42,9 +42,9 @@ source_dir: "/data/source"
   - "%s/configs/*.mkvdup.yaml"
 `, dir))
 
-	files, err := ResolveIncludePaths([]string{mainPath})
+	files, err := resolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2: %v", len(files), files)
@@ -76,9 +76,9 @@ source_dir: "/data/source"
   - "%s/movies/**/*.mkvdup.yaml"
 `, dir))
 
-	files, err := ResolveIncludePaths([]string{mainPath})
+	files, err := resolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2: %v", len(files), files)
@@ -101,9 +101,9 @@ source_dir: "/data/source"
   - "%s/movie.mkvdup.yaml"
 `, dir, dir))
 
-	files, err := ResolveIncludePaths([]string{mainPath})
+	files, err := resolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1 (dedup failed): %v", len(files), files)
@@ -118,9 +118,9 @@ func TestResolveIncludePaths_NoMatches(t *testing.T) {
   - "%s/nonexistent/**/*.mkvdup.yaml"
 `, dir))
 
-	files, err := ResolveIncludePaths([]string{mainPath})
+	files, err := resolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 0 {
 		t.Fatalf("got %d files, want 0", len(files))
@@ -142,9 +142,9 @@ source_dir: "/data/source"
   - "%s/a.mkvdup.yaml"
 `, dir))
 
-	files, err := ResolveIncludePaths([]string{mainPath})
+	files, err := resolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1: %v", len(files), files)
@@ -169,9 +169,9 @@ dedup_file: "/data/b.mkvdup"
 source_dir: "/data/source"
 `)
 
-	files, err := ResolveIncludePaths([]string{aPath, bPath})
+	files, err := resolveIncludePaths([]string{aPath, bPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2", len(files))
@@ -198,9 +198,9 @@ func TestResolveIncludePaths_VirtualFilesOnly(t *testing.T) {
   - "%s"
 `, vfPath))
 
-	files, err := ResolveIncludePaths([]string{mainPath})
+	files, err := resolveIncludePaths([]string{mainPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1 (the virtual_files config): %v", len(files), files)
@@ -224,9 +224,9 @@ virtual_files:
     source_dir: "/data/source"
 `)
 
-	files, err := ResolveIncludePaths([]string{mixedPath})
+	files, err := resolveIncludePaths([]string{mixedPath})
 	if err != nil {
-		t.Fatalf("ResolveIncludePaths: %v", err)
+		t.Fatalf("resolveIncludePaths: %v", err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1: %v", len(files), files)

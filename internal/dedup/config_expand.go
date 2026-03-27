@@ -9,12 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ResolveIncludePaths reads standard config files and resolves their includes
+// resolveIncludePaths reads standard config files and resolves their includes
 // glob patterns into a sorted, deduplicated list of absolute file paths.
-// The input config uses the same format as mount/validate (includes field
-// with glob patterns). This is used by expand-config to generate an explicit
-// config from a wildcard-based one.
-func ResolveIncludePaths(configPaths []string) ([]string, error) {
+// It can be used to compute the explicit set of config files that contribute
+// mappings from a wildcard-based configuration.
+func resolveIncludePaths(configPaths []string) ([]string, error) {
 	seen := make(map[string]bool)
 	var files []string
 
