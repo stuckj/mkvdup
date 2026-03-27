@@ -153,22 +153,16 @@ source_dir: "/data/source"
 		t.Fatalf("first run: %v", err)
 	}
 
-	contentBefore, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatalf("read after first run: %v", err)
+	// Make the file read-only so that any attempted rewrite on the second run
+	// would fail with a permission error. This makes the "no rewrite" behavior
+	// deterministic and independent of timestamp precision in generated headers.
+	if err := os.Chmod(outPath, 0444); err != nil {
+		t.Fatalf("chmod read-only: %v", err)
 	}
 
-	// Second run with same inputs: should not rewrite.
+	// Second run with same inputs: should not attempt to rewrite, and thus
+	// should still succeed even though the file is read-only.
 	if err := expandConfigCmd([]string{cfgPath}, false, outPath, false); err != nil {
-		t.Fatalf("second run: %v", err)
-	}
-
-	contentAfter, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatalf("read after second run: %v", err)
-	}
-
-	if string(contentBefore) != string(contentAfter) {
-		t.Error("file was rewritten even though includes list did not change")
+		t.Fatalf("second run: %v (file was likely rewritten despite unchanged includes)", err)
 	}
 }

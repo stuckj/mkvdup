@@ -90,7 +90,10 @@ func expandConfigCmd(configPaths []string, configDir bool, outputPath string, dr
 		return fmt.Errorf("write output file: %w", err)
 	}
 
-	absOutput, _ := filepath.Abs(outputPath)
+	absOutput, err := filepath.Abs(outputPath)
+	if err != nil || absOutput == "" {
+		absOutput = outputPath
+	}
 	if !quiet {
 		fmt.Fprintf(os.Stderr, "Wrote %s\n", absOutput)
 	}
