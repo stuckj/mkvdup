@@ -38,7 +38,7 @@ func expandConfigCmd(configPaths []string, configDir bool, outputPath string, dr
 	}
 
 	if len(files) == 0 {
-		printWarn("Warning: no .mkvdup.yaml files matched\n")
+		printWarn("Warning: no config files matched\n")
 	}
 
 	if !quiet {

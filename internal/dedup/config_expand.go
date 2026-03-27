@@ -1,6 +1,7 @@
 package dedup
 
 import (
+	"fmt"
 	"sort"
 )
 
@@ -18,11 +19,25 @@ func ResolveIncludePaths(configPaths []string) ([]string, error) {
 			if phase != "pre" {
 				return nil
 			}
-			// Collect paths of configs that contribute any mappings
-			// (top-level direct mapping or virtual_files entries).
-			hasDirectMapping := cf.Name != "" && cf.DedupFile != "" && cf.SourceDir != ""
-			hasVirtualFiles := len(cf.VirtualFiles) > 0
-			if hasDirectMapping || hasVirtualFiles {
+
+			// Validate partial top-level fields (same rules as resolveConfig).
+			hasName := cf.Name != ""
+			hasDedup := cf.DedupFile != ""
+			hasSource := cf.SourceDir != ""
+			hasDirectMapping := hasName && hasDedup && hasSource
+			if (hasName || hasDedup || hasSource) && !hasDirectMapping {
+				return fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+			}
+
+			// Validate virtual_files entries.
+			for _, vf := range cf.VirtualFiles {
+				if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
+					return fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
+				}
+			}
+
+			// Collect paths of configs that contribute any mappings.
+			if hasDirectMapping || len(cf.VirtualFiles) > 0 {
 				files = append(files, realPath)
 			}
 			return nil
