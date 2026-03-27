@@ -18,8 +18,11 @@ func ResolveIncludePaths(configPaths []string) ([]string, error) {
 			if phase != "pre" {
 				return nil
 			}
-			// Collect paths of configs that define a direct mapping.
-			if cf.Name != "" && cf.DedupFile != "" && cf.SourceDir != "" {
+			// Collect paths of configs that contribute any mappings
+			// (top-level direct mapping or virtual_files entries).
+			hasDirectMapping := cf.Name != "" && cf.DedupFile != "" && cf.SourceDir != ""
+			hasVirtualFiles := len(cf.VirtualFiles) > 0
+			if hasDirectMapping || hasVirtualFiles {
 				files = append(files, realPath)
 			}
 			return nil

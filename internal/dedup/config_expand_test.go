@@ -177,3 +177,58 @@ source_dir: "/data/source"
 		t.Fatalf("got %d files, want 2", len(files))
 	}
 }
+
+func TestResolveIncludePaths_VirtualFilesOnly(t *testing.T) {
+	dir := t.TempDir()
+
+	// A config with only virtual_files (no top-level name/dedup_file/source_dir)
+	// should still be included in the output.
+	vfPath := filepath.Join(dir, "vf.yaml")
+	writeYAML(t, vfPath, `virtual_files:
+  - name: "movie1.mkv"
+    dedup_file: "/data/movie1.mkvdup"
+    source_dir: "/data/source"
+  - name: "movie2.mkv"
+    dedup_file: "/data/movie2.mkvdup"
+    source_dir: "/data/source"
+`)
+
+	mainPath := filepath.Join(dir, "main.yaml")
+	writeYAML(t, mainPath, fmt.Sprintf(`includes:
+  - "%s"
+`, vfPath))
+
+	files, err := ResolveIncludePaths([]string{mainPath})
+	if err != nil {
+		t.Fatalf("ResolveIncludePaths: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1 (the virtual_files config): %v", len(files), files)
+	}
+	if files[0] != vfPath {
+		t.Errorf("expected %s, got %s", vfPath, files[0])
+	}
+}
+
+func TestResolveIncludePaths_MixedDirectAndVirtualFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// A config with both top-level mapping and virtual_files should appear once.
+	mixedPath := filepath.Join(dir, "mixed.yaml")
+	writeYAML(t, mixedPath, `name: "direct.mkv"
+dedup_file: "/data/direct.mkvdup"
+source_dir: "/data/source"
+virtual_files:
+  - name: "vf.mkv"
+    dedup_file: "/data/vf.mkvdup"
+    source_dir: "/data/source"
+`)
+
+	files, err := ResolveIncludePaths([]string{mixedPath})
+	if err != nil {
+		t.Fatalf("ResolveIncludePaths: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1: %v", len(files), files)
+	}
+}
