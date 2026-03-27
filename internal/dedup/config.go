@@ -244,7 +244,8 @@ func walkConfig(configPath string, seen map[string]bool, visit configVisitor) er
 	seen[realPath] = true
 
 	// Now do the expensive work: ownership check, read, parse.
-	_, _, cf, err := openConfigFile(configPath)
+	// Pass realPath (already canonical) to avoid redundant resolution.
+	_, _, cf, err := openConfigFile(realPath)
 	if err != nil {
 		return err
 	}

@@ -58,6 +58,12 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 		return nil, err
 	}
 
+	// Validate on_error_command (same check as ResolveConfigs) so that
+	// expand-config fails fast on invalid input.
+	if cf.OnErrorCommand != nil && len(cf.OnErrorCommand.Command.Args) == 0 {
+		return nil, fmt.Errorf("%s: on_error_command.command must not be empty", realPath)
+	}
+
 	// If there are no includes, nothing to expand.
 	if len(cf.Includes) == 0 {
 		return data, nil
@@ -79,9 +85,14 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("resolve path %s: %w", match, err)
 			}
-			if !seen[abs] {
-				seen[abs] = true
-				resolved = append(resolved, abs)
+			// Canonicalize via EvalSymlinks for dedup, matching walkConfig's behavior.
+			canon := abs
+			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+				canon = resolved
+			}
+			if !seen[canon] {
+				seen[canon] = true
+				resolved = append(resolved, canon)
 			}
 		}
 	}
