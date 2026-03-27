@@ -279,20 +279,21 @@ PID of the running daemon, e.g. for foreground mode (mutually exclusive with \fB
 Treat config argument as directory of YAML files (.yaml, .yml)
 .RE
 .TP
-.B expand-config \fR[\fIoptions\fR] \fIconfig.yaml\fR...
-Expand a mount config's include globs into an explicit file list.
-Reads standard mount config files (the same format accepted by mount,
-validate, and reload), resolves all includes glob patterns, and writes
-an expanded config with each matched .mkvdup.yaml explicitly listed.
-Useful for keeping the FUSE mount's file watcher in sync when new
-.mkvdup.yaml config files are added.
+.B expand-config \fR[\fIoptions\fR] \fIconfig.yaml\fR
+Expand a mount config's include globs into explicit file paths.
+Reads a standard mount config file (the same format accepted by mount,
+validate, and reload), resolves its includes glob patterns to explicit
+paths, and writes an expanded config. All other settings
+(on_error_command, virtual_files, top-level mappings) are preserved
+unchanged. The included files are not modified and can still contain
+their own globs. After regenerating, reload the running mount
+(e.g., via
+.B mkvdup reload
+or SIGHUP) to pick up changes.
 .RS
 .TP
 .I config.yaml
-One or more config files to expand (same format as mount)
-.TP
-.B \-\-config\-dir
-Treat arguments as directories of config files
+Config file to expand (same format as mount)
 .TP
 .B \-\-output PATH
 Write expanded config to PATH (default: stdout)

@@ -32,7 +32,7 @@ source_dir: "/data/source"
 	quiet = true
 	defer func() { quiet = oldQuiet }()
 
-	if err := expandConfigCmd([]string{cfgPath}, false, outPath, false); err != nil {
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
 		t.Fatalf("expandConfigCmd: %v", err)
 	}
 
@@ -52,21 +52,78 @@ source_dir: "/data/source"
 	if !strings.Contains(output, "# Generated:") {
 		t.Error("missing generated timestamp header")
 	}
-	if !strings.Contains(output, "# Matched files: 2") {
-		t.Error("missing or incorrect matched files count")
-	}
 
-	// Check includes format.
+	// Check includes format with explicit paths.
 	if !strings.Contains(output, "includes:") {
-		t.Error("output should use 'includes:' format")
+		t.Error("output should contain 'includes:'")
 	}
-
-	// Check both files are listed.
 	if !strings.Contains(output, "a.mkvdup.yaml") {
 		t.Error("missing a.mkvdup.yaml in output")
 	}
 	if !strings.Contains(output, "b.mkvdup.yaml") {
 		t.Error("missing b.mkvdup.yaml in output")
+	}
+	// Should not contain glob patterns.
+	if strings.Contains(output, "*.mkvdup.yaml") {
+		t.Error("output should not contain glob patterns")
+	}
+}
+
+func TestExpandConfigCmd_PreservesSettings(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTestYAML(t, filepath.Join(dir, "movie.mkvdup.yaml"), `name: "movie.mkv"
+dedup_file: "/data/movie.mkvdup"
+source_dir: "/data/source"
+`)
+
+	// Config with on_error_command, virtual_files, and includes.
+	cfgPath := filepath.Join(dir, "mount.yaml")
+	writeTestYAML(t, cfgPath, fmt.Sprintf(`includes:
+  - "%s/*.mkvdup.yaml"
+virtual_files:
+  - name: "inline.mkv"
+    dedup_file: "/data/inline.mkvdup"
+    source_dir: "/data/source"
+on_error_command:
+  command: ["curl", "-d", "%%source%%", "https://ntfy.sh/test"]
+  timeout: 10s
+`, dir))
+
+	outPath := filepath.Join(dir, "expanded.yaml")
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
+		t.Fatalf("expandConfigCmd: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	output := string(data)
+
+	// All settings should be preserved.
+	if !strings.Contains(output, "on_error_command:") {
+		t.Error("on_error_command should be preserved")
+	}
+	if !strings.Contains(output, "virtual_files:") {
+		t.Error("virtual_files should be preserved")
+	}
+	if !strings.Contains(output, "inline.mkv") {
+		t.Error("virtual_files entry should be preserved")
+	}
+	if !strings.Contains(output, "ntfy.sh/test") {
+		t.Error("on_error_command details should be preserved")
+	}
+	// Includes should be expanded (no glob).
+	if !strings.Contains(output, "movie.mkvdup.yaml") {
+		t.Error("expanded include should be present")
+	}
+	if strings.Contains(output, "*.mkvdup.yaml") {
+		t.Error("glob pattern should not be in expanded output")
 	}
 }
 
@@ -88,7 +145,7 @@ source_dir: "/data/source"
 	quiet = true
 	defer func() { quiet = oldQuiet }()
 
-	if err := expandConfigCmd([]string{cfgPath}, false, outPath, true); err != nil {
+	if err := expandConfigCmd(cfgPath, outPath, true); err != nil {
 		t.Fatalf("expandConfigCmd --dry-run: %v", err)
 	}
 
@@ -114,7 +171,7 @@ source_dir: "/data/source"
 	quiet = true
 	defer func() { quiet = oldQuiet }()
 
-	if err := expandConfigCmd([]string{cfgPath}, false, outPath, false); err != nil {
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
 		t.Fatalf("expandConfigCmd: %v", err)
 	}
 
@@ -149,20 +206,18 @@ source_dir: "/data/source"
 	defer func() { quiet = oldQuiet }()
 
 	// First run: creates the file.
-	if err := expandConfigCmd([]string{cfgPath}, false, outPath, false); err != nil {
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
 
 	// Make the file read-only so that any attempted rewrite on the second run
-	// would fail with a permission error. This makes the "no rewrite" behavior
-	// deterministic and independent of timestamp precision in generated headers.
+	// would fail with a permission error.
 	if err := os.Chmod(outPath, 0444); err != nil {
 		t.Fatalf("chmod read-only: %v", err)
 	}
 
-	// Second run with same inputs: should not attempt to rewrite, and thus
-	// should still succeed even though the file is read-only.
-	if err := expandConfigCmd([]string{cfgPath}, false, outPath, false); err != nil {
-		t.Fatalf("second run: %v (file was likely rewritten despite unchanged includes)", err)
+	// Second run with same inputs: should not attempt to rewrite.
+	if err := expandConfigCmd(cfgPath, outPath, false); err != nil {
+		t.Fatalf("second run: %v (file was likely rewritten despite unchanged content)", err)
 	}
 }

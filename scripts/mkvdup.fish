@@ -161,7 +161,6 @@ complete -c $cmd -n '__fish_mkvdup_using_command reload' -l config-dir -d 'Treat
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -F -d 'Config files'
 
 # expand-config options
-complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -l config-dir -d 'Treat arguments as directories of config files'
 complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -l output -d 'Write expanded config to file' -r
 complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -l dry-run -d 'Preview expanded output without writing'
 complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -F -d 'Config file'

@@ -180,10 +180,9 @@ _mkvdup_expand_config() {
         '--log-verbose[Enable verbose output in log file only]' \
         '(-h --help)'{-h,--help}'[Show help]' \
         '--version[Show version]' \
-        '--config-dir[Treat arguments as directories of config files]' \
         '--output[Write expanded config to file]:output file:_files -g "*.y(a|)ml(-.)"' \
         '--dry-run[Preview expanded output without writing]' \
-        '*:Config file:_files'
+        '1:Config file:_files'
 }
 
 _mkvdup_parse_mkv() {

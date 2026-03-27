@@ -2,7 +2,12 @@ package dedup
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+
+	"github.com/bmatcuk/doublestar/v4"
+	"gopkg.in/yaml.v3"
 )
 
 // ResolveIncludePaths reads standard config files and resolves their includes
@@ -49,4 +54,64 @@ func ResolveIncludePaths(configPaths []string) ([]string, error) {
 
 	sort.Strings(files)
 	return files, nil
+}
+
+// ExpandConfigFile reads a config file, resolves its includes glob patterns
+// to explicit paths (single level, no recursion), and returns the expanded
+// config as YAML bytes. All other settings (on_error_command, virtual_files,
+// top-level name/dedup_file/source_dir) are preserved unchanged. The included
+// files themselves are not modified — they can still contain their own globs.
+func ExpandConfigFile(configPath string) ([]byte, error) {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve path %s: %w", configPath, err)
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config file %s: %w", absPath, err)
+	}
+
+	var cf configFile
+	if err := yaml.Unmarshal(data, &cf); err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", absPath, err)
+	}
+
+	// If there are no includes, nothing to expand.
+	if len(cf.Includes) == 0 {
+		return data, nil
+	}
+
+	// Resolve each include glob pattern to explicit paths (single level only).
+	configDir := filepath.Dir(absPath)
+	seen := make(map[string]bool)
+	var resolved []string
+	for _, pattern := range cf.Includes {
+		pattern = resolveRelative(configDir, pattern)
+		matches, err := doublestar.FilepathGlob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, absPath, err)
+		}
+		sort.Strings(matches)
+		for _, match := range matches {
+			abs, err := filepath.Abs(match)
+			if err != nil {
+				return nil, fmt.Errorf("resolve path %s: %w", match, err)
+			}
+			if !seen[abs] {
+				seen[abs] = true
+				resolved = append(resolved, abs)
+			}
+		}
+	}
+
+	// Replace includes with the resolved explicit paths.
+	cf.Includes = resolved
+
+	out, err := yaml.Marshal(&cf)
+	if err != nil {
+		return nil, fmt.Errorf("marshal expanded config: %w", err)
+	}
+
+	return out, nil
 }

@@ -212,7 +212,7 @@ See [CLI reload command](CLI.md#reload) for more details.
 - Daemon watches config file and include directories via inotify
 - Automatically reloads when changes detected
 
-**Workaround:** The file watcher does not detect new files added to directories matched by include wildcards. Use `mkvdup expand-config` to generate an explicit config from wildcard patterns, then point the mount at the expanded config. When new `.mkvdup.yaml` config files are added, re-run `expand-config` to regenerate the explicit config — the mount detects the config file change and picks up the new virtual files. See [expand-config](CLI.md#expand-config) for details.
+**Workaround:** Include globs are not re-expanded at runtime. Use `mkvdup expand-config` to resolve a config's include globs to explicit paths, then point the mount at the expanded config. When new `.mkvdup.yaml` config files are added, re-run `expand-config` to regenerate the explicit config and reload the mount (`mkvdup reload` or SIGHUP) to pick up the changes. See [expand-config](CLI.md#expand-config) for details.
 
 ## Permissions and Ownership
 
