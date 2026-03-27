@@ -182,7 +182,7 @@ _mkvdup_expand_config() {
         '--version[Show version]' \
         '--output[Write expanded config to file]:output file:_files -g "*.y(a|)ml(-.)"' \
         '--dry-run[Preview expanded output without writing]' \
-        '1:Config file:_files'
+        '1:Config file:_files -g "*.y(a|)ml(-.)"'
 }
 
 _mkvdup_parse_mkv() {

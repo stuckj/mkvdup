@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
 func TestExpandConfigCmd_OutputFormat(t *testing.T) {
@@ -124,6 +126,21 @@ on_error_command:
 	}
 	if strings.Contains(output, "*.mkvdup.yaml") {
 		t.Error("glob pattern should not be in expanded output")
+	}
+
+	// Verify the expanded output is valid: it should be parseable by
+	// ResolveConfigs (the same loader used by mount/validate/reload).
+	// This catches schema regressions like missing MarshalYAML for
+	// custom types (e.g., CommandValue).
+	configs, errCmd, err := dedup.ResolveConfigs([]string{outPath})
+	if err != nil {
+		t.Fatalf("expanded config is not parseable by ResolveConfigs: %v", err)
+	}
+	if len(configs) < 2 {
+		t.Errorf("expected at least 2 configs (1 included + 1 virtual_files), got %d", len(configs))
+	}
+	if errCmd == nil {
+		t.Error("on_error_command should survive round-trip")
 	}
 }
 

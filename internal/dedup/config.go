@@ -24,12 +24,12 @@ type Config struct {
 // configFile is the internal YAML representation that supports includes
 // and virtual_files in addition to the standard Config fields.
 type configFile struct {
-	Name           string              `yaml:"name"`
-	DedupFile      string              `yaml:"dedup_file"`
-	SourceDir      string              `yaml:"source_dir"`
-	Includes       []string            `yaml:"includes"`
-	VirtualFiles   []Config            `yaml:"virtual_files"`
-	OnErrorCommand *ErrorCommandConfig `yaml:"on_error_command"`
+	Name           string              `yaml:"name,omitempty"`
+	DedupFile      string              `yaml:"dedup_file,omitempty"`
+	SourceDir      string              `yaml:"source_dir,omitempty"`
+	Includes       []string            `yaml:"includes,omitempty"`
+	VirtualFiles   []Config            `yaml:"virtual_files,omitempty"`
+	OnErrorCommand *ErrorCommandConfig `yaml:"on_error_command,omitempty"`
 }
 
 // ErrorCommandConfig configures an external command to run when a source
@@ -37,8 +37,8 @@ type configFile struct {
 // %files%, %event%) are substituted at runtime.
 type ErrorCommandConfig struct {
 	Command       CommandValue  `yaml:"command"`
-	Timeout       time.Duration `yaml:"timeout"`
-	BatchInterval time.Duration `yaml:"batch_interval"`
+	Timeout       time.Duration `yaml:"timeout,omitempty"`
+	BatchInterval time.Duration `yaml:"batch_interval,omitempty"`
 }
 
 // applyDefaults fills in zero-value fields with sensible defaults.
@@ -89,6 +89,15 @@ func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	return fmt.Errorf("on_error_command: command must be a string or list of strings")
+}
+
+// MarshalYAML implements custom marshaling for CommandValue.
+// Shell commands (string form) are emitted as a scalar; list commands as a sequence.
+func (c CommandValue) MarshalYAML() (interface{}, error) {
+	if c.IsShell && len(c.Args) == 1 {
+		return c.Args[0], nil
+	}
+	return c.Args, nil
 }
 
 // WriteConfig writes the .mkvdup.yaml config file.
@@ -217,9 +226,15 @@ func validateConfigFields(realPath string, cf *configFile) error {
 }
 
 func walkConfig(configPath string, seen map[string]bool, visit configVisitor) error {
-	realPath, _, cf, err := openConfigFile(configPath)
+	// Resolve to a canonical path before doing any expensive work, so we
+	// can cheaply skip configs we've already seen (cycle detection).
+	absPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve path %s: %w", configPath, err)
+	}
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return fmt.Errorf("resolve symlinks %s: %w", absPath, err)
 	}
 
 	if seen[realPath] {
@@ -227,6 +242,12 @@ func walkConfig(configPath string, seen map[string]bool, visit configVisitor) er
 		return nil
 	}
 	seen[realPath] = true
+
+	// Now do the expensive work: ownership check, read, parse.
+	_, _, cf, err := openConfigFile(configPath)
+	if err != nil {
+		return err
+	}
 
 	configDir := filepath.Dir(realPath)
 
