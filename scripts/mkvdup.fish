@@ -81,6 +81,7 @@ complete -c $cmd -n __fish_mkvdup_needs_command -a check -d 'Check integrity of 
 complete -c $cmd -n __fish_mkvdup_needs_command -a stats -d 'Show space savings and file statistics'
 complete -c $cmd -n __fish_mkvdup_needs_command -a validate -d 'Validate configuration files for correctness'
 complete -c $cmd -n __fish_mkvdup_needs_command -a reload -d 'Reload a running daemon configuration'
+complete -c $cmd -n __fish_mkvdup_needs_command -a expand-config -d 'Expand wildcard config to explicit file list'
 complete -c $cmd -n __fish_mkvdup_needs_command -a parse-mkv -d 'Parse and display MKV structure (debug)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a index-source -d 'Index a source directory (debug)'
 complete -c $cmd -n __fish_mkvdup_needs_command -a match -d 'Match packets between MKV and source (debug)'
@@ -159,6 +160,11 @@ complete -c $cmd -n '__fish_mkvdup_using_command reload' -l pid -d 'PID of the r
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -l config-dir -d 'Treat config argument as directory of YAML files'
 complete -c $cmd -n '__fish_mkvdup_using_command reload' -F -d 'Config files'
 
+# expand-config options
+complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -l output -d 'Write expanded config to file' -r
+complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -l dry-run -d 'Preview expanded output without writing'
+complete -c $cmd -n '__fish_mkvdup_using_command expand-config' -F -d 'Config file'
+
 # parse-mkv options
 complete -c $cmd -n '__fish_mkvdup_using_command parse-mkv' -F -d 'MKV file'
 
@@ -173,6 +179,6 @@ complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -s v -l verbose -d '
 complete -c $cmd -n '__fish_mkvdup_using_command deltadiag' -F -d 'Dedup file or MKV file'
 
 # help - complete with subcommand names
-complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag' -d 'Command'
+complete -c $cmd -n '__fish_mkvdup_using_command help' -a 'create batch-create probe mount info verify extract check stats validate reload expand-config parse-mkv index-source match deltadiag' -d 'Command'
 
 end # for cmd

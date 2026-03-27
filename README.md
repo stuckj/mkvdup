@@ -143,6 +143,30 @@ includes:
   - "/data/dedup/**/*.mkvdup.yaml"
 ```
 
+### Expand wildcard configs
+
+Include globs in mount configs aren't re-expanded at runtime, so new files
+added to matched directories won't appear until the config is reloaded.
+Use `expand-config` to resolve globs to explicit paths:
+
+```bash
+# Use an existing mount config with include globs as the source of truth
+# e.g., /etc/mkvdup.conf contains:
+#   includes:
+#     - "/data/dedup/**/*.mkvdup.yaml"
+
+# Expand to explicit file list
+mkvdup expand-config /etc/mkvdup.conf --output expanded.yaml
+
+# Mount using the expanded config
+mkvdup mount /mnt/videos expanded.yaml
+```
+
+When new `.mkvdup.yaml` files are added, re-run `expand-config` to regenerate
+the explicit config, then reload the running mount (`mkvdup reload` or SIGHUP).
+If the file list hasn't changed, the output file is not rewritten. See
+[docs/CLI.md](docs/CLI.md#expand-config) for full details.
+
 ### Mount via fstab
 
 ```

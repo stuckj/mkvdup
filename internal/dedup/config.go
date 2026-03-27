@@ -24,12 +24,12 @@ type Config struct {
 // configFile is the internal YAML representation that supports includes
 // and virtual_files in addition to the standard Config fields.
 type configFile struct {
-	Name           string              `yaml:"name"`
-	DedupFile      string              `yaml:"dedup_file"`
-	SourceDir      string              `yaml:"source_dir"`
-	Includes       []string            `yaml:"includes"`
-	VirtualFiles   []Config            `yaml:"virtual_files"`
-	OnErrorCommand *ErrorCommandConfig `yaml:"on_error_command"`
+	Name           string              `yaml:"name,omitempty"`
+	DedupFile      string              `yaml:"dedup_file,omitempty"`
+	SourceDir      string              `yaml:"source_dir,omitempty"`
+	Includes       []string            `yaml:"includes,omitempty"`
+	VirtualFiles   []Config            `yaml:"virtual_files,omitempty"`
+	OnErrorCommand *ErrorCommandConfig `yaml:"on_error_command,omitempty"`
 }
 
 // ErrorCommandConfig configures an external command to run when a source
@@ -37,8 +37,8 @@ type configFile struct {
 // %files%, %event%) are substituted at runtime.
 type ErrorCommandConfig struct {
 	Command       CommandValue  `yaml:"command"`
-	Timeout       time.Duration `yaml:"timeout"`
-	BatchInterval time.Duration `yaml:"batch_interval"`
+	Timeout       time.Duration `yaml:"timeout,omitempty"`
+	BatchInterval time.Duration `yaml:"batch_interval,omitempty"`
 }
 
 // applyDefaults fills in zero-value fields with sensible defaults.
@@ -89,6 +89,15 @@ func (c *CommandValue) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	return fmt.Errorf("on_error_command: command must be a string or list of strings")
+}
+
+// MarshalYAML implements custom marshaling for CommandValue.
+// Shell commands (string form) are emitted as a scalar; list commands as a sequence.
+func (c CommandValue) MarshalYAML() (interface{}, error) {
+	if c.IsShell && len(c.Args) == 1 {
+		return c.Args[0], nil
+	}
+	return c.Args, nil
 }
 
 // WriteConfig writes the .mkvdup.yaml config file.
@@ -151,98 +160,155 @@ func ResolveConfigs(configPaths []string) ([]Config, *ErrorCommandConfig, error)
 	return all, errorCmd, nil
 }
 
-// resolveConfig recursively resolves a single config file.
-// Returns the file configs and the first on_error_command encountered (or nil).
-func resolveConfig(configPath string, seen map[string]bool) ([]Config, *ErrorCommandConfig, error) {
+// configVisitor is called for each config file visited during the walk.
+// realPath is the resolved absolute path of the config file.
+// cf is the parsed config file contents.
+// configDir is the directory containing the config file (for resolving relative paths).
+// phase indicates when the visitor is called:
+//   - "pre"  — before recursing into includes (for top-level config entries)
+//   - "post" — after includes have been recursed (for virtual_files)
+type configVisitor func(phase string, realPath string, cf *configFile, configDir string) error
+
+// walkConfig recursively walks a config file tree, calling the visitor for each
+// file. It handles path resolution, symlink resolution, cycle detection,
+// ownership checks, YAML parsing, and includes glob expansion — the shared
+// logic that all config resolution uses.
+//
+// The visitor is called twice per file: once with phase "pre" before processing
+// includes, and once with phase "post" after. This preserves the original
+// ordering: top-level entries → included configs → virtual_files.
+// openConfigFile resolves a config path (abs, symlinks, ownership check),
+// reads and parses the YAML. Returns the canonical real path, raw data,
+// parsed config, and any error.
+func openConfigFile(configPath string) (realPath string, data []byte, cf *configFile, err error) {
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve path %s: %w", configPath, err)
+		return "", nil, nil, fmt.Errorf("resolve path %s: %w", configPath, err)
 	}
 
-	// Resolve symlinks for reliable cycle detection.
-	realPath, err := filepath.EvalSymlinks(absPath)
+	realPath, err = filepath.EvalSymlinks(absPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+		return "", nil, nil, fmt.Errorf("resolve symlinks %s: %w", absPath, err)
 	}
 
-	if seen[realPath] {
-		log.Printf("warning: skipping already-seen config %s (cycle detection)", realPath)
-		return nil, nil, nil
-	}
-	seen[realPath] = true
-
-	// When running as root, verify config file ownership and permissions.
-	if err := security.CheckFileOwnership(realPath); err != nil {
-		return nil, nil, fmt.Errorf("config file %s: %w", realPath, err)
+	if err := security.CheckFileOwnershipResolved(realPath); err != nil {
+		return "", nil, nil, fmt.Errorf("config file %s: %w", realPath, err)
 	}
 
-	data, err := os.ReadFile(realPath)
+	data, err = os.ReadFile(realPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read config file %s: %w", realPath, err)
+		return "", nil, nil, fmt.Errorf("read config file %s: %w", realPath, err)
 	}
 
-	var cf configFile
-	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return nil, nil, fmt.Errorf("parse config %s: %w", realPath, err)
+	cf = &configFile{}
+	if err := yaml.Unmarshal(data, cf); err != nil {
+		return "", nil, nil, fmt.Errorf("parse config %s: %w", realPath, err)
 	}
 
-	configDir := filepath.Dir(realPath)
-	var configs []Config
-	var errorCmd *ErrorCommandConfig
+	return realPath, data, cf, nil
+}
 
-	// Capture on_error_command from this file (first-wins across resolution).
-	if cf.OnErrorCommand != nil {
-		errorCmd = cf.OnErrorCommand
-	}
-
-	// If top-level name/dedup_file/source_dir are set, add as a Config entry.
+// validateConfigFields checks for partial top-level fields and invalid
+// virtual_files entries. Returns an error if validation fails.
+func validateConfigFields(realPath string, cf *configFile) error {
 	hasName := cf.Name != ""
 	hasDedup := cf.DedupFile != ""
 	hasSource := cf.SourceDir != ""
-	if hasName || hasDedup || hasSource {
-		if !hasName || !hasDedup || !hasSource {
-			return nil, nil, fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+	if (hasName || hasDedup || hasSource) && !(hasName && hasDedup && hasSource) {
+		return fmt.Errorf("config %s: name, dedup_file, and source_dir must all be set if any is set", realPath)
+	}
+	for _, vf := range cf.VirtualFiles {
+		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
+			return fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
 		}
-		configs = append(configs, Config{
-			Name:      cf.Name,
-			DedupFile: resolveRelative(configDir, cf.DedupFile),
-			SourceDir: resolveRelative(configDir, cf.SourceDir),
-		})
+	}
+	return nil
+}
+
+func walkConfig(configPath string, seen map[string]bool, visit configVisitor) error {
+	// openConfigFile resolves abs + symlinks, checks ownership, reads, parses.
+	realPath, _, cf, err := openConfigFile(configPath)
+	if err != nil {
+		return err
 	}
 
-	// Process includes.
+	// Cycle detection using the canonical path from openConfigFile.
+	if seen[realPath] {
+		log.Printf("warning: skipping already-seen config %s (cycle detection)", realPath)
+		return nil
+	}
+	seen[realPath] = true
+
+	configDir := filepath.Dir(realPath)
+
+	// Pre-includes visit (top-level config entries).
+	if err := visit("pre", realPath, cf, configDir); err != nil {
+		return err
+	}
+
+	// Recurse into includes.
 	for _, pattern := range cf.Includes {
 		pattern = resolveRelative(configDir, pattern)
 		matches, err := doublestar.FilepathGlob(pattern)
 		if err != nil {
-			return nil, nil, fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
+			return fmt.Errorf("expand include pattern %q in %s: %w", pattern, realPath, err)
 		}
 		sort.Strings(matches)
 		for _, match := range matches {
-			sub, cmd, err := resolveConfig(match, seen)
-			if err != nil {
-				return nil, nil, err
-			}
-			configs = append(configs, sub...)
-			if errorCmd == nil && cmd != nil {
-				errorCmd = cmd
+			if err := walkConfig(match, seen, visit); err != nil {
+				return err
 			}
 		}
 	}
 
-	// Process virtual_files.
-	for _, vf := range cf.VirtualFiles {
-		if vf.Name == "" || vf.DedupFile == "" || vf.SourceDir == "" {
-			return nil, nil, fmt.Errorf("config %s: virtual_files entry missing required fields (name, dedup_file, source_dir)", realPath)
-		}
-		configs = append(configs, Config{
-			Name:      vf.Name,
-			DedupFile: resolveRelative(configDir, vf.DedupFile),
-			SourceDir: resolveRelative(configDir, vf.SourceDir),
-		})
+	// Post-includes visit (virtual_files).
+	if err := visit("post", realPath, cf, configDir); err != nil {
+		return err
 	}
 
-	return configs, errorCmd, nil
+	return nil
+}
+
+// resolveConfig recursively resolves a single config file using walkConfig.
+// Returns the file configs and the first on_error_command encountered (or nil).
+func resolveConfig(configPath string, seen map[string]bool) ([]Config, *ErrorCommandConfig, error) {
+	var configs []Config
+	var errorCmd *ErrorCommandConfig
+
+	err := walkConfig(configPath, seen, func(phase, realPath string, cf *configFile, configDir string) error {
+		if phase == "pre" {
+			// Capture on_error_command from this file (first-wins across resolution).
+			if errorCmd == nil && cf.OnErrorCommand != nil {
+				errorCmd = cf.OnErrorCommand
+			}
+
+			// Validate fields and add top-level config entry if present.
+			if err := validateConfigFields(realPath, cf); err != nil {
+				return err
+			}
+			if cf.Name != "" && cf.DedupFile != "" && cf.SourceDir != "" {
+				configs = append(configs, Config{
+					Name:      cf.Name,
+					DedupFile: resolveRelative(configDir, cf.DedupFile),
+					SourceDir: resolveRelative(configDir, cf.SourceDir),
+				})
+			}
+		} else {
+			// Process virtual_files after includes have been resolved.
+			// Validation was already done in the "pre" phase.
+			for _, vf := range cf.VirtualFiles {
+				configs = append(configs, Config{
+					Name:      vf.Name,
+					DedupFile: resolveRelative(configDir, vf.DedupFile),
+					SourceDir: resolveRelative(configDir, vf.SourceDir),
+				})
+			}
+		}
+
+		return nil
+	})
+
+	return configs, errorCmd, err
 }
 
 // BatchManifest represents the batch create manifest file format.

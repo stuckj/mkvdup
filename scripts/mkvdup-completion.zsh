@@ -171,6 +171,20 @@ _mkvdup_reload() {
         '*:Config files:_files -g "*.y(a|)ml(-.)"'
 }
 
+_mkvdup_expand_config() {
+    _arguments -s \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
+        '--no-progress[Disable progress bars]' \
+        '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
+        '--output[Write expanded config to file]:output file:_files -g "*.y(a|)ml(-.)"' \
+        '--dry-run[Preview expanded output without writing]' \
+        '1:Config file:_files -g "*.y(a|)ml(-.)"'
+}
+
 _mkvdup_parse_mkv() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
@@ -251,6 +265,7 @@ _mkvdup() {
                 'stats:Show space savings and file statistics'
                 'validate:Validate configuration files for correctness'
                 'reload:Reload a running daemon configuration'
+                'expand-config:Expand wildcard config to explicit file list'
                 'parse-mkv:Parse and display MKV structure (debug)'
                 'index-source:Index a source directory (debug)'
                 'match:Match packets between MKV and source (debug)'
@@ -271,14 +286,15 @@ _mkvdup() {
                 check)        _mkvdup_check ;;
                 stats)        _mkvdup_stats ;;
                 validate)     _mkvdup_validate ;;
-                reload)       _mkvdup_reload ;;
-                parse-mkv)    _mkvdup_parse_mkv ;;
+                reload)        _mkvdup_reload ;;
+                expand-config) _mkvdup_expand_config ;;
+                parse-mkv)     _mkvdup_parse_mkv ;;
                 index-source) _mkvdup_index_source ;;
                 match)        _mkvdup_match ;;
                 deltadiag)    _mkvdup_deltadiag ;;
                 help)
                     local -a help_cmds
-                    help_cmds=(create batch-create probe mount info verify extract check stats validate reload parse-mkv index-source match deltadiag)
+                    help_cmds=(create batch-create probe mount info verify extract check stats validate reload expand-config parse-mkv index-source match deltadiag)
                     _describe -t commands 'command' help_cmds
                     ;;
             esac

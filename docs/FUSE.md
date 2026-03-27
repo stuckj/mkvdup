@@ -212,6 +212,8 @@ See [CLI reload command](CLI.md#reload) for more details.
 - Daemon watches config file and include directories via inotify
 - Automatically reloads when changes detected
 
+**Workaround:** Include globs are not re-expanded at runtime. Use `mkvdup expand-config` to resolve a config's include globs to explicit paths, then point the mount at the expanded config. When new `.mkvdup.yaml` config files are added, re-run `expand-config` to regenerate the explicit config and reload the mount (`mkvdup reload` or SIGHUP) to pick up the changes. See [expand-config](CLI.md#expand-config) for details.
+
 ## Permissions and Ownership
 
 Virtual files and directories support `chmod` and `chown` operations. Permission metadata is stored in a separate YAML file, keeping `.mkvdup` files immutable while allowing customization.
