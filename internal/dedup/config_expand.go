@@ -49,7 +49,7 @@ func resolveIncludePaths(configPaths []string) ([]string, error) {
 // top-level name/dedup_file/source_dir) are preserved unchanged. The included
 // files themselves are not modified — they can still contain their own globs.
 func ExpandConfigFile(configPath string) ([]byte, error) {
-	realPath, data, cf, err := openConfigFile(configPath)
+	realPath, _, cf, err := openConfigFile(configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -64,9 +64,11 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: on_error_command.command must not be empty", realPath)
 	}
 
-	// If there are no includes, nothing to expand.
+	// If there are no includes, marshal the parsed config (not raw data) to
+	// ensure consistent output formatting and avoid accumulating headers when
+	// expand-config is run on already-expanded output.
 	if len(cf.Includes) == 0 {
-		return data, nil
+		return yaml.Marshal(cf)
 	}
 
 	// Resolve each include glob pattern to explicit paths (single level only).
@@ -87,8 +89,8 @@ func ExpandConfigFile(configPath string) ([]byte, error) {
 			}
 			// Canonicalize via EvalSymlinks for dedup, matching walkConfig's behavior.
 			canon := abs
-			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-				canon = resolved
+			if real, err := filepath.EvalSymlinks(abs); err == nil {
+				canon = real
 			}
 			if !seen[canon] {
 				seen[canon] = true

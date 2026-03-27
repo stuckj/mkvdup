@@ -226,29 +226,18 @@ func validateConfigFields(realPath string, cf *configFile) error {
 }
 
 func walkConfig(configPath string, seen map[string]bool, visit configVisitor) error {
-	// Resolve to a canonical path before doing any expensive work, so we
-	// can cheaply skip configs we've already seen (cycle detection).
-	absPath, err := filepath.Abs(configPath)
+	// openConfigFile resolves abs + symlinks, checks ownership, reads, parses.
+	realPath, _, cf, err := openConfigFile(configPath)
 	if err != nil {
-		return fmt.Errorf("resolve path %s: %w", configPath, err)
-	}
-	realPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return fmt.Errorf("resolve symlinks %s: %w", absPath, err)
+		return err
 	}
 
+	// Cycle detection using the canonical path from openConfigFile.
 	if seen[realPath] {
 		log.Printf("warning: skipping already-seen config %s (cycle detection)", realPath)
 		return nil
 	}
 	seen[realPath] = true
-
-	// Now do the expensive work: ownership check, read, parse.
-	// Pass realPath (already canonical) to avoid redundant resolution.
-	_, _, cf, err := openConfigFile(realPath)
-	if err != nil {
-		return err
-	}
 
 	configDir := filepath.Dir(realPath)
 
