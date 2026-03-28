@@ -165,6 +165,18 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	// now that the go-fuse bridge is initialized.
 	root.SetMounted()
 
+	// In daemon mode, redirect log output to syslog before starting watchers
+	// so that all log.Printf calls (from watchers, doReload, BuildDirectoryTree)
+	// go to syslog. Must happen before daemon.Detach() which redirects stderr
+	// to /dev/null.
+	if daemon.IsChild() {
+		if w, err := syslog.New(syslog.LOG_INFO|syslog.LOG_DAEMON, "mkvdup"); err == nil {
+			log.SetOutput(w)
+			log.SetFlags(0) // syslog adds its own timestamp
+			defer w.Close()
+		}
+	}
+
 	// Set up source file watcher (monitors source files for changes)
 	var sourceWatcher *mkvfuse.SourceWatcher
 	if !opts.NoSourceWatch {
@@ -268,18 +280,6 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		}
 		fmt.Println()
 		fmt.Println("Press Ctrl+C to unmount")
-	}
-
-	// In daemon mode, redirect log output to syslog since stderr is
-	// redirected to /dev/null after Detach(). All log.Printf calls
-	// (including from doReload, watchers, and BuildDirectoryTree) will
-	// go to syslog automatically.
-	if daemon.IsChild() {
-		if w, err := syslog.New(syslog.LOG_INFO|syslog.LOG_DAEMON, "mkvdup"); err == nil {
-			log.SetOutput(w)
-			log.SetFlags(0) // syslog adds its own timestamp
-			defer w.Close()
-		}
 	}
 
 	// Handle signals for graceful shutdown and config reload
