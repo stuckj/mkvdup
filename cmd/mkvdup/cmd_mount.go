@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -200,9 +201,14 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	var configWatcher *mkvfuse.ConfigWatcher
 
 	// doReload performs a config reload. Called by the SIGHUP handler and
-	// the config file watcher callback. Uses log.Printf which is redirected
-	// to syslog in daemon mode (see log.SetOutput below).
+	// the config file watcher callback. Serialized by reloadMu to prevent
+	// concurrent reloads from racing on root.Reload() and watcher updates.
+	// Uses log.Printf which is redirected to syslog in daemon mode (see
+	// log.SetOutput above).
+	var reloadMu sync.Mutex
 	doReload := func() {
+		reloadMu.Lock()
+		defer reloadMu.Unlock()
 		log.Printf("reloading config...")
 
 		// Re-expand config-dir if applicable
