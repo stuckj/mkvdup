@@ -243,7 +243,13 @@ func (cw *ConfigWatcher) pollCheck() {
 		info, err := os.Stat(pf.path)
 		if err != nil {
 			cw.logFn("config-watch: poll: cannot stat %s: %v", pf.path, err)
-			changed = true
+			// Only treat as a change on transition into error/missing state.
+			// This prevents repeated reload triggers every poll tick when a
+			// config file is persistently unreachable.
+			if !pf.lastMtime.IsZero() {
+				updates = append(updates, mtimeUpdate{path: pf.path, newMtime: time.Time{}})
+				changed = true
+			}
 			continue
 		}
 		if !info.ModTime().Equal(pf.lastMtime) {
