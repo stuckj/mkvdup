@@ -69,6 +69,8 @@ _mkvdup_mount() {
         '--on-source-change=[Action on source change]:action:(warn disable checksum)' \
         '--source-watch-poll-interval=[Polling interval for source file changes]:duration' \
         '--source-read-timeout=[Read timeout for network FS sources]:duration' \
+        '--no-config-watch[Disable config file monitoring]' \
+        '--on-config-change=[Action on config change]:action:(reload warn)' \
         '1:Mount point:_files -/' \
         '*:Config files:_files -g "*.y(a|)ml(-.)"'
 }

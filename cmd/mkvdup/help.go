@@ -233,6 +233,12 @@ Source Watch Options:
     --source-watch-poll-interval DUR     Poll interval for source file changes (default: 60s)
     --source-read-timeout DUR            Read timeout for network FS sources (default: 30s)
 
+Config Watch Options:
+    --no-config-watch                    Disable config file monitoring (enabled by default)
+    --on-config-change ACTION            Action on config change: reload (default), warn
+                                         reload - automatically reload configuration
+                                         warn   - log a warning only
+
 Error Notification (configured in YAML config, not CLI):
     on_error_command:
       command: ["/path/to/script", "%source%", "%event%", "%files%"]

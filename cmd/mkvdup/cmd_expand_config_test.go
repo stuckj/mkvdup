@@ -132,7 +132,7 @@ on_error_command:
 	// ResolveConfigs (the same loader used by mount/validate/reload).
 	// This catches schema regressions like missing MarshalYAML for
 	// custom types (e.g., CommandValue).
-	configs, errCmd, err := dedup.ResolveConfigs([]string{outPath})
+	configs, errCmd, _, err := dedup.ResolveConfigs([]string{outPath})
 	if err != nil {
 		t.Fatalf("expanded config is not parseable by ResolveConfigs: %v", err)
 	}

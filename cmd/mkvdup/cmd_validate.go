@@ -32,7 +32,7 @@ func validateConfigEntries(configPaths []string) ([]validationEntry, []dedup.Con
 	for _, configPath := range configPaths {
 		fmt.Printf("Validating %s...\n", filepath.Base(configPath))
 
-		configs, _, err := dedup.ResolveConfigs([]string{configPath})
+		configs, _, _, err := dedup.ResolveConfigs([]string{configPath})
 		if err != nil {
 			fmt.Printf("  ERR  %s\n", err)
 			allEntries = append(allEntries, validationEntry{

@@ -233,6 +233,13 @@ Config files support `includes` (glob patterns referencing other configs, includ
 | `--source-watch-poll-interval DUR` | Polling interval for network FS (default: `60s`) |
 | `--source-read-timeout DUR` | Timeout for source file reads on network FS (default: `30s`) |
 
+**Config Watch Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--no-config-watch` | Disable config file watching |
+| `--on-config-change ACTION` | Action on config change: `reload` (default), `warn` |
+
 Error notification on source integrity issues is configured via `on_error_command` in a YAML config file rather than CLI flags. See [Error Notification](FUSE.md#error-notification) for details.
 
 **Permissions file search order:**
