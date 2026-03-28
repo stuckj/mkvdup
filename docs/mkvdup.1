@@ -167,6 +167,23 @@ Accepts Go duration format (e.g., 10s, 1m, 5m). Default: 60s.
 Read timeout for source files on network filesystems (NFS, CIFS/SMB).
 When source media is on a network mount, individual read operations will
 time out after this duration. Accepts Go duration format. Default: 30s.
+.TP
+.B \-\-no\-config\-watch
+Disable config file monitoring. By default, @PACKAGE_NAME@ monitors config
+files (and included files) for changes using inotify (local) or polling
+(network filesystems). When a change is detected, the configured action is taken.
+.TP
+.B \-\-on\-config\-change ACTION
+Action to take when a config file change is detected. Default: \fBreload\fR.
+.RS
+.TP
+.B reload
+Automatically reload the configuration (equivalent to receiving SIGHUP).
+Changes are debounced (500ms) to handle editor atomic-save patterns.
+.TP
+.B warn
+Log a warning but do not reload.
+.RE
 .RE
 .TP
 .B info \fR[\fIoptions\fR] \fIdedup-file\fR

@@ -115,7 +115,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 
 	// Resolve configs (expands includes, globs, virtual_files) and extract
 	// on_error_command (first-wins across all config files).
-	configs, errorCmdConfig, err := dedup.ResolveConfigs(configPaths)
+	configs, errorCmdConfig, loadedConfigPaths, err := dedup.ResolveConfigs(configPaths)
 	if err != nil {
 		err = fmt.Errorf("resolve configs: %w", err)
 		if daemon.IsChild() {
@@ -180,6 +180,28 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		} else {
 			sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
 			sourceWatcher.Start()
+		}
+	}
+
+	// Set up config file watcher (monitors config files for changes)
+	var configWatcher *mkvfuse.ConfigWatcher
+	if !opts.NoConfigWatch {
+		watchLogFn := func(format string, args ...interface{}) {
+			log.Printf(format, args...)
+		}
+		var err error
+		configWatcher, err = mkvfuse.NewConfigWatcher(opts.OnConfigChange, opts.SourceWatchPollInterval, func() {
+			// Trigger SIGHUP to self for config reload.
+			sigCh := make(chan os.Signal, 1)
+			_ = sigCh
+			process, _ := os.FindProcess(os.Getpid())
+			process.Signal(syscall.SIGHUP)
+		}, watchLogFn)
+		if err != nil {
+			log.Printf("config-watch: warning: failed to create watcher: %v", err)
+		} else {
+			configWatcher.Update(loadedConfigPaths)
+			configWatcher.Start()
 		}
 	}
 
@@ -250,7 +272,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 				}
 
 				// Resolve configs (expands includes, globs, virtual_files)
-				configs, _, err := dedup.ResolveConfigs(reloadPaths)
+				configs, _, newConfigPaths, err := dedup.ResolveConfigs(reloadPaths)
 				if err != nil {
 					logFn("reload failed: resolve configs: %v", err)
 					continue
@@ -265,6 +287,11 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 				// Update source watcher with new file set
 				if sourceWatcher != nil {
 					sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
+				}
+
+				// Update config watcher with new config file set
+				if configWatcher != nil {
+					configWatcher.Update(newConfigPaths)
 				}
 
 				logFn("config reloaded successfully")
@@ -282,7 +309,10 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	// Serve until unmounted
 	server.Wait()
 
-	// Stop source watcher
+	// Stop watchers
+	if configWatcher != nil {
+		configWatcher.Stop()
+	}
 	if sourceWatcher != nil {
 		sourceWatcher.Stop()
 	}

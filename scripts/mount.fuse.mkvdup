@@ -107,6 +107,12 @@ for opt in "${OPTS[@]}"; do
         source_read_timeout=*)
             MKVDUP_ARGS+=("--source-read-timeout" "${opt#source_read_timeout=}")
             ;;
+        no_config_watch)
+            MKVDUP_ARGS+=("--no-config-watch")
+            ;;
+        on_config_change=*)
+            MKVDUP_ARGS+=("--on-config-change" "${opt#on_config_change=}")
+            ;;
         pid_file=*)
             MKVDUP_ARGS+=("--pid-file" "${opt#pid_file=}")
             ;;

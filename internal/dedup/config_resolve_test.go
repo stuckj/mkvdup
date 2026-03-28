@@ -28,7 +28,7 @@ dedup_file: "/data/movie.mkvdup"
 source_dir: "/data/source"
 `)
 
-	configs, _, err := ResolveConfigs([]string{cfgPath})
+	configs, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -66,7 +66,7 @@ source_dir: "/data/source"
   - "%s/*.mkvdup.yaml"
 `, subDir))
 
-	configs, _, err := ResolveConfigs([]string{mainPath})
+	configs, _, _, err := ResolveConfigs([]string{mainPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -94,7 +94,7 @@ source_dir: "/data/source"
   - "%s/**/*.mkvdup.yaml"
 `, dir))
 
-	configs, _, err := ResolveConfigs([]string{mainPath})
+	configs, _, _, err := ResolveConfigs([]string{mainPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestResolveConfigs_VirtualFiles(t *testing.T) {
     source_dir: "/data/source2"
 `)
 
-	configs, _, err := ResolveConfigs([]string{cfgPath})
+	configs, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -156,7 +156,7 @@ virtual_files:
     source_dir: "/data/source"
 `, subDir))
 
-	configs, _, err := ResolveConfigs([]string{mainPath})
+	configs, _, _, err := ResolveConfigs([]string{mainPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -195,7 +195,7 @@ includes:
   - "%s"
 `, aPath))
 
-	configs, _, err := ResolveConfigs([]string{aPath})
+	configs, _, _, err := ResolveConfigs([]string{aPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -215,7 +215,7 @@ dedup_file: "../data/rel.mkvdup"
 source_dir: "../sources/dvd"
 `)
 
-	configs, _, err := ResolveConfigs([]string{cfgPath})
+	configs, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -246,7 +246,7 @@ source_dir: "/data/source"
   - "sub/*.mkvdup.yaml"
 `)
 
-	configs, _, err := ResolveConfigs([]string{filepath.Join(dir, "parent.yaml")})
+	configs, _, _, err := ResolveConfigs([]string{filepath.Join(dir, "parent.yaml")})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestResolveConfigs_NoMatchesNotError(t *testing.T) {
   - "/nonexistent/path/*.mkvdup.yaml"
 `)
 
-	configs, _, err := ResolveConfigs([]string{cfgPath})
+	configs, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestResolveConfigs_InvalidIncludedConfig(t *testing.T) {
   - "%s/*.mkvdup.yaml"
 `, dir))
 
-	_, _, err := ResolveConfigs([]string{mainPath})
+	_, _, _, err := ResolveConfigs([]string{mainPath})
 	if err == nil {
 		t.Fatal("expected error for invalid included config, got nil")
 	}
@@ -299,7 +299,7 @@ func TestResolveConfigs_PartialTopLevelFields(t *testing.T) {
 	writeYAML(t, cfgPath, `name: "movie.mkv"
 `)
 
-	_, _, err := ResolveConfigs([]string{cfgPath})
+	_, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err == nil {
 		t.Fatal("expected error for partial top-level fields, got nil")
 	}
@@ -315,7 +315,7 @@ func TestResolveConfigs_VirtualFilesMissingFields(t *testing.T) {
   - name: "movie.mkv"
 `)
 
-	_, _, err := ResolveConfigs([]string{cfgPath})
+	_, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err == nil {
 		t.Fatal("expected error for virtual_files with missing fields, got nil")
 	}
@@ -329,7 +329,7 @@ func TestResolveConfigs_EmptyConfig(t *testing.T) {
 	cfgPath := filepath.Join(dir, "empty.yaml")
 	writeYAML(t, cfgPath, "# just a comment\n")
 
-	configs, _, err := ResolveConfigs([]string{cfgPath})
+	configs, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestResolveConfigs_VirtualFilesRelativePaths(t *testing.T) {
     source_dir: "../sources/dvd"
 `)
 
-	configs, _, err := ResolveConfigs([]string{cfgPath})
+	configs, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -379,7 +379,7 @@ dedup_file: "/data/b.mkvdup"
 source_dir: "/data/source"
 `)
 
-	configs, _, err := ResolveConfigs([]string{aPath, bPath})
+	configs, _, _, err := ResolveConfigs([]string{aPath, bPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -392,7 +392,7 @@ source_dir: "/data/source"
 }
 
 func TestResolveConfigs_FileNotFound(t *testing.T) {
-	_, _, err := ResolveConfigs([]string{"/nonexistent/config.yaml"})
+	_, _, _, err := ResolveConfigs([]string{"/nonexistent/config.yaml"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent file, got nil")
 	}
@@ -407,7 +407,7 @@ func TestResolveConfigs_OnErrorCommand_ListForm(t *testing.T) {
   command: ["echo", "%source%", "%event%"]
 `)
 
-	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	_, errCmd, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestResolveConfigs_OnErrorCommand_StringForm(t *testing.T) {
   command: "echo %source% %event%"
 `)
 
-	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	_, errCmd, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestResolveConfigs_OnErrorCommand_CustomTimeouts(t *testing.T) {
   batch_interval: 2s
 `)
 
-	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	_, errCmd, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -496,7 +496,7 @@ func TestResolveConfigs_OnErrorCommand_FirstWins(t *testing.T) {
   timeout: 20s
 `)
 
-	_, errCmd, err := ResolveConfigs([]string{cfg1Path, cfg2Path})
+	_, errCmd, _, err := ResolveConfigs([]string{cfg1Path, cfg2Path})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -531,7 +531,7 @@ includes:
   - "%s"
 `, childPath))
 
-	_, errCmd, err := ResolveConfigs([]string{parentPath})
+	_, errCmd, _, err := ResolveConfigs([]string{parentPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -555,7 +555,7 @@ dedup_file: "/data/movie.mkvdup"
 source_dir: "/data/source"
 `)
 
-	_, errCmd, err := ResolveConfigs([]string{cfgPath})
+	_, errCmd, _, err := ResolveConfigs([]string{cfgPath})
 	if err != nil {
 		t.Fatalf("ResolveConfigs: %v", err)
 	}
@@ -574,11 +574,61 @@ on_error_command:
   timeout: 10s
 `)
 
-	_, _, err := ResolveConfigs([]string{cfgPath})
+	_, _, _, err := ResolveConfigs([]string{cfgPath})
 	if err == nil {
 		t.Fatal("expected error for on_error_command with missing command")
 	}
 	if !strings.Contains(err.Error(), "missing command") {
 		t.Errorf("error = %q, want it to contain 'missing command'", err)
+	}
+}
+
+func TestResolveConfigs_LoadedPaths(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a child config
+	childPath := filepath.Join(dir, "child.yaml")
+	writeYAML(t, childPath, `name: "child.mkv"
+dedup_file: "/data/child.mkvdup"
+source_dir: "/data/source"
+`)
+
+	// Create a parent config that includes the child
+	parentPath := filepath.Join(dir, "parent.yaml")
+	writeYAML(t, parentPath, fmt.Sprintf(`name: "parent.mkv"
+dedup_file: "/data/parent.mkvdup"
+source_dir: "/data/source"
+includes:
+  - %q
+`, childPath))
+
+	configs, _, loadedPaths, err := ResolveConfigs([]string{parentPath})
+	if err != nil {
+		t.Fatalf("ResolveConfigs: %v", err)
+	}
+	if len(configs) != 2 {
+		t.Fatalf("got %d configs, want 2", len(configs))
+	}
+	if len(loadedPaths) != 2 {
+		t.Fatalf("got %d loaded paths, want 2", len(loadedPaths))
+	}
+	// Paths should be sorted and absolute
+	for _, p := range loadedPaths {
+		if !filepath.IsAbs(p) {
+			t.Errorf("loaded path %q is not absolute", p)
+		}
+	}
+	// Both parent and child should be in the loaded paths
+	pathSet := make(map[string]bool)
+	for _, p := range loadedPaths {
+		pathSet[p] = true
+	}
+	parentReal, _ := filepath.EvalSymlinks(parentPath)
+	childReal, _ := filepath.EvalSymlinks(childPath)
+	if !pathSet[parentReal] {
+		t.Errorf("parent path %q not in loaded paths %v", parentReal, loadedPaths)
+	}
+	if !pathSet[childReal] {
+		t.Errorf("child path %q not in loaded paths %v", childReal, loadedPaths)
 	}
 }

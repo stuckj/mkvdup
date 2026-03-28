@@ -31,7 +31,7 @@ func showStats(configPaths []string, configDir bool) error {
 	// abort the entire stats run.
 	var configs []dedup.Config
 	for _, cfgPath := range resolved {
-		cfgs, _, cfgErr := dedup.ResolveConfigs([]string{cfgPath})
+		cfgs, _, _, cfgErr := dedup.ResolveConfigs([]string{cfgPath})
 		if cfgErr != nil {
 			printWarn("Failed to load config %s: %v\n", cfgPath, cfgErr)
 			continue

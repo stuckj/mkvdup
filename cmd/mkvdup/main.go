@@ -31,6 +31,8 @@ type MountOptions struct {
 	SourceWatchPollInterval time.Duration             // Poll interval for network FS source watching (0 = 60s default)
 	SourceReadTimeout       time.Duration             // Pread timeout for network FS sources (0 = disabled; CLI default 30s)
 	OnErrorCommand          *dedup.ErrorCommandConfig // External command to run on source integrity error (from YAML config)
+	NoConfigWatch           bool                      // Disable config file watching
+	OnConfigChange          string                    // Action on config change: "reload", "warn"
 }
 
 // parseUint32 parses a string as uint32.
@@ -280,6 +282,8 @@ func main() {
 		onSourceChange := "checksum"
 		sourceWatchPollInterval := time.Duration(0)
 		sourceReadTimeout := 30 * time.Second
+		noConfigWatch := false
+		onConfigChange := "reload"
 		var mountArgs []string
 		for i := 0; i < len(args); i++ {
 			switch args[i] {
@@ -401,6 +405,21 @@ func main() {
 				} else {
 					log.Fatalf("Error: --source-read-timeout requires a duration argument (e.g., 30s, 1m)")
 				}
+			case "--no-config-watch":
+				noConfigWatch = true
+			case "--on-config-change":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+					onConfigChange = args[i+1]
+					switch onConfigChange {
+					case "reload", "warn":
+						// valid
+					default:
+						log.Fatalf("Error: --on-config-change must be reload or warn")
+					}
+					i++
+				} else {
+					log.Fatalf("Error: --on-config-change requires an argument (reload or warn)")
+				}
 			default:
 				mountArgs = append(mountArgs, args[i])
 			}
@@ -426,6 +445,8 @@ func main() {
 			OnSourceChange:          onSourceChange,
 			SourceWatchPollInterval: sourceWatchPollInterval,
 			SourceReadTimeout:       sourceReadTimeout,
+			NoConfigWatch:           noConfigWatch,
+			OnConfigChange:          onConfigChange,
 		}
 		if err := mountFuse(mountpoint, configPaths, mountOpts); err != nil {
 			log.Fatalf("Error: %v", err)
