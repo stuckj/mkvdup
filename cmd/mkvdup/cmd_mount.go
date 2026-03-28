@@ -183,20 +183,64 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		}
 	}
 
-	// Set up config file watcher (monitors config files for changes)
+	// Declare configWatcher before doReload so the closure can reference it.
+	// Initialized below after doReload is defined.
 	var configWatcher *mkvfuse.ConfigWatcher
+
+	// doReload performs a config reload. Called by the SIGHUP handler and
+	// the config file watcher callback. Uses log.Printf which is redirected
+	// to syslog in daemon mode (see log.SetOutput below).
+	doReload := func() {
+		log.Printf("reloading config...")
+
+		// Re-expand config-dir if applicable
+		var reloadPaths []string
+		if configDirPath != "" {
+			expanded, err := expandConfigDir(configDirPath)
+			if err != nil {
+				log.Printf("reload failed: expand config dir: %v", err)
+				return
+			}
+			reloadPaths = expanded
+		} else {
+			reloadPaths = configPaths
+		}
+
+		// Resolve configs (expands includes, globs, virtual_files)
+		configs, _, newConfigPaths, err := dedup.ResolveConfigs(reloadPaths)
+		if err != nil {
+			log.Printf("reload failed: resolve configs: %v", err)
+			return
+		}
+
+		// Reload the filesystem
+		if err := root.Reload(configs, func(format string, args ...interface{}) {
+			log.Printf(format, args...)
+		}); err != nil {
+			log.Printf("reload failed: %v", err)
+			return
+		}
+
+		// Update source watcher with new file set
+		if sourceWatcher != nil {
+			sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
+		}
+
+		// Update config watcher with new config file set
+		if configWatcher != nil {
+			configWatcher.Update(newConfigPaths)
+		}
+
+		log.Printf("config reloaded successfully")
+	}
+
+	// Set up config file watcher (monitors config files for changes)
 	if !opts.NoConfigWatch {
 		watchLogFn := func(format string, args ...interface{}) {
 			log.Printf(format, args...)
 		}
 		var err error
-		configWatcher, err = mkvfuse.NewConfigWatcher(opts.OnConfigChange, opts.SourceWatchPollInterval, func() {
-			// Trigger SIGHUP to self for config reload.
-			process, _ := os.FindProcess(os.Getpid())
-			if err := process.Signal(syscall.SIGHUP); err != nil {
-				log.Printf("config-watch: warning: failed to send SIGHUP for reload: %v", err)
-			}
-		}, watchLogFn)
+		configWatcher, err = mkvfuse.NewConfigWatcher(opts.OnConfigChange, opts.SourceWatchPollInterval, doReload, watchLogFn)
 		if err != nil {
 			log.Printf("config-watch: warning: failed to create watcher: %v", err)
 		} else {
@@ -226,26 +270,16 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		fmt.Println("Press Ctrl+C to unmount")
 	}
 
-	// Set up logging function. In daemon mode, use syslog since
-	// stderr is redirected to /dev/null after Detach().
-	logFn := func(format string, args ...interface{}) {
-		log.Printf(format, args...)
-	}
-	var syslogWriter *syslog.Writer
+	// In daemon mode, redirect log output to syslog since stderr is
+	// redirected to /dev/null after Detach(). All log.Printf calls
+	// (including from doReload, watchers, and BuildDirectoryTree) will
+	// go to syslog automatically.
 	if daemon.IsChild() {
 		if w, err := syslog.New(syslog.LOG_INFO|syslog.LOG_DAEMON, "mkvdup"); err == nil {
-			syslogWriter = w
-			logFn = func(format string, args ...interface{}) {
-				syslogWriter.Info(fmt.Sprintf(format, args...))
-			}
+			log.SetOutput(w)
+			log.SetFlags(0) // syslog adds its own timestamp
+			defer w.Close()
 		}
-	}
-	if syslogWriter != nil {
-		// Redirect global log output to syslog so that log.Printf calls
-		// from BuildDirectoryTree (during reload) go to syslog too.
-		log.SetOutput(syslogWriter)
-		log.SetFlags(0) // syslog adds its own timestamp
-		defer syslogWriter.Close()
 	}
 
 	// Handle signals for graceful shutdown and config reload
@@ -256,45 +290,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		for sig := range sigChan {
 			switch sig {
 			case syscall.SIGHUP:
-				logFn("received SIGHUP, reloading config...")
-
-				// Re-expand config-dir if applicable
-				var reloadPaths []string
-				if configDirPath != "" {
-					expanded, err := expandConfigDir(configDirPath)
-					if err != nil {
-						logFn("reload failed: expand config dir: %v", err)
-						continue
-					}
-					reloadPaths = expanded
-				} else {
-					reloadPaths = configPaths
-				}
-
-				// Resolve configs (expands includes, globs, virtual_files)
-				configs, _, newConfigPaths, err := dedup.ResolveConfigs(reloadPaths)
-				if err != nil {
-					logFn("reload failed: resolve configs: %v", err)
-					continue
-				}
-
-				// Reload the filesystem
-				if err := root.Reload(configs, logFn); err != nil {
-					logFn("reload failed: %v", err)
-					continue
-				}
-
-				// Update source watcher with new file set
-				if sourceWatcher != nil {
-					sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
-				}
-
-				// Update config watcher with new config file set
-				if configWatcher != nil {
-					configWatcher.Update(newConfigPaths)
-				}
-
-				logFn("config reloaded successfully")
+				doReload()
 
 			case syscall.SIGINT, syscall.SIGTERM:
 				if !daemon.IsChild() {
