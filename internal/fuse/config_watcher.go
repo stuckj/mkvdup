@@ -154,8 +154,12 @@ func (cw *ConfigWatcher) Stop() {
 func (cw *ConfigWatcher) eventLoop() {
 	defer cw.wg.Done()
 
-	var debounceTimer *time.Timer
-	var debounceCh <-chan time.Time
+	// Single timer reused across events. Starts stopped; Reset activates it.
+	debounceTimer := time.NewTimer(0)
+	if !debounceTimer.Stop() {
+		<-debounceTimer.C
+	}
+	defer debounceTimer.Stop()
 
 	for {
 		select {
@@ -173,15 +177,17 @@ func (cw *ConfigWatcher) eventLoop() {
 			if !tracked {
 				continue
 			}
-			// Reset debounce timer.
-			if debounceTimer != nil {
-				debounceTimer.Stop()
+			// Reset debounce timer — drain channel if Stop reports
+			// the timer already fired to prevent a stale tick.
+			if !debounceTimer.Stop() {
+				select {
+				case <-debounceTimer.C:
+				default:
+				}
 			}
-			debounceTimer = time.NewTimer(configDebounceDelay)
-			debounceCh = debounceTimer.C
+			debounceTimer.Reset(configDebounceDelay)
 
-		case <-debounceCh:
-			debounceCh = nil
+		case <-debounceTimer.C:
 			cw.triggerAction()
 
 		case err, ok := <-cw.watcher.Errors:
@@ -191,9 +197,6 @@ func (cw *ConfigWatcher) eventLoop() {
 			cw.logFn("config-watch: watcher error: %v", err)
 
 		case <-cw.stopCh:
-			if debounceTimer != nil {
-				debounceTimer.Stop()
-			}
 			return
 		}
 	}

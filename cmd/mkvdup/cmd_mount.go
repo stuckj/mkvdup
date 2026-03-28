@@ -192,10 +192,10 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		var err error
 		configWatcher, err = mkvfuse.NewConfigWatcher(opts.OnConfigChange, opts.SourceWatchPollInterval, func() {
 			// Trigger SIGHUP to self for config reload.
-			sigCh := make(chan os.Signal, 1)
-			_ = sigCh
 			process, _ := os.FindProcess(os.Getpid())
-			process.Signal(syscall.SIGHUP)
+			if err := process.Signal(syscall.SIGHUP); err != nil {
+				log.Printf("config-watch: warning: failed to send SIGHUP for reload: %v", err)
+			}
 		}, watchLogFn)
 		if err != nil {
 			log.Printf("config-watch: warning: failed to create watcher: %v", err)

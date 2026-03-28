@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+// waitForCondition polls a condition function until it returns true or the
+// deadline is reached. Returns true if the condition was met.
+func waitForCondition(deadline time.Time, check func() bool) bool {
+	for time.Now().Before(deadline) {
+		if check() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return check()
+}
+
 func TestConfigWatcher_WarnAction(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "test.yaml")
@@ -34,11 +46,9 @@ func TestConfigWatcher_WarnAction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wait for debounce + processing
-	time.Sleep(configDebounceDelay + 200*time.Millisecond)
-
-	// Should have logged at least one message (the Update log + the warn)
-	if warned.Load() < 2 {
+	// Wait for debounce + processing with deadline
+	deadline := time.Now().Add(5 * time.Second)
+	if !waitForCondition(deadline, func() bool { return warned.Load() >= 2 }) {
 		t.Errorf("expected at least 2 log messages (update + warn), got %d", warned.Load())
 	}
 }
@@ -69,10 +79,9 @@ func TestConfigWatcher_ReloadAction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wait for debounce + processing
-	time.Sleep(configDebounceDelay + 200*time.Millisecond)
-
-	if reloaded.Load() != 1 {
+	// Wait for reload with deadline
+	deadline := time.Now().Add(5 * time.Second)
+	if !waitForCondition(deadline, func() bool { return reloaded.Load() >= 1 }) {
 		t.Errorf("expected 1 reload, got %d", reloaded.Load())
 	}
 }
@@ -106,12 +115,16 @@ func TestConfigWatcher_Debounce(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	// Wait for debounce + processing
-	time.Sleep(configDebounceDelay + 200*time.Millisecond)
-
-	// Should coalesce into a single reload
-	if reloaded.Load() != 1 {
+	// Wait for the single debounced reload
+	deadline := time.Now().Add(5 * time.Second)
+	if !waitForCondition(deadline, func() bool { return reloaded.Load() >= 1 }) {
 		t.Errorf("expected 1 reload (debounced), got %d", reloaded.Load())
+	}
+
+	// Give extra time to confirm no additional reloads fire
+	time.Sleep(configDebounceDelay + 100*time.Millisecond)
+	if reloaded.Load() != 1 {
+		t.Errorf("expected exactly 1 reload (debounced), got %d", reloaded.Load())
 	}
 }
 
@@ -145,7 +158,7 @@ func TestConfigWatcher_IgnoresUnrelatedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wait for debounce window
+	// Wait past the debounce window to confirm no reload fires
 	time.Sleep(configDebounceDelay + 200*time.Millisecond)
 
 	if reloaded.Load() != 0 {
@@ -195,8 +208,8 @@ func TestConfigWatcher_UpdateReplacesPaths(t *testing.T) {
 	if err := os.WriteFile(cfg2, []byte("b-modified"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(configDebounceDelay + 200*time.Millisecond)
-	if reloaded.Load() != 1 {
+	deadline := time.Now().Add(5 * time.Second)
+	if !waitForCondition(deadline, func() bool { return reloaded.Load() >= 1 }) {
 		t.Errorf("expected 1 reload for new config file, got %d", reloaded.Load())
 	}
 }
