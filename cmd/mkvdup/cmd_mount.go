@@ -181,7 +181,7 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	// Set up source file watcher (monitors source files for changes)
 	var sourceWatcher *mkvfuse.SourceWatcher
 	if !opts.NoSourceWatch {
-		// Closure over log.Printf: syslog setup below redirects the default
+		// Closure over log.Printf: syslog setup above redirects the default
 		// logger's output, so the watcher automatically picks it up.
 		watchLogFn := func(format string, args ...interface{}) {
 			log.Printf(format, args...)

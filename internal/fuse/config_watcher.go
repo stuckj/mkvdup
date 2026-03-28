@@ -195,7 +195,14 @@ func (cw *ConfigWatcher) eventLoop() {
 			debounceTimer.Reset(configDebounceDelay)
 
 		case <-debounceTimer.C:
-			cw.triggerAction()
+			// Guard against select choosing the timer case when stopCh
+			// is also ready — prefer shutdown over triggering a reload.
+			select {
+			case <-cw.stopCh:
+				return
+			default:
+				cw.triggerAction()
+			}
 
 		case err, ok := <-cw.watcher.Errors:
 			if !ok {
@@ -219,7 +226,12 @@ func (cw *ConfigWatcher) pollLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			cw.pollCheck()
+			select {
+			case <-cw.stopCh:
+				return
+			default:
+				cw.pollCheck()
+			}
 		case <-cw.stopCh:
 			return
 		}

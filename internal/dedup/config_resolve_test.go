@@ -623,8 +623,14 @@ includes:
 	for _, p := range loadedPaths {
 		pathSet[p] = true
 	}
-	parentReal, _ := filepath.EvalSymlinks(parentPath)
-	childReal, _ := filepath.EvalSymlinks(childPath)
+	parentReal, err := filepath.EvalSymlinks(parentPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", parentPath, err)
+	}
+	childReal, err := filepath.EvalSymlinks(childPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", childPath, err)
+	}
 	if !pathSet[parentReal] {
 		t.Errorf("parent path %q not in loaded paths %v", parentReal, loadedPaths)
 	}
