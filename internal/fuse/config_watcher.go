@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -42,6 +43,12 @@ type ConfigWatcher struct {
 // If pollInterval <= 0, defaultPollInterval is used.
 // The watcher is not started until Start() is called.
 func NewConfigWatcher(action string, pollInterval time.Duration, reloadFn func(), logFn func(string, ...interface{})) (*ConfigWatcher, error) {
+	switch action {
+	case "reload", "warn":
+	default:
+		return nil, fmt.Errorf("invalid config watch action %q (must be reload or warn)", action)
+	}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
