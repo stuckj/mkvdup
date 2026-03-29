@@ -137,27 +137,34 @@ func ReadConfig(configPath string) (*Config, error) {
 // If any config file contains an on_error_command block, the first one
 // encountered (depth-first, in file order) is returned. Defaults are applied
 // for omitted timeout and batch_interval fields.
-func ResolveConfigs(configPaths []string) ([]Config, *ErrorCommandConfig, error) {
+//
+// The returned loadedPaths slice contains the absolute, symlink-resolved paths
+// of every config file that was successfully loaded (the keys of the cycle-detection
+// set). This is useful for setting up file watchers on the loaded configs.
+func ResolveConfigs(configPaths []string) (configs []Config, errorCmd *ErrorCommandConfig, loadedPaths []string, err error) {
 	seen := make(map[string]bool)
-	var all []Config
-	var errorCmd *ErrorCommandConfig
 	for _, p := range configPaths {
-		configs, cmd, err := resolveConfig(p, seen)
-		if err != nil {
-			return nil, nil, err
+		cfgs, cmd, resolveErr := resolveConfig(p, seen)
+		if resolveErr != nil {
+			return nil, nil, nil, resolveErr
 		}
-		all = append(all, configs...)
+		configs = append(configs, cfgs...)
 		if errorCmd == nil && cmd != nil {
 			errorCmd = cmd
 		}
 	}
 	if errorCmd != nil {
 		if len(errorCmd.Command.Args) == 0 {
-			return nil, nil, fmt.Errorf("invalid on_error_command: missing command")
+			return nil, nil, nil, fmt.Errorf("invalid on_error_command: missing command")
 		}
 		errorCmd.applyDefaults()
 	}
-	return all, errorCmd, nil
+	loadedPaths = make([]string, 0, len(seen))
+	for p := range seen {
+		loadedPaths = append(loadedPaths, p)
+	}
+	sort.Strings(loadedPaths)
+	return configs, errorCmd, loadedPaths, nil
 }
 
 // configVisitor is called for each config file visited during the walk.

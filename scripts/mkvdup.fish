@@ -122,6 +122,8 @@ complete -c $cmd -n '__fish_mkvdup_using_command mount' -l no-source-watch -d 'D
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l on-source-change -d 'Action on source change' -x -a 'warn disable checksum'
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l source-watch-poll-interval -d 'Polling interval for source file changes' -x
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -l source-read-timeout -d 'Read timeout for network FS sources' -x
+complete -c $cmd -n '__fish_mkvdup_using_command mount' -l no-config-watch -d 'Disable config file monitoring'
+complete -c $cmd -n '__fish_mkvdup_using_command mount' -l on-config-change -d 'Action on config change' -x -a 'reload warn'
 complete -c $cmd -n '__fish_mkvdup_using_command mount' -F -d 'Mount point or config files'
 
 # info options

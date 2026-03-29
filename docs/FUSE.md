@@ -205,12 +205,38 @@ kill -HUP $(pidof mkvdup)
 
 See [CLI reload command](CLI.md#reload) for more details.
 
-### File-watch reload *(planned — [#10](https://github.com/stuckj/mkvdup/issues/10))*
+### Config File Watching
 
-> **Not yet implemented.** The following describes planned behavior.
+The daemon monitors config files (and all files resolved via `includes`) for changes. When a change is detected, the configured action is taken. Enabled by default.
 
-- Daemon watches config file and include directories via inotify
-- Automatically reloads when changes detected
+**CLI Options:**
+
+```bash
+# Disable config file watching
+mkvdup mount --no-config-watch /mnt/videos config.yaml
+
+# Warn on config change instead of auto-reloading
+mkvdup mount --on-config-change warn /mnt/videos config.yaml
+```
+
+**fstab Options:**
+
+```
+# Disable config watching
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  no_config_watch  0  0
+
+# Warn instead of reload
+/etc/mkvdup.conf  /mnt/videos  fuse.mkvdup  on_config_change=warn  0  0
+```
+
+**Actions:**
+
+| Action | Behavior |
+|--------|----------|
+| `reload` (default) | Automatically reload configuration (equivalent to SIGHUP). Changes are debounced (500ms) to handle editor atomic-save patterns (write temp file, rename). |
+| `warn` | Log a warning but do not reload. Useful for manual control via `mkvdup reload`. |
+
+**How it works:** At mount time, the daemon records all config file paths that were loaded (including files pulled in via `includes` and glob patterns). These files are monitored via inotify on local filesystems, or polling on network filesystems (using the same `--source-watch-poll-interval` setting). After a reload, the watcher is updated with the new set of config files — if a reload adds or removes include files, watching adjusts automatically.
 
 **Workaround:** Include globs are not re-expanded at runtime. Use `mkvdup expand-config` to resolve a config's include globs to explicit paths, then point the mount at the expanded config. When new `.mkvdup.yaml` config files are added, re-run `expand-config` to regenerate the explicit config and reload the mount (`mkvdup reload` or SIGHUP) to pick up the changes. See [expand-config](CLI.md#expand-config) for details.
 
