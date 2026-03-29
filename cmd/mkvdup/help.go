@@ -23,6 +23,7 @@ Commands:
   validate      Validate configuration files
   reload        Reload running daemon's configuration
   expand-config Expand wildcard config to explicit file list
+  relocate      Move dedup file + sidecar, updating paths
 
 Analysis commands:
   deltadiag    Analyze unmatched regions by stream type
@@ -73,6 +74,8 @@ func printCommandUsage(cmd string) {
 		printReloadUsage()
 	case "expand-config":
 		printExpandConfigUsage()
+	case "relocate":
+		printRelocateUsage()
 	case "deltadiag":
 		printDeltadiagUsage()
 	case "parse-mkv":
