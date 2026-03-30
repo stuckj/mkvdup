@@ -2,6 +2,8 @@ package source
 
 import (
 	"encoding/binary"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -486,4 +488,132 @@ func TestDetectDVDCodecs_WithCellSegmentAdapter(t *testing.T) {
 	if !containsCodec(codecs.AudioCodecs, CodecAC3Audio) {
 		t.Error("expected AC3 audio codec")
 	}
+}
+
+func TestIndexMPEGPSFile_InterleavedSegments(t *testing.T) {
+	// Build a synthetic MPEG-PS file with 4 interleaved VOBUs (2 cells x 2 ILVUs).
+	// Each VOBU has: NAV pack + video PES packet with identifiable payload.
+	const bufSize = 32768
+	data := make([]byte, bufSize)
+	pos := 0
+
+	// VOBU 0: Cell A, ILVU start+end
+	pos += buildTestNAVPack(data, pos, ilvuStartBit|ilvuEndBit)
+	pos += buildTestVideoPES(data, pos, 200)
+
+	// VOBU 1: Cell B, ILVU start+end
+	pos += buildTestNAVPack(data, pos, ilvuStartBit|ilvuEndBit)
+	pos += buildTestVideoPES(data, pos, 200)
+
+	// VOBU 2: Cell A, ILVU start+end
+	pos += buildTestNAVPack(data, pos, ilvuStartBit|ilvuEndBit)
+	pos += buildTestVideoPES(data, pos, 200)
+
+	// VOBU 3: Cell B, ILVU start+end
+	pos += buildTestNAVPack(data, pos, ilvuStartBit|ilvuEndBit)
+	pos += buildTestVideoPES(data, pos, 200)
+
+	// Write to a temp file (indexMPEGPSFile mmaps the file)
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.vob")
+	if err := os.WriteFile(tmpFile, data[:pos], 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	// Create an indexer and call indexMPEGPSFile directly
+	idx := &Indexer{
+		windowSize: DefaultWindowSize,
+		index:      NewIndex(tmpDir, TypeDVD, DefaultWindowSize),
+	}
+	idx.index.UsesESOffsets = true
+
+	n, checksum, err := idx.indexMPEGPSFile(0, tmpFile, int64(pos), nil)
+	if err != nil {
+		t.Fatalf("indexMPEGPSFile() error = %v", err)
+	}
+
+	// Should produce 4 segments (one per VOBU)
+	if n != 4 {
+		t.Errorf("indexMPEGPSFile() returned %d entries, want 4", n)
+	}
+
+	// Checksum should be non-zero
+	if checksum == 0 {
+		t.Error("expected non-zero checksum")
+	}
+
+	// ESReaders count should match segment count
+	if len(idx.index.ESReaders) != n {
+		t.Errorf("len(ESReaders) = %d, want %d", len(idx.index.ESReaders), n)
+	}
+
+	// Each ESReader should be a cellSegmentAdapter
+	for i, reader := range idx.index.ESReaders {
+		if _, ok := reader.(*cellSegmentAdapter); !ok {
+			t.Errorf("ESReaders[%d] is %T, want *cellSegmentAdapter", i, reader)
+		}
+	}
+
+	// Verify locations reference valid FileIndex values (0..n-1)
+	for hash, locs := range idx.index.HashToLocations {
+		for _, loc := range locs {
+			if int(loc.FileIndex) >= n {
+				t.Errorf("hash 0x%X: location FileIndex=%d exceeds segment count %d", hash, loc.FileIndex, n)
+			}
+		}
+	}
+
+	// Clean up mmap files
+	idx.index.Close()
+}
+
+func TestIndexMPEGPSFile_NonInterleaved(t *testing.T) {
+	// Build a synthetic MPEG-PS file with non-interleaved VOBUs.
+	// Should produce exactly 1 entry (existing behavior).
+	const bufSize = 16384
+	data := make([]byte, bufSize)
+	pos := 0
+
+	// Two non-interleaved VOBUs
+	pos += buildTestNAVPack(data, pos, 0)
+	pos += buildTestVideoPES(data, pos, 200)
+	pos += buildTestNAVPack(data, pos, 0)
+	pos += buildTestVideoPES(data, pos, 200)
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.vob")
+	if err := os.WriteFile(tmpFile, data[:pos], 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	idx := &Indexer{
+		windowSize: DefaultWindowSize,
+		index:      NewIndex(tmpDir, TypeDVD, DefaultWindowSize),
+	}
+	idx.index.UsesESOffsets = true
+
+	n, _, err := idx.indexMPEGPSFile(0, tmpFile, int64(pos), nil)
+	if err != nil {
+		t.Fatalf("indexMPEGPSFile() error = %v", err)
+	}
+
+	// Non-interleaved: exactly 1 entry
+	if n != 1 {
+		t.Errorf("indexMPEGPSFile() returned %d entries, want 1", n)
+	}
+
+	// ESReader should be *MPEGPSParser (not adapter)
+	if len(idx.index.ESReaders) != 1 {
+		t.Fatalf("len(ESReaders) = %d, want 1", len(idx.index.ESReaders))
+	}
+	if _, ok := idx.index.ESReaders[0].(*MPEGPSParser); !ok {
+		t.Errorf("ESReaders[0] is %T, want *MPEGPSParser", idx.index.ESReaders[0])
+	}
+
+	// Files and ESReaders should be aligned
+	if len(idx.index.ESReaders) != 1 {
+		t.Error("ESReaders count should be 1 for non-interleaved")
+	}
+
+	idx.index.Close()
 }
