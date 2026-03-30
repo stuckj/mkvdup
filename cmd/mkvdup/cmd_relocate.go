@@ -51,6 +51,8 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		isDirDst = true
 	} else if os.IsNotExist(err) && len(dst) > 0 && os.IsPathSeparator(dst[len(dst)-1]) {
 		isDirDst = true
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("check destination: %w", err)
 	}
 	if isDirDst {
 		absDst = filepath.Join(absDst, filepath.Base(absSrc))
@@ -204,6 +206,15 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 				return fmt.Errorf("close temp sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
 			}
 			return fmt.Errorf("close temp sidecar: %w", err)
+		}
+
+		// os.CreateTemp creates files with 0600; match dedup.WriteConfig's 0644.
+		if err := os.Chmod(sidecarTmp, 0644); err != nil {
+			_ = osRemove(sidecarTmp)
+			if rbErr := osRename(absDst, absSrc); rbErr != nil {
+				return fmt.Errorf("set sidecar permissions: %v (also failed to rollback dedup move: %w)", err, rbErr)
+			}
+			return fmt.Errorf("set sidecar permissions: %w", err)
 		}
 
 		if err := osRename(sidecarTmp, sidecarDst); err != nil {
