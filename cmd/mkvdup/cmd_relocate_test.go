@@ -296,6 +296,31 @@ source_dir: "`+sourceMediaDir+`"
 	}
 }
 
+func TestRelocateDedup_DestSidecarConflictNoSourceSidecar(t *testing.T) {
+	dir := t.TempDir()
+
+	dedupPath := filepath.Join(dir, "movie.mkvdup")
+	if err := os.WriteFile(dedupPath, []byte("fake-dedup-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// No source sidecar.
+
+	newPath := filepath.Join(dir, "other.mkvdup")
+	// Destination sidecar exists but source has none.
+	if err := os.WriteFile(newPath+".yaml", []byte("stale-sidecar"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without --force, should error about existing destination sidecar.
+	err := relocateDedup(dedupPath, newPath, false, false)
+	if err == nil {
+		t.Fatal("expected error when destination sidecar exists without --force")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention 'already exists', got: %v", err)
+	}
+}
+
 func TestRelocateDedup_SamePathError(t *testing.T) {
 	dir := t.TempDir()
 
