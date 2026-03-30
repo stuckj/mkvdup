@@ -335,3 +335,170 @@ func buildFilteredVideoRangesFromData(data []byte, dataSize int64, videoRanges [
 
 	return filteredRanges
 }
+
+// filteredAudioResult holds the output of buildFilteredAudioRangesFromData.
+type filteredAudioResult struct {
+	RangesBySubStream map[byte][]PESPayloadRange
+	SubStreams        []byte        // sub-stream IDs in order of appearance
+	LPCMSubStreams    map[byte]bool // which sub-streams are 16-bit LPCM
+	LPCMInfo          map[byte]LPCMFrameHeader
+}
+
+// buildFilteredAudioRangesFromData creates per-sub-stream filtered audio ranges.
+// This is the shared implementation used by both MPEGPSParser and cellSegmentAdapter.
+//
+// For Private Stream 1 (0xBD), strips the 4-byte PS header (sub-stream ID, frame count,
+// first access unit pointer). For LPCM, strips an additional 3-byte frame header.
+// For MPEG-1 audio streams (0xC0-0xDF), the payload is raw MP2 data with no header.
+//
+// When existingLPCM is non-nil, LPCM sub-stream detection is skipped and the provided
+// metadata is used instead (for cell segment adapters that share the parser's LPCM info).
+func buildFilteredAudioRangesFromData(
+	data []byte, dataSize int64,
+	audioRanges []PESPayloadRange, audioRangeStreamIDs []byte,
+	existingLPCM map[byte]bool,
+) filteredAudioResult {
+	result := filteredAudioResult{
+		RangesBySubStream: make(map[byte][]PESPayloadRange),
+		LPCMSubStreams:    make(map[byte]bool),
+		LPCMInfo:          make(map[byte]LPCMFrameHeader),
+	}
+
+	if len(audioRanges) == 0 {
+		return result
+	}
+
+	// Copy existing LPCM metadata if provided
+	for id, v := range existingLPCM {
+		result.LPCMSubStreams[id] = v
+	}
+
+	esOffsetBySubStream := make(map[byte]int64)
+	seenSubStreams := make(map[byte]bool)
+
+	for i, rawRange := range audioRanges {
+		if rawRange.FileOffset >= dataSize {
+			continue
+		}
+
+		pesStreamID := audioRangeStreamIDs[i]
+
+		// MPEG-1 audio streams (0xC0-0xDF): payload is raw MP2 data, no sub-stream header
+		if pesStreamID >= 0xC0 && pesStreamID <= 0xDF {
+			if rawRange.Size <= 0 {
+				continue
+			}
+			if !seenSubStreams[pesStreamID] {
+				seenSubStreams[pesStreamID] = true
+				result.SubStreams = append(result.SubStreams, pesStreamID)
+			}
+			esOffset := esOffsetBySubStream[pesStreamID]
+			result.RangesBySubStream[pesStreamID] = append(result.RangesBySubStream[pesStreamID], PESPayloadRange{
+				FileOffset: rawRange.FileOffset,
+				Size:       rawRange.Size,
+				ESOffset:   esOffset,
+			})
+			esOffsetBySubStream[pesStreamID] += int64(rawRange.Size)
+			continue
+		}
+
+		// Private Stream 1 (0xBD): has sub-stream header
+		if rawRange.Size < 4 {
+			continue
+		}
+
+		subStreamID := data[rawRange.FileOffset]
+
+		isAC3 := subStreamID >= 0x80 && subStreamID <= 0x87
+		isDTS := subStreamID >= 0x88 && subStreamID <= 0x8F
+		isLPCM := subStreamID >= 0xA0 && subStreamID <= 0xA7
+
+		if isAC3 || isDTS || isLPCM {
+			if !seenSubStreams[subStreamID] {
+				seenSubStreams[subStreamID] = true
+				result.SubStreams = append(result.SubStreams, subStreamID)
+			}
+
+			if isLPCM {
+				if rawRange.Size > LPCMTotalHeaderSize {
+					// Parse LPCM header on first packet (only when not using existing metadata)
+					if existingLPCM == nil {
+						if _, ok := result.LPCMInfo[subStreamID]; !ok {
+							headerEnd := rawRange.FileOffset + 4 + LPCMHeaderSize
+							if headerEnd > dataSize {
+								continue
+							}
+							headerData := data[rawRange.FileOffset+4 : headerEnd]
+							info := ParseLPCMFrameHeader(headerData)
+							result.LPCMInfo[subStreamID] = info
+							if IsLPCM16Bit(info.Quantization) {
+								result.LPCMSubStreams[subStreamID] = true
+							}
+						}
+					}
+					esOffset := esOffsetBySubStream[subStreamID]
+					result.RangesBySubStream[subStreamID] = append(result.RangesBySubStream[subStreamID], PESPayloadRange{
+						FileOffset: rawRange.FileOffset + LPCMTotalHeaderSize,
+						Size:       rawRange.Size - LPCMTotalHeaderSize,
+						ESOffset:   esOffset,
+					})
+					esOffsetBySubStream[subStreamID] += int64(rawRange.Size - LPCMTotalHeaderSize)
+				}
+			} else {
+				if rawRange.Size > 4 {
+					esOffset := esOffsetBySubStream[subStreamID]
+					result.RangesBySubStream[subStreamID] = append(result.RangesBySubStream[subStreamID], PESPayloadRange{
+						FileOffset: rawRange.FileOffset + 4,
+						Size:       rawRange.Size - 4,
+						ESOffset:   esOffset,
+					})
+					esOffsetBySubStream[subStreamID] += int64(rawRange.Size - 4)
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// readLPCMSubStreamData reads LPCM audio data with 16-bit byte-swap transform.
+// Handles alignment: if esOffset is odd, reads from the pair-aligned offset,
+// swaps, and returns only the requested portion.
+func readLPCMSubStreamData(data []byte, dataSize int64, ranges []PESPayloadRange, esOffset int64, size int) ([]byte, error) {
+	alignedOffset := esOffset
+	trimFront := 0
+	if esOffset%2 == 1 {
+		alignedOffset = esOffset - 1
+		trimFront = 1
+	}
+	alignedSize := size + trimFront
+	trimBack := 0
+	if alignedSize%2 == 1 {
+		alignedSize++
+		trimBack = 1
+	}
+
+	raw, err := readFromRanges(data, nil, dataSize, ranges, alignedOffset, alignedSize)
+	if err != nil {
+		if trimBack > 0 {
+			alignedSize--
+			trimBack = 0
+			raw, err = readFromRanges(data, nil, dataSize, ranges, alignedOffset, alignedSize)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// readFromRanges may return a zero-copy mmap slice, so clone first
+	result := make([]byte, len(raw))
+	copy(result, raw)
+	TransformLPCM16BE(result)
+
+	start := trimFront
+	end := start + size
+	if end > len(result) {
+		end = len(result)
+	}
+	return result[start:end], nil
+}

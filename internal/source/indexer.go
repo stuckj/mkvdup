@@ -125,7 +125,8 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 
 	// Process each file
 	// fileIndex tracks the next available index for source file entries.
-	// Most files produce one entry, but Blu-ray ISOs produce one per M2TS region.
+	// Most files produce one entry, but Blu-ray ISOs produce one per M2TS region
+	// and interleaved DVD VOBs produce one per cell segment.
 	fileIndex := 0
 	for _, relPath := range files {
 		fullPath := filepath.Join(idx.sourceDir, relPath)

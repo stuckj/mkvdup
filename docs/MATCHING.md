@@ -75,6 +75,35 @@ File offset:          47                            1314
 
 The parser maintains a mapping of ES offsets to file offsets for each PES payload range.
 
+### DVD Cell Interleaving
+
+**Problem:** On multi-episode DVDs, a single VTS (Video Title Set) contains VOB files with cells from different titles (episodes) interleaved. The parser builds a single continuous ES by concatenating all video PES payloads in file order, but the MKV for a specific episode contains only that episode's cells in playback order. At cell boundaries, the ES has bytes from a different episode where the MKV has the next cell of the same episode, causing ~42% of sync point hashes to fail on multi-episode discs.
+
+```
+VOB file order:  [Ep1 Cell1] [Ep2 Cell1] [Ep1 Cell2] [Ep2 Cell2]
+                      ↓            ↓            ↓            ↓
+Single ES:       [Ep1C1 video][Ep2C1 video][Ep1C2 video][Ep2C2 video]
+                              ↑ mismatch    ↑ mismatch
+MKV (Episode 1): [Ep1C1 video].............[Ep1C2 video]
+```
+
+**Solution:** Detect cell boundaries using NAV pack metadata and create per-cell ES segments.
+
+DVD VOBs contain NAV packs (Navigation Packs) at the start of each VOBU (Video Object Unit). Each NAV pack has two Private Stream 2 (stream ID 0xBF) PES packets:
+
+1. **PCI** (Presentation Control Information, 980-byte payload): Contains VOBU timing and playback control
+2. **DSI** (Data Search Information, 1018-byte payload): Contains the `SML_PBI.category` field at payload offset 24, whose top nibble indicates whether this VOBU is part of an Interleaved Video Unit (ILVU)
+
+The parser detects ILVU boundaries:
+- `ilvuStartBit` (0x2000): First VOBU of an interleaved unit
+- `ilvuEndBit` (0x1000): Last VOBU of an interleaved unit
+
+Each ILVU (one cell's portion of an interleaved block) becomes its own ES segment with independent offset space, following the same multi-entry pattern used for Blu-ray ISO M2TS regions. The `cellSegmentAdapter` wraps the parser to present each segment as a separate `ESReader`, sharing the parser's mmap'd data zero-copy.
+
+**No regression:** Non-interleaved DVDs (where `SML_PBI.category == 0` for all VOBUs) produce zero segments and use the existing single-ES code path unchanged.
+
+**Impact:** On a multi-episode DVD test disc, video hash hit rate improved from ~58% to ~95%+, and savings from ~78% to ~95%+.
+
 ## ES-Aware Indexing (Blu-ray)
 
 **Problem:** Blu-rays use MPEG Transport Stream (MPEG-TS) containers in M2TS files. M2TS files consist of fixed-size 192-byte packets: a 4-byte timecode prefix plus a 188-byte TS packet (which itself has a 4-byte header, leaving up to 184 bytes for payload). Each TS packet carries a small fragment of a PES packet, identified by a 13-bit PID. PES packets span multiple TS packets and contain the actual codec data. When extracting to MKV, tools extract the raw ES data, stripping all TS and PES framing. If we index raw file offsets in the M2TS file, the 8-byte headers (4-byte timecode + 4-byte TS header, interleaved every 192 bytes) cause misalignments — expansion fails at every packet boundary.

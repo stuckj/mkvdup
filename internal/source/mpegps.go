@@ -47,15 +47,15 @@ const (
 
 // vobuInfo tracks a Video Object Unit detected via NAV pack.
 type vobuInfo struct {
-	startPTS        uint32 // VOBU start PTS from PCI packet
 	ilvuCategory    uint16 // SML_PBI category from DSI packet (ILVU flags)
 	videoRangeStart int    // first index in videoRanges for this VOBU
 	audioRangeStart int    // first index in audioRanges for this VOBU
 }
 
-// cellSegment represents a group of consecutive VOBUs with monotonically
-// increasing PTS, corresponding to a single cell (or portion of one).
-// Cell boundaries are where different titles/episodes are interleaved on disc.
+// cellSegment represents a group of consecutive VOBUs belonging to the same
+// interleaved unit (ILVU). On multi-episode DVDs, VOBs interleave cells from
+// different titles; each ILVU contains VOBUs from a single cell. Segment
+// boundaries are determined by the DSI packet's SML_PBI ILVU start/end flags.
 type cellSegment struct {
 	vobuStart int // first VOBU index (inclusive)
 	vobuEnd   int // last VOBU index (exclusive)
@@ -188,15 +188,11 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 					switch length {
 					case 980:
 						// PCI packet (first Private Stream 2 in a NAV pack).
-						// Contains vobu_s_ptm at payload offset 12 (PCI_GI field).
-						if payloadStart+16 <= p.size {
-							vobuStartPTS := binary.BigEndian.Uint32(p.data[payloadStart+12 : payloadStart+16])
-							p.vobus = append(p.vobus, vobuInfo{
-								startPTS:        vobuStartPTS,
-								videoRangeStart: len(p.videoRanges),
-								audioRangeStart: len(p.audioRanges),
-							})
-						}
+						// Marks the start of a new VOBU.
+						p.vobus = append(p.vobus, vobuInfo{
+							videoRangeStart: len(p.videoRanges),
+							audioRangeStart: len(p.audioRanges),
+						})
 					case 1018:
 						// DSI packet (second Private Stream 2 in a NAV pack).
 						// SML_PBI.category at payload offset 24 (after 24-byte DSI_GI).
@@ -275,9 +271,9 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 		progress(p.size, p.size)
 	}
 
-	// Detect cell segments from VOBU PTS continuity.
-	// Within a cell, VOBUs have monotonically increasing PTS.
-	// When PTS drops, it indicates a switch to a different cell (e.g., different episode).
+	// Detect cell segments from DSI ILVU start/end flags.
+	// On multi-episode DVDs, VOBs interleave cells from different titles;
+	// ILVU boundaries mark where one cell's data ends and another begins.
 	p.buildCellSegments()
 
 	// Build filtered video ranges that exclude user_data (B2) sections
@@ -322,107 +318,11 @@ func (p *MPEGPSParser) buildFilteredVideoRanges() error {
 //
 // Each sub-stream ID gets its own separate filtered ES to avoid interleaving issues.
 func (p *MPEGPSParser) buildFilteredAudioRanges() error {
-	if len(p.audioRanges) == 0 {
-		return nil
-	}
-
-	// Map to track ranges per sub-stream
-	rangesBySubStream := make(map[byte][]PESPayloadRange)
-	esOffsetBySubStream := make(map[byte]int64)
-	seenSubStreams := make(map[byte]bool)
-	p.lpcmSubStreams = make(map[byte]bool)
-	p.lpcmInfo = make(map[byte]LPCMFrameHeader)
-
-	for i, rawRange := range p.audioRanges {
-		if rawRange.FileOffset >= p.size {
-			continue
-		}
-
-		pesStreamID := p.audioRangeStreamIDs[i]
-
-		// MPEG-1 audio streams (0xC0-0xDF): payload is raw MP2 data, no sub-stream header
-		if pesStreamID >= 0xC0 && pesStreamID <= 0xDF {
-			if rawRange.Size <= 0 {
-				continue
-			}
-			// Use the PES stream ID as a pseudo sub-stream ID
-			if !seenSubStreams[pesStreamID] {
-				seenSubStreams[pesStreamID] = true
-				p.audioSubStreams = append(p.audioSubStreams, pesStreamID)
-			}
-			esOffset := esOffsetBySubStream[pesStreamID]
-			rangesBySubStream[pesStreamID] = append(rangesBySubStream[pesStreamID], PESPayloadRange{
-				FileOffset: rawRange.FileOffset,
-				Size:       rawRange.Size,
-				ESOffset:   esOffset,
-			})
-			esOffsetBySubStream[pesStreamID] += int64(rawRange.Size)
-			continue
-		}
-
-		// Private Stream 1 (0xBD): has sub-stream header
-		if rawRange.Size < 4 {
-			continue
-		}
-
-		subStreamID := p.data[rawRange.FileOffset]
-
-		// Check if this is AC3, DTS, or LPCM
-		isAC3 := subStreamID >= 0x80 && subStreamID <= 0x87
-		isDTS := subStreamID >= 0x88 && subStreamID <= 0x8F
-		isLPCM := subStreamID >= 0xA0 && subStreamID <= 0xA7
-
-		if isAC3 || isDTS || isLPCM {
-			// Track sub-stream order
-			if !seenSubStreams[subStreamID] {
-				seenSubStreams[subStreamID] = true
-				p.audioSubStreams = append(p.audioSubStreams, subStreamID)
-			}
-
-			if isLPCM {
-				// Strip 7 bytes: 4-byte PS header + 3-byte LPCM frame header
-				if rawRange.Size > LPCMTotalHeaderSize {
-					// Parse LPCM header on first packet to get bit depth
-					if _, ok := p.lpcmInfo[subStreamID]; !ok {
-						headerEnd := rawRange.FileOffset + 4 + LPCMHeaderSize
-						if headerEnd > p.size {
-							continue
-						}
-						headerData := p.data[rawRange.FileOffset+4 : headerEnd]
-						info := ParseLPCMFrameHeader(headerData)
-						p.lpcmInfo[subStreamID] = info
-						// Only 16-bit LPCM is supported for byte-swap matching.
-						// 20/24-bit uses grouped packing that changes data size
-						// during transform, so it falls through to delta.
-						if IsLPCM16Bit(info.Quantization) {
-							p.lpcmSubStreams[subStreamID] = true
-						}
-					}
-					esOffset := esOffsetBySubStream[subStreamID]
-					rangesBySubStream[subStreamID] = append(rangesBySubStream[subStreamID], PESPayloadRange{
-						FileOffset: rawRange.FileOffset + LPCMTotalHeaderSize,
-						Size:       rawRange.Size - LPCMTotalHeaderSize,
-						ESOffset:   esOffset,
-					})
-					esOffsetBySubStream[subStreamID] += int64(rawRange.Size - LPCMTotalHeaderSize)
-				}
-			} else {
-				// Strip the entire 4-byte header, keep only raw audio data
-				if rawRange.Size > 4 {
-					esOffset := esOffsetBySubStream[subStreamID]
-					rangesBySubStream[subStreamID] = append(rangesBySubStream[subStreamID], PESPayloadRange{
-						FileOffset: rawRange.FileOffset + 4, // Skip header (1 + 1 + 2)
-						Size:       rawRange.Size - 4,       // Rest is audio data
-						ESOffset:   esOffset,
-					})
-					esOffsetBySubStream[subStreamID] += int64(rawRange.Size - 4)
-				}
-			}
-		}
-		// Skip unknown sub-stream types (like subtitles 0x20-0x3F)
-	}
-
-	p.filteredAudioBySubStream = rangesBySubStream
+	result := buildFilteredAudioRangesFromData(p.data, p.size, p.audioRanges, p.audioRangeStreamIDs, nil)
+	p.filteredAudioBySubStream = result.RangesBySubStream
+	p.audioSubStreams = result.SubStreams
+	p.lpcmSubStreams = result.LPCMSubStreams
+	p.lpcmInfo = result.LPCMInfo
 	return nil
 }
 
@@ -770,7 +670,8 @@ func (p *MPEGPSParser) buildCellSegments() {
 }
 
 // CellSegmentCount returns the number of detected cell segments.
-// Returns 0 if no NAV packs were found (no segmentation).
+// Returns 0 when no segmentation is needed: either no NAV packs were found,
+// or NAV packs were found but no interleaving was detected.
 func (p *MPEGPSParser) CellSegmentCount() int {
 	return len(p.cellSegments)
 }
@@ -908,49 +809,7 @@ func (p *MPEGPSParser) ReadAudioSubStreamData(subStreamID byte, esOffset int64, 
 		return readFromRanges(p.data, nil, p.size, ranges, esOffset, size)
 	}
 
-	// LPCM 16-bit forward transform (DVD big-endian → MKV little-endian).
-	// Byte-swap pairs are aligned to the ES start (pairs at offsets 0-1, 2-3, ...).
-	// If esOffset is odd, we must read one extra byte before to complete the pair.
-	alignedOffset := esOffset
-	trimFront := 0
-	if esOffset%2 == 1 {
-		alignedOffset = esOffset - 1
-		trimFront = 1
-	}
-	alignedSize := size + trimFront
-	// If alignedSize is odd, extend by 1 to complete the trailing pair
-	// (if data is available).
-	trimBack := 0
-	if alignedSize%2 == 1 {
-		alignedSize++
-		trimBack = 1
-	}
-
-	data, err := readFromRanges(p.data, nil, p.size, ranges, alignedOffset, alignedSize)
-	if err != nil {
-		// If extending caused an out-of-range error, retry without the trailing extension
-		if trimBack > 0 {
-			alignedSize--
-			trimBack = 0
-			data, err = readFromRanges(p.data, nil, p.size, ranges, alignedOffset, alignedSize)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// readFromRanges may return a zero-copy mmap slice, so clone first
-	result := make([]byte, len(data))
-	copy(result, data)
-	TransformLPCM16BE(result)
-
-	// Trim to the originally requested range
-	start := trimFront
-	end := start + size
-	if end > len(result) {
-		end = len(result)
-	}
-	return result[start:end], nil
+	return readLPCMSubStreamData(p.data, p.size, ranges, esOffset, size)
 }
 
 // IsLPCMSubStream returns true if the given sub-stream ID is an LPCM sub-stream.

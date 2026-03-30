@@ -9,12 +9,19 @@ import (
 
 // detectDVDCodecs extracts codec information from an already-indexed DVD source.
 // The MPEG-PS parser has already identified video and audio streams during indexing.
+// For interleaved DVDs, ESReaders may contain cellSegmentAdapter entries;
+// we unwrap them to access the underlying parser's stream metadata.
 func detectDVDCodecs(index *Index) (*SourceCodecs, error) {
 	codecs := &SourceCodecs{}
 
 	for _, esReader := range index.ESReaders {
-		parser, ok := esReader.(*MPEGPSParser)
-		if !ok {
+		var parser *MPEGPSParser
+		switch r := esReader.(type) {
+		case *MPEGPSParser:
+			parser = r
+		case *cellSegmentAdapter:
+			parser = r.Parser()
+		default:
 			continue
 		}
 
