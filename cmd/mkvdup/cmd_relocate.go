@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -69,11 +72,15 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 	if !force {
 		if _, err := os.Stat(absDst); err == nil {
 			return fmt.Errorf("destination %s already exists (use --force to overwrite)", absDst)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("check destination %s: %w", absDst, err)
 		}
 		// Always check for existing destination sidecar, even if source has none,
 		// to avoid leaving stale/mismatched sidecars.
 		if _, err := os.Stat(sidecarDst); err == nil {
 			return fmt.Errorf("destination sidecar %s already exists (use --force to overwrite)", sidecarDst)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("check destination sidecar %s: %w", sidecarDst, err)
 		}
 	} else if !hasSidecar {
 		// With --force, if the source has no sidecar but the destination does,
@@ -174,8 +181,8 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		return fmt.Errorf("create destination directory: %w", err)
 	}
 
-	// Move the .mkvdup file
-	if err := osRename(absSrc, absDst); err != nil {
+	// Move the .mkvdup file (supports cross-filesystem moves)
+	if err := moveFile(absSrc, absDst); err != nil {
 		return fmt.Errorf("move dedup file: %w", err)
 	}
 
@@ -185,7 +192,7 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 	if hasSidecar {
 		tmpFile, err := os.CreateTemp(filepath.Dir(sidecarDst), ".mkvdup-relocate-*.tmp")
 		if err != nil {
-			if rbErr := osRename(absDst, absSrc); rbErr != nil {
+			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
 				return fmt.Errorf("create temp sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
 			}
 			return fmt.Errorf("create temp sidecar: %w", err)
@@ -195,14 +202,14 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		if _, err := tmpFile.Write(updatedSidecar); err != nil {
 			tmpFile.Close()
 			_ = osRemove(sidecarTmp)
-			if rbErr := osRename(absDst, absSrc); rbErr != nil {
+			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
 				return fmt.Errorf("write sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
 			}
 			return fmt.Errorf("write sidecar: %w", err)
 		}
 		if err := tmpFile.Close(); err != nil {
 			_ = osRemove(sidecarTmp)
-			if rbErr := osRename(absDst, absSrc); rbErr != nil {
+			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
 				return fmt.Errorf("close temp sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
 			}
 			return fmt.Errorf("close temp sidecar: %w", err)
@@ -211,7 +218,7 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		// os.CreateTemp creates files with 0600; match dedup.WriteConfig's 0644.
 		if err := os.Chmod(sidecarTmp, 0644); err != nil {
 			_ = osRemove(sidecarTmp)
-			if rbErr := osRename(absDst, absSrc); rbErr != nil {
+			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
 				return fmt.Errorf("set sidecar permissions: %v (also failed to rollback dedup move: %w)", err, rbErr)
 			}
 			return fmt.Errorf("set sidecar permissions: %w", err)
@@ -219,7 +226,7 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 
 		if err := osRename(sidecarTmp, sidecarDst); err != nil {
 			_ = osRemove(sidecarTmp)
-			if rbErr := osRename(absDst, absSrc); rbErr != nil {
+			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
 				return fmt.Errorf("move sidecar into place: %v (also failed to rollback dedup move: %w)", err, rbErr)
 			}
 			return fmt.Errorf("move sidecar into place: %w", err)
@@ -269,6 +276,58 @@ func resolveRelPath(baseDir, path string) string {
 		return path
 	}
 	return filepath.Clean(filepath.Join(baseDir, path))
+}
+
+// moveFile moves a file from src to dst. It tries os.Rename first for
+// efficiency; if that fails with EXDEV (cross-device), it falls back to
+// copy + remove.
+func moveFile(src, dst string) error {
+	err := osRename(src, dst)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+
+	// Cross-filesystem: copy then remove source.
+	if err := copyFile(src, dst); err != nil {
+		return fmt.Errorf("cross-device copy: %w", err)
+	}
+	if err := osRemove(src); err != nil {
+		return fmt.Errorf("remove source after cross-device copy: %w", err)
+	}
+	return nil
+}
+
+// copyFile copies a file from src to dst, preserving permissions.
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		dstFile.Close()
+		_ = osRemove(dst)
+		return err
+	}
+	if err := dstFile.Close(); err != nil {
+		_ = osRemove(dst)
+		return err
+	}
+	return nil
 }
 
 // yamlNodeValue returns the string value for a key in a YAML mapping node.
