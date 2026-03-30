@@ -319,6 +319,11 @@ func (idx *Indexer) indexMPEGPSFile(startFileIndex uint16, path string, size int
 		}
 
 		entriesCreated++
+
+		// Report incremental progress for Phase 3 (66% → 100%)
+		if progress != nil {
+			progress(2*size/3 + int64(i+1)*size/(3*int64(numSegments)))
+		}
 	}
 
 	if progress != nil {
