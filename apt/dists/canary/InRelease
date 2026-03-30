@@ -8,16 +8,16 @@ Codename: canary
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup canary packages
-Date: Wed, 25 Mar 2026 03:09:02 +0000
+Date: Mon, 30 Mar 2026 18:32:54 +0000
 SHA256:
- e7f124ff60a423459a14569894c8f3b2fdbd403bfc24a9c702eb34a277a3ee06 686 main/binary-amd64/Packages
- e01a0e3976dabf4df452e1fedc8c01c0fd5c68acaa73d9f05c6618616b0e05e9 485 main/binary-amd64/Packages.gz
- 7d805455106c7dba156aec6ac799096790bf657d5102d2063af25093afcd327f 686 main/binary-arm64/Packages
- 8244d42a2a2349b73c82ce6dd69ea0d76670e7ab85ceed7bc3d1f7f82c648754 487 main/binary-arm64/Packages.gz
+ dff676bbbdb22ad087ab79140f6c05412ce0b73914ebd4580d66ce76451e0284 686 main/binary-amd64/Packages
+ 0298cd7d53a698c13d72db67e9213142fb246c9f63de15a8336475e5b51ab87a 485 main/binary-amd64/Packages.gz
+ aabe5d93799c1c020992cab4c4d8b5eff720a0c492445fc8b3da9de14de930d8 686 main/binary-arm64/Packages
+ 3ae341011fcad443077a416271ba2b1c590383f3c9e98a14208b78cab4bca1a3 488 main/binary-arm64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCacNRzwAKCRDNt7j4ivzL
-4/PyAQCpTkNb20tobCmOPJ/WREIj6k2dD6ITJ75YM8/ygp73IwD/Xvx/vjCofcr1
-HDpY51aKPuGtSvF8lSSUDVmgqn+HUwU=
-=v39d
+iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCacrB1wAKCRDNt7j4ivzL
+47KoAP9UY6uzu8v/jaxikTrJvDYOQi+WNBqINC4eWzETjE75fAEA9ArXVWW5VHPq
+enHyCCEAPE3R7Ssg5UcqmA1HlgsQigE=
+=Sd4y
 -----END PGP SIGNATURE-----
