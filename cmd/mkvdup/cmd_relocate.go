@@ -65,6 +65,18 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 				return fmt.Errorf("destination sidecar %s already exists (use --force to overwrite)", sidecarDst)
 			}
 		}
+	} else if !hasSidecar {
+		// With --force, if the source has no sidecar but the destination does,
+		// remove the stale destination sidecar so it doesn't become orphaned.
+		if _, err := os.Stat(sidecarDst); err == nil {
+			if !dryRun {
+				if err := osRemove(sidecarDst); err != nil {
+					return fmt.Errorf("remove stale destination sidecar %s: %w", sidecarDst, err)
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("check destination sidecar %s: %w", sidecarDst, err)
+		}
 	}
 
 	// Read and update sidecar if it exists
@@ -78,11 +90,18 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		srcDir := filepath.Dir(absSrc)
 		dstDir := filepath.Dir(absDst)
 
-		// Resolve current paths to absolute, then make relative to new location
-		newDedupFile, err := recalcRelativePath(srcDir, dstDir, config.DedupFile)
-		if err != nil {
-			return fmt.Errorf("recalculate dedup_file path: %w", err)
+		// dedup_file should point to the new location (since the .mkvdup file
+		// itself is being moved). Use the basename for relative paths (sidecar
+		// and dedup file are always in the same directory), or the new absolute
+		// path if the original was absolute.
+		var newDedupFile string
+		if filepath.IsAbs(config.DedupFile) {
+			newDedupFile = absDst
+		} else {
+			newDedupFile = filepath.Base(absDst)
 		}
+
+		// source_dir points to a static location — recalculate relative to new position
 		newSourceDir, err := recalcRelativePath(srcDir, dstDir, config.SourceDir)
 		if err != nil {
 			return fmt.Errorf("recalculate source_dir path: %w", err)
@@ -133,7 +152,7 @@ source_dir: %q
 		}
 		// Remove old sidecar (only if src and dst sidecars are different files)
 		if sidecarSrc != sidecarDst {
-			if err := os.Remove(sidecarSrc); err != nil && !os.IsNotExist(err) {
+			if err := osRemove(sidecarSrc); err != nil && !os.IsNotExist(err) {
 				printWarn("Warning: could not remove old sidecar %s: %v\n", sidecarSrc, err)
 			}
 		}
@@ -198,9 +217,10 @@ directory with its original filename. Otherwise, <destination> is used
 as the new file path.
 
 The .mkvdup.yaml sidecar (if present) is moved alongside the .mkvdup
-file and its dedup_file and source_dir paths are recalculated so they
-resolve to the same absolute locations from the new position. Absolute
-paths in the sidecar are preserved unchanged.
+file. The dedup_file path is updated to reference the new .mkvdup
+location. The source_dir path is recalculated so it resolves to the
+same absolute location from the new position (absolute source_dir
+paths are preserved unchanged).
 
 After moving, the command validates that source directories referenced
 by the sidecar are still reachable.

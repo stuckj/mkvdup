@@ -65,6 +65,11 @@ source_dir: "`+relMedia+`"
 	}
 	sidecar := string(data)
 
+	// dedup_file should point to the new filename (same directory as sidecar).
+	if !strings.Contains(sidecar, `"movie.mkvdup"`) {
+		t.Errorf("sidecar dedup_file should reference new location %q, got:\n%s", "movie.mkvdup", sidecar)
+	}
+
 	// source_dir should be recalculated relative to new location.
 	newRelMedia, _ := filepath.Rel(dstDir, sourceMediaDir)
 	if !strings.Contains(sidecar, newRelMedia) {
@@ -257,10 +262,11 @@ source_dir: "`+sourceMediaDir+`"
 	}
 	sidecar := string(data)
 
-	// Absolute paths should be preserved unchanged.
-	if !strings.Contains(sidecar, dedupPath) {
-		t.Errorf("absolute dedup_file should be preserved, got:\n%s", sidecar)
+	// Absolute dedup_file should be updated to the new location.
+	if !strings.Contains(sidecar, newPath) {
+		t.Errorf("absolute dedup_file should be updated to new path %q, got:\n%s", newPath, sidecar)
 	}
+	// Absolute source_dir should be preserved unchanged.
 	if !strings.Contains(sidecar, sourceMediaDir) {
 		t.Errorf("absolute source_dir should be preserved, got:\n%s", sidecar)
 	}
@@ -289,6 +295,36 @@ func TestRelocateDedup_SourceNotFound(t *testing.T) {
 	err := relocateDedup(filepath.Join(dir, "nonexistent.mkvdup"), filepath.Join(dir, "dst.mkvdup"), false, false)
 	if err == nil {
 		t.Fatal("expected error for nonexistent source")
+	}
+}
+
+func TestRelocateDedup_ForceRemovesOrphanedSidecar(t *testing.T) {
+	dir := t.TempDir()
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
+	// Source has no sidecar.
+	dedupPath := filepath.Join(dir, "movie.mkvdup")
+	if err := os.WriteFile(dedupPath, []byte("fake-dedup-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Destination already has a dedup file AND a sidecar.
+	newPath := filepath.Join(dir, "other.mkvdup")
+	if err := os.WriteFile(newPath, []byte("existing"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath+".yaml", []byte("orphan-sidecar"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// With --force, should succeed and remove the orphaned destination sidecar.
+	if err := relocateDedup(dedupPath, newPath, true, false); err != nil {
+		t.Fatalf("relocateDedup --force: %v", err)
+	}
+	if _, err := os.Stat(newPath + ".yaml"); !os.IsNotExist(err) {
+		t.Error("orphaned destination sidecar should be removed when source has no sidecar")
 	}
 }
 

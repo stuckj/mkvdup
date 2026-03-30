@@ -583,8 +583,8 @@ mkvdup relocate --force <source.mkvdup> <destination>
 **Behavior:**
 - If `<destination>` is an existing directory, the file is moved into it with its original filename
 - The `.mkvdup.yaml` sidecar (if present) is moved alongside the `.mkvdup` file
-- Relative `dedup_file` and `source_dir` paths in the sidecar are recalculated so they resolve to the same absolute locations from the new position
-- Absolute paths in the sidecar are preserved unchanged
+- The `dedup_file` path in the sidecar is updated to reference the new `.mkvdup` location
+- Relative `source_dir` paths in the sidecar are recalculated so they resolve to the same absolute location from the new position; absolute `source_dir` paths are preserved unchanged
 - After moving, validates that source directories referenced by the sidecar are still reachable
 - Creates destination directories as needed
 
