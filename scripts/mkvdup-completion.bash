@@ -45,7 +45,7 @@ _mkvdup() {
         }
     fi
 
-    local commands="create batch-create probe mount info verify extract check stats validate reload expand-config parse-mkv index-source match deltadiag help"
+    local commands="create batch-create probe mount info verify extract check stats validate reload expand-config relocate parse-mkv index-source match deltadiag help"
     local global_opts="-v --verbose -q --quiet --no-progress --log-file --log-verbose -h --help --version"
 
     # Find the command (first non-option argument after mkvdup)
@@ -92,7 +92,7 @@ _mkvdup() {
     fi
 
     # Global options available for commands that don't define their own options
-    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "stats" && "$cmd" != "validate" && "$cmd" != "reload" && "$cmd" != "info" && "$cmd" != "expand-config" ]]; then
+    if [[ "$cur" == -* && "$cmd" != "create" && "$cmd" != "batch-create" && "$cmd" != "mount" && "$cmd" != "check" && "$cmd" != "stats" && "$cmd" != "validate" && "$cmd" != "reload" && "$cmd" != "info" && "$cmd" != "expand-config" && "$cmd" != "relocate" ]]; then
         COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))
         return
     fi
@@ -281,6 +281,16 @@ _mkvdup() {
                     ;;
             esac
             _filedir '@(yaml|yml)'
+            ;;
+
+        relocate)
+            # relocate [options] <source.mkvdup> <destination>
+            local relocate_opts="--dry-run --force"
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$relocate_opts $global_opts" -- "$cur"))
+                return
+            fi
+            _filedir
             ;;
 
         parse-mkv)

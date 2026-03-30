@@ -559,6 +559,51 @@ mkvdup expand-config mount-config.yaml --output expanded.yaml
 mkvdup expand-config --dry-run mount-config.yaml
 ```
 
+### relocate
+
+Move an `.mkvdup` file and its `.mkvdup.yaml` sidecar to a new location, updating relative paths in the sidecar so they resolve to the same absolute locations from the new position.
+
+```bash
+mkvdup relocate <source.mkvdup> <destination>
+mkvdup relocate --dry-run <source.mkvdup> <destination>
+mkvdup relocate --force <source.mkvdup> <destination>
+```
+
+**Arguments:**
+- `<source.mkvdup>` -- Path to the `.mkvdup` file to move
+- `<destination>` -- Destination path (file or directory)
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview changes without moving files |
+| `--force` | Overwrite destination if it already exists |
+
+**Behavior:**
+- If `<destination>` is an existing directory, the file is moved into it with its original filename
+- The `.mkvdup.yaml` sidecar (if present) is moved alongside the `.mkvdup` file
+- The `dedup_file` path in the sidecar is updated to reference the new `.mkvdup` location
+- Relative `source_dir` paths in the sidecar are recalculated so they resolve to the same absolute location from the new position; absolute `source_dir` paths are preserved unchanged
+- Before moving, validates that source directories referenced by the sidecar are reachable from the destination; if validation fails, no files are moved
+- Creates destination directories as needed
+
+**Examples:**
+
+```bash
+# Move to a specific path
+mkvdup relocate movie.mkvdup /new/location/movie.mkvdup
+
+# Move into a directory (keeps original filename)
+mkvdup relocate movie.mkvdup /new/location/
+
+# Preview what would happen
+mkvdup relocate --dry-run movie.mkvdup /new/location/
+
+# Overwrite existing destination
+mkvdup relocate --force movie.mkvdup /new/location/movie.mkvdup
+```
+
 ### deltadiag
 
 Analyze unmatched (delta) regions in a dedup file by cross-referencing with the original MKV to classify what stream type each delta region belongs to.

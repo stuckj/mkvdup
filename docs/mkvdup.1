@@ -319,6 +319,29 @@ Write expanded config to PATH (default: stdout)
 Preview expanded output without writing
 .RE
 .TP
+.B relocate \fR[\fIoptions\fR] \fIsource.mkvdup\fR \fIdestination\fR
+Move an .mkvdup file and its .mkvdup.yaml sidecar to a new location,
+updating relative paths in the sidecar so they resolve to the same
+absolute locations from the new position. If
+.I destination
+is an existing directory, the file is moved into it with its original
+filename. The sidecar's \fIdedup_file\fR is updated to point to the new
+location; absolute \fIsource_dir\fR paths are preserved unchanged.
+.RS
+.TP
+.I source.mkvdup
+Path to the .mkvdup file to move
+.TP
+.I destination
+Destination path (file or directory)
+.TP
+.B \-\-dry\-run
+Preview changes without moving files
+.TP
+.B \-\-force
+Overwrite destination if it already exists
+.RE
+.TP
 .B deltadiag \fIdedup-file\fR \fImkv-file\fR
 Analyze unmatched (delta) regions in a dedup file by cross-referencing with
 the original MKV. Classifies delta bytes by stream type (video, audio,
@@ -468,6 +491,15 @@ Analyze unmatched regions in a dedup file:
 .RS
 .nf
 @PACKAGE_NAME@ deltadiag movie.mkvdup original.mkv
+.fi
+.RE
+.PP
+Move a dedup file and its sidecar to a new location:
+.PP
+.RS
+.nf
+@PACKAGE_NAME@ relocate movie.mkvdup /new/location/
+@PACKAGE_NAME@ relocate --dry-run movie.mkvdup /new/location/movie.mkvdup
 .fi
 .RE
 .SH BATCH MANIFEST FORMAT

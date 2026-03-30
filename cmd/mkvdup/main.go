@@ -629,6 +629,28 @@ func main() {
 			log.Fatalf("Error: %v", err)
 		}
 
+	case "relocate":
+		force := false
+		dryRun := false
+		var relocateArgs []string
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--force":
+				force = true
+			case "--dry-run":
+				dryRun = true
+			default:
+				relocateArgs = append(relocateArgs, args[i])
+			}
+		}
+		if len(relocateArgs) != 2 {
+			printCommandUsage("relocate")
+			os.Exit(1)
+		}
+		if err := relocateDedup(relocateArgs[0], relocateArgs[1], force, dryRun); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
 	case "deltadiag":
 		if len(args) < 2 {
 			printCommandUsage("deltadiag")

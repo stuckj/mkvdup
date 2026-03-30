@@ -187,6 +187,21 @@ _mkvdup_expand_config() {
         '1:Config file:_files -g "*.y(a|)ml(-.)"'
 }
 
+_mkvdup_relocate() {
+    _arguments -s \
+        '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress informational progress output]' \
+        '--no-progress[Disable progress bars]' \
+        '--log-file[Duplicate output to a log file]: :_files' \
+        '--log-verbose[Enable verbose output in log file only]' \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '--version[Show version]' \
+        '--dry-run[Preview changes without moving files]' \
+        '--force[Overwrite destination if it already exists]' \
+        '1:Source dedup file:_files -g "*.mkvdup(-.)"' \
+        '2:Destination:_files'
+}
+
 _mkvdup_parse_mkv() {
     _arguments -s \
         '(-v --verbose)'{-v,--verbose}'[Enable verbose/debug output]' \
@@ -268,6 +283,7 @@ _mkvdup() {
                 'validate:Validate configuration files for correctness'
                 'reload:Reload a running daemon configuration'
                 'expand-config:Expand wildcard config to explicit file list'
+                'relocate:Move dedup file + sidecar, updating paths'
                 'parse-mkv:Parse and display MKV structure (debug)'
                 'index-source:Index a source directory (debug)'
                 'match:Match packets between MKV and source (debug)'
@@ -290,13 +306,14 @@ _mkvdup() {
                 validate)     _mkvdup_validate ;;
                 reload)        _mkvdup_reload ;;
                 expand-config) _mkvdup_expand_config ;;
+                relocate)      _mkvdup_relocate ;;
                 parse-mkv)     _mkvdup_parse_mkv ;;
                 index-source) _mkvdup_index_source ;;
                 match)        _mkvdup_match ;;
                 deltadiag)    _mkvdup_deltadiag ;;
                 help)
                     local -a help_cmds
-                    help_cmds=(create batch-create probe mount info verify extract check stats validate reload expand-config parse-mkv index-source match deltadiag)
+                    help_cmds=(create batch-create probe mount info verify extract check stats validate reload expand-config relocate parse-mkv index-source match deltadiag)
                     _describe -t commands 'command' help_cmds
                     ;;
             esac
