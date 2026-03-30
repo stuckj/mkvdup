@@ -296,6 +296,72 @@ source_dir: "`+sourceMediaDir+`"
 	}
 }
 
+func TestRelocateDedup_PreservesExtraYAMLKeys(t *testing.T) {
+	dir := t.TempDir()
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
+	sourceMediaDir := filepath.Join(dir, "media")
+	if err := os.MkdirAll(sourceMediaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	dedupPath := filepath.Join(dir, "movie.mkvdup")
+	if err := os.WriteFile(dedupPath, []byte("fake-dedup-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sidecar with extra keys (includes, virtual_files, on_error_command).
+	writeTestYAML(t, dedupPath+".yaml", `name: "movie.mkv"
+dedup_file: "movie.mkvdup"
+source_dir: "media"
+includes:
+  - "/data/**/*.mkvdup.yaml"
+virtual_files:
+  - name: "extra.mkv"
+    dedup_file: "/data/extra.mkvdup"
+    source_dir: "/data/source"
+on_error_command:
+  command: ["echo", "error"]
+  timeout: 10s
+`)
+
+	dstDir := filepath.Join(dir, "subdir")
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := relocateDedup(dedupPath, dstDir, false, false); err != nil {
+		t.Fatalf("relocateDedup: %v", err)
+	}
+
+	newPath := filepath.Join(dstDir, "movie.mkvdup")
+	data, err := os.ReadFile(newPath + ".yaml")
+	if err != nil {
+		t.Fatalf("read new sidecar: %v", err)
+	}
+	sidecar := string(data)
+
+	// Extra keys should be preserved.
+	if !strings.Contains(sidecar, "includes:") {
+		t.Error("includes should be preserved")
+	}
+	if !strings.Contains(sidecar, "virtual_files:") {
+		t.Error("virtual_files should be preserved")
+	}
+	if !strings.Contains(sidecar, "on_error_command:") {
+		t.Error("on_error_command should be preserved")
+	}
+	if !strings.Contains(sidecar, "/data/**/*.mkvdup.yaml") {
+		t.Error("include glob should be preserved")
+	}
+	// dedup_file and source_dir should be updated.
+	if !strings.Contains(sidecar, "movie.mkvdup") {
+		t.Errorf("dedup_file should reference new location, got:\n%s", sidecar)
+	}
+}
+
 func TestRelocateDedup_DestSidecarConflictNoSourceSidecar(t *testing.T) {
 	dir := t.TempDir()
 
