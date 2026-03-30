@@ -186,53 +186,15 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		return fmt.Errorf("move dedup file: %w", err)
 	}
 
-	// Write updated sidecar at destination (then remove old one).
-	// Write to a unique temporary file first, then atomically move into
-	// place to avoid leaving a partially written sidecar at sidecarDst.
+	// Write updated sidecar atomically, then remove old one.
+	// If sidecar write fails, rollback the dedup move.
 	if hasSidecar {
-		tmpFile, err := os.CreateTemp(filepath.Dir(sidecarDst), ".mkvdup-relocate-*.tmp")
-		if err != nil {
+		if err := writeFileAtomic(sidecarDst, updatedSidecar, 0644); err != nil {
 			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
-				return fmt.Errorf("create temp sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
-			}
-			return fmt.Errorf("create temp sidecar: %w", err)
-		}
-		sidecarTmp := tmpFile.Name()
-
-		if _, err := tmpFile.Write(updatedSidecar); err != nil {
-			tmpFile.Close()
-			_ = osRemove(sidecarTmp)
-			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
-				return fmt.Errorf("write sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
+				printWarn("Warning: failed to rollback dedup move: %v\n", rbErr)
 			}
 			return fmt.Errorf("write sidecar: %w", err)
 		}
-		if err := tmpFile.Close(); err != nil {
-			_ = osRemove(sidecarTmp)
-			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
-				return fmt.Errorf("close temp sidecar: %v (also failed to rollback dedup move: %w)", err, rbErr)
-			}
-			return fmt.Errorf("close temp sidecar: %w", err)
-		}
-
-		// os.CreateTemp creates files with 0600; match dedup.WriteConfig's 0644.
-		if err := os.Chmod(sidecarTmp, 0644); err != nil {
-			_ = osRemove(sidecarTmp)
-			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
-				return fmt.Errorf("set sidecar permissions: %v (also failed to rollback dedup move: %w)", err, rbErr)
-			}
-			return fmt.Errorf("set sidecar permissions: %w", err)
-		}
-
-		if err := osRename(sidecarTmp, sidecarDst); err != nil {
-			_ = osRemove(sidecarTmp)
-			if rbErr := moveFile(absDst, absSrc); rbErr != nil {
-				return fmt.Errorf("move sidecar into place: %v (also failed to rollback dedup move: %w)", err, rbErr)
-			}
-			return fmt.Errorf("move sidecar into place: %w", err)
-		}
-
-		// Remove old sidecar (only if src and dst sidecars are different files)
 		if sidecarSrc != sidecarDst {
 			if err := osRemove(sidecarSrc); err != nil && !os.IsNotExist(err) {
 				printWarn("Warning: could not remove old sidecar %s: %v\n", sidecarSrc, err)
@@ -276,6 +238,39 @@ func resolveRelPath(baseDir, path string) string {
 		return path
 	}
 	return filepath.Clean(filepath.Join(baseDir, path))
+}
+
+// writeFileAtomic writes data to dst via a temp file + rename, ensuring
+// no partially written file is left at dst on failure. The temp file is
+// cleaned up automatically on any error.
+func writeFileAtomic(dst string, data []byte, perm os.FileMode) error {
+	tmpFile, err := os.CreateTemp(filepath.Dir(dst), ".mkvdup-relocate-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	success := false
+	defer func() {
+		if !success {
+			_ = osRemove(tmpPath)
+		}
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		return err
+	}
+	if err := osRename(tmpPath, dst); err != nil {
+		return err
+	}
+	success = true
+	return nil
 }
 
 // moveFile moves a file from src to dst. It tries os.Rename first for
