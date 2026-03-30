@@ -194,6 +194,30 @@ source_dir: "media"
 	}
 }
 
+func TestRelocateDedup_TrailingSlashCreatesDir(t *testing.T) {
+	dir := t.TempDir()
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
+	dedupPath := filepath.Join(dir, "movie.mkvdup")
+	if err := os.WriteFile(dedupPath, []byte("fake-dedup-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Destination with trailing slash — directory doesn't exist yet.
+	dstDir := filepath.Join(dir, "newdir") + "/"
+
+	if err := relocateDedup(dedupPath, dstDir, false, false); err != nil {
+		t.Fatalf("relocateDedup with trailing slash: %v", err)
+	}
+
+	newPath := filepath.Join(dir, "newdir", "movie.mkvdup")
+	if _, err := os.Stat(newPath); err != nil {
+		t.Error("file should be moved into the created directory")
+	}
+}
+
 func TestRelocateDedup_NoSidecar(t *testing.T) {
 	dir := t.TempDir()
 	oldQuiet := quiet

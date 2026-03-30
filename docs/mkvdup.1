@@ -325,7 +325,8 @@ updating relative paths in the sidecar so they resolve to the same
 absolute locations from the new position. If
 .I destination
 is an existing directory, the file is moved into it with its original
-filename. Absolute paths in the sidecar are preserved unchanged.
+filename. The sidecar's \fIdedup_file\fR is updated to point to the new
+location; absolute \fIsource_dir\fR paths are preserved unchanged.
 .RS
 .TP
 .I source.mkvdup

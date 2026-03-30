@@ -42,9 +42,17 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		return fmt.Errorf("resolve destination path: %w", err)
 	}
 
-	// If destination is an existing directory, move into it with the same filename
+	// If destination is an existing directory, or an explicitly-directory path
+	// (e.g. ends with a path separator, like "/new/location/"), move into it
+	// with the same filename.
 	dstInfo, err := os.Stat(absDst)
+	isDirDst := false
 	if err == nil && dstInfo.IsDir() {
+		isDirDst = true
+	} else if os.IsNotExist(err) && len(dst) > 0 && os.IsPathSeparator(dst[len(dst)-1]) {
+		isDirDst = true
+	}
+	if isDirDst {
 		absDst = filepath.Join(absDst, filepath.Base(absSrc))
 	}
 
