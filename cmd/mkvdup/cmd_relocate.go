@@ -82,18 +82,6 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("check destination sidecar %s: %w", sidecarDst, err)
 		}
-	} else if !hasSidecar {
-		// With --force, if the source has no sidecar but the destination does,
-		// remove the stale destination sidecar so it doesn't become orphaned.
-		if _, err := os.Stat(sidecarDst); err == nil {
-			if !dryRun {
-				if err := osRemove(sidecarDst); err != nil {
-					return fmt.Errorf("remove stale destination sidecar %s: %w", sidecarDst, err)
-				}
-			}
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("check destination sidecar %s: %w", sidecarDst, err)
-		}
 	}
 
 	// Read and update sidecar if it exists, preserving all YAML keys/comments
@@ -157,6 +145,14 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 		setYAMLNodeValue(root, "dedup_file", newDedupFile)
 		setYAMLNodeValue(root, "source_dir", newSourceDir)
 
+		// Recalculate relative paths in virtual_files entries
+		if err := recalcVirtualFiles(root, srcDir, dstDir); err != nil {
+			return fmt.Errorf("recalculate virtual_files paths: %w", err)
+		}
+
+		// Recalculate relative include patterns
+		recalcIncludes(root, srcDir, dstDir)
+
 		updatedSidecar, err = yaml.Marshal(&doc)
 		if err != nil {
 			return fmt.Errorf("marshal updated sidecar: %w", err)
@@ -184,6 +180,16 @@ func relocateDedup(src, dst string, force, dryRun bool) error {
 	// Move the .mkvdup file (supports cross-filesystem moves)
 	if err := moveFile(absSrc, absDst); err != nil {
 		return fmt.Errorf("move dedup file: %w", err)
+	}
+
+	// With --force and no source sidecar, clean up any orphaned destination
+	// sidecar now that the dedup move has succeeded.
+	if force && !hasSidecar {
+		if _, err := os.Stat(sidecarDst); err == nil {
+			if err := osRemove(sidecarDst); err != nil {
+				printWarn("Warning: could not remove orphaned sidecar %s: %v\n", sidecarDst, err)
+			}
+		}
 	}
 
 	// Write updated sidecar atomically, then remove old one.
@@ -344,6 +350,69 @@ func setYAMLNodeValue(mapping *yaml.Node, key, value string) {
 			return
 		}
 	}
+}
+
+// recalcVirtualFiles recalculates relative dedup_file and source_dir paths
+// in virtual_files entries (a YAML sequence of mappings).
+func recalcVirtualFiles(root *yaml.Node, srcDir, dstDir string) error {
+	vfNode := yamlNodeByKey(root, "virtual_files")
+	if vfNode == nil || vfNode.Kind != yaml.SequenceNode {
+		return nil
+	}
+	for i, entry := range vfNode.Content {
+		if entry.Kind != yaml.MappingNode {
+			continue
+		}
+		// Recalculate dedup_file (points to a static file, not being moved)
+		if old := yamlNodeValue(entry, "dedup_file"); old != "" {
+			recalced, err := recalcRelativePath(srcDir, dstDir, old)
+			if err != nil {
+				return fmt.Errorf("virtual_files[%d].dedup_file: %w", i, err)
+			}
+			setYAMLNodeValue(entry, "dedup_file", recalced)
+		}
+		// Recalculate source_dir
+		if old := yamlNodeValue(entry, "source_dir"); old != "" {
+			recalced, err := recalcRelativePath(srcDir, dstDir, old)
+			if err != nil {
+				return fmt.Errorf("virtual_files[%d].source_dir: %w", i, err)
+			}
+			setYAMLNodeValue(entry, "source_dir", recalced)
+		}
+	}
+	return nil
+}
+
+// recalcIncludes recalculates relative include glob patterns in the sidecar.
+func recalcIncludes(root *yaml.Node, srcDir, dstDir string) {
+	inclNode := yamlNodeByKey(root, "includes")
+	if inclNode == nil || inclNode.Kind != yaml.SequenceNode {
+		return
+	}
+	for _, entry := range inclNode.Content {
+		if entry.Kind != yaml.ScalarNode || filepath.IsAbs(entry.Value) {
+			continue
+		}
+		// Recalculate the relative portion. Glob patterns may contain
+		// wildcards, but the directory prefix is what needs adjusting.
+		// recalcRelativePath works on the path as-is since filepath.Rel
+		// handles non-existent paths fine.
+		recalced, err := recalcRelativePath(srcDir, dstDir, entry.Value)
+		if err == nil {
+			entry.Value = recalced
+		}
+	}
+}
+
+// yamlNodeByKey returns the value node for a key in a YAML mapping node.
+// Returns nil if the key is not found.
+func yamlNodeByKey(mapping *yaml.Node, key string) *yaml.Node {
+	for i := 0; i < len(mapping.Content)-1; i += 2 {
+		if mapping.Content[i].Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // printRelocateUsage prints the usage for the relocate command.

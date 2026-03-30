@@ -362,6 +362,94 @@ on_error_command:
 	}
 }
 
+func TestRelocateDedup_RecalcsVirtualFilesAndIncludes(t *testing.T) {
+	dir := t.TempDir()
+	oldQuiet := quiet
+	quiet = true
+	defer func() { quiet = oldQuiet }()
+
+	sourceMediaDir := filepath.Join(dir, "media")
+	if err := os.MkdirAll(sourceMediaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	extraSourceDir := filepath.Join(dir, "extra-source")
+	if err := os.MkdirAll(extraSourceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	srcDir := filepath.Join(dir, "old")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	dedupPath := filepath.Join(srcDir, "movie.mkvdup")
+	if err := os.WriteFile(dedupPath, []byte("fake-dedup-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Relative paths in virtual_files and includes that need recalculation.
+	relMedia, _ := filepath.Rel(srcDir, sourceMediaDir)
+	relExtra, _ := filepath.Rel(srcDir, extraSourceDir)
+	writeTestYAML(t, dedupPath+".yaml", `name: "movie.mkv"
+dedup_file: "movie.mkvdup"
+source_dir: "`+relMedia+`"
+includes:
+  - "`+relMedia+`/**/*.mkvdup.yaml"
+  - "/absolute/include/*.yaml"
+virtual_files:
+  - name: "extra.mkv"
+    dedup_file: "`+relExtra+`/extra.mkvdup"
+    source_dir: "`+relExtra+`"
+  - name: "abs.mkv"
+    dedup_file: "/absolute/abs.mkvdup"
+    source_dir: "/absolute/source"
+`)
+
+	dstDir := filepath.Join(dir, "new", "deep")
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(dstDir, "movie.mkvdup")
+
+	if err := relocateDedup(dedupPath, newPath, false, false); err != nil {
+		t.Fatalf("relocateDedup: %v", err)
+	}
+
+	data, err := os.ReadFile(newPath + ".yaml")
+	if err != nil {
+		t.Fatalf("read new sidecar: %v", err)
+	}
+	sidecar := string(data)
+
+	// Relative virtual_files paths should be recalculated.
+	newRelExtra, _ := filepath.Rel(dstDir, extraSourceDir)
+	if !strings.Contains(sidecar, newRelExtra+"/extra.mkvdup") {
+		t.Errorf("virtual_files dedup_file should be recalculated to %q, got:\n%s", newRelExtra+"/extra.mkvdup", sidecar)
+	}
+	if !strings.Contains(sidecar, newRelExtra) {
+		t.Errorf("virtual_files source_dir should be recalculated, got:\n%s", sidecar)
+	}
+
+	// Absolute virtual_files paths should be preserved.
+	if !strings.Contains(sidecar, "/absolute/abs.mkvdup") {
+		t.Errorf("absolute virtual_files dedup_file should be preserved, got:\n%s", sidecar)
+	}
+	if !strings.Contains(sidecar, "/absolute/source") {
+		t.Errorf("absolute virtual_files source_dir should be preserved, got:\n%s", sidecar)
+	}
+
+	// Relative include pattern should be recalculated.
+	newRelMedia, _ := filepath.Rel(dstDir, sourceMediaDir)
+	if !strings.Contains(sidecar, newRelMedia+"/**/*.mkvdup.yaml") {
+		t.Errorf("relative include should be recalculated to %q, got:\n%s", newRelMedia+"/**/*.mkvdup.yaml", sidecar)
+	}
+
+	// Absolute include should be preserved.
+	if !strings.Contains(sidecar, "/absolute/include/*.yaml") {
+		t.Errorf("absolute include should be preserved, got:\n%s", sidecar)
+	}
+}
+
 func TestRelocateDedup_DestSidecarConflictNoSourceSidecar(t *testing.T) {
 	dir := t.TempDir()
 
