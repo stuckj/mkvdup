@@ -87,20 +87,21 @@ Single ES:       [Ep1C1 video][Ep2C1 video][Ep1C2 video][Ep2C2 video]
 MKV (Episode 1): [Ep1C1 video].............[Ep1C2 video]
 ```
 
-**Solution:** Detect cell boundaries using NAV pack metadata and create per-cell ES segments.
+**Solution:** Parse the IFO Cell Address Table to identify cell boundaries and create per-cell ES segments.
 
-DVD VOBs contain NAV packs (Navigation Packs) at the start of each VOBU (Video Object Unit). Each NAV pack has two Private Stream 2 (stream ID 0xBF) PES packets:
+DVD cell structure is defined in VTS IFO files (VTS_xx_0.IFO) under VIDEO_TS/. Each IFO contains a Cell Address Table (C_ADT) at offset 0xE0 in the VTS_MAT that maps sector ranges to (VOB ID, Cell ID) pairs:
 
-1. **PCI** (Presentation Control Information, 980-byte payload): Contains VOBU timing and playback control
-2. **DSI** (Data Search Information, 1018-byte payload): Contains the `SML_PBI.category` field at payload offset 24, whose top nibble indicates whether this VOBU is part of an Interleaved Video Unit (ILVU)
+```
+C_ADT entries for a 4-episode disc:
+  VOB 1, Cell 1: sectors 0-5000      (Episode 1, chapter 1)
+  VOB 2, Cell 1: sectors 5001-10000  (Episode 2, chapter 1)
+  VOB 1, Cell 2: sectors 10001-15000 (Episode 1, chapter 2)
+  VOB 2, Cell 2: sectors 15001-20000 (Episode 2, chapter 2)
+```
 
-The parser detects ILVU boundaries:
-- `ilvuStartBit` (0x2000): First VOBU of an interleaved unit
-- `ilvuEndBit` (0x1000): Last VOBU of an interleaved unit
+The parser detects VOBU boundaries via NAV packs (Private Stream 2 PCI packets, which contain the `nv_pck_lbn` sector address), then maps each VOBU to its VOB ID using the C_ADT. Consecutive VOBUs with the same VOB ID are grouped into one ES segment. Each segment gets its own `cellSegmentAdapter` (implementing `ESReader`), following the same multi-entry pattern used for Blu-ray ISO M2TS regions, and sharing the parser's mmap'd data zero-copy.
 
-Each ILVU (one cell's portion of an interleaved block) becomes its own ES segment with independent offset space, following the same multi-entry pattern used for Blu-ray ISO M2TS regions. The `cellSegmentAdapter` wraps the parser to present each segment as a separate `ESReader`, sharing the parser's mmap'd data zero-copy.
-
-**No regression:** Non-interleaved DVDs (where `SML_PBI.category == 0` for all VOBUs) produce zero segments and use the existing single-ES code path unchanged.
+**No regression:** Non-interleaved DVDs (single VOB ID, or no IFO found) produce zero segments and use the existing single-ES code path unchanged.
 
 **Impact:** On a multi-episode DVD test disc, video hash hit rate improved from ~58% to ~95%+, and savings from ~78% to ~95%+.
 

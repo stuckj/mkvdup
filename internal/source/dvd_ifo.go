@@ -175,6 +175,211 @@ func findIFOsInUDF(f *os.File) ([]isoFileExtent, error) {
 	return ifos, nil
 }
 
+// cellAddrEntry represents one entry in the IFO Cell Address Table (C_ADT).
+// Sector values are relative to the start of the VTS title VOBs.
+type cellAddrEntry struct {
+	VOBId       uint16
+	CellId      uint8
+	StartSector uint32 // relative to VTS VOBs start
+	LastSector  uint32 // inclusive, relative to VTS VOBs start
+}
+
+// vtsCellInfo holds the cell address table and VOB start sector for a VTS.
+type vtsCellInfo struct {
+	VTSVobsSector uint32 // absolute sector of VTS title VOBs in the ISO
+	Cells         []cellAddrEntry
+}
+
+// parseDVDIFOCells parses a VTS IFO file to extract the Cell Address Table.
+// The C_ADT maps sector ranges within the VTS VOBs to (VOB ID, Cell ID) pairs,
+// defining which portions of the interleaved VOB data belong to which cell.
+//
+// VTS_MAT layout (relevant offsets):
+//
+//	0x084: VTS title VOBs start sector (4 bytes BE, relative to IFO start)
+//	0x0E0: VTS_C_ADT sector offset (4 bytes BE, relative to IFO start)
+func parseDVDIFOCells(ifoData []byte, ifoAbsSector uint32) (*vtsCellInfo, error) {
+	if len(ifoData) < 0xE4 {
+		return nil, fmt.Errorf("IFO data too short for C_ADT pointer (%d bytes)", len(ifoData))
+	}
+
+	magic := string(ifoData[:12])
+	if magic != "DVDVIDEO-VTS" {
+		return nil, fmt.Errorf("not a VTS IFO file (magic: %q)", magic)
+	}
+
+	vtsVobsSectorRel := binary.BigEndian.Uint32(ifoData[0x84:0x88])
+	cadtSectorRel := binary.BigEndian.Uint32(ifoData[0xE0:0xE4])
+	if cadtSectorRel == 0 {
+		return nil, fmt.Errorf("no C_ADT in this VTS IFO")
+	}
+
+	// C_ADT is at cadtSectorRel * 2048 bytes from the IFO start
+	cadtOffset := int(cadtSectorRel) * isoSectorSize
+	if cadtOffset+8 > len(ifoData) {
+		return nil, fmt.Errorf("C_ADT offset %d beyond IFO data (%d bytes)", cadtOffset, len(ifoData))
+	}
+	cadtData := ifoData[cadtOffset:]
+
+	// C_ADT header:
+	//   0-1: nr_of_vobs (uint16 BE)
+	//   2-3: reserved
+	//   4-7: last_byte (uint32 BE, inclusive)
+	lastByte := binary.BigEndian.Uint32(cadtData[4:8])
+	numEntries := (int(lastByte) + 1 - 8) / 12
+	if numEntries <= 0 || numEntries > 10000 {
+		return nil, fmt.Errorf("invalid C_ADT entry count: %d", numEntries)
+	}
+
+	info := &vtsCellInfo{
+		VTSVobsSector: ifoAbsSector + vtsVobsSectorRel,
+		Cells:         make([]cellAddrEntry, 0, numEntries),
+	}
+
+	for i := range numEntries {
+		off := 8 + i*12
+		if off+12 > len(cadtData) {
+			break
+		}
+		info.Cells = append(info.Cells, cellAddrEntry{
+			VOBId:       binary.BigEndian.Uint16(cadtData[off : off+2]),
+			CellId:      cadtData[off+2],
+			StartSector: binary.BigEndian.Uint32(cadtData[off+4 : off+8]),
+			LastSector:  binary.BigEndian.Uint32(cadtData[off+8 : off+12]),
+		})
+	}
+
+	return info, nil
+}
+
+// findVTSCellInfo finds and parses the IFO file for the VTS that contains the given
+// VOB file offset. Returns nil if the IFO cannot be found or parsed.
+// The isoData is the full mmap'd ISO; ifoFinder locates IFO file extents.
+func findVTSCellInfo(isoData []byte, vobAbsSector uint32) *vtsCellInfo {
+	isoSize := int64(len(isoData))
+
+	// Find IFO files by navigating ISO9660 structure
+	// We reuse the same ISO navigation as findIFOsInISO but work from mmap'd data
+	if isoSize < 17*isoSectorSize+isoSectorSize {
+		return nil
+	}
+
+	pvd := isoData[16*isoSectorSize : 17*isoSectorSize]
+	if pvd[0] != 1 || string(pvd[1:6]) != "CD001" {
+		return nil
+	}
+
+	rootDirRecord := pvd[156:]
+	if len(rootDirRecord) < 34 {
+		return nil
+	}
+	rootExtent := uint32(rootDirRecord[2]) | uint32(rootDirRecord[3])<<8 | uint32(rootDirRecord[4])<<16 | uint32(rootDirRecord[5])<<24
+	rootDataLen := uint32(rootDirRecord[10]) | uint32(rootDirRecord[11])<<8 | uint32(rootDirRecord[12])<<16 | uint32(rootDirRecord[13])<<24
+
+	rootStart := int64(rootExtent) * isoSectorSize
+	rootEnd := rootStart + int64(rootDataLen)
+	if rootEnd > isoSize {
+		return nil
+	}
+	rootDir := isoData[rootStart:rootEnd]
+
+	// Find VIDEO_TS directory
+	var vtsDirExtent, vtsDirLen uint32
+	for offset := 0; offset < len(rootDir); {
+		recLen := int(rootDir[offset])
+		if recLen == 0 {
+			nextSector := ((offset / isoSectorSize) + 1) * isoSectorSize
+			if nextSector >= len(rootDir) {
+				break
+			}
+			offset = nextSector
+			continue
+		}
+		if offset+33 > len(rootDir) {
+			break
+		}
+		nameLen := int(rootDir[offset+32])
+		if offset+33+nameLen > len(rootDir) {
+			break
+		}
+		name := strings.ToUpper(string(rootDir[offset+33 : offset+33+nameLen]))
+		if idx := strings.Index(name, ";"); idx >= 0 {
+			name = name[:idx]
+		}
+		name = strings.TrimSuffix(name, ".")
+		if name == "VIDEO_TS" {
+			vtsDirExtent = uint32(rootDir[offset+2]) | uint32(rootDir[offset+3])<<8 | uint32(rootDir[offset+4])<<16 | uint32(rootDir[offset+5])<<24
+			vtsDirLen = uint32(rootDir[offset+10]) | uint32(rootDir[offset+11])<<8 | uint32(rootDir[offset+12])<<16 | uint32(rootDir[offset+13])<<24
+		}
+		offset += recLen
+	}
+	if vtsDirExtent == 0 {
+		return nil
+	}
+
+	vtsDirStart := int64(vtsDirExtent) * isoSectorSize
+	vtsDirEnd := vtsDirStart + int64(vtsDirLen)
+	if vtsDirEnd > isoSize {
+		return nil
+	}
+	vtsDir := isoData[vtsDirStart:vtsDirEnd]
+
+	// Find all VTS IFO files and check which VTS contains our VOB sector
+	for offset := 0; offset < len(vtsDir); {
+		recLen := int(vtsDir[offset])
+		if recLen == 0 {
+			nextSector := ((offset / isoSectorSize) + 1) * isoSectorSize
+			if nextSector >= len(vtsDir) {
+				break
+			}
+			offset = nextSector
+			continue
+		}
+		if offset+33 > len(vtsDir) {
+			break
+		}
+		nameLen := int(vtsDir[offset+32])
+		if offset+33+nameLen > len(vtsDir) {
+			break
+		}
+		name := strings.ToUpper(string(vtsDir[offset+33 : offset+33+nameLen]))
+		if idx := strings.Index(name, ";"); idx >= 0 {
+			name = name[:idx]
+		}
+		name = strings.TrimSuffix(name, ".")
+
+		if len(name) == 12 && strings.HasPrefix(name, "VTS_") && name[7] == '0' && strings.HasSuffix(name, ".IFO") {
+			ifoSector := uint32(vtsDir[offset+2]) | uint32(vtsDir[offset+3])<<8 | uint32(vtsDir[offset+4])<<16 | uint32(vtsDir[offset+5])<<24
+			ifoSize := uint32(vtsDir[offset+10]) | uint32(vtsDir[offset+11])<<8 | uint32(vtsDir[offset+12])<<16 | uint32(vtsDir[offset+13])<<24
+
+			ifoStart := int64(ifoSector) * isoSectorSize
+			ifoEnd := ifoStart + int64(ifoSize)
+			if ifoEnd > isoSize {
+				offset += recLen
+				continue
+			}
+
+			info, err := parseDVDIFOCells(isoData[ifoStart:ifoEnd], ifoSector)
+			if err != nil {
+				offset += recLen
+				continue
+			}
+
+			// Check if the VOB sector falls within this VTS's VOB range
+			if len(info.Cells) > 0 {
+				lastCell := info.Cells[len(info.Cells)-1]
+				vtsVobEnd := info.VTSVobsSector + lastCell.LastSector
+				if vobAbsSector >= info.VTSVobsSector && vobAbsSector <= vtsVobEnd {
+					return info
+				}
+			}
+		}
+		offset += recLen
+	}
+
+	return nil
+}
+
 // detectDVDCodecsFromIFOs reads IFO files from within an ISO and returns
 // the unioned codec information from all title sets.
 func detectDVDCodecsFromIFOs(f *os.File, ifos []isoFileExtent) (*SourceCodecs, error) {

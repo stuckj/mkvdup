@@ -38,24 +38,18 @@ type PESPayloadRange struct {
 	ESOffset   int64 // Logical offset in the elementary stream
 }
 
-// ILVU category bit masks from DSI's SML_PBI.
-const (
-	ilvuAnyFlag  = 0xf000 // any of the top 4 bits = interleaved block
-	ilvuStartBit = 0x2000 // first VOBU of an interleaved unit
-	ilvuEndBit   = 0x1000 // last VOBU of an interleaved unit
-)
-
 // vobuInfo tracks a Video Object Unit detected via NAV pack.
 type vobuInfo struct {
-	ilvuCategory    uint16 // SML_PBI category from DSI packet (ILVU flags)
+	sectorLBN       uint32 // NAV pack sector (nv_pck_lbn from PCI)
 	videoRangeStart int    // first index in videoRanges for this VOBU
 	audioRangeStart int    // first index in audioRanges for this VOBU
 }
 
 // cellSegment represents a group of consecutive VOBUs belonging to the same
-// interleaved unit (ILVU). On multi-episode DVDs, VOBs interleave cells from
-// different titles; each ILVU contains VOBUs from a single cell. Segment
-// boundaries are determined by the DSI packet's SML_PBI ILVU start/end flags.
+// IFO cell. On multi-episode DVDs, VOBs interleave cells from different titles.
+// The IFO Cell Address Table (C_ADT) defines which sector ranges belong to which
+// VOB ID / cell ID. Consecutive VOBUs with the same VOB ID are grouped into one
+// segment so that each segment's ES is contiguous for a single title's content.
 type cellSegment struct {
 	vobuStart int // first VOBU index (inclusive)
 	vobuEnd   int // last VOBU index (exclusive)
@@ -184,23 +178,20 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 				length, err := p.readPESLength(startCodePos + 4)
 				if err == nil {
 					advance = 6 + int64(length)
-					payloadStart := startCodePos + 6
-					switch length {
-					case 980:
-						// PCI packet (first Private Stream 2 in a NAV pack).
-						// Marks the start of a new VOBU.
+					// PCI packet (980-byte payload): contains nv_pck_lbn at offset 0
+					// which gives this NAV pack's sector address. Used to map VOBUs
+					// to IFO cell entries for cell-based segmentation.
+					if length == 980 {
+						payloadStart := startCodePos + 6
+						var lbn uint32
+						if payloadStart+4 <= p.size {
+							lbn = binary.BigEndian.Uint32(p.data[payloadStart : payloadStart+4])
+						}
 						p.vobus = append(p.vobus, vobuInfo{
+							sectorLBN:       lbn,
 							videoRangeStart: len(p.videoRanges),
 							audioRangeStart: len(p.audioRanges),
 						})
-					case 1018:
-						// DSI packet (second Private Stream 2 in a NAV pack).
-						// SML_PBI.category at payload offset 24 (after 24-byte DSI_GI).
-						// ILVU flags in the top nibble indicate cell interleaving.
-						if len(p.vobus) > 0 && payloadStart+26 <= p.size {
-							category := binary.BigEndian.Uint16(p.data[payloadStart+24 : payloadStart+26])
-							p.vobus[len(p.vobus)-1].ilvuCategory = category
-						}
 					}
 				}
 
@@ -271,9 +262,10 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 		progress(p.size, p.size)
 	}
 
-	// Detect cell segments from DSI ILVU start/end flags.
+	// Detect cell segments from the IFO Cell Address Table (C_ADT).
 	// On multi-episode DVDs, VOBs interleave cells from different titles;
-	// ILVU boundaries mark where one cell's data ends and another begins.
+	// the C_ADT maps sector ranges to VOB IDs identifying which title each
+	// cell belongs to.
 	p.buildCellSegments()
 
 	// Build filtered video ranges that exclude user_data (B2) sections
@@ -602,76 +594,88 @@ func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, r
 	return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)
 }
 
-// buildCellSegments groups VOBUs into cell segments using DSI ILVU flags.
+// buildCellSegments groups VOBUs into cell segments using the IFO Cell Address
+// Table (C_ADT). Each C_ADT entry maps a sector range to a (VOB ID, Cell ID)
+// pair. Consecutive VOBUs with the same VOB ID are grouped into one segment,
+// so each segment's ES is contiguous for a single title's content.
 //
-// On multi-episode DVDs, VOBs interleave cells from different titles using
-// Interleaved Video Units (ILVUs). Each ILVU contains VOBUs from a single cell.
-// The DSI packet's SML_PBI.category field marks ILVU start/end boundaries.
-//
-// Non-interleaved DVDs (category == 0 for all VOBUs) produce no segments,
-// preserving the existing single-ES behavior with zero regression.
+// When the IFO cannot be found or all VOBUs share the same VOB ID (no
+// interleaving), no segments are produced and the existing single-ES behavior
+// is used unchanged.
 func (p *MPEGPSParser) buildCellSegments() {
 	if len(p.vobus) == 0 {
 		p.cellSegments = nil
 		return
 	}
 
-	// Check if any VOBUs are part of an interleaved block
-	hasInterleaving := false
-	for _, v := range p.vobus {
-		if v.ilvuCategory&ilvuAnyFlag != 0 {
-			hasInterleaving = true
-			break
-		}
-	}
-
-	if !hasInterleaving {
-		// No interleaving detected — no segmentation needed.
-		// The existing single-ES behavior is correct for this disc.
+	// Look up the IFO Cell Address Table from the ISO9660 filesystem.
+	// The first VOBU's sector address tells us which VTS we're in.
+	cellInfo := findVTSCellInfo(p.data, p.vobus[0].sectorLBN)
+	if cellInfo == nil || len(cellInfo.Cells) <= 1 {
+		// No IFO found or single-cell VTS — no segmentation needed.
 		p.cellSegments = nil
 		return
 	}
 
-	// Segment at ILVU boundaries. Each ILVU (one cell's portion of an
-	// interleaved block) becomes its own segment. Non-interleaved VOBUs
-	// between interleaved blocks are grouped into a single segment.
+	// Map each VOBU to its VOB ID by finding which C_ADT entry contains its sector.
+	// Sectors in C_ADT are relative to VTS VOBs start.
+	vobuVOBIDs := make([]uint16, len(p.vobus))
+	for i, v := range p.vobus {
+		var relSector uint32
+		if v.sectorLBN >= cellInfo.VTSVobsSector {
+			relSector = v.sectorLBN - cellInfo.VTSVobsSector
+		}
+		// Linear scan is fine: C_ADT typically has <100 entries.
+		for _, cell := range cellInfo.Cells {
+			if relSector >= cell.StartSector && relSector <= cell.LastSector {
+				vobuVOBIDs[i] = cell.VOBId
+				break
+			}
+		}
+	}
+
+	// Check if all VOBUs have the same VOB ID (no interleaving).
+	firstVOBID := vobuVOBIDs[0]
+	hasMultipleVOBIDs := false
+	for _, id := range vobuVOBIDs[1:] {
+		if id != firstVOBID {
+			hasMultipleVOBIDs = true
+			break
+		}
+	}
+	if !hasMultipleVOBIDs {
+		p.cellSegments = nil
+		return
+	}
+
+	// Group consecutive VOBUs with the same VOB ID into segments.
 	var segments []cellSegment
 	segStart := 0
+	currentVOBID := vobuVOBIDs[0]
 
-	for i, v := range p.vobus {
-		// ILVU start: break before this VOBU (start new segment)
-		if v.ilvuCategory&ilvuStartBit != 0 && i > segStart {
+	for i := 1; i < len(vobuVOBIDs); i++ {
+		if vobuVOBIDs[i] != currentVOBID {
 			segments = append(segments, cellSegment{
 				vobuStart: segStart,
 				vobuEnd:   i,
 			})
 			segStart = i
-		}
-
-		// ILVU end: break after this VOBU
-		if v.ilvuCategory&ilvuEndBit != 0 && i+1 < len(p.vobus) {
-			segments = append(segments, cellSegment{
-				vobuStart: segStart,
-				vobuEnd:   i + 1,
-			})
-			segStart = i + 1
+			currentVOBID = vobuVOBIDs[i]
 		}
 	}
-
 	// Close the last segment
-	if segStart < len(p.vobus) {
-		segments = append(segments, cellSegment{
-			vobuStart: segStart,
-			vobuEnd:   len(p.vobus),
-		})
-	}
+	segments = append(segments, cellSegment{
+		vobuStart: segStart,
+		vobuEnd:   len(p.vobus),
+	})
 
 	p.cellSegments = segments
 }
 
 // CellSegmentCount returns the number of detected cell segments.
 // Returns 0 when no segmentation is needed: either no NAV packs were found,
-// or NAV packs were found but no interleaving was detected.
+// the IFO Cell Address Table could not be read, or all VOBUs share the same
+// VOB ID (no interleaving).
 func (p *MPEGPSParser) CellSegmentCount() int {
 	return len(p.cellSegments)
 }
