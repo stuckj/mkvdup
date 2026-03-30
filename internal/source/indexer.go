@@ -137,11 +137,28 @@ func (idx *Indexer) Build(progress ProgressFunc) error {
 
 		var checksum uint64
 		if idx.sourceType == TypeDVD && !idx.useRawIndexing {
-			checksum, err = idx.indexMPEGPSFile(uint16(fileIndex), fullPath, size, func(fileProcessed int64) {
+			// DVD MPEG-PS: may produce multiple source file entries
+			// for interleaved multi-episode discs.
+			var n int
+			n, checksum, err = idx.indexMPEGPSFile(uint16(fileIndex), fullPath, size, func(fileProcessed int64) {
 				if progress != nil {
 					progress(processedSize+fileProcessed, totalSize)
 				}
 			})
+			if err != nil {
+				return fmt.Errorf("index file %s: %w", relPath, err)
+			}
+			// Add source file entries — all entries share the same path/size/checksum
+			for range n {
+				idx.index.Files = append(idx.index.Files, File{
+					RelativePath: relPath,
+					Size:         size,
+					Checksum:     checksum,
+				})
+			}
+			fileIndex += n
+			processedSize += size
+			continue
 		} else if idx.sourceType == TypeBluray && isISOFile(relPath) {
 			// Blu-ray ISO: one ISO may contain multiple M2TS regions,
 			// each producing a separate source file entry.
@@ -213,11 +230,13 @@ func checksumWithProgress(data []byte, progress func(int64)) uint64 {
 
 // indexMPEGPSFile processes an MPEG-PS file (DVD ISO) using ES-aware indexing.
 // It extracts the elementary stream data and indexes sync points within it.
-func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, progress func(int64)) (uint64, error) {
+// For multi-episode DVDs with interleaved cells, creates one source file entry
+// per cell segment. Returns the number of entries created and the file checksum.
+func (idx *Indexer) indexMPEGPSFile(startFileIndex uint16, path string, size int64, progress func(int64)) (int, uint64, error) {
 	// Memory-map the file with zero-copy access
 	mmapFile, err := mmap.Open(path)
 	if err != nil {
-		return 0, fmt.Errorf("mmap open: %w", err)
+		return 0, 0, fmt.Errorf("mmap open: %w", err)
 	}
 	// Note: Don't close mmapFile - it's stored in MmapFiles for later use
 
@@ -233,11 +252,8 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 			progress(processed / 3)
 		}
 	}); err != nil {
-		return 0, fmt.Errorf("parse MPEG-PS: %w", err)
+		return 0, 0, fmt.Errorf("parse MPEG-PS: %w", err)
 	}
-
-	// Store parser for later use by matcher
-	idx.index.ESReaders = append(idx.index.ESReaders, parser)
 
 	// Phase 2: Checksum (33% → 66%)
 	checksum := checksumWithProgress(mmapFile.Data(), func(processed int64) {
@@ -247,43 +263,94 @@ func (idx *Indexer) indexMPEGPSFile(fileIndex uint16, path string, size int64, p
 	})
 
 	// Phase 3: Index ES data (66% → 100%)
-	videoESSize := parser.TotalESSize(true)
-	if videoESSize > 0 {
-		indexProgress := func(fileOffset int64) {
-			if progress != nil {
-				progress(2*size/3 + fileOffset/3)
+	numSegments := parser.CellSegmentCount()
+
+	if numSegments == 0 {
+		// No cell interleaving — use single-segment path (existing behavior).
+		idx.index.ESReaders = append(idx.index.ESReaders, parser)
+
+		videoESSize := parser.TotalESSize(true)
+		if videoESSize > 0 {
+			indexProgress := func(fileOffset int64) {
+				if progress != nil {
+					progress(2*size/3 + fileOffset/3)
+				}
+			}
+			if err := idx.indexESData(startFileIndex, parser, true, videoESSize, indexProgress); err != nil {
+				return 0, 0, fmt.Errorf("index video ES: %w", err)
 			}
 		}
-		if err := idx.indexESData(fileIndex, parser, true, videoESSize, indexProgress); err != nil {
-			return 0, fmt.Errorf("index video ES: %w", err)
+
+		if err := idx.indexMPEGPSAudio(startFileIndex, parser); err != nil {
+			return 0, 0, fmt.Errorf("index audio: %w", err)
 		}
+
+		if progress != nil {
+			progress(size)
+		}
+
+		return 1, checksum, nil
 	}
 
-	// Index each audio sub-stream separately
-	audioSubStreams := parser.AudioSubStreams()
-	for _, subStreamID := range audioSubStreams {
-		subStreamSize := parser.AudioSubStreamESSize(subStreamID)
-		if subStreamSize > 0 {
-			if parser.IsLPCMSubStream(subStreamID) {
-				// LPCM has no natural sync patterns; use fixed-interval sync points.
-				// The indexer forces the slow path (ReadAudioSubStreamData) for LPCM
-				// so the data goes through the byte-swap transform.
-				if err := idx.indexSubStream(fileIndex, parser, subStreamID, subStreamSize, FindLPCMIndexSyncPoints); err != nil {
-					return 0, fmt.Errorf("index LPCM sub-stream 0x%02X: %w", subStreamID, err)
-				}
-			} else {
-				if err := idx.indexAudioSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
-					return 0, fmt.Errorf("index audio sub-stream 0x%02X: %w", subStreamID, err)
-				}
+	// Cell interleaving detected — create one source file entry per segment.
+	if idx.verboseWriter != nil {
+		fmt.Fprintf(idx.verboseWriter, "  [indexMPEGPSFile] %d cell segments detected (interleaved DVD)\n", numSegments)
+	}
+
+	entriesCreated := 0
+	for i := 0; i < numSegments; i++ {
+		fileIndex := startFileIndex + uint16(entriesCreated)
+		adapter := newCellSegmentAdapter(parser, i)
+
+		idx.index.ESReaders = append(idx.index.ESReaders, adapter)
+
+		// Index video ES
+		videoESSize := adapter.TotalESSize(true)
+		if videoESSize > 0 {
+			if err := idx.indexESData(fileIndex, adapter, true, videoESSize, nil); err != nil {
+				return 0, 0, fmt.Errorf("index video ES for segment %d: %w", i, err)
 			}
 		}
+
+		// Index audio sub-streams
+		if err := idx.indexMPEGPSAudio(fileIndex, adapter); err != nil {
+			return 0, 0, fmt.Errorf("index audio for segment %d: %w", i, err)
+		}
+
+		entriesCreated++
 	}
 
 	if progress != nil {
 		progress(size)
 	}
 
-	return checksum, nil
+	return entriesCreated, checksum, nil
+}
+
+// mpegpsAudioIndexable is the interface needed to index MPEG-PS audio sub-streams.
+type mpegpsAudioIndexable interface {
+	esDataProvider
+	AudioSubStreams() []byte
+	AudioSubStreamESSize(subStreamID byte) int64
+}
+
+// indexMPEGPSAudio indexes all audio sub-streams from an MPEG-PS parser or adapter.
+func (idx *Indexer) indexMPEGPSAudio(fileIndex uint16, provider mpegpsAudioIndexable) error {
+	for _, subStreamID := range provider.AudioSubStreams() {
+		subStreamSize := provider.AudioSubStreamESSize(subStreamID)
+		if subStreamSize > 0 {
+			if provider.IsLPCMSubStream(subStreamID) {
+				if err := idx.indexSubStream(fileIndex, provider, subStreamID, subStreamSize, FindLPCMIndexSyncPoints); err != nil {
+					return fmt.Errorf("index LPCM sub-stream 0x%02X: %w", subStreamID, err)
+				}
+			} else {
+				if err := idx.indexAudioSubStream(fileIndex, provider, subStreamID, subStreamSize); err != nil {
+					return fmt.Errorf("index audio sub-stream 0x%02X: %w", subStreamID, err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // Index returns the built index. Must call Build first.

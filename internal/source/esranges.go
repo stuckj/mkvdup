@@ -1,6 +1,9 @@
 package source
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+)
 
 // binarySearchRanges performs binary search on PES payload ranges to find the one
 // containing the given ES offset. Returns the index, or -1 if not found.
@@ -251,4 +254,84 @@ func totalESSizeFromRanges(ranges []PESPayloadRange) int64 {
 	}
 	last := ranges[len(ranges)-1]
 	return last.ESOffset + int64(last.Size)
+}
+
+// Common error helpers for ESReader implementations.
+var errAudioUsesSubStream = fmt.Errorf("audio uses per-sub-stream methods, use ReadAudioSubStreamData")
+
+func errSubStreamNotFound(id byte) error {
+	return fmt.Errorf("audio sub-stream 0x%02X not found", id)
+}
+
+// buildFilteredVideoRangesFromData creates filtered video ranges (excluding user_data
+// sections) from the given raw video ranges. This is the shared implementation used
+// by both MPEGPSParser and cellSegmentAdapter.
+func buildFilteredVideoRangesFromData(data []byte, dataSize int64, videoRanges []PESPayloadRange) []PESPayloadRange {
+	if len(videoRanges) == 0 {
+		return nil
+	}
+
+	filteredRanges := make([]PESPayloadRange, 0, len(videoRanges))
+	var filteredESOffset int64
+
+	for _, rawRange := range videoRanges {
+		endOffset := rawRange.FileOffset + int64(rawRange.Size)
+		if endOffset > dataSize {
+			continue
+		}
+		rangeData := data[rawRange.FileOffset:endOffset]
+
+		// Scan for user_data (00 00 01 B2) sections within this PES payload
+		i := 2
+		rangeStart := 0
+		for i < len(rangeData)-1 {
+			idx := bytes.IndexByte(rangeData[i:], 0x01)
+			if idx < 0 {
+				break
+			}
+			pos := i + idx
+
+			if pos >= 2 && pos < len(rangeData)-1 &&
+				rangeData[pos-1] == 0x00 && rangeData[pos-2] == 0x00 && rangeData[pos+1] == UserDataStartCode {
+				startCodePos := pos - 2
+				if startCodePos > rangeStart {
+					filteredRanges = append(filteredRanges, PESPayloadRange{
+						FileOffset: rawRange.FileOffset + int64(rangeStart),
+						Size:       startCodePos - rangeStart,
+						ESOffset:   filteredESOffset,
+					})
+					filteredESOffset += int64(startCodePos - rangeStart)
+				}
+
+				i = pos + 2
+				for i < len(rangeData)-1 {
+					idx := bytes.IndexByte(rangeData[i:], 0x01)
+					if idx < 0 {
+						i = len(rangeData)
+						break
+					}
+					nextPos := i + idx
+					if nextPos >= 2 && rangeData[nextPos-1] == 0x00 && rangeData[nextPos-2] == 0x00 {
+						i = nextPos - 2
+						break
+					}
+					i = nextPos + 1
+				}
+				rangeStart = i
+			} else {
+				i = pos + 1
+			}
+		}
+
+		if rangeStart < len(rangeData) {
+			filteredRanges = append(filteredRanges, PESPayloadRange{
+				FileOffset: rawRange.FileOffset + int64(rangeStart),
+				Size:       len(rangeData) - rangeStart,
+				ESOffset:   filteredESOffset,
+			})
+			filteredESOffset += int64(len(rangeData) - rangeStart)
+		}
+	}
+
+	return filteredRanges
 }

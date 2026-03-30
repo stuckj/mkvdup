@@ -1,7 +1,6 @@
 package source
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -39,6 +38,29 @@ type PESPayloadRange struct {
 	ESOffset   int64 // Logical offset in the elementary stream
 }
 
+// ILVU category bit masks from DSI's SML_PBI.
+const (
+	ilvuAnyFlag  = 0xf000 // any of the top 4 bits = interleaved block
+	ilvuStartBit = 0x2000 // first VOBU of an interleaved unit
+	ilvuEndBit   = 0x1000 // last VOBU of an interleaved unit
+)
+
+// vobuInfo tracks a Video Object Unit detected via NAV pack.
+type vobuInfo struct {
+	startPTS        uint32 // VOBU start PTS from PCI packet
+	ilvuCategory    uint16 // SML_PBI category from DSI packet (ILVU flags)
+	videoRangeStart int    // first index in videoRanges for this VOBU
+	audioRangeStart int    // first index in audioRanges for this VOBU
+}
+
+// cellSegment represents a group of consecutive VOBUs with monotonically
+// increasing PTS, corresponding to a single cell (or portion of one).
+// Cell boundaries are where different titles/episodes are interleaved on disc.
+type cellSegment struct {
+	vobuStart int // first VOBU index (inclusive)
+	vobuEnd   int // last VOBU index (exclusive)
+}
+
 // MPEGPSParser parses MPEG Program Stream files to extract PES packet information.
 type MPEGPSParser struct {
 	data                []byte // Direct mmap'd data - zero-copy access
@@ -58,6 +80,9 @@ type MPEGPSParser struct {
 	// LPCM sub-stream tracking
 	lpcmSubStreams map[byte]bool            // which sub-streams are LPCM
 	lpcmInfo       map[byte]LPCMFrameHeader // parsed header per LPCM sub-stream
+	// VOBU tracking for cell segmentation
+	vobus        []vobuInfo
+	cellSegments []cellSegment
 }
 
 // NewMPEGPSParser creates a parser for the given memory-mapped data.
@@ -153,6 +178,36 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 					advance = 6 + int64(length)
 				}
 
+			case startCode == PrivateStream2Code:
+				// NAV pack PCI/DSI packets. Private Stream 2 has no PES header
+				// extension — payload starts directly at offset 6.
+				length, err := p.readPESLength(startCodePos + 4)
+				if err == nil {
+					advance = 6 + int64(length)
+					payloadStart := startCodePos + 6
+					switch length {
+					case 980:
+						// PCI packet (first Private Stream 2 in a NAV pack).
+						// Contains vobu_s_ptm at payload offset 12 (PCI_GI field).
+						if payloadStart+16 <= p.size {
+							vobuStartPTS := binary.BigEndian.Uint32(p.data[payloadStart+12 : payloadStart+16])
+							p.vobus = append(p.vobus, vobuInfo{
+								startPTS:        vobuStartPTS,
+								videoRangeStart: len(p.videoRanges),
+								audioRangeStart: len(p.audioRanges),
+							})
+						}
+					case 1018:
+						// DSI packet (second Private Stream 2 in a NAV pack).
+						// SML_PBI.category at payload offset 24 (after 24-byte DSI_GI).
+						// ILVU flags in the top nibble indicate cell interleaving.
+						if len(p.vobus) > 0 && payloadStart+26 <= p.size {
+							category := binary.BigEndian.Uint16(p.data[payloadStart+24 : payloadStart+26])
+							p.vobus[len(p.vobus)-1].ilvuCategory = category
+						}
+					}
+				}
+
 			case startCode == PrivateStream1Code:
 				pkt, err := p.parsePESPacket(startCodePos, byte(startCode&0xFF))
 				if err == nil {
@@ -220,6 +275,11 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 		progress(p.size, p.size)
 	}
 
+	// Detect cell segments from VOBU PTS continuity.
+	// Within a cell, VOBUs have monotonically increasing PTS.
+	// When PTS drops, it indicates a switch to a different cell (e.g., different episode).
+	p.buildCellSegments()
+
 	// Build filtered video ranges that exclude user_data (B2) sections
 	// This makes the ES compatible with what MKV tools produce
 	if err := p.buildFilteredVideoRanges(); err != nil {
@@ -239,86 +299,8 @@ func (p *MPEGPSParser) ParseWithProgress(progress MPEGPSProgressFunc) error {
 
 // buildFilteredVideoRanges scans the video ES and creates ranges that exclude user_data sections.
 // User_data (00 00 01 B2) is used for closed captions etc. and is stripped by MKV tools.
-// Optimized to use bytes.IndexByte for fast scanning (uses SIMD on x86).
 func (p *MPEGPSParser) buildFilteredVideoRanges() error {
-	if len(p.videoRanges) == 0 {
-		return nil
-	}
-
-	// Process each raw video range individually
-	// This avoids complex chunk boundary handling
-	// Pre-allocate with similar capacity to reduce reallocation
-	filteredRanges := make([]PESPayloadRange, 0, len(p.videoRanges))
-	var filteredESOffset int64
-
-	for _, rawRange := range p.videoRanges {
-		// Direct slice access - zero copy, no allocation
-		endOffset := rawRange.FileOffset + int64(rawRange.Size)
-		if endOffset > p.size {
-			continue
-		}
-		data := p.data[rawRange.FileOffset:endOffset]
-
-		// Scan for user_data sections within this PES payload
-		// Use bytes.IndexByte to quickly find 0x01 bytes (SIMD optimized)
-		i := 2 // Start at position 2 since we need at least 00 00 before 01
-		rangeStart := 0
-		for i < len(data)-1 {
-			// Find next 0x01 byte
-			idx := bytes.IndexByte(data[i:], 0x01)
-			if idx < 0 {
-				break
-			}
-			pos := i + idx
-
-			// Check if this is a user_data start code (00 00 01 B2)
-			if pos >= 2 && pos < len(data)-1 &&
-				data[pos-1] == 0x00 && data[pos-2] == 0x00 && data[pos+1] == UserDataStartCode {
-				// Found user_data - emit range before it
-				startCodePos := pos - 2
-				if startCodePos > rangeStart {
-					filteredRanges = append(filteredRanges, PESPayloadRange{
-						FileOffset: rawRange.FileOffset + int64(rangeStart),
-						Size:       startCodePos - rangeStart,
-						ESOffset:   filteredESOffset,
-					})
-					filteredESOffset += int64(startCodePos - rangeStart)
-				}
-
-				// Skip user_data section to next start code using fast scan
-				i = pos + 2
-				for i < len(data)-1 {
-					idx := bytes.IndexByte(data[i:], 0x01)
-					if idx < 0 {
-						i = len(data)
-						break
-					}
-					nextPos := i + idx
-					if nextPos >= 2 && data[nextPos-1] == 0x00 && data[nextPos-2] == 0x00 {
-						// Found next start code
-						i = nextPos - 2
-						break
-					}
-					i = nextPos + 1
-				}
-				rangeStart = i
-			} else {
-				i = pos + 1
-			}
-		}
-
-		// Emit remaining data in this PES payload
-		if rangeStart < len(data) {
-			filteredRanges = append(filteredRanges, PESPayloadRange{
-				FileOffset: rawRange.FileOffset + int64(rangeStart),
-				Size:       len(data) - rangeStart,
-				ESOffset:   filteredESOffset,
-			})
-			filteredESOffset += int64(len(data) - rangeStart)
-		}
-	}
-
-	p.filteredVideoRanges = filteredRanges
+	p.filteredVideoRanges = buildFilteredVideoRangesFromData(p.data, p.size, p.videoRanges)
 	return nil
 }
 
@@ -718,6 +700,146 @@ func (p *MPEGPSParser) ReadAudioByteWithHint(subStreamID byte, esOffset int64, r
 		return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], swappedOffset, rangeHint)
 	}
 	return readByteWithHint(p.data, nil, p.size, p.filteredAudioBySubStream[subStreamID], esOffset, rangeHint)
+}
+
+// buildCellSegments groups VOBUs into cell segments using DSI ILVU flags.
+//
+// On multi-episode DVDs, VOBs interleave cells from different titles using
+// Interleaved Video Units (ILVUs). Each ILVU contains VOBUs from a single cell.
+// The DSI packet's SML_PBI.category field marks ILVU start/end boundaries.
+//
+// Non-interleaved DVDs (category == 0 for all VOBUs) produce no segments,
+// preserving the existing single-ES behavior with zero regression.
+func (p *MPEGPSParser) buildCellSegments() {
+	if len(p.vobus) == 0 {
+		p.cellSegments = nil
+		return
+	}
+
+	// Check if any VOBUs are part of an interleaved block
+	hasInterleaving := false
+	for _, v := range p.vobus {
+		if v.ilvuCategory&ilvuAnyFlag != 0 {
+			hasInterleaving = true
+			break
+		}
+	}
+
+	if !hasInterleaving {
+		// No interleaving detected — no segmentation needed.
+		// The existing single-ES behavior is correct for this disc.
+		p.cellSegments = nil
+		return
+	}
+
+	// Segment at ILVU boundaries. Each ILVU (one cell's portion of an
+	// interleaved block) becomes its own segment. Non-interleaved VOBUs
+	// between interleaved blocks are grouped into a single segment.
+	var segments []cellSegment
+	segStart := 0
+
+	for i, v := range p.vobus {
+		// ILVU start: break before this VOBU (start new segment)
+		if v.ilvuCategory&ilvuStartBit != 0 && i > segStart {
+			segments = append(segments, cellSegment{
+				vobuStart: segStart,
+				vobuEnd:   i,
+			})
+			segStart = i
+		}
+
+		// ILVU end: break after this VOBU
+		if v.ilvuCategory&ilvuEndBit != 0 && i+1 < len(p.vobus) {
+			segments = append(segments, cellSegment{
+				vobuStart: segStart,
+				vobuEnd:   i + 1,
+			})
+			segStart = i + 1
+		}
+	}
+
+	// Close the last segment
+	if segStart < len(p.vobus) {
+		segments = append(segments, cellSegment{
+			vobuStart: segStart,
+			vobuEnd:   len(p.vobus),
+		})
+	}
+
+	p.cellSegments = segments
+}
+
+// CellSegmentCount returns the number of detected cell segments.
+// Returns 0 if no NAV packs were found (no segmentation).
+func (p *MPEGPSParser) CellSegmentCount() int {
+	return len(p.cellSegments)
+}
+
+// CellSegmentVideoRanges returns the raw video ranges belonging to a specific cell segment,
+// with ES offsets renumbered starting at 0 for the segment.
+func (p *MPEGPSParser) CellSegmentVideoRanges(segIdx int) []PESPayloadRange {
+	if segIdx < 0 || segIdx >= len(p.cellSegments) {
+		return nil
+	}
+	seg := p.cellSegments[segIdx]
+	startRange, endRange := p.vobuRangeIndices(seg, true)
+	return rebaseRanges(p.videoRanges[startRange:endRange])
+}
+
+// CellSegmentAudioRanges returns the raw audio ranges belonging to a specific cell segment,
+// with ES offsets renumbered starting at 0 for the segment.
+func (p *MPEGPSParser) CellSegmentAudioRanges(segIdx int) ([]PESPayloadRange, []byte) {
+	if segIdx < 0 || segIdx >= len(p.cellSegments) {
+		return nil, nil
+	}
+	seg := p.cellSegments[segIdx]
+	startRange, endRange := p.vobuRangeIndices(seg, false)
+	return rebaseRanges(p.audioRanges[startRange:endRange]), p.audioRangeStreamIDs[startRange:endRange]
+}
+
+// vobuRangeIndices returns the start (inclusive) and end (exclusive) indices into
+// videoRanges or audioRanges for the given cell segment.
+func (p *MPEGPSParser) vobuRangeIndices(seg cellSegment, isVideo bool) (int, int) {
+	var startRange int
+	if isVideo {
+		startRange = p.vobus[seg.vobuStart].videoRangeStart
+	} else {
+		startRange = p.vobus[seg.vobuStart].audioRangeStart
+	}
+
+	var endRange int
+	if seg.vobuEnd < len(p.vobus) {
+		if isVideo {
+			endRange = p.vobus[seg.vobuEnd].videoRangeStart
+		} else {
+			endRange = p.vobus[seg.vobuEnd].audioRangeStart
+		}
+	} else {
+		if isVideo {
+			endRange = len(p.videoRanges)
+		} else {
+			endRange = len(p.audioRanges)
+		}
+	}
+	return startRange, endRange
+}
+
+// rebaseRanges creates a copy of ranges with ES offsets renumbered starting at 0.
+func rebaseRanges(ranges []PESPayloadRange) []PESPayloadRange {
+	if len(ranges) == 0 {
+		return nil
+	}
+	result := make([]PESPayloadRange, len(ranges))
+	var esOffset int64
+	for i, r := range ranges {
+		result[i] = PESPayloadRange{
+			FileOffset: r.FileOffset,
+			Size:       r.Size,
+			ESOffset:   esOffset,
+		}
+		esOffset += int64(r.Size)
+	}
+	return result
 }
 
 // Video start codes that should be KEPT (not user_data)
