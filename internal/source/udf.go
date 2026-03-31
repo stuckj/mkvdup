@@ -509,7 +509,11 @@ func (ctx *udfContext) lookupDir(fids []udfFID, name string) (*udfFileEntry, err
 // resolveAllExtents collects all physical extents for a file entry.
 // For long_ad, each AD has an explicit partition reference.
 // For short_ad, the partition is inherited from the FE.
+// Handles allocation extent chaining (type 3 descriptors) for files
+// whose allocation descriptors span multiple blocks.
 func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, error) {
+	allocDescs := fe.AllocDescs
+
 	switch fe.AllocType & 0x07 {
 	case 0: // short_ad
 		if int(fe.PartRef) < len(ctx.partMaps) && ctx.partMaps[fe.PartRef].IsMetadata {
@@ -517,49 +521,104 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 		}
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
-		for off := 0; off+8 <= len(fe.AllocDescs) && remaining > 0; off += 8 {
-			ad := parseShortAD(fe.AllocDescs[off : off+8])
-			extLen := int64(ad.Length & 0x3FFFFFFF)
-			if extLen == 0 {
-				break
+		for remaining > 0 {
+			for off := 0; off+8 <= len(allocDescs) && remaining > 0; off += 8 {
+				ad := parseShortAD(allocDescs[off : off+8])
+				extType := (ad.Length >> 30) & 0x03
+				extLen := int64(ad.Length & 0x3FFFFFFF)
+				if extLen == 0 {
+					remaining = 0
+					break
+				}
+				if extType == 3 {
+					// Allocation extent descriptor: follow chain
+					nextDescs, err := ctx.readAllocExtentBlock(ad.Position, fe.PartRef)
+					if err != nil {
+						return nil, fmt.Errorf("follow short_ad alloc extent chain: %w", err)
+					}
+					allocDescs = nextDescs
+					break // restart inner loop with new descriptors
+				}
+				if extLen > remaining {
+					extLen = remaining
+				}
+				extents = append(extents, isoPhysicalRange{
+					ISOOffset: ctx.resolveBlockPhysical(ad.Position),
+					Length:    extLen,
+				})
+				remaining -= extLen
 			}
-			if extLen > remaining {
-				extLen = remaining
-			}
-			extents = append(extents, isoPhysicalRange{
-				ISOOffset: ctx.resolveBlockPhysical(ad.Position),
-				Length:    extLen,
-			})
-			remaining -= extLen
 		}
 		return extents, nil
 
 	case 1: // long_ad
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
-		for off := 0; off+16 <= len(fe.AllocDescs) && remaining > 0; off += 16 {
-			ad := parseLongAD(fe.AllocDescs[off : off+16])
-			extLen := int64(ad.Length & 0x3FFFFFFF)
-			if extLen == 0 {
-				break
+		for remaining > 0 {
+			for off := 0; off+16 <= len(allocDescs) && remaining > 0; off += 16 {
+				ad := parseLongAD(allocDescs[off : off+16])
+				extType := (ad.Length >> 30) & 0x03
+				extLen := int64(ad.Length & 0x3FFFFFFF)
+				if extLen == 0 {
+					remaining = 0
+					break
+				}
+				if extType == 3 {
+					// Allocation extent descriptor: follow chain to get more ADs.
+					nextDescs, err := ctx.readAllocExtentBlock(ad.Location, ad.PartRef)
+					if err != nil {
+						return nil, fmt.Errorf("follow long_ad alloc extent chain: %w", err)
+					}
+					allocDescs = nextDescs
+					break // restart inner loop with new descriptors
+				}
+				if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
+					return nil, fmt.Errorf("long_ad data extent on metadata partition")
+				}
+				if extLen > remaining {
+					extLen = remaining
+				}
+				extents = append(extents, isoPhysicalRange{
+					ISOOffset: ctx.resolveBlockPhysical(ad.Location),
+					Length:    extLen,
+				})
+				remaining -= extLen
 			}
-			if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
-				return nil, fmt.Errorf("long_ad extent on metadata partition")
-			}
-			if extLen > remaining {
-				extLen = remaining
-			}
-			extents = append(extents, isoPhysicalRange{
-				ISOOffset: ctx.resolveBlockPhysical(ad.Location),
-				Length:    extLen,
-			})
-			remaining -= extLen
 		}
 		return extents, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported alloc type %d for extent resolution", fe.AllocType&0x07)
 	}
+}
+
+// readAllocExtentBlock reads a block containing continuation allocation
+// descriptors (referenced by a type 3 extent). The block starts with an
+// Allocation Extent Descriptor (tag 258) header, followed by the raw
+// allocation descriptor data.
+func (ctx *udfContext) readAllocExtentBlock(blockNum uint32, partRef uint16) ([]byte, error) {
+	data, err := ctx.readBlock(blockNum, partRef)
+	if err != nil {
+		return nil, fmt.Errorf("read alloc extent block %d (part %d): %w", blockNum, partRef, err)
+	}
+
+	// Allocation Extent Descriptor: tag 258
+	// Offset 0-15: descriptor tag
+	// Offset 16-19: previous allocation extent location (uint32)
+	// Offset 20-23: length of allocation descriptors (uint32)
+	// Offset 24+: allocation descriptors
+	if len(data) < 24 {
+		return nil, fmt.Errorf("alloc extent block too short")
+	}
+	tag := parseDescriptorTag(data)
+	if tag.TagID != 258 {
+		return nil, fmt.Errorf("expected Allocation Extent Descriptor (tag 258), got tag %d", tag.TagID)
+	}
+	adLen := binary.LittleEndian.Uint32(data[20:24])
+	if 24+int(adLen) > len(data) {
+		adLen = uint32(len(data) - 24)
+	}
+	return data[24 : 24+adLen], nil
 }
 
 // extentsContiguous returns true if all extents are physically adjacent.
