@@ -665,10 +665,12 @@ func (ctx *udfContext) readAllocExtentBlock(blockNum uint32, partRef uint16) ([]
 		return nil, fmt.Errorf("expected Allocation Extent Descriptor (tag 258), got tag %d", tag.TagID)
 	}
 	adLen := binary.LittleEndian.Uint32(data[20:24])
-	if 24+int(adLen) > len(data) {
-		return nil, fmt.Errorf("allocation descriptor length %d exceeds remaining block bytes %d", adLen, len(data)-24)
+	remaining := len(data) - 24
+	if adLen > uint32(remaining) {
+		return nil, fmt.Errorf("allocation descriptor length %d exceeds remaining block bytes %d", adLen, remaining)
 	}
-	return data[24 : 24+adLen], nil
+	adLenInt := int(adLen)
+	return data[24 : 24+adLenInt], nil
 }
 
 // extentsContiguous returns true if all extents are physically adjacent.
