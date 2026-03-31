@@ -528,6 +528,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
 		chainDepth := 0
+		visited := map[[2]uint32]bool{}
 		for remaining > 0 {
 			followed := false
 			for off := 0; off+8 <= len(allocDescs) && remaining > 0; off += 8 {
@@ -542,6 +543,11 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 					if chainDepth > maxAllocExtentChainDepth {
 						return nil, fmt.Errorf("short_ad alloc extent chain depth exceeded %d", maxAllocExtentChainDepth)
 					}
+					key := [2]uint32{uint32(fe.PartRef), ad.Position}
+					if visited[key] {
+						return nil, fmt.Errorf("cycle in short_ad alloc extent chain at block %d part %d", ad.Position, fe.PartRef)
+					}
+					visited[key] = true
 					nextDescs, err := ctx.readAllocExtentBlock(ad.Position, fe.PartRef)
 					if err != nil {
 						return nil, fmt.Errorf("follow short_ad alloc extent chain: %w", err)
@@ -577,6 +583,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
 		chainDepth := 0
+		visited := map[[2]uint32]bool{}
 		for remaining > 0 {
 			followed := false
 			for off := 0; off+16 <= len(allocDescs) && remaining > 0; off += 16 {
@@ -591,6 +598,11 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 					if chainDepth > maxAllocExtentChainDepth {
 						return nil, fmt.Errorf("long_ad alloc extent chain depth exceeded %d", maxAllocExtentChainDepth)
 					}
+					key := [2]uint32{uint32(ad.PartRef), ad.Location}
+					if visited[key] {
+						return nil, fmt.Errorf("cycle in long_ad alloc extent chain at block %d part %d", ad.Location, ad.PartRef)
+					}
+					visited[key] = true
 					nextDescs, err := ctx.readAllocExtentBlock(ad.Location, ad.PartRef)
 					if err != nil {
 						return nil, fmt.Errorf("follow long_ad alloc extent chain: %w", err)
