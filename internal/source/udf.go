@@ -554,10 +554,15 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				if extLen > remaining {
 					extLen = remaining
 				}
-				extents = append(extents, isoPhysicalRange{
-					ISOOffset: ctx.resolveBlockPhysical(ad.Position),
-					Length:    extLen,
-				})
+				if extType == 0 {
+					// Type 0: recorded and allocated — actual data extent
+					extents = append(extents, isoPhysicalRange{
+						ISOOffset: ctx.resolveBlockPhysical(ad.Position),
+						Length:    extLen,
+					})
+				}
+				// Type 1 (allocated, not recorded) and type 2 (not allocated)
+				// are sparse holes with no data on disc — skip without appending.
 				remaining -= extLen
 			}
 			if !followed {
@@ -593,16 +598,21 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 					followed = true
 					break
 				}
-				if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
-					return nil, fmt.Errorf("long_ad data extent on metadata partition")
-				}
 				if extLen > remaining {
 					extLen = remaining
 				}
-				extents = append(extents, isoPhysicalRange{
-					ISOOffset: ctx.resolveBlockPhysical(ad.Location),
-					Length:    extLen,
-				})
+				if extType == 0 {
+					// Type 0: recorded and allocated — actual data extent
+					if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
+						return nil, fmt.Errorf("long_ad data extent on metadata partition")
+					}
+					extents = append(extents, isoPhysicalRange{
+						ISOOffset: ctx.resolveBlockPhysical(ad.Location),
+						Length:    extLen,
+					})
+				}
+				// Type 1 (allocated, not recorded) and type 2 (not allocated)
+				// are sparse holes with no data on disc — skip without appending.
 				remaining -= extLen
 			}
 			if !followed {
