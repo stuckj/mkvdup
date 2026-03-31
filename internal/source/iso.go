@@ -29,8 +29,10 @@ type isoPhysicalRange struct {
 	Length    int64 // number of bytes
 }
 
-// findBlurayM2TSInISO parses an ISO9660 filesystem to find M2TS files
-// under the BDMV/STREAM/ directory. Returns the files sorted by name.
+// findBlurayM2TSInISO finds M2TS files under BDMV/STREAM/ in a Blu-ray ISO.
+// Tries UDF first (native Blu-ray filesystem), falls back to ISO9660.
+// UDF is preferred because ISO9660 has a 4 GB file size limit and cannot
+// properly represent large M2TS files common on Blu-ray discs.
 func findBlurayM2TSInISO(isoPath string) ([]isoFileExtent, error) {
 	f, err := os.Open(isoPath)
 	if err != nil {
@@ -38,12 +40,17 @@ func findBlurayM2TSInISO(isoPath string) ([]isoFileExtent, error) {
 	}
 	defer f.Close()
 
-	// Read root directory from PVD
+	// Try UDF first — Blu-ray's native filesystem, no file size limits.
+	udfFiles, udfErr := findBlurayM2TSInUDF(f)
+	if udfErr == nil && len(udfFiles) > 0 {
+		return udfFiles, nil
+	}
+
+	// Fall back to ISO9660 (some DVD-based ISOs or hybrid discs).
 	rootExtent, rootDataLen, err := readISOPVDRoot(f)
 	if err != nil {
-		if errors.Is(err, errNotISO9660) {
-			// No valid ISO9660 PVD, try UDF (Blu-ray ISOs from CloneBD)
-			return findBlurayM2TSInUDF(f)
+		if udfErr != nil {
+			return nil, fmt.Errorf("neither UDF (%v) nor ISO9660 (%w) found", udfErr, err)
 		}
 		return nil, fmt.Errorf("read ISO PVD: %w", err)
 	}
