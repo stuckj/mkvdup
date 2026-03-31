@@ -687,3 +687,98 @@ func TestResolveAllExtents_AllocExtentChaining(t *testing.T) {
 		t.Errorf("expected size %d, got %d", len(m2tsData), e.Size)
 	}
 }
+
+func TestResolveAllExtents_AllocExtentChaining_LongAD(t *testing.T) {
+	// Test type-3 allocation extent chaining with long_ad descriptors.
+	// This is the code path that was broken in #176: large M2TS files on
+	// Blu-ray ISOs use long_ad with continuation blocks.
+	const sector = 2048
+	const partStart = 257
+
+	m2tsData := buildBasicM2TSData()
+	m2tsStartSector := 266
+	m2tsSectors := (len(m2tsData) + sector - 1) / sector
+	totalSectors := m2tsStartSector + m2tsSectors
+	if totalSectors < 267 {
+		totalSectors = 267
+	}
+
+	iso := make([]byte, totalSectors*sector)
+
+	writeVRSDescriptor(iso[16*sector:], "BEA01")
+	writeVRSDescriptor(iso[17*sector:], "NSR03")
+	writeVRSDescriptor(iso[18*sector:], "TEA01")
+	writeUDFPartitionDesc(iso[32*sector:], 32, 0, uint32(partStart))
+	writeUDFLogicalVolumeDesc(iso[33*sector:], 33, uint32(sector), 0, 0)
+	writeUDFTag(iso[34*sector:], 8, 34)
+	writeUDFAVDP(iso[256*sector:], 32, 3*sector)
+	writeUDFFSD(iso[257*sector:], 0, 1, 0)
+
+	writeUDFFileEntry(iso[258*sector:], 1, 4, uint64(sector), 0, 2, uint32(sector))
+	writeRootDirFIDs(iso[259*sector:], 2, 3, 0)
+	writeUDFFileEntry(iso[260*sector:], 3, 4, uint64(sector), 0, 4, uint32(sector))
+	writeBDMVDirFIDs(iso[261*sector:], 4, 5, 0)
+	writeUDFFileEntry(iso[262*sector:], 5, 4, uint64(sector), 0, 6, uint32(sector))
+	writeSTREAMDirFIDs(iso[263*sector:], 6, 7, 0)
+
+	// M2TS File Entry at sector 264 (LB 7) with allocType=1 (long_ad).
+	// Contains a type-3 long_ad pointing to a continuation block at LB 8.
+	fe := iso[264*sector:]
+	writeUDFTag(fe, udfTagFileEntry, 7)
+	fe[27] = 5                                  // file type = regular file
+	binary.LittleEndian.PutUint16(fe[34:36], 1) // alloc type = long_ad
+	binary.LittleEndian.PutUint64(fe[56:64], uint64(len(m2tsData)))
+	binary.LittleEndian.PutUint32(fe[168:172], 0)  // L_EA
+	binary.LittleEndian.PutUint32(fe[172:176], 16) // L_AD = 16 (one long_ad)
+	// Type-3 long_ad: upper 2 bits = 3, location = LB 8, partRef = 0
+	binary.LittleEndian.PutUint32(fe[176:180], 0xC0000000|uint32(sector))
+	binary.LittleEndian.PutUint32(fe[180:184], 8) // location = LB 8
+	binary.LittleEndian.PutUint16(fe[184:186], 0) // partRef = 0
+	recomputeTagChecksum(fe)
+
+	// Allocation Extent Descriptor (tag 258) at sector 265 (LB 8)
+	aed := iso[265*sector:]
+	writeUDFTag(aed, 258, 8)
+	binary.LittleEndian.PutUint32(aed[16:20], 0)  // previous alloc extent location
+	binary.LittleEndian.PutUint32(aed[20:24], 16) // L_AD = 16 (one long_ad)
+	// Data long_ad: type 0, M2TS data at LB 9, partRef 0
+	m2tsLB := uint32(m2tsStartSector - partStart)
+	binary.LittleEndian.PutUint32(aed[24:28], uint32(len(m2tsData)))
+	binary.LittleEndian.PutUint32(aed[28:32], m2tsLB)
+	binary.LittleEndian.PutUint16(aed[32:34], 0) // partRef = 0
+	recomputeTagChecksum(aed)
+
+	copy(iso[m2tsStartSector*sector:], m2tsData)
+
+	dir := t.TempDir()
+	isoPath := filepath.Join(dir, "chained_long.iso")
+	if err := os.WriteFile(isoPath, iso, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := os.Open(isoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	extents, err := findBlurayM2TSInUDF(f)
+	if err != nil {
+		t.Fatalf("findBlurayM2TSInUDF() error = %v", err)
+	}
+
+	if len(extents) != 1 {
+		t.Fatalf("expected 1 M2TS file, got %d", len(extents))
+	}
+
+	e := extents[0]
+	if e.Name != "00000.M2TS" {
+		t.Errorf("expected name 00000.M2TS, got %q", e.Name)
+	}
+	if e.Offset != int64(m2tsStartSector)*int64(sector) {
+		t.Errorf("expected offset %d, got %d", int64(m2tsStartSector)*int64(sector), e.Offset)
+	}
+	if e.Size != int64(len(m2tsData)) {
+		t.Errorf("expected size %d, got %d", len(m2tsData), e.Size)
+	}
+}

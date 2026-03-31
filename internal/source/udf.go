@@ -506,6 +506,12 @@ func (ctx *udfContext) lookupDir(fids []udfFID, name string) (*udfFileEntry, err
 	return nil, fmt.Errorf("%q not found in directory", name)
 }
 
+// maxAllocExtentChainDepth limits the number of type-3 allocation extent
+// continuation hops to prevent infinite loops on corrupt/cyclic images.
+// In practice even a badly fragmented 50 GB Blu-ray needs only 2-3 hops;
+// 10000 is extremely conservative.
+const maxAllocExtentChainDepth = 10000
+
 // resolveAllExtents collects all physical extents for a file entry.
 // For long_ad, each AD has an explicit partition reference.
 // For short_ad, the partition is inherited from the FE.
@@ -521,6 +527,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 		}
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
+		chainDepth := 0
 		for remaining > 0 {
 			followed := false
 			for off := 0; off+8 <= len(allocDescs) && remaining > 0; off += 8 {
@@ -532,14 +539,17 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 					break
 				}
 				if extType == 3 {
-					// Allocation extent descriptor: follow chain
+					chainDepth++
+					if chainDepth > maxAllocExtentChainDepth {
+						return nil, fmt.Errorf("short_ad alloc extent chain depth exceeded %d", maxAllocExtentChainDepth)
+					}
 					nextDescs, err := ctx.readAllocExtentBlock(ad.Position, fe.PartRef)
 					if err != nil {
 						return nil, fmt.Errorf("follow short_ad alloc extent chain: %w", err)
 					}
 					allocDescs = nextDescs
 					followed = true
-					break // restart inner loop with new descriptors
+					break
 				}
 				if extLen > remaining {
 					extLen = remaining
@@ -551,7 +561,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				remaining -= extLen
 			}
 			if !followed {
-				break // no continuation — inner loop exhausted descriptors
+				break
 			}
 		}
 		return extents, nil
@@ -559,6 +569,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 	case 1: // long_ad
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
+		chainDepth := 0
 		for remaining > 0 {
 			followed := false
 			for off := 0; off+16 <= len(allocDescs) && remaining > 0; off += 16 {
@@ -570,14 +581,17 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 					break
 				}
 				if extType == 3 {
-					// Allocation extent descriptor: follow chain to get more ADs.
+					chainDepth++
+					if chainDepth > maxAllocExtentChainDepth {
+						return nil, fmt.Errorf("long_ad alloc extent chain depth exceeded %d", maxAllocExtentChainDepth)
+					}
 					nextDescs, err := ctx.readAllocExtentBlock(ad.Location, ad.PartRef)
 					if err != nil {
 						return nil, fmt.Errorf("follow long_ad alloc extent chain: %w", err)
 					}
 					allocDescs = nextDescs
 					followed = true
-					break // restart inner loop with new descriptors
+					break
 				}
 				if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
 					return nil, fmt.Errorf("long_ad data extent on metadata partition")
@@ -592,7 +606,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				remaining -= extLen
 			}
 			if !followed {
-				break // no continuation — inner loop exhausted descriptors
+				break
 			}
 		}
 		return extents, nil
