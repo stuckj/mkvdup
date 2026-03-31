@@ -49,8 +49,16 @@ func findBlurayM2TSInISO(isoPath string) ([]isoFileExtent, error) {
 	// Fall back to ISO9660 (some DVD-based ISOs or hybrid discs).
 	rootExtent, rootDataLen, err := readISOPVDRoot(f)
 	if err != nil {
+		if errors.Is(err, errNotISO9660) {
+			// No ISO9660 PVD found — report both failures if UDF also failed.
+			if udfErr != nil {
+				return nil, fmt.Errorf("neither UDF (%v) nor ISO9660 (%w) found", udfErr, err)
+			}
+			return nil, fmt.Errorf("read ISO PVD: %w", err)
+		}
+		// ISO9660 PVD exists but had a read/parse error — surface it directly.
 		if udfErr != nil {
-			return nil, fmt.Errorf("neither UDF (%v) nor ISO9660 (%w) found", udfErr, err)
+			return nil, fmt.Errorf("read ISO PVD: %w (UDF attempt also failed: %v)", err, udfErr)
 		}
 		return nil, fmt.Errorf("read ISO PVD: %w", err)
 	}

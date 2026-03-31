@@ -535,8 +535,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				extType := (ad.Length >> 30) & 0x03
 				extLen := int64(ad.Length & 0x3FFFFFFF)
 				if extLen == 0 {
-					remaining = 0
-					break
+					break // end-of-descriptor-list marker
 				}
 				if extType == 3 {
 					chainDepth++
@@ -569,6 +568,9 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				break
 			}
 		}
+		if remaining > 0 {
+			return nil, fmt.Errorf("short_ad allocation descriptors truncated: %d bytes remaining", remaining)
+		}
 		return extents, nil
 
 	case 1: // long_ad
@@ -582,8 +584,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				extType := (ad.Length >> 30) & 0x03
 				extLen := int64(ad.Length & 0x3FFFFFFF)
 				if extLen == 0 {
-					remaining = 0
-					break
+					break // end-of-descriptor-list marker
 				}
 				if extType == 3 {
 					chainDepth++
@@ -618,6 +619,9 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 			if !followed {
 				break
 			}
+		}
+		if remaining > 0 {
+			return nil, fmt.Errorf("long_ad allocation descriptors truncated: %d bytes remaining", remaining)
 		}
 		return extents, nil
 
