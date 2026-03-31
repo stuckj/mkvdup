@@ -150,22 +150,23 @@ type pesState struct {
 
 // scanState holds mutable state for the packet scanning loop.
 type scanState struct {
-	trackedPIDs    map[uint16]bool
-	pesStates      map[uint16]*pesState
-	videoESOffset  int64
-	audioESOffsets map[byte]int64
-	lastProgress   int64
+	trackedPIDs           map[uint16]bool
+	pesStates             map[uint16]*pesState
+	videoESOffset         int64
+	videoSubStreamOffsets map[byte]int64 // ES offsets for non-primary video streams
+	audioESOffsets        map[byte]int64
+	lastProgress          int64
 }
 
 // initScanState sets up PID tracking and PES state for scanning.
 func (p *MPEGTSParser) initScanState() *scanState {
-	if p.videoPID == 0 && len(p.audioPIDs) == 0 {
+	if len(p.videoPIDs) == 0 && len(p.audioPIDs) == 0 {
 		return nil
 	}
 
 	trackedPIDs := make(map[uint16]bool)
-	if p.videoPID != 0 {
-		trackedPIDs[p.videoPID] = true
+	for _, pid := range p.videoPIDs {
+		trackedPIDs[pid] = true
 	}
 	for _, pid := range p.audioPIDs {
 		trackedPIDs[pid] = true
@@ -173,12 +174,15 @@ func (p *MPEGTSParser) initScanState() *scanState {
 
 	// Pre-allocate range slices
 	estimatedPackets := int(p.size) / p.packetSize
-	if p.videoPID != 0 {
+	if len(p.videoPIDs) > 0 {
 		p.videoRanges = make([]PESPayloadRange, 0, estimatedPackets*7/10)
+	}
+	for _, subID := range p.videoSubStreams {
+		p.videoBySubStream[subID] = make([]PESPayloadRange, 0, estimatedPackets/10)
 	}
 	for _, pid := range p.audioPIDs {
 		subID := p.pidToSubStream[pid]
-		p.audioBySubStream[subID] = make([]PESPayloadRange, 0, estimatedPackets/10/len(p.audioPIDs))
+		p.audioBySubStream[subID] = make([]PESPayloadRange, 0, estimatedPackets/10/max(len(p.audioPIDs), 1))
 	}
 
 	pesStates := make(map[uint16]*pesState)
@@ -187,9 +191,10 @@ func (p *MPEGTSParser) initScanState() *scanState {
 	}
 
 	return &scanState{
-		trackedPIDs:    trackedPIDs,
-		pesStates:      pesStates,
-		audioESOffsets: make(map[byte]int64),
+		trackedPIDs:           trackedPIDs,
+		pesStates:             pesStates,
+		videoSubStreamOffsets: make(map[byte]int64),
+		audioESOffsets:        make(map[byte]int64),
 	}
 }
 
@@ -257,22 +262,7 @@ func (p *MPEGTSParser) scanPackets(data []byte, startPos int, logicalBase int64,
 			esPayload := payload[pesHeaderSize:]
 			fileOffset := logPayloadOff + int64(pesHeaderSize)
 
-			if pid == p.videoPID {
-				p.videoRanges = append(p.videoRanges, PESPayloadRange{
-					FileOffset: fileOffset,
-					Size:       len(esPayload),
-					ESOffset:   ss.videoESOffset,
-				})
-				ss.videoESOffset += int64(len(esPayload))
-			} else {
-				subID := p.pidToSubStream[pid]
-				p.audioBySubStream[subID] = append(p.audioBySubStream[subID], PESPayloadRange{
-					FileOffset: fileOffset,
-					Size:       len(esPayload),
-					ESOffset:   ss.audioESOffsets[subID],
-				})
-				ss.audioESOffsets[subID] += int64(len(esPayload))
-			}
+			p.appendPayload(pid, fileOffset, len(esPayload), ss)
 			state.headerBytesRemaining = 0
 		} else {
 			// Continuation packet
@@ -293,22 +283,7 @@ func (p *MPEGTSParser) scanPackets(data []byte, startPos int, logicalBase int64,
 				continue
 			}
 
-			if pid == p.videoPID {
-				p.videoRanges = append(p.videoRanges, PESPayloadRange{
-					FileOffset: fileOffset,
-					Size:       len(esPayload),
-					ESOffset:   ss.videoESOffset,
-				})
-				ss.videoESOffset += int64(len(esPayload))
-			} else {
-				subID := p.pidToSubStream[pid]
-				p.audioBySubStream[subID] = append(p.audioBySubStream[subID], PESPayloadRange{
-					FileOffset: fileOffset,
-					Size:       len(esPayload),
-					ESOffset:   ss.audioESOffsets[subID],
-				})
-				ss.audioESOffsets[subID] += int64(len(esPayload))
-			}
+			p.appendPayload(pid, fileOffset, len(esPayload), ss)
 		}
 
 		// Report progress
@@ -320,10 +295,40 @@ func (p *MPEGTSParser) scanPackets(data []byte, startPos int, logicalBase int64,
 	}
 }
 
+// appendPayload routes a PES payload chunk to the correct range set based on PID.
+// The primary video PID goes to videoRanges, additional video PIDs go to
+// videoBySubStream, and audio/subtitle PIDs go to audioBySubStream.
+func (p *MPEGTSParser) appendPayload(pid uint16, fileOffset int64, size int, ss *scanState) {
+	primaryVideoPID := p.videoPIDs[0]
+	if pid == primaryVideoPID {
+		p.videoRanges = append(p.videoRanges, PESPayloadRange{
+			FileOffset: fileOffset,
+			Size:       size,
+			ESOffset:   ss.videoESOffset,
+		})
+		ss.videoESOffset += int64(size)
+	} else if subID, ok := p.pidToVideoSubStream[pid]; ok {
+		p.videoBySubStream[subID] = append(p.videoBySubStream[subID], PESPayloadRange{
+			FileOffset: fileOffset,
+			Size:       size,
+			ESOffset:   ss.videoSubStreamOffsets[subID],
+		})
+		ss.videoSubStreamOffsets[subID] += int64(size)
+	} else {
+		subID := p.pidToSubStream[pid]
+		p.audioBySubStream[subID] = append(p.audioBySubStream[subID], PESPayloadRange{
+			FileOffset: fileOffset,
+			Size:       size,
+			ESOffset:   ss.audioESOffsets[subID],
+		})
+		ss.audioESOffsets[subID] += int64(size)
+	}
+}
+
 // finalizeParse performs post-scan processing: video range filtering and
 // TrueHD+AC3 stream splitting. Shared by contiguous and multi-region paths.
 func (p *MPEGTSParser) finalizeParse() error {
-	if p.videoPID == 0 && len(p.audioPIDs) == 0 {
+	if len(p.videoPIDs) == 0 && len(p.audioPIDs) == 0 {
 		return fmt.Errorf("no video or audio PIDs found in PMT")
 	}
 
@@ -331,11 +336,85 @@ func (p *MPEGTSParser) finalizeParse() error {
 		return fmt.Errorf("build filtered video ranges: %w", err)
 	}
 
+	// Filter user_data from additional video streams (MPEG-2 only)
+	for subID, ranges := range p.videoBySubStream {
+		codec := p.videoSubStreamCodec[subID]
+		if codec == CodecMPEG2Video && len(ranges) > 0 {
+			p.videoBySubStream[subID] = p.filterVideoSubStreamRanges(ranges)
+		}
+	}
+
 	p.filterUserData = true
 	p.splitTrueHDAC3Streams()
 	p.splitDTSHDCoreStreams()
 
 	return nil
+}
+
+// filterVideoSubStreamRanges applies user_data filtering to a set of video ranges.
+func (p *MPEGTSParser) filterVideoSubStreamRanges(ranges []PESPayloadRange) []PESPayloadRange {
+	filteredRanges := make([]PESPayloadRange, 0, len(ranges))
+	var filteredESOffset int64
+
+	for _, rawRange := range ranges {
+		endOffset := rawRange.FileOffset + int64(rawRange.Size)
+		if endOffset > p.size {
+			continue
+		}
+		data := p.dataSlice(rawRange.FileOffset, endOffset)
+
+		i := 2
+		rangeStart := 0
+		for i < len(data)-1 {
+			idx := bytes.IndexByte(data[i:], 0x01)
+			if idx < 0 {
+				break
+			}
+			pos := i + idx
+
+			if pos >= 2 && pos < len(data)-1 &&
+				data[pos-1] == 0x00 && data[pos-2] == 0x00 && data[pos+1] == UserDataStartCode {
+				startCodePos := pos - 2
+				if startCodePos > rangeStart {
+					filteredRanges = append(filteredRanges, PESPayloadRange{
+						FileOffset: rawRange.FileOffset + int64(rangeStart),
+						Size:       startCodePos - rangeStart,
+						ESOffset:   filteredESOffset,
+					})
+					filteredESOffset += int64(startCodePos - rangeStart)
+				}
+
+				i = pos + 2
+				for i < len(data)-1 {
+					idx := bytes.IndexByte(data[i:], 0x01)
+					if idx < 0 {
+						i = len(data)
+						break
+					}
+					nextPos := i + idx
+					if nextPos >= 2 && data[nextPos-1] == 0x00 && data[nextPos-2] == 0x00 {
+						i = nextPos - 2
+						break
+					}
+					i = nextPos + 1
+				}
+				rangeStart = i
+			} else {
+				i = pos + 1
+			}
+		}
+
+		if rangeStart < len(data) {
+			filteredRanges = append(filteredRanges, PESPayloadRange{
+				FileOffset: rawRange.FileOffset + int64(rangeStart),
+				Size:       len(data) - rangeStart,
+				ESOffset:   filteredESOffset,
+			})
+			filteredESOffset += int64(len(data) - rangeStart)
+		}
+	}
+
+	return filteredRanges
 }
 
 // parsePATandPMT finds the PAT and PMT in the first portion of the file
@@ -377,9 +456,28 @@ func (p *MPEGTSParser) parsePATandPMT(data []byte, startOffset int) error {
 
 			ct := tsStreamTypeToCodecType(streamType)
 			if ct != CodecUnknown {
-				if IsVideoCodec(ct) && p.videoPID == 0 {
-					p.videoPID = esPID
-					p.videoCodec = ct
+				if IsVideoCodec(ct) {
+					if len(p.videoPIDs) == 0 {
+						// Primary video stream
+						p.videoPIDs = append(p.videoPIDs, esPID)
+						p.videoCodec = ct
+					} else {
+						// Additional video stream — check it's not a duplicate PID
+						isDup := false
+						for _, existing := range p.videoPIDs {
+							if existing == esPID {
+								isDup = true
+								break
+							}
+						}
+						if !isDup {
+							p.videoPIDs = append(p.videoPIDs, esPID)
+							videoSubID := byte(len(p.videoPIDs) - 1) // 1, 2, 3, ...
+							p.pidToVideoSubStream[esPID] = videoSubID
+							p.videoSubStreamCodec[videoSubID] = ct
+							p.videoSubStreams = append(p.videoSubStreams, videoSubID)
+						}
+					}
 				} else if IsAudioCodec(ct) || IsSubtitleCodec(ct) {
 					p.audioPIDs = append(p.audioPIDs, esPID)
 					p.pidToSubStream[esPID] = subStreamSeq

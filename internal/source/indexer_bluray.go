@@ -54,6 +54,20 @@ func (idx *Indexer) indexM2TSFile(fileIndex uint16, path string, size int64, pro
 		}
 	}
 
+	// Index additional video sub-streams (multi-PID M2TS files)
+	for _, subStreamID := range parser.VideoSubStreams() {
+		subStreamSize := parser.VideoSubStreamESSize(subStreamID)
+		if subStreamSize > 0 {
+			if idx.verboseWriter != nil {
+				fmt.Fprintf(idx.verboseWriter, "  [indexM2TSFile] indexing additional video PID (sub-stream %d, %.1f MB)\n",
+					subStreamID, float64(subStreamSize)/(1024*1024))
+			}
+			if err := idx.indexVideoSubStream(fileIndex, parser, subStreamID, subStreamSize); err != nil {
+				return 0, fmt.Errorf("index video sub-stream %d: %w", subStreamID, err)
+			}
+		}
+	}
+
 	// Index each audio sub-stream separately
 	subtitleIDs := parser.SubtitleSubStreams()
 	subtitleSet := make(map[byte]bool, len(subtitleIDs))
@@ -190,6 +204,16 @@ func (idx *Indexer) indexBlurayISOFile(startFileIndex uint16, path, relPath stri
 		if videoESSize > 0 {
 			if err := idx.indexESData(fileIndex, adapter, true, videoESSize, nil); err != nil {
 				return 0, 0, fmt.Errorf("index video ES for %s: %w", p.extent.Name, err)
+			}
+		}
+
+		// Index additional video sub-streams
+		for _, subStreamID := range adapter.parser.VideoSubStreams() {
+			subStreamSize := adapter.parser.VideoSubStreamESSize(subStreamID)
+			if subStreamSize > 0 {
+				if err := idx.indexVideoSubStream(fileIndex, adapter, subStreamID, subStreamSize); err != nil {
+					return 0, 0, fmt.Errorf("index video sub-stream %d for %s: %w", subStreamID, p.extent.Name, err)
+				}
 			}
 		}
 

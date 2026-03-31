@@ -165,6 +165,26 @@ func (a *isoM2TSAdapter) IsLPCMSubStream(_ byte) bool {
 	return false
 }
 
+// --- multiVideoStreamReader interface (for multi-PID M2TS files) ---
+
+func (a *isoM2TSAdapter) ReadVideoSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error) {
+	return a.parser.ReadVideoSubStreamData(subStreamID, esOffset, size)
+}
+
+func (a *isoM2TSAdapter) ReadVideoSubStreamByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
+	return a.parser.ReadVideoSubStreamByteWithHint(subStreamID, esOffset, rangeHint)
+}
+
+// --- videoSubStreamProvider interface (for indexing additional video streams) ---
+
+func (a *isoM2TSAdapter) FilteredVideoSubStreamRanges(subStreamID byte) []PESPayloadRange {
+	return a.parser.FilteredVideoSubStreamRanges(subStreamID)
+}
+
+func (a *isoM2TSAdapter) VideoSubStreamESSize(subStreamID byte) int64 {
+	return a.parser.VideoSubStreamESSize(subStreamID)
+}
+
 // --- ESRangeConverter interface (for V3 format — adds baseOffset to raw ranges) ---
 
 func (a *isoM2TSAdapter) RawRangesForESRegion(esOffset int64, size int, isVideo bool) ([]RawRange, error) {

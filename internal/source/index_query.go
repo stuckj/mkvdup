@@ -21,10 +21,23 @@ func (idx *Index) ReadESDataAt(loc Location, size int) ([]byte, error) {
 		return nil, fmt.Errorf("no ES reader for file %d", loc.FileIndex)
 	}
 	if loc.IsVideo {
+		// Non-primary video sub-stream (AudioSubStreamID repurposed as video sub-stream ID)
+		if loc.AudioSubStreamID != 0 {
+			if mvr, ok := idx.ESReaders[loc.FileIndex].(multiVideoStreamReader); ok {
+				return mvr.ReadVideoSubStreamData(loc.AudioSubStreamID, loc.Offset, size)
+			}
+		}
 		return idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, size, true)
 	}
 	// For audio, use the sub-stream specific reader
 	return idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, size)
+}
+
+// multiVideoStreamReader is implemented by parsers that support multiple video
+// streams (e.g., MPEGTSParser on multi-PID Blu-ray M2TS files).
+type multiVideoStreamReader interface {
+	ReadVideoSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
+	ReadVideoSubStreamByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool)
 }
 
 // hintedESReader is the interface for hint-based byte reading.
@@ -43,6 +56,13 @@ func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bo
 		return 0, -1, false
 	}
 
+	// Non-primary video sub-stream: use stream-specific reader
+	if loc.IsVideo && loc.AudioSubStreamID != 0 {
+		if mvr, ok := idx.ESReaders[loc.FileIndex].(multiVideoStreamReader); ok {
+			return mvr.ReadVideoSubStreamByteWithHint(loc.AudioSubStreamID, loc.Offset, rangeHint)
+		}
+	}
+
 	// Try hint-based reading (fast path for MPEGPSParser and MPEGTSParser)
 	if hinted, ok := idx.ESReaders[loc.FileIndex].(hintedESReader); ok {
 		if loc.IsVideo {
@@ -55,7 +75,14 @@ func (idx *Index) ReadESByteWithHint(loc Location, rangeHint int) (byte, int, bo
 	var data []byte
 	var err error
 	if loc.IsVideo {
-		data, err = idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, 1, true)
+		if loc.AudioSubStreamID != 0 {
+			if mvr, ok := idx.ESReaders[loc.FileIndex].(multiVideoStreamReader); ok {
+				data, err = mvr.ReadVideoSubStreamData(loc.AudioSubStreamID, loc.Offset, 1)
+			}
+		}
+		if data == nil && err == nil {
+			data, err = idx.ESReaders[loc.FileIndex].ReadESData(loc.Offset, 1, true)
+		}
 	} else {
 		data, err = idx.ESReaders[loc.FileIndex].ReadAudioSubStreamData(loc.AudioSubStreamID, loc.Offset, 1)
 	}

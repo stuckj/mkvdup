@@ -98,6 +98,67 @@ func (idx *Indexer) indexESData(fileIndex uint16, parser esDataProvider, isVideo
 	return nil
 }
 
+// videoSubStreamProvider is the interface needed to index additional video sub-streams.
+type videoSubStreamProvider interface {
+	esDataProvider
+	FilteredVideoSubStreamRanges(subStreamID byte) []PESPayloadRange
+	ReadVideoSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error)
+}
+
+// indexVideoSubStream indexes a non-primary video sub-stream.
+// Uses the sub-stream's filtered ranges (with user_data excluded for MPEG-2).
+// Locations are stored with IsVideo=true and AudioSubStreamID set to the video
+// sub-stream ID so the matcher can route reads to the correct stream.
+func (idx *Indexer) indexVideoSubStream(fileIndex uint16, parser videoSubStreamProvider, subStreamID byte, esSize int64) error {
+	ranges := parser.FilteredVideoSubStreamRanges(subStreamID)
+	if len(ranges) == 0 {
+		return nil
+	}
+
+	dataSize := parser.DataSize()
+	for _, r := range ranges {
+		endOffset := r.FileOffset + int64(r.Size)
+		if endOffset > dataSize {
+			continue
+		}
+		rangeData := parser.DataSlice(r.FileOffset, r.Size)
+
+		syncPoints := FindVideoNALStarts(rangeData)
+
+		for _, offsetInRange := range syncPoints {
+			syncESOffset := r.ESOffset + int64(offsetInRange)
+			if syncESOffset+int64(idx.windowSize) > esSize {
+				continue
+			}
+
+			if offsetInRange+idx.windowSize <= len(rangeData) {
+				window := rangeData[offsetInRange : offsetInRange+idx.windowSize]
+				hash := xxhash.Sum64(window)
+				idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
+					FileIndex:        fileIndex,
+					Offset:           syncESOffset,
+					IsVideo:          true,
+					AudioSubStreamID: subStreamID,
+				})
+			} else {
+				window, err := parser.ReadVideoSubStreamData(subStreamID, syncESOffset, idx.windowSize)
+				if err != nil || len(window) < idx.windowSize {
+					continue
+				}
+				hash := xxhash.Sum64(window)
+				idx.index.HashToLocations[hash] = append(idx.index.HashToLocations[hash], Location{
+					FileIndex:        fileIndex,
+					Offset:           syncESOffset,
+					IsVideo:          true,
+					AudioSubStreamID: subStreamID,
+				})
+			}
+		}
+	}
+
+	return nil
+}
+
 // syncPointFinder is a function that returns sync point offsets within data.
 type syncPointFinder func(data []byte) []int
 

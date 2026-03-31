@@ -20,14 +20,22 @@ type MPEGTSParser struct {
 	tsOffset    int // offset from packet start to TS sync byte (4 for M2TS, 0 for TS)
 
 	// Stream PIDs from PMT
-	videoPID   uint16
+	videoPIDs  []uint16  // ordered by PMT appearance; first is the primary
 	audioPIDs  []uint16  // ordered by PMT appearance
-	videoCodec CodecType // for user_data filtering decision
+	videoCodec CodecType // codec of the primary video stream (for user_data filtering)
 
 	// PES payload ranges (one entry per TS payload chunk for tracked PIDs)
+	// The primary video PID's ranges are stored in videoRanges/filteredVideoRanges
+	// for backwards compatibility. Additional video PIDs use videoBySubStream.
 	videoRanges         []PESPayloadRange
-	filteredVideoRanges []PESPayloadRange // excludes user_data for MPEG-2 only
+	filteredVideoRanges []PESPayloadRange          // excludes user_data for MPEG-2 only
+	videoBySubStream    map[byte][]PESPayloadRange // non-primary video streams (keyed by sub-stream ID)
 	audioBySubStream    map[byte][]PESPayloadRange
+
+	// Video PID → sub-stream ID mapping (for non-primary video PIDs only)
+	videoSubStreams     []byte             // sequential IDs for additional video streams
+	pidToVideoSubStream map[uint16]byte    // PID → video sub-stream ID
+	videoSubStreamCodec map[byte]CodecType // codec type per video sub-stream
 
 	// Audio PID → sub-stream ID mapping
 	audioSubStreams []byte             // sequential IDs: 0, 1, 2, ...
@@ -41,12 +49,15 @@ type MPEGTSParser struct {
 // NewMPEGTSParser creates a parser for the given memory-mapped M2TS data.
 func NewMPEGTSParser(data []byte) *MPEGTSParser {
 	return &MPEGTSParser{
-		data:             data,
-		size:             int64(len(data)),
-		audioBySubStream: make(map[byte][]PESPayloadRange),
-		pidToSubStream:   make(map[uint16]byte),
-		subStreamToPID:   make(map[byte]uint16),
-		subStreamCodec:   make(map[byte]CodecType),
+		data:                data,
+		size:                int64(len(data)),
+		videoBySubStream:    make(map[byte][]PESPayloadRange),
+		audioBySubStream:    make(map[byte][]PESPayloadRange),
+		pidToVideoSubStream: make(map[uint16]byte),
+		videoSubStreamCodec: make(map[byte]CodecType),
+		pidToSubStream:      make(map[uint16]byte),
+		subStreamToPID:      make(map[byte]uint16),
+		subStreamCodec:      make(map[byte]CodecType),
 	}
 }
 
@@ -55,12 +66,15 @@ func NewMPEGTSParser(data []byte) *MPEGTSParser {
 // contiguous view over multiple mmap sub-slices.
 func NewMPEGTSParserMultiRegion(mr *multiRegionData) *MPEGTSParser {
 	return &MPEGTSParser{
-		multiRegion:      mr,
-		size:             mr.Len(),
-		audioBySubStream: make(map[byte][]PESPayloadRange),
-		pidToSubStream:   make(map[uint16]byte),
-		subStreamToPID:   make(map[byte]uint16),
-		subStreamCodec:   make(map[byte]CodecType),
+		multiRegion:         mr,
+		size:                mr.Len(),
+		videoBySubStream:    make(map[byte][]PESPayloadRange),
+		audioBySubStream:    make(map[byte][]PESPayloadRange),
+		pidToVideoSubStream: make(map[uint16]byte),
+		videoSubStreamCodec: make(map[byte]CodecType),
+		pidToSubStream:      make(map[uint16]byte),
+		subStreamToPID:      make(map[byte]uint16),
+		subStreamCodec:      make(map[byte]CodecType),
 	}
 }
 
@@ -249,9 +263,17 @@ func (p *MPEGTSParser) AudioSubStreamCount() int {
 	return len(p.audioSubStreams)
 }
 
-// VideoPID returns the video PID detected from the PMT.
+// VideoPID returns the primary video PID detected from the PMT.
 func (p *MPEGTSParser) VideoPID() uint16 {
-	return p.videoPID
+	if len(p.videoPIDs) > 0 {
+		return p.videoPIDs[0]
+	}
+	return 0
+}
+
+// VideoPIDs returns all video PIDs detected from the PMT.
+func (p *MPEGTSParser) VideoPIDs() []uint16 {
+	return p.videoPIDs
 }
 
 // AudioPIDs returns the audio PIDs detected from the PMT.
@@ -262,6 +284,44 @@ func (p *MPEGTSParser) AudioPIDs() []uint16 {
 // VideoCodec returns the video codec type detected from the PMT.
 func (p *MPEGTSParser) VideoCodec() CodecType {
 	return p.videoCodec
+}
+
+// VideoSubStreams returns sub-stream IDs for non-primary video streams.
+func (p *MPEGTSParser) VideoSubStreams() []byte {
+	return p.videoSubStreams
+}
+
+// VideoSubStreamESSize returns the ES size for a non-primary video sub-stream.
+func (p *MPEGTSParser) VideoSubStreamESSize(subStreamID byte) int64 {
+	return totalESSizeFromRanges(p.videoBySubStream[subStreamID])
+}
+
+// FilteredVideoSubStreamRanges returns the filtered ranges for a non-primary video sub-stream.
+func (p *MPEGTSParser) FilteredVideoSubStreamRanges(subStreamID byte) []PESPayloadRange {
+	return p.videoBySubStream[subStreamID]
+}
+
+// ReadVideoSubStreamData reads data from a non-primary video sub-stream.
+func (p *MPEGTSParser) ReadVideoSubStreamData(subStreamID byte, esOffset int64, size int) ([]byte, error) {
+	ranges := p.videoBySubStream[subStreamID]
+	if ranges == nil {
+		return nil, fmt.Errorf("video sub-stream %d not found", subStreamID)
+	}
+	return readFromRanges(p.data, p.multiRegion, p.size, ranges, esOffset, size)
+}
+
+// ReadVideoSubStreamByteWithHint reads a single byte from a non-primary video sub-stream.
+func (p *MPEGTSParser) ReadVideoSubStreamByteWithHint(subStreamID byte, esOffset int64, rangeHint int) (byte, int, bool) {
+	return readByteWithHint(p.data, p.multiRegion, p.size, p.videoBySubStream[subStreamID], esOffset, rangeHint)
+}
+
+// RawRangesForVideoSubStream returns the raw file ranges for a non-primary video sub-stream.
+func (p *MPEGTSParser) RawRangesForVideoSubStream(subStreamID byte, esOffset int64, size int) ([]RawRange, error) {
+	ranges := p.videoBySubStream[subStreamID]
+	if ranges == nil {
+		return nil, fmt.Errorf("video sub-stream %d not found", subStreamID)
+	}
+	return rawRangesFromPESRanges(ranges, esOffset, size)
 }
 
 // Ensure MPEGTSParser implements the required interfaces at compile time.
