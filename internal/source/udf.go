@@ -522,6 +522,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
 		for remaining > 0 {
+			followed := false
 			for off := 0; off+8 <= len(allocDescs) && remaining > 0; off += 8 {
 				ad := parseShortAD(allocDescs[off : off+8])
 				extType := (ad.Length >> 30) & 0x03
@@ -537,6 +538,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 						return nil, fmt.Errorf("follow short_ad alloc extent chain: %w", err)
 					}
 					allocDescs = nextDescs
+					followed = true
 					break // restart inner loop with new descriptors
 				}
 				if extLen > remaining {
@@ -548,6 +550,9 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 				})
 				remaining -= extLen
 			}
+			if !followed {
+				break // no continuation — inner loop exhausted descriptors
+			}
 		}
 		return extents, nil
 
@@ -555,6 +560,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 		var extents []isoPhysicalRange
 		remaining := int64(fe.InfoLength)
 		for remaining > 0 {
+			followed := false
 			for off := 0; off+16 <= len(allocDescs) && remaining > 0; off += 16 {
 				ad := parseLongAD(allocDescs[off : off+16])
 				extType := (ad.Length >> 30) & 0x03
@@ -570,6 +576,7 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 						return nil, fmt.Errorf("follow long_ad alloc extent chain: %w", err)
 					}
 					allocDescs = nextDescs
+					followed = true
 					break // restart inner loop with new descriptors
 				}
 				if int(ad.PartRef) < len(ctx.partMaps) && ctx.partMaps[ad.PartRef].IsMetadata {
@@ -583,6 +590,9 @@ func (ctx *udfContext) resolveAllExtents(fe *udfFileEntry) ([]isoPhysicalRange, 
 					Length:    extLen,
 				})
 				remaining -= extLen
+			}
+			if !followed {
+				break // no continuation — inner loop exhausted descriptors
 			}
 		}
 		return extents, nil
@@ -616,7 +626,7 @@ func (ctx *udfContext) readAllocExtentBlock(blockNum uint32, partRef uint16) ([]
 	}
 	adLen := binary.LittleEndian.Uint32(data[20:24])
 	if 24+int(adLen) > len(data) {
-		adLen = uint32(len(data) - 24)
+		return nil, fmt.Errorf("allocation descriptor length %d exceeds remaining block bytes %d", adLen, len(data)-24)
 	}
 	return data[24 : 24+adLen], nil
 }
