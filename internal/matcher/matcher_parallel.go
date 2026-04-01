@@ -283,7 +283,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			if codecInfo.nalLengthSize > 0 && len(nalType) > 0 && nalSizeExact {
 				nt := nalType[0] & 0x1F
 				if nt == 1 || nt == 5 { // non-IDR slice or IDR slice
-					if region := m.tryBitShiftMatch(pkt, int(offsetInPacket), data, hint, nalSize, codecInfo.nalLengthSize); region != nil {
+					if region := m.tryBitShiftMatch(pkt, int(offsetInPacket), data, hint, nalSize); region != nil {
 						m.regionsMu.Lock()
 						m.matchedRegions = append(m.matchedRegions, *region)
 						m.regionsMu.Unlock()

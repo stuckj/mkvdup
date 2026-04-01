@@ -15,18 +15,24 @@ const maxDivergenceOffset = 20
 // before committing to a full-NAL check.
 const bitShiftVerifyLen = 64
 
-// startCodeScanWindow is the number of bytes to read from the source when
-// searching for the Annex B start code of the next NAL.
-const startCodeScanWindow = 32
+// alignSearchRange is the number of byte offsets to try in each direction
+// when aligning the predicted source offset to the actual NAL header position.
+// The prediction can be off by a few bytes due to AVCC vs Annex B framing
+// differences (length prefix size vs start code size).
+const alignSearchRange = 3
+
+// minAlignBytes is the minimum number of pre-divergence bytes that must match
+// to confirm alignment between MKV and source NAL data.
+const minAlignBytes = 2
 
 // tryBitShiftMatch attempts to recover a NAL that failed hash-based matching
 // by detecting a bit-shift between source and MKV data. This handles H.264
 // slice headers where extraction tools modified VLC-coded fields.
 //
 // The approach uses the per-track locality hint to predict where this NAL
-// should be in the source, then scans for the Annex B start code and matching
-// NAL header byte. If found, it detects the divergence point and tries all
-// 7 possible shift amounts.
+// should be in the source, then compares pre-divergence bytes at nearby
+// offsets to align. Once aligned, it detects the divergence point and tries
+// all 7 possible shift amounts.
 //
 // Returns a matchedRegion with bitShift and divergenceOffset set, or nil
 // if no bit-shift match was found.
@@ -36,7 +42,6 @@ func (m *Matcher) tryBitShiftMatch(
 	mkvNALData []byte,
 	hint *trackLocalityHint,
 	nalSize int,
-	nalLengthSize int,
 ) *matchedRegion {
 	m.diagBitShiftAttempts.Add(1)
 
@@ -55,10 +60,6 @@ func (m *Matcher) tryBitShiftMatch(
 		return nil
 	}
 
-	// The MKV NAL header byte (first byte after AVCC length prefix).
-	// This byte is the same in both source and MKV.
-	nalHeaderByte := mkvNALData[0]
-
 	// Predict approximate source ES offset. The MKV and source NALs are
 	// packed sequentially on the same track, so the offset delta between
 	// consecutive NALs is similar (differing only by framing: AVCC length
@@ -69,38 +70,41 @@ func (m *Matcher) tryBitShiftMatch(
 		return nil
 	}
 
-	// Read a small window from the source around the predicted offset
-	// to find the Annex B start code (00 00 01) + NAL header byte.
 	hintFileIndex := uint16(hint.fileIndex.Load())
-	scanLoc := source.Location{
-		FileIndex: hintFileIndex,
-		Offset:    predictedSrcOff,
-		IsVideo:   true,
-	}
 
-	scanSize := startCodeScanWindow
-	scanData, err := m.sourceIndex.ReadESDataAt(scanLoc, scanSize)
-	if err != nil || len(scanData) < 4 {
-		return nil
-	}
-
-	// Scan for start code (00 00 01) followed by matching NAL header byte.
+	// Try to align the predicted offset to the actual NAL header position
+	// by comparing pre-divergence bytes. The prediction can be off by a few
+	// bytes due to AVCC (4-byte length prefix) vs Annex B (3-4 byte start code)
+	// framing differences. We try offsets around the prediction and look for
+	// the first position where the initial bytes match the MKV NAL data.
 	srcNALOffset := int64(-1)
-	for i := 0; i+3 < len(scanData); i++ {
-		if scanData[i] == 0x00 && scanData[i+1] == 0x00 && scanData[i+2] == 0x01 {
-			if scanData[i+3] == nalHeaderByte {
-				// Found it: the NAL payload starts at i+3 relative to scanLoc.Offset
-				srcNALOffset = predictedSrcOff + int64(i+3)
+	for delta := -alignSearchRange; delta <= alignSearchRange; delta++ {
+		candidateOff := predictedSrcOff + int64(delta)
+		if candidateOff < 0 {
+			continue
+		}
+
+		loc := source.Location{
+			FileIndex: hintFileIndex,
+			Offset:    candidateOff,
+			IsVideo:   true,
+		}
+		probe, err := m.sourceIndex.ReadESDataAt(loc, minAlignBytes)
+		if err != nil || len(probe) < minAlignBytes {
+			continue
+		}
+
+		// Check if the first minAlignBytes bytes match the MKV NAL data
+		match := true
+		for i := 0; i < minAlignBytes; i++ {
+			if probe[i] != mkvNALData[i] {
+				match = false
 				break
 			}
 		}
-		// Also check 4-byte start code (00 00 00 01)
-		if i+4 < len(scanData) && scanData[i] == 0x00 && scanData[i+1] == 0x00 &&
-			scanData[i+2] == 0x00 && scanData[i+3] == 0x01 {
-			if i+4 < len(scanData) && scanData[i+4] == nalHeaderByte {
-				srcNALOffset = predictedSrcOff + int64(i+4)
-				break
-			}
+		if match {
+			srcNALOffset = candidateOff
+			break
 		}
 	}
 
@@ -108,7 +112,7 @@ func (m *Matcher) tryBitShiftMatch(
 		return nil
 	}
 
-	// Read source NAL data at the found offset.
+	// Read source NAL data at the aligned offset.
 	// We need nalSize+1 bytes: nalSize for comparison + 1 for the shift transform.
 	srcReadSize := nalSize + 1
 	srcLoc := source.Location{

@@ -12,10 +12,10 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 
 | Version | Description |
 |---------|-------------|
-| 10 | V8 + bit-shifted NAL entry support (ESFlags bits 2-4 encode shift amount). Only produced when bit-shifted entries are present. |
-| 9 | V7 + bit-shifted NAL entry support (ESFlags bits 2-4 encode shift amount). Only produced when bit-shifted entries are present. |
-| 8 (current) | V6 + per-source-file Used byte. On-disk layout otherwise identical to V6. |
-| 7 (current) | V5 + per-source-file Used byte. On-disk layout otherwise identical to V5. |
+| 10 (current when bit-shifted entries are present) | V8 + bit-shifted NAL entry support (ESFlags bits 2-4 encode shift amount). Only produced when bit-shifted entries are present. |
+| 9 (current when bit-shifted entries are present) | V7 + bit-shifted NAL entry support (ESFlags bits 2-4 encode shift amount). Only produced when bit-shifted entries are present. |
+| 8 (default; current when no bit-shifted entries are present) | V6 + per-source-file Used byte. On-disk layout otherwise identical to V6. |
+| 7 (default; current when no bit-shifted entries are present) | V5 + per-source-file Used byte. On-disk layout otherwise identical to V5. |
 | 6 | V4 + embedded creator version string after the header. On-disk layout otherwise identical to V4. |
 | 5 | V3 + embedded creator version string after the header. On-disk layout otherwise identical to V3. |
 | 4 | Adds embedded range map section for Blu-ray M2TS sources. Index entries use ES offsets; the range map translates ES offsets to raw file offsets at read time. Footer extended to 32 bytes with range map checksum. |

@@ -86,6 +86,12 @@ func (w *Writer) resolveVersion() {
 	hasCreator := w.creatorVersion != ""
 	hasBitShift := w.hasBitShiftEntries
 
+	// V9/V10 require a creator version string because the reader unconditionally
+	// parses one for versions >= 5. Without it the file would be malformed.
+	if hasBitShift && !hasCreator {
+		panic("mkvdup: bit-shifted entries require SetCreatorVersion to be called before writing")
+	}
+
 	switch {
 	case hasRangeMaps && hasBitShift:
 		w.header.Version = VersionRangeMapBitShift // V10

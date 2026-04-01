@@ -52,6 +52,15 @@ func (m *Matcher) mergeRegions() {
 		} else if curr.mkvEnd > last.mkvEnd {
 			// Different source or inconsistent mapping. The earlier region (last)
 			// keeps priority. Clip curr to start where last ends.
+			//
+			// Bit-shifted regions cannot be clipped because divergenceOffset is
+			// relative to the original mkvStart and would become invalid after
+			// trimming. Drop them instead (the overlapping bytes go to delta).
+			// For AVCC tracks this is effectively unreachable since expansion
+			// cannot cross NAL boundaries.
+			if curr.bitShift > 0 {
+				continue
+			}
 			overlap := last.mkvEnd - curr.mkvStart
 			curr.mkvStart = last.mkvEnd
 			curr.srcOffset += overlap
@@ -123,8 +132,8 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) {
 						IsLPCM:           inRegion.isLPCM,
 						BitShiftAmount:   inRegion.bitShift,
 					})
-					pos += regionLen
 				}
+				pos = inRegion.mkvEnd
 			} else {
 				// Normal matched entry (or bit-shifted with no pre-divergence bytes)
 				entry := Entry{
