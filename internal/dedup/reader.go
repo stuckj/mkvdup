@@ -10,11 +10,27 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/stuckj/mkvdup/internal/bitshift"
 	"github.com/stuckj/mkvdup/internal/mmap"
 	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 	"golang.org/x/sys/unix"
 )
+
+// bitShiftPoolMaxSize is the maximum buffer size returned to the pool.
+// Buffers larger than this are let go for GC to reclaim, preventing a single
+// large NAL read from permanently inflating the pool.
+const bitShiftPoolMaxSize = 256 * 1024
+
+// bitShiftPool is a pool of reusable byte slices for bit-shift transform buffers.
+// During active FUSE reads, the same few buffers circulate between concurrent readers.
+// Go's GC clears unreferenced pool entries, so the pool shrinks to zero when idle.
+var bitShiftPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 64*1024)
+		return b
+	},
+}
 
 // blockSize is the block size for the block index.
 // Each block maps an MKV offset range to an entry index for O(1) lookup.
@@ -203,8 +219,8 @@ func (r *Reader) initEntryAccess() error {
 		// Build block index for fast random access lookup
 		r.buildBlockIndex()
 
-		// V4/V6/V8: parse range map section
-		if r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator || r.file.Header.Version == VersionRangeMapUsed {
+		// V4/V6/V8/V10: parse range map section
+		if r.hasRangeMaps() {
 			if err := r.initRangeMaps(); err != nil {
 				r.entriesErr = fmt.Errorf("init range maps: %w", err)
 				return
@@ -243,17 +259,30 @@ func (r *Reader) initRangeMaps() error {
 	return nil
 }
 
-// HasRangeMaps returns true if this dedup file uses V4/V6/V8 range maps.
+// hasRangeMaps returns true if this dedup file uses range maps (V4/V6/V8/V10).
+func (r *Reader) hasRangeMaps() bool {
+	switch r.file.Header.Version {
+	case VersionRangeMap, VersionRangeMapCreator, VersionRangeMapUsed, VersionRangeMapBitShift:
+		return true
+	}
+	return false
+}
+
+// HasRangeMaps returns true if this dedup file uses V4/V6/V8/V10 range maps.
 // This checks the header version (available immediately after NewReaderLazy)
 // rather than the lazily-loaded range map data, so it's safe to call
 // before the first ReadAt.
 func (r *Reader) HasRangeMaps() bool {
-	return r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator || r.file.Header.Version == VersionRangeMapUsed
+	return r.hasRangeMaps()
 }
 
-// HasSourceUsedFlags returns true if the dedup file has per-source-file Used flags (V7/V8).
+// HasSourceUsedFlags returns true if the dedup file has per-source-file Used flags (V7+).
 func (r *Reader) HasSourceUsedFlags() bool {
-	return r.file.Header.Version == VersionUsed || r.file.Header.Version == VersionRangeMapUsed
+	switch r.file.Header.Version {
+	case VersionUsed, VersionRangeMapUsed, VersionBitShift, VersionRangeMapBitShift:
+		return true
+	}
+	return false
 }
 
 // buildBlockIndex creates a mapping from block numbers to entry indices.
@@ -471,8 +500,30 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		// offset and read length may be misaligned to pair boundaries when
 		// the caller's buffer doesn't align with entry boundaries.
 		needsLPCMSwap := entry.Source != 0 && entry.IsLPCM && !(r.file.UsesESOffsets && r.esReader != nil)
+		needsBitShift := entry.Source != 0 && entry.BitShiftAmount > 0
 
-		if needsLPCMSwap {
+		if needsBitShift {
+			// Bit-shifted entry: read source data + 1 extra byte, apply transform.
+			// The transform needs src[j+1] for the last output byte.
+			srcLen := readLen + 1
+			tmp := bitShiftPool.Get().([]byte)
+			if cap(tmp) < srcLen {
+				tmp = make([]byte, srcLen)
+			} else {
+				tmp = tmp[:srcLen]
+			}
+
+			if err := r.readEntry(entry, sourceOffset, srcLen, tmp); err != nil {
+				bitShiftPool.Put(tmp[:0])
+				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
+			}
+
+			bitshift.Apply(tmp, entry.BitShiftAmount, buf[bufOffset:bufOffset+readLen])
+
+			if cap(tmp) <= bitShiftPoolMaxSize {
+				bitShiftPool.Put(tmp[:0])
+			}
+		} else if needsLPCMSwap {
 			// Compute pair-aligned read range within the entry.
 			alignedOff := offsetInEntry
 			trimFront := 0
@@ -494,7 +545,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			source.TransformLPCM16BE(tmp)
 			copy(buf[bufOffset:bufOffset+readLen], tmp[trimFront:trimFront+readLen])
 		} else {
-			// Normal read path (non-LPCM)
+			// Normal read path (non-LPCM, non-bit-shifted)
 			if err := r.readEntry(entry, sourceOffset, readLen, buf[bufOffset:bufOffset+readLen]); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
@@ -770,16 +821,17 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
-	// Support versions 3-8. Older versions must be recreated.
+	// Support versions 3-10. Older versions must be recreated.
 	switch file.Header.Version {
-	case Version, VersionRangeMap, VersionCreator, VersionRangeMapCreator, VersionUsed, VersionRangeMapUsed:
+	case Version, VersionRangeMap, VersionCreator, VersionRangeMapCreator,
+		VersionUsed, VersionRangeMapUsed, VersionBitShift, VersionRangeMapBitShift:
 		// OK
 	case 1:
 		return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
 	case 2:
 		return nil, fmt.Errorf("unsupported version 2 (uses uint8 source index); please recreate with 'mkvdup create'")
 	default:
-		return nil, fmt.Errorf("unsupported version: %d (expected 3-8)", file.Header.Version)
+		return nil, fmt.Errorf("unsupported version: %d (expected 3-10)", file.Header.Version)
 	}
 
 	// Read flags
@@ -872,7 +924,8 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 		}
 
 		// V7/V8: read used flag
-		if file.Header.Version == VersionUsed || file.Header.Version == VersionRangeMapUsed {
+		if file.Header.Version == VersionUsed || file.Header.Version == VersionRangeMapUsed ||
+			file.Header.Version == VersionBitShift || file.Header.Version == VersionRangeMapBitShift {
 			var used uint8
 			if err := binary.Read(r, binary.LittleEndian, &used); err != nil {
 				return nil, fmt.Errorf("read file used flag: %w", err)
@@ -892,9 +945,8 @@ func (r *Reader) VerifyIntegrity() error {
 		return fmt.Errorf("init entry access: %w", err)
 	}
 
-	hasRangeMaps := r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator || r.file.Header.Version == VersionRangeMapUsed
 	footerSz := int64(FooterSize)
-	if hasRangeMaps {
+	if r.hasRangeMaps() {
 		footerSz = int64(FooterV4Size)
 	}
 
@@ -913,7 +965,7 @@ func (r *Reader) VerifyIntegrity() error {
 	off += 8
 	footer.DeltaChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
 	off += 8
-	if hasRangeMaps {
+	if r.hasRangeMaps() {
 		footer.RangeMapChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
 		off += 8
 	}
@@ -941,7 +993,7 @@ func (r *Reader) VerifyIntegrity() error {
 	}
 
 	// V4/V6: verify range map checksum
-	if hasRangeMaps {
+	if r.hasRangeMaps() {
 		rangeMapOffset := r.file.DeltaOffset + r.file.Header.DeltaSize
 		rangeMapSize := int(footerOffset - rangeMapOffset)
 		if rangeMapSize > 0 {
@@ -960,7 +1012,7 @@ func (r *Reader) VerifyIntegrity() error {
 
 func (r *Reader) calculateSourceFilesSize() int64 {
 	var size int64
-	hasUsed := r.file.Header.Version == VersionUsed || r.file.Header.Version == VersionRangeMapUsed
+	hasUsed := r.HasSourceUsedFlags()
 	for _, sf := range r.file.SourceFiles {
 		size += 2 + int64(len(sf.RelativePath)) + 8 + 8
 		if hasUsed {

@@ -15,6 +15,7 @@ type Entry struct {
 	IsVideo          bool   // For ES-based sources: whether this is video or audio data
 	AudioSubStreamID byte   // For ES-based audio: sub-stream ID (0x80-0x87=AC3, etc.)
 	IsLPCM           bool   // True if this is 16-bit LPCM audio requiring byte-swap on read
+	BitShiftAmount   uint8  // 0 = normal, 1-7 = bit-shift left amount for source-to-MKV transform
 }
 
 // Result contains the results of the matching process.

@@ -274,6 +274,33 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 				m.diagExamplesMu.Unlock()
 			}
 		}
+
+		// Bit-shift recovery: for H.264 AVCC slice NALs (types 1 and 5),
+		// try to detect a bit-shifted match using the locality hint.
+		// This handles NALs whose headers were modified by extraction tools.
+		if isVideo && m.sourceIndex.UsesESOffsets {
+			codecInfo := m.trackCodecs[int(pkt.TrackNum)]
+			if codecInfo.nalLengthSize > 0 && len(nalType) > 0 && nalSizeExact {
+				nt := nalType[0] & 0x1F
+				if nt == 1 || nt == 5 { // non-IDR slice or IDR slice
+					if region := m.tryBitShiftMatch(pkt, int(offsetInPacket), data, hint, nalSize, codecInfo.nalLengthSize); region != nil {
+						m.regionsMu.Lock()
+						m.matchedRegions = append(m.matchedRegions, *region)
+						m.regionsMu.Unlock()
+						m.markChunksCovered(region.mkvStart, region.mkvEnd)
+						if hint != nil {
+							hint.fileIndex.Store(uint32(region.fileIndex))
+							hint.offset.Store(region.srcOffset + (region.mkvEnd-region.mkvStart)/2)
+							hint.valid.Store(true)
+							hint.lastSrcEnd.Store(region.srcOffset + (region.mkvEnd - region.mkvStart))
+							hint.lastMkvEnd.Store(region.mkvEnd)
+						}
+						return true
+					}
+				}
+			}
+		}
+
 		return false
 	}
 
@@ -387,6 +414,8 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			hint.fileIndex.Store(uint32(bestMatch.fileIndex))
 			hint.offset.Store(bestMatch.srcOffset + bestMatchLen/2)
 			hint.valid.Store(true)
+			hint.lastSrcEnd.Store(bestMatch.srcOffset + bestMatchLen)
+			hint.lastMkvEnd.Store(bestMatch.mkvEnd)
 		}
 		if isVideo {
 			m.diagVideoNALsMatched.Add(1)

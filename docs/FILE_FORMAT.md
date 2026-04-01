@@ -12,6 +12,8 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 
 | Version | Description |
 |---------|-------------|
+| 10 | V8 + bit-shifted NAL entry support (ESFlags bits 2-4 encode shift amount). Only produced when bit-shifted entries are present. |
+| 9 | V7 + bit-shifted NAL entry support (ESFlags bits 2-4 encode shift amount). Only produced when bit-shifted entries are present. |
 | 8 (current) | V6 + per-source-file Used byte. On-disk layout otherwise identical to V6. |
 | 7 (current) | V5 + per-source-file Used byte. On-disk layout otherwise identical to V5. |
 | 6 | V4 + embedded creator version string after the header. On-disk layout otherwise identical to V4. |
@@ -21,7 +23,7 @@ The `.mkvdup` file is a single binary file containing both the index and delta d
 | 2 (deprecated) | Raw file offsets stored directly. Source field was uint8 (max 256 files). No longer supported; files must be recreated. |
 | 1 (deprecated) | Used ES (elementary stream) offsets for DVD sources. No longer supported; files must be recreated. |
 
-The writer produces V7 (DVD) or V8 (Blu-ray) files. V3-V6 files are supported for reading. V5-V8 add a creator version string (uint16 length + UTF-8 string) immediately after the 60-byte header, shifting all subsequent sections by `2 + len(version_string)` bytes. V7/V8 additionally add a Used byte (uint8) per source file record, indicating whether the file is referenced by any index entry.
+The writer produces V7 (DVD) or V8 (Blu-ray) files, upgrading to V9/V10 when bit-shifted entries are present. V3-V6 files are supported for reading. V5+ add a creator version string (uint16 length + UTF-8 string) immediately after the 60-byte header, shifting all subsequent sections by `2 + len(version_string)` bytes. V7+ additionally add a Used byte (uint8) per source file record, indicating whether the file is referenced by any index entry. V9/V10 use ESFlags bits 2-4 to encode bit-shift amounts for NAL recovery (see Bit-Shifted Entries below).
 
 ## Design Principles
 
@@ -70,7 +72,8 @@ The writer produces V7 (DVD) or V8 (Blu-ray) files. V3-V6 files are supported fo
 │    ESFlags: uint8 (1 byte)                             │
 │      bit 0: IsVideo                                    │
 │      bit 1: IsLPCM (16-bit byte-swap on FUSE read)     │
-│      bits 2-7: reserved                                │
+│      bits 2-4: BitShiftAmount (0=normal, 1-7=shift)    │
+│      bits 5-7: reserved                                │
 │    AudioSubStreamID: uint8 (1 byte) [audio or sub]     │
 │                                                        │
 │  Entry size: 28 bytes                                  │
@@ -270,6 +273,23 @@ For each FUSE read:
 2. Seek to the correct position in the range map (cached cursor or binary search)
 3. Batch-copy payloads from the mmap'd source file using stride arithmetic
 
+## Bit-Shifted Entries (Version 9/10)
+
+Video extraction tools modify VLC-coded fields in H.264 slice headers during remux (e.g., `first_mb_in_slice`, `slice_type`, `frame_num`). Because these fields use variable-length coding with no byte-alignment boundary, modifying a header field shifts all subsequent bits by 1-7 positions. The relationship after the divergence point is:
+
+```
+mkv_byte[j] = (src_byte[j] << shift) | (src_byte[j+1] >> (8 - shift))
+```
+
+To avoid storing the entire shifted NAL as delta, each affected NAL is split into two consecutive entries:
+
+1. **Small delta entry** (Source=0): Pre-divergence header bytes (typically 1-10 bytes) stored verbatim in the delta section.
+2. **Bit-shifted source entry** (Source>0): Post-divergence data with `BitShiftAmount` encoded in ESFlags bits 2-4. The FUSE reader applies the bit-shift transform at read time.
+
+The FUSE reader uses a `sync.Pool` of reusable buffers for the transform. Each output byte requires two source bytes (`src[j]` and `src[j+1]`), so the reader reads `Length + 1` source bytes. The pool caps individual buffer size at 256 KB; larger buffers are released to GC. The pool shrinks to zero when bit-shift reads stop.
+
+Files containing bit-shifted entries use V9 (no range maps) or V10 (with range maps). Files without bit-shifted entries remain V7/V8 for backward compatibility.
+
 ## Storage Efficiency
 
 **Current entry size: 28 bytes**
@@ -277,7 +297,7 @@ For each FUSE read:
 - Length: 8 bytes
 - Source: 2 bytes (uint16, supports up to 65535 source files)
 - SourceOffset: 8 bytes
-- ESFlags: 1 byte (bit 0: IsVideo, bit 1: IsLPCM)
+- ESFlags: 1 byte (bit 0: IsVideo, bit 1: IsLPCM, bits 2-4: BitShiftAmount)
 - AudioSubStreamID: 1 byte (also used for subtitle sub-streams)
 
 **Estimated index size for typical video:**

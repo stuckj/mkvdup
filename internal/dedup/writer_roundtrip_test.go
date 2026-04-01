@@ -522,3 +522,100 @@ func TestWriter_RoundTrip_V5_LargeEntryCount(t *testing.T) {
 		}
 	}
 }
+
+func TestWriter_RoundTrip_BitShiftEntries(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate a file with: delta header (5 bytes) + bit-shifted source (95 bytes) + normal source (100 bytes)
+	deltaData := []byte{0x41, 0x9B, 0x84, 0x20, 0x06} // pre-divergence header bytes
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     200,
+		originalChecksum: 0xBEEF,
+		sourceType:       source.TypeBluray,
+		creatorVersion:   "test-v1",
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 5, Source: 0, SourceOffset: 0},
+				{MkvOffset: 5, Length: 95, Source: 1, SourceOffset: 105, IsVideo: true, BitShiftAmount: 3},
+				{MkvOffset: 100, Length: 100, Source: 1, SourceOffset: 500, IsVideo: true},
+			},
+			DeltaData:      deltaData,
+			MatchedBytes:   195,
+			UnmatchedBytes: 5,
+			TotalPackets:   1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	// No range maps → V9
+	info := r.Info()
+	if got := info["version"].(uint32); got != VersionBitShift {
+		t.Errorf("version = %d, want %d (V9)", got, VersionBitShift)
+	}
+	if got := info["entry_count"].(int); got != 3 {
+		t.Errorf("entry_count = %d, want 3", got)
+	}
+
+	// Entry 0: delta
+	entry0, ok := r.getEntry(0)
+	if !ok {
+		t.Fatal("getEntry(0) returned false")
+	}
+	if entry0.Source != 0 || entry0.Length != 5 {
+		t.Errorf("entry[0]: Source=%d Length=%d, want Source=0 Length=5", entry0.Source, entry0.Length)
+	}
+
+	// Entry 1: bit-shifted
+	entry1, ok := r.getEntry(1)
+	if !ok {
+		t.Fatal("getEntry(1) returned false")
+	}
+	if entry1.Source != 1 || entry1.BitShiftAmount != 3 || !entry1.IsVideo || entry1.Length != 95 {
+		t.Errorf("entry[1]: Source=%d BitShift=%d IsVideo=%v Length=%d, want Source=1 BitShift=3 IsVideo=true Length=95",
+			entry1.Source, entry1.BitShiftAmount, entry1.IsVideo, entry1.Length)
+	}
+
+	// Entry 2: normal
+	entry2, ok := r.getEntry(2)
+	if !ok {
+		t.Fatal("getEntry(2) returned false")
+	}
+	if entry2.BitShiftAmount != 0 {
+		t.Errorf("entry[2].BitShiftAmount = %d, want 0", entry2.BitShiftAmount)
+	}
+}
+
+func TestWriter_RoundTrip_NoBitShift_StaysV7(t *testing.T) {
+	dir := t.TempDir()
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0x1111,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "test-v1",
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 100, Source: 1, SourceOffset: 0},
+			},
+			MatchedBytes: 100,
+			TotalPackets: 1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	info := r.Info()
+	if got := info["version"].(uint32); got != VersionUsed {
+		t.Errorf("version = %d, want %d (V7)", got, VersionUsed)
+	}
+}

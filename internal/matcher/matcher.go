@@ -87,6 +87,8 @@ type matchedRegion struct {
 	isVideo          bool  // For ES-based sources
 	audioSubStreamID byte  // For audio in MPEG-PS
 	isLPCM           bool  // True if this is an LPCM audio region requiring inverse transform
+	bitShift         uint8 // 0 = normal match, 1-7 = bit-shift amount for source-to-MKV transform
+	divergenceOffset int64 // Bytes from region start where bit-shift begins (pre-divergence bytes go to delta)
 }
 
 // Matcher performs the deduplication matching.
@@ -103,9 +105,11 @@ type trackCodecInfo struct {
 // trackLocalityHint stores per-track locality state so that interleaved
 // packets from different tracks don't thrash a single shared hint.
 type trackLocalityHint struct {
-	fileIndex atomic.Uint32
-	offset    atomic.Int64
-	valid     atomic.Bool
+	fileIndex  atomic.Uint32
+	offset     atomic.Int64
+	valid      atomic.Bool
+	lastSrcEnd atomic.Int64 // End of last matched source region (for bit-shift prediction)
+	lastMkvEnd atomic.Int64 // End of last matched MKV region (for bit-shift prediction)
 }
 
 type Matcher struct {
@@ -162,6 +166,12 @@ type Matcher struct {
 	diagPhase2Capped     atomic.Int64 // Times Phase 2 hit the verify attempt cap
 	diagPhase1Skips      atomic.Int64 // Times Phase 2 was skipped (Phase 1 sufficient)
 	diagTotalSyncPoints  atomic.Int64 // Total match attempts (all track types)
+
+	// Bit-shift recovery diagnostics
+	diagBitShiftAttempts     atomic.Int64    // Times bit-shift recovery was attempted
+	diagBitShiftMatched      atomic.Int64    // Times bit-shift recovery succeeded
+	diagBitShiftMatchedBytes atomic.Int64    // Total bytes recovered via bit-shift
+	diagBitShiftByAmount     [8]atomic.Int64 // Distribution of shift amounts (index = shift)
 
 	// First few hash-not-found examples for debugging
 	diagExamplesMu     sync.Mutex
@@ -387,6 +397,17 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		fmt.Fprintf(w, "Phase 2 total locations checked: %d\n", m.diagPhase2Locations.Load())
 		fmt.Fprintf(w, "Phase 2 early exits: %d\n", m.diagPhase2EarlyExits.Load())
 		fmt.Fprintf(w, "Phase 2 capped (hit %d limit): %d\n", phase2MaxVerifyAttempts, m.diagPhase2Capped.Load())
+
+		fmt.Fprintf(w, "\nBit-shift recovery:\n")
+		fmt.Fprintf(w, "  Attempts:  %d\n", m.diagBitShiftAttempts.Load())
+		fmt.Fprintf(w, "  Matched:   %d\n", m.diagBitShiftMatched.Load())
+		fmt.Fprintf(w, "  Bytes:     %d\n", m.diagBitShiftMatchedBytes.Load())
+		for shift := uint8(1); shift <= 7; shift++ {
+			count := m.diagBitShiftByAmount[shift].Load()
+			if count > 0 {
+				fmt.Fprintf(w, "  Shift %d:   %d\n", shift, count)
+			}
+		}
 
 		fmt.Fprintf(w, "\nFirst hash-not-found examples:\n")
 		for _, ex := range m.diagExamplesOutput {
