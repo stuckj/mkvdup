@@ -28,7 +28,7 @@ const bitShiftPoolMaxSize = 256 * 1024
 var bitShiftPool = sync.Pool{
 	New: func() any {
 		b := make([]byte, 0, 64*1024)
-		return b
+		return &b
 	},
 }
 
@@ -506,7 +506,8 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			// Bit-shifted entry: read source data + 1 extra byte, apply transform.
 			// The transform needs src[j+1] for the last output byte.
 			srcLen := readLen + 1
-			tmp := bitShiftPool.Get().([]byte)
+			tmpPtr := bitShiftPool.Get().(*[]byte)
+			tmp := *tmpPtr
 			if cap(tmp) < srcLen {
 				tmp = make([]byte, srcLen)
 			} else {
@@ -514,14 +515,18 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			}
 
 			if err := r.readEntry(entry, sourceOffset, srcLen, tmp); err != nil {
-				bitShiftPool.Put(tmp[:0])
+				tmp = tmp[:0]
+				*tmpPtr = tmp
+				bitShiftPool.Put(tmpPtr)
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
 
 			bitshift.Apply(tmp, entry.BitShiftAmount, buf[bufOffset:bufOffset+readLen])
 
+			tmp = tmp[:0]
+			*tmpPtr = tmp
 			if cap(tmp) <= bitShiftPoolMaxSize {
-				bitShiftPool.Put(tmp[:0])
+				bitShiftPool.Put(tmpPtr)
 			}
 		} else if needsLPCMSwap {
 			// Compute pair-aligned read range within the entry.
