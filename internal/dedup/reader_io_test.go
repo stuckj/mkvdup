@@ -2,7 +2,12 @@ package dedup
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stuckj/mkvdup/internal/bitshift"
+	"github.com/stuckj/mkvdup/internal/matcher"
+	"github.com/stuckj/mkvdup/internal/source"
 )
 
 func TestReadAt_BeyondFileEnd(t *testing.T) {
@@ -253,5 +258,104 @@ func TestInfo(t *testing.T) {
 	// V3 file should have empty creator version
 	if info["creator_version"].(string) != "" {
 		t.Errorf("info[creator_version] = %v, want empty string", info["creator_version"])
+	}
+}
+
+func TestReadAt_BitShiftTransform(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create source data: a fake NAL with known bytes.
+	// The reader will apply bit-shift to source bytes to reconstruct MKV bytes.
+	srcData := make([]byte, 200)
+	for i := range srcData {
+		srcData[i] = byte(i * 7 & 0xFF) // deterministic pattern
+	}
+
+	// Create source file
+	srcDir := filepath.Join(dir, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "source.vob")
+	os.WriteFile(srcPath, srcData, 0644)
+
+	// Compute what the MKV bytes should be for a shift of 3, starting at source offset 10.
+	// Pre-divergence: 5 bytes copied verbatim from source.
+	// Post-divergence: 90 bytes bit-shifted from source offset 15.
+	shift := uint8(3)
+	preDivLen := 5
+	postDivLen := 90
+	totalLen := preDivLen + postDivLen
+
+	// Build expected MKV data
+	expectedMKV := make([]byte, totalLen)
+	copy(expectedMKV[:preDivLen], srcData[10:10+preDivLen])
+	bitshift.Apply(srcData[10+preDivLen:10+preDivLen+postDivLen+1], shift, expectedMKV[preDivLen:])
+
+	// Write dedup file with two entries:
+	// 1. Delta entry for pre-divergence bytes (5 bytes)
+	// 2. Bit-shifted source entry for post-divergence bytes (90 bytes)
+	dedupPath := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     int64(totalLen),
+		originalChecksum: 0xAAAA,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "test-bitshift",
+		sourceFiles: []source.File{
+			{RelativePath: "source.vob", Size: int64(len(srcData)), Checksum: 0xBBBB},
+		},
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: int64(preDivLen), Source: 0, SourceOffset: 0},
+				{MkvOffset: int64(preDivLen), Length: int64(postDivLen), Source: 1, SourceOffset: int64(10 + preDivLen), IsVideo: true, BitShiftAmount: shift},
+			},
+			DeltaData:      expectedMKV[:preDivLen],
+			MatchedBytes:   int64(postDivLen),
+			UnmatchedBytes: int64(preDivLen),
+			TotalPackets:   1,
+		},
+	})
+
+	// Open reader with source dir
+	r, err := NewReader(dedupPath, srcDir)
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+	defer r.Close()
+
+	// Load source files for ReadAt to work
+	if err := r.LoadSourceFiles(); err != nil {
+		t.Fatalf("LoadSourceFiles: %v", err)
+	}
+
+	// Full read
+	buf := make([]byte, totalLen)
+	n, err := r.ReadAt(buf, 0)
+	if err != nil {
+		t.Fatalf("ReadAt full: %v", err)
+	}
+	if n != totalLen {
+		t.Fatalf("ReadAt full: got %d bytes, want %d", n, totalLen)
+	}
+	for i := range expectedMKV {
+		if buf[i] != expectedMKV[i] {
+			t.Errorf("byte %d: got %02x, want %02x", i, buf[i], expectedMKV[i])
+			break
+		}
+	}
+
+	// Partial read: start mid-way through the bit-shifted entry
+	partialOff := int64(preDivLen + 10)
+	partialLen := 20
+	partialBuf := make([]byte, partialLen)
+	n, err = r.ReadAt(partialBuf, partialOff)
+	if err != nil {
+		t.Fatalf("ReadAt partial: %v", err)
+	}
+	if n != partialLen {
+		t.Fatalf("ReadAt partial: got %d bytes, want %d", n, partialLen)
+	}
+	for i := range partialBuf {
+		if partialBuf[i] != expectedMKV[int(partialOff)+i] {
+			t.Errorf("partial byte %d: got %02x, want %02x", i, partialBuf[i], expectedMKV[int(partialOff)+i])
+			break
+		}
 	}
 }

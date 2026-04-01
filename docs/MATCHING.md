@@ -412,7 +412,7 @@ On Blu-ray H.264 content, video extraction tools modify slice header fields (`fi
 When hash-based matching fails for an H.264 slice NAL (types 1 and 5), the matcher attempts bit-shift recovery:
 
 1. Use the per-track locality hint to predict the source location of the NAL
-2. Read source data near the predicted offset and scan for an Annex B start code (`00 00 01`) followed by the matching NAL header byte
+2. Probe a small window of source offsets around the predicted location and, at each candidate offset, compare the first few bytes of the source NAL to the MKV NAL to find an aligned match
 3. Compare MKV vs source byte-by-byte to find the divergence point (typically within the first 5-10 bytes)
 4. Try all 7 possible shift amounts (1-7) at the divergence point
 5. Verify the shift produces matching bytes across the full NAL

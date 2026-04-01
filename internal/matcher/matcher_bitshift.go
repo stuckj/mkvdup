@@ -22,8 +22,10 @@ const bitShiftVerifyLen = 64
 const alignSearchRange = 3
 
 // minAlignBytes is the minimum number of pre-divergence bytes that must match
-// to confirm alignment between MKV and source NAL data.
-const minAlignBytes = 2
+// to confirm alignment between MKV and source NAL data. Set to 4 to avoid
+// false positives — H.264 NALs have predictable first 2 bytes (NAL type +
+// first slice header byte), so 2 bytes is insufficient across 7 candidates.
+const minAlignBytes = 4
 
 // tryBitShiftMatch attempts to recover a NAL that failed hash-based matching
 // by detecting a bit-shift between source and MKV data. This handles H.264
@@ -121,7 +123,7 @@ func (m *Matcher) tryBitShiftMatch(
 		IsVideo:   true,
 	}
 	srcData, err := m.sourceIndex.ReadESDataAt(srcLoc, srcReadSize)
-	if err != nil || len(srcData) < nalSize {
+	if err != nil || len(srcData) < srcReadSize {
 		return nil
 	}
 
