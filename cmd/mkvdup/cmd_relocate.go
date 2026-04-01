@@ -414,4 +414,3 @@ func yamlNodeByKey(mapping *yaml.Node, key string) *yaml.Node {
 	}
 	return nil
 }
-
