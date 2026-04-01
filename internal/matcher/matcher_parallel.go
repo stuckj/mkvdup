@@ -275,28 +275,26 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			}
 		}
 
-		// Bit-shift recovery: for H.264 AVCC slice NALs (types 1 and 5),
-		// try to detect a bit-shifted match using the locality hint.
-		// This handles NALs whose headers were modified by extraction tools.
+		// Locality-based recovery: for AVCC video NALs that failed hash lookup,
+		// try to find the source data via the per-track locality hint. This
+		// recovers both bit-shifted NALs (header modifications by extraction
+		// tools) and NALs that the indexer missed during source indexing.
 		if isVideo && m.sourceIndex.UsesESOffsets {
 			codecInfo := m.trackCodecs[int(pkt.TrackNum)]
-			if codecInfo.nalLengthSize > 0 && len(nalType) > 0 && nalSizeExact {
-				nt := nalType[0] & 0x1F
-				if nt == 1 || nt == 5 { // non-IDR slice or IDR slice
-					if region := m.tryBitShiftMatch(pkt, int(offsetInPacket), data, hint, nalSize); region != nil {
-						m.regionsMu.Lock()
-						m.matchedRegions = append(m.matchedRegions, *region)
-						m.regionsMu.Unlock()
-						m.markChunksCovered(region.mkvStart, region.mkvEnd)
-						if hint != nil {
-							hint.fileIndex.Store(uint32(region.fileIndex))
-							hint.offset.Store(region.srcOffset + (region.mkvEnd-region.mkvStart)/2)
-							hint.valid.Store(true)
-							hint.lastSrcEnd.Store(region.srcOffset + (region.mkvEnd - region.mkvStart))
-							hint.lastMkvEnd.Store(region.mkvEnd)
-						}
-						return true
+			if codecInfo.nalLengthSize > 0 && nalSizeExact {
+				if region := m.tryBitShiftMatch(pkt, int(offsetInPacket), data, hint, nalSize); region != nil {
+					m.regionsMu.Lock()
+					m.matchedRegions = append(m.matchedRegions, *region)
+					m.regionsMu.Unlock()
+					m.markChunksCovered(region.mkvStart, region.mkvEnd)
+					if hint != nil {
+						hint.fileIndex.Store(uint32(region.fileIndex))
+						hint.offset.Store(region.srcOffset + (region.mkvEnd-region.mkvStart)/2)
+						hint.valid.Store(true)
+						hint.lastSrcEnd.Store(region.srcOffset + (region.mkvEnd - region.mkvStart))
+						hint.lastMkvEnd.Store(region.mkvEnd)
 					}
+					return true
 				}
 			}
 		}

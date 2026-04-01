@@ -1,6 +1,8 @@
 package matcher
 
 import (
+	"fmt"
+
 	"github.com/stuckj/mkvdup/internal/bitshift"
 	"github.com/stuckj/mkvdup/internal/mkv"
 	"github.com/stuckj/mkvdup/internal/source"
@@ -28,16 +30,15 @@ const alignSearchRange = 3
 const minAlignBytes = 4
 
 // tryBitShiftMatch attempts to recover a NAL that failed hash-based matching
-// by detecting a bit-shift between source and MKV data. This handles H.264
-// slice headers where extraction tools modified VLC-coded fields.
+// by using the per-track locality hint to predict the source location. This
+// recovers both bit-shifted NALs (where extraction tools modified VLC-coded
+// header fields) and NALs that the indexer missed during source indexing.
 //
-// The approach uses the per-track locality hint to predict where this NAL
-// should be in the source, then compares pre-divergence bytes at nearby
-// offsets to align. Once aligned, it detects the divergence point and tries
-// all 7 possible shift amounts.
+// The approach compares pre-divergence bytes at nearby offsets to align the
+// prediction, then either returns a normal match (if all bytes match) or
+// detects the bit-shift amount and returns a shifted match.
 //
-// Returns a matchedRegion with bitShift and divergenceOffset set, or nil
-// if no bit-shift match was found.
+// Returns a matchedRegion (normal or bit-shifted), or nil if no match found.
 func (m *Matcher) tryBitShiftMatch(
 	pkt mkv.Packet,
 	syncOff int,
@@ -46,6 +47,8 @@ func (m *Matcher) tryBitShiftMatch(
 	nalSize int,
 ) *matchedRegion {
 	m.diagBitShiftAttempts.Add(1)
+	debugN := m.diagBitShiftAttempts.Load()
+	debug := m.verboseWriter != nil && debugN <= 10
 
 	// Need a valid locality hint with lastSrcEnd set
 	if hint == nil || !hint.valid.Load() {
@@ -73,6 +76,11 @@ func (m *Matcher) tryBitShiftMatch(
 	}
 
 	hintFileIndex := uint16(hint.fileIndex.Load())
+
+	if debug {
+		fmt.Fprintf(m.verboseWriter, "[locality#%d] mkvOff=%d nalSize=%d nalHdr=%02x predictedSrc=%d fileIdx=%d\n",
+			debugN, currentMkvOff, nalSize, mkvNALData[0], predictedSrcOff, hintFileIndex)
+	}
 
 	// Try to align the predicted offset to the actual NAL header position
 	// by comparing pre-divergence bytes. The prediction can be off by a few
@@ -111,6 +119,9 @@ func (m *Matcher) tryBitShiftMatch(
 	}
 
 	if srcNALOffset < 0 {
+		if debug {
+			fmt.Fprintf(m.verboseWriter, "[locality#%d] alignment failed\n", debugN)
+		}
 		return nil
 	}
 
@@ -124,6 +135,9 @@ func (m *Matcher) tryBitShiftMatch(
 	}
 	srcData, err := m.sourceIndex.ReadESDataAt(srcLoc, srcReadSize)
 	if err != nil || len(srcData) < srcReadSize {
+		if debug {
+			fmt.Fprintf(m.verboseWriter, "[locality#%d] source read failed: err=%v len=%d need=%d\n", debugN, err, len(srcData), srcReadSize)
+		}
 		return nil
 	}
 
@@ -137,16 +151,38 @@ func (m *Matcher) tryBitShiftMatch(
 		}
 	}
 
-	// If no divergence found, this is actually a normal match (shouldn't happen
-	// since hash lookup already failed, but handle gracefully).
+	mkvStart := pkt.Offset + int64(syncOff)
+	mkvEnd := mkvStart + int64(nalSize)
+
+	// If no divergence found, the bytes match perfectly — the indexer missed
+	// this NAL during source indexing but the locality prediction found it.
+	// Return a normal (non-shifted) matched region to recover it from delta.
 	if divergeAt < 0 {
-		return nil
+		if debug {
+			fmt.Fprintf(m.verboseWriter, "[locality#%d] exact match at srcOff=%d\n", debugN, srcNALOffset)
+		}
+		m.diagBitShiftMatched.Add(1)
+		m.diagBitShiftMatchedBytes.Add(int64(nalSize))
+		return &matchedRegion{
+			mkvStart:  mkvStart,
+			mkvEnd:    mkvEnd,
+			fileIndex: hintFileIndex,
+			srcOffset: srcNALOffset,
+			isVideo:   true,
+		}
 	}
 
 	// If divergence is at byte 0, the NAL header doesn't match — wrong source location.
 	// If divergence is too far in, this isn't a header modification.
 	if divergeAt == 0 || divergeAt > maxDivergenceOffset {
+		if debug {
+			fmt.Fprintf(m.verboseWriter, "[locality#%d] divergence at %d (limit %d), not a bit-shift\n", debugN, divergeAt, maxDivergenceOffset)
+		}
 		return nil
+	}
+
+	if debug {
+		fmt.Fprintf(m.verboseWriter, "[locality#%d] divergence at byte %d, trying shifts\n", debugN, divergeAt)
 	}
 
 	// Try each shift amount 1-7. The relationship after divergence is:
@@ -172,6 +208,9 @@ func (m *Matcher) tryBitShiftMatch(
 	}
 
 	if foundShift == 0 {
+		if debug {
+			fmt.Fprintf(m.verboseWriter, "[locality#%d] no shift matched\n", debugN)
+		}
 		return nil
 	}
 
@@ -187,8 +226,9 @@ func (m *Matcher) tryBitShiftMatch(
 	}
 
 	// Success! Record as a bit-shifted match.
-	mkvStart := pkt.Offset + int64(syncOff)
-	mkvEnd := mkvStart + int64(nalSize)
+	if debug {
+		fmt.Fprintf(m.verboseWriter, "[locality#%d] bit-shift match: shift=%d divergeAt=%d\n", debugN, foundShift, divergeAt)
+	}
 
 	m.diagBitShiftMatched.Add(1)
 	m.diagBitShiftMatchedBytes.Add(int64(nalSize))
