@@ -273,9 +273,13 @@ func TestReadAt_BitShiftTransform(t *testing.T) {
 
 	// Create source file
 	srcDir := filepath.Join(dir, "src")
-	os.MkdirAll(srcDir, 0755)
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	srcPath := filepath.Join(srcDir, "source.vob")
-	os.WriteFile(srcPath, srcData, 0644)
+	if err := os.WriteFile(srcPath, srcData, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	// Compute what the MKV bytes should be for a shift of 3, starting at source offset 10.
 	// Pre-divergence: 5 bytes copied verbatim from source.
