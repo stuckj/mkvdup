@@ -147,7 +147,7 @@ type Matcher struct {
 	// Per-track locality hints. Each track gets its own hint so interleaved
 	// packets from different tracks (e.g. multiple DTS streams) don't thrash
 	// a single shared hint. Created in Match() before workers start; the map
-	// itself is read-only during matching, only the atomic fields are written.
+	// itself is read-only during matching, each hint is mutex-synchronized.
 	trackHints map[uint64]*trackCrossPacketHint
 
 	// Diagnostic counters for investigating match failures

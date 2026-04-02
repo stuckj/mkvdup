@@ -209,27 +209,35 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		// Compute NAL/frame size from distance to next sync point.
 		nalSize, nalSizeExact := computeNALSize(syncPoints, i, syncOff, len(data), isVideo, codecInfo.nalLengthSize)
 
-		// Track NAL type for video diagnostics (H.264 only —
-		// HEVC uses different NAL type encoding, MPEG-2 uses start code types)
-		var region *matchedRegion
-		if isVideo && m.isAVCTrack[int(pkt.TrackNum)] && syncOff < len(data) {
-			nalType := data[syncOff] & 0x1F
+		// H.264 NAL type diagnostics (other codecs use different type encodings)
+		var nalType byte
+		isAVC := isVideo && m.isAVCTrack[int(pkt.TrackNum)] && syncOff < len(data)
+		if isAVC {
+			nalType = data[syncOff] & 0x1F
 			m.diagNALTypeTotal[nalType].Add(1)
+		}
+
+		// Hash-based matching (all codecs)
+		var region *matchedRegion
+		if isAVC {
 			region = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, pktLoc, nalSize, nalSizeExact, nalType)
-			// Locality-based recovery for unmatched video NALs
-			if region == nil && m.sourceIndex.UsesESOffsets && nalSizeExact {
-				region = m.tryLocalityMatch(pkt, syncOff, data[syncOff:], pktLoc, nalSize)
-			}
-			if region != nil {
-				recordMatch(region, nalSize, nalType)
-			} else {
-				m.diagNALSizeUnmatched[nalSizeBucket(nalSize)].Add(1)
-			}
 		} else {
 			region = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, pktLoc, nalSize, nalSizeExact)
-			if region != nil {
+		}
+
+		// Locality-based recovery for unmatched video NALs (all video codecs)
+		if region == nil && isVideo && m.sourceIndex.UsesESOffsets && nalSizeExact {
+			region = m.tryLocalityMatch(pkt, syncOff, data[syncOff:], pktLoc, nalSize)
+		}
+
+		if region != nil {
+			if isAVC {
+				recordMatch(region, nalSize, nalType)
+			} else {
 				recordMatch(region, nalSize)
 			}
+		} else if isVideo {
+			m.diagNALSizeUnmatched[nalSizeBucket(nalSize)].Add(1)
 		}
 
 		if region != nil {
