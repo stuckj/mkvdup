@@ -87,8 +87,6 @@ type matchedRegion struct {
 	isVideo          bool  // For ES-based sources
 	audioSubStreamID byte  // For audio in MPEG-PS
 	isLPCM           bool  // True if this is an LPCM audio region requiring inverse transform
-	bitShift         uint8 // 0 = normal match, 1-7 = bit-shift amount for source-to-MKV transform
-	divergenceOffset int64 // Bytes from region start where bit-shift begins (pre-divergence bytes go to delta)
 }
 
 // Matcher performs the deduplication matching.
@@ -167,11 +165,10 @@ type Matcher struct {
 	diagPhase1Skips      atomic.Int64 // Times Phase 2 was skipped (Phase 1 sufficient)
 	diagTotalSyncPoints  atomic.Int64 // Total match attempts (all track types)
 
-	// Bit-shift recovery diagnostics
-	diagBitShiftAttempts     atomic.Int64    // Times bit-shift recovery was attempted
-	diagBitShiftMatched      atomic.Int64    // Times bit-shift recovery succeeded
-	diagBitShiftMatchedBytes atomic.Int64    // Total bytes recovered via bit-shift
-	diagBitShiftByAmount     [8]atomic.Int64 // Distribution of shift amounts (index = shift)
+	// Locality recovery diagnostics
+	diagLocalityAttempts     atomic.Int64 // Times locality recovery was attempted
+	diagLocalityMatched      atomic.Int64 // Times locality recovery succeeded
+	diagLocalityMatchedBytes atomic.Int64 // Total bytes recovered via locality
 
 	// First few hash-not-found examples for debugging
 	diagExamplesMu     sync.Mutex
@@ -398,16 +395,10 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		fmt.Fprintf(w, "Phase 2 early exits: %d\n", m.diagPhase2EarlyExits.Load())
 		fmt.Fprintf(w, "Phase 2 capped (hit %d limit): %d\n", phase2MaxVerifyAttempts, m.diagPhase2Capped.Load())
 
-		fmt.Fprintf(w, "\nBit-shift recovery:\n")
-		fmt.Fprintf(w, "  Attempts:  %d\n", m.diagBitShiftAttempts.Load())
-		fmt.Fprintf(w, "  Matched:   %d\n", m.diagBitShiftMatched.Load())
-		fmt.Fprintf(w, "  Bytes:     %d\n", m.diagBitShiftMatchedBytes.Load())
-		for shift := uint8(1); shift <= 7; shift++ {
-			count := m.diagBitShiftByAmount[shift].Load()
-			if count > 0 {
-				fmt.Fprintf(w, "  Shift %d:   %d\n", shift, count)
-			}
-		}
+		fmt.Fprintf(w, "\nLocality recovery:\n")
+		fmt.Fprintf(w, "  Attempts:  %d\n", m.diagLocalityAttempts.Load())
+		fmt.Fprintf(w, "  Matched:   %d\n", m.diagLocalityMatched.Load())
+		fmt.Fprintf(w, "  Bytes:     %d\n", m.diagLocalityMatchedBytes.Load())
 
 		fmt.Fprintf(w, "\nFirst hash-not-found examples:\n")
 		for _, ex := range m.diagExamplesOutput {

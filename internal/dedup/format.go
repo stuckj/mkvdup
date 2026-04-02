@@ -23,10 +23,6 @@ const (
 	VersionUsed uint32 = 7
 	// VersionRangeMapUsed is V8: V6 with a per-source-file Used byte after the checksum.
 	VersionRangeMapUsed uint32 = 8
-	// VersionBitShift is V9: V7 with bit-shifted NAL entry support (ESFlags bits 2-4).
-	VersionBitShift uint32 = 9
-	// VersionRangeMapBitShift is V10: V8 with bit-shifted NAL entry support (ESFlags bits 2-4).
-	VersionRangeMapBitShift uint32 = 10
 	// HeaderSize = Magic(8) + Version(4) + Flags(4) + OriginalSize(8) + OriginalChecksum(8) +
 	//              SourceType(1) + UsesESOffsets(1) + SourceFileCount(2) + EntryCount(8) +
 	//              DeltaOffset(8) + DeltaSize(8) = 60 bytes
@@ -78,7 +74,6 @@ type Entry struct {
 	IsVideo          bool   // For ES-based sources
 	AudioSubStreamID byte   // For ES-based audio sub-streams
 	IsLPCM           bool   // True if 16-bit LPCM audio requiring byte-swap on read
-	BitShiftAmount   uint8  // 0 = normal, 1-7 = bit-shift left amount for source-to-MKV transform
 }
 
 // RawEntry matches the 28-byte on-disk entry format exactly.
@@ -97,8 +92,7 @@ type RawEntry struct {
 //
 //	bit 0: IsVideo
 //	bit 1: IsLPCM (16-bit LPCM requiring byte-swap on read)
-//	bits 2-4: BitShiftAmount (0 = normal, 1-7 = left shift for source-to-MKV transform)
-//	bits 5-7: reserved
+//	bits 2-7: reserved
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
 func (r *RawEntry) ToEntry() Entry {
@@ -110,7 +104,6 @@ func (r *RawEntry) ToEntry() Entry {
 		IsVideo:          r.ESFlags&1 == 1,
 		AudioSubStreamID: r.AudioSubStreamID,
 		IsLPCM:           r.ESFlags&2 != 0,
-		BitShiftAmount:   (r.ESFlags >> 2) & 0x07,
 	}
 	return e
 }
@@ -153,7 +146,6 @@ func (e *Entry) ToMatcherEntry() matcher.Entry {
 		IsVideo:          e.IsVideo,
 		AudioSubStreamID: e.AudioSubStreamID,
 		IsLPCM:           e.IsLPCM,
-		BitShiftAmount:   e.BitShiftAmount,
 	}
 }
 
@@ -167,7 +159,6 @@ func FromMatcherEntry(e matcher.Entry) Entry {
 		IsVideo:          e.IsVideo,
 		AudioSubStreamID: e.AudioSubStreamID,
 		IsLPCM:           e.IsLPCM,
-		BitShiftAmount:   e.BitShiftAmount,
 	}
 }
 

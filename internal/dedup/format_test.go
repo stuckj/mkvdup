@@ -130,28 +130,6 @@ func TestRawEntryToEntry(t *testing.T) {
 				AudioSubStreamID: 0,
 			},
 		},
-		{
-			name: "bit-shifted video entry",
-			raw: func() RawEntry {
-				var r RawEntry
-				binary.LittleEndian.PutUint64(r.MkvOffset[:], 5000)
-				binary.LittleEndian.PutUint64(r.Length[:], 30000)
-				binary.LittleEndian.PutUint16(r.Source[:], 1)
-				binary.LittleEndian.PutUint64(r.SourceOffset[:], 8000)
-				r.ESFlags = 1 | (3 << 2) // IsVideo=true, BitShiftAmount=3
-				r.AudioSubStreamID = 0
-				return r
-			}(),
-			expected: Entry{
-				MkvOffset:        5000,
-				Length:           30000,
-				Source:           1,
-				SourceOffset:     8000,
-				IsVideo:          true,
-				AudioSubStreamID: 0,
-				BitShiftAmount:   3,
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -254,47 +232,6 @@ func TestRawEntryLPCMFlags(t *testing.T) {
 				t.Errorf("IsLPCM = %v, want %v", entry.IsLPCM, tt.wantIsLPCM)
 			}
 		})
-	}
-}
-
-func TestBitShiftESFlagsRoundTrip(t *testing.T) {
-	// Verify that BitShiftAmount encodes into ESFlags bits 2-4 and decodes correctly,
-	// without interfering with IsVideo (bit 0) or IsLPCM (bit 1).
-	for shift := uint8(0); shift <= 7; shift++ {
-		for _, isVideo := range []bool{false, true} {
-			for _, isLPCM := range []bool{false, true} {
-				var esFlags uint8
-				if isVideo {
-					esFlags |= 1
-				}
-				if isLPCM {
-					esFlags |= 2
-				}
-				esFlags |= (shift & 0x07) << 2
-
-				var r RawEntry
-				binary.LittleEndian.PutUint64(r.MkvOffset[:], 100)
-				binary.LittleEndian.PutUint64(r.Length[:], 200)
-				binary.LittleEndian.PutUint16(r.Source[:], 1)
-				binary.LittleEndian.PutUint64(r.SourceOffset[:], 300)
-				r.ESFlags = esFlags
-
-				entry := r.ToEntry()
-
-				if entry.BitShiftAmount != shift {
-					t.Errorf("shift=%d, isVideo=%v, isLPCM=%v: BitShiftAmount = %d, want %d (esFlags=0x%02X)",
-						shift, isVideo, isLPCM, entry.BitShiftAmount, shift, esFlags)
-				}
-				if entry.IsVideo != isVideo {
-					t.Errorf("shift=%d, isVideo=%v, isLPCM=%v: IsVideo = %v, want %v",
-						shift, isVideo, isLPCM, entry.IsVideo, isVideo)
-				}
-				if entry.IsLPCM != isLPCM {
-					t.Errorf("shift=%d, isVideo=%v, isLPCM=%v: IsLPCM = %v, want %v",
-						shift, isVideo, isLPCM, entry.IsLPCM, isLPCM)
-				}
-			}
-		}
 	}
 }
 

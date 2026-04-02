@@ -10,27 +10,11 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/stuckj/mkvdup/internal/bitshift"
 	"github.com/stuckj/mkvdup/internal/mmap"
 	"github.com/stuckj/mkvdup/internal/security"
 	"github.com/stuckj/mkvdup/internal/source"
 	"golang.org/x/sys/unix"
 )
-
-// bitShiftPoolMaxSize is the maximum buffer size returned to the pool.
-// Buffers larger than this are let go for GC to reclaim, preventing a single
-// large NAL read from permanently inflating the pool.
-const bitShiftPoolMaxSize = 256 * 1024
-
-// bitShiftPool is a pool of reusable byte slices for bit-shift transform buffers.
-// During active FUSE reads, the same few buffers circulate between concurrent readers.
-// Go's GC clears unreferenced pool entries, so the pool shrinks to zero when idle.
-var bitShiftPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 0, 64*1024)
-		return &b
-	},
-}
 
 // blockSize is the block size for the block index.
 // Each block maps an MKV offset range to an entry index for O(1) lookup.
@@ -262,7 +246,7 @@ func (r *Reader) initRangeMaps() error {
 // hasRangeMaps returns true if this dedup file uses range maps (V4/V6/V8/V10).
 func (r *Reader) hasRangeMaps() bool {
 	switch r.file.Header.Version {
-	case VersionRangeMap, VersionRangeMapCreator, VersionRangeMapUsed, VersionRangeMapBitShift:
+	case VersionRangeMap, VersionRangeMapCreator, VersionRangeMapUsed:
 		return true
 	}
 	return false
@@ -279,7 +263,7 @@ func (r *Reader) HasRangeMaps() bool {
 // HasSourceUsedFlags returns true if the dedup file has per-source-file Used flags (V7+).
 func (r *Reader) HasSourceUsedFlags() bool {
 	switch r.file.Header.Version {
-	case VersionUsed, VersionRangeMapUsed, VersionBitShift, VersionRangeMapBitShift:
+	case VersionUsed, VersionRangeMapUsed:
 		return true
 	}
 	return false
@@ -500,35 +484,8 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 		// offset and read length may be misaligned to pair boundaries when
 		// the caller's buffer doesn't align with entry boundaries.
 		needsLPCMSwap := entry.Source != 0 && entry.IsLPCM && !(r.file.UsesESOffsets && r.esReader != nil)
-		needsBitShift := entry.Source != 0 && entry.BitShiftAmount > 0
 
-		if needsBitShift {
-			// Bit-shifted entry: read source data + 1 extra byte, apply transform.
-			// The transform needs src[j+1] for the last output byte.
-			srcLen := readLen + 1
-			tmpPtr := bitShiftPool.Get().(*[]byte)
-			tmp := *tmpPtr
-			if cap(tmp) < srcLen {
-				tmp = make([]byte, srcLen)
-			} else {
-				tmp = tmp[:srcLen]
-			}
-
-			if err := r.readEntry(entry, sourceOffset, srcLen, tmp); err != nil {
-				tmp = tmp[:0]
-				*tmpPtr = tmp
-				bitShiftPool.Put(tmpPtr)
-				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
-			}
-
-			bitshift.Apply(tmp, entry.BitShiftAmount, buf[bufOffset:bufOffset+readLen])
-
-			tmp = tmp[:0]
-			*tmpPtr = tmp
-			if cap(tmp) <= bitShiftPoolMaxSize {
-				bitShiftPool.Put(tmpPtr)
-			}
-		} else if needsLPCMSwap {
+		if needsLPCMSwap {
 			// Compute pair-aligned read range within the entry.
 			alignedOff := offsetInEntry
 			trimFront := 0
@@ -550,7 +507,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 			source.TransformLPCM16BE(tmp)
 			copy(buf[bufOffset:bufOffset+readLen], tmp[trimFront:trimFront+readLen])
 		} else {
-			// Normal read path (non-LPCM, non-bit-shifted)
+			// Normal read path (non-LPCM)
 			if err := r.readEntry(entry, sourceOffset, readLen, buf[bufOffset:bufOffset+readLen]); err != nil {
 				return totalRead, fmt.Errorf("read at offset %d: %w", readStart, err)
 			}
@@ -826,17 +783,17 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	if err := binary.Read(r, binary.LittleEndian, &file.Header.Version); err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
-	// Support versions 3-10. Older versions must be recreated.
+	// Support versions 3-8. Older versions must be recreated.
 	switch file.Header.Version {
 	case Version, VersionRangeMap, VersionCreator, VersionRangeMapCreator,
-		VersionUsed, VersionRangeMapUsed, VersionBitShift, VersionRangeMapBitShift:
+		VersionUsed, VersionRangeMapUsed:
 		// OK
 	case 1:
 		return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
 	case 2:
 		return nil, fmt.Errorf("unsupported version 2 (uses uint8 source index); please recreate with 'mkvdup create'")
 	default:
-		return nil, fmt.Errorf("unsupported version: %d (expected 3-10)", file.Header.Version)
+		return nil, fmt.Errorf("unsupported version: %d (expected 3-8)", file.Header.Version)
 	}
 
 	// Read flags
@@ -929,8 +886,7 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 		}
 
 		// V7/V8: read used flag
-		if file.Header.Version == VersionUsed || file.Header.Version == VersionRangeMapUsed ||
-			file.Header.Version == VersionBitShift || file.Header.Version == VersionRangeMapBitShift {
+		if file.Header.Version == VersionUsed || file.Header.Version == VersionRangeMapUsed {
 			var used uint8
 			if err := binary.Read(r, binary.LittleEndian, &used); err != nil {
 				return nil, fmt.Errorf("read file used flag: %w", err)

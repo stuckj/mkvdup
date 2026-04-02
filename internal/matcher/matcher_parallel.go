@@ -275,27 +275,24 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			}
 		}
 
-		// Locality-based recovery: for AVCC video NALs that failed hash lookup,
+		// Locality-based recovery: for video NALs that failed hash lookup,
 		// try to find the source data via the per-track locality hint. This
-		// recovers both bit-shifted NALs (header modifications by extraction
-		// tools) and NALs that the indexer missed during source indexing.
-		if isVideo && m.sourceIndex.UsesESOffsets {
-			codecInfo := m.trackCodecs[int(pkt.TrackNum)]
-			if codecInfo.nalLengthSize > 0 && nalSizeExact {
-				if region := m.tryBitShiftMatch(pkt, int(offsetInPacket), data, hint, nalSize); region != nil {
-					m.regionsMu.Lock()
-					m.matchedRegions = append(m.matchedRegions, *region)
-					m.regionsMu.Unlock()
-					m.markChunksCovered(region.mkvStart, region.mkvEnd)
-					if hint != nil {
-						hint.fileIndex.Store(uint32(region.fileIndex))
-						hint.offset.Store(region.srcOffset + (region.mkvEnd-region.mkvStart)/2)
-						hint.valid.Store(true)
-						hint.lastSrcEnd.Store(region.srcOffset + (region.mkvEnd - region.mkvStart))
-						hint.lastMkvEnd.Store(region.mkvEnd)
-					}
-					return true
+		// recovers NALs that the indexer missed during source indexing.
+		// Works for both AVCC (H.264/H.265) and Annex B (VC-1, MPEG-2) tracks.
+		if isVideo && m.sourceIndex.UsesESOffsets && nalSizeExact {
+			if region := m.tryLocalityMatch(pkt, int(offsetInPacket), data, hint, nalSize); region != nil {
+				m.regionsMu.Lock()
+				m.matchedRegions = append(m.matchedRegions, *region)
+				m.regionsMu.Unlock()
+				m.markChunksCovered(region.mkvStart, region.mkvEnd)
+				if hint != nil {
+					hint.fileIndex.Store(uint32(region.fileIndex))
+					hint.offset.Store(region.srcOffset + (region.mkvEnd-region.mkvStart)/2)
+					hint.valid.Store(true)
+					hint.lastSrcEnd.Store(region.srcOffset + (region.mkvEnd - region.mkvStart))
+					hint.lastMkvEnd.Store(region.mkvEnd)
 				}
+				return true
 			}
 		}
 

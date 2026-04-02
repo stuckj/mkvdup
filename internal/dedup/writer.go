@@ -14,16 +14,15 @@ import (
 
 // Writer creates .mkvdup files.
 type Writer struct {
-	file               *os.File
-	header             Header
-	sourceFiles        []SourceFile
-	entries            []Entry
-	deltaData          []byte               // In-memory delta (for tests / small files)
-	deltaFile          *matcher.DeltaWriter // File-backed delta (for large files)
-	rangeMaps          []RangeMapData       // V4/V6: per-source-file range maps (nil for V3/V5)
-	rangeMapBuf        []byte               // Pre-encoded range map section (set by EncodeRangeMaps)
-	creatorVersion     string               // Version string to embed in the file
-	hasBitShiftEntries bool                 // True if any entries have BitShiftAmount > 0
+	file           *os.File
+	header         Header
+	sourceFiles    []SourceFile
+	entries        []Entry
+	deltaData      []byte               // In-memory delta (for tests / small files)
+	deltaFile      *matcher.DeltaWriter // File-backed delta (for large files)
+	rangeMaps      []RangeMapData       // V4/V6: per-source-file range maps (nil for V3/V5)
+	rangeMapBuf    []byte               // Pre-encoded range map section (set by EncodeRangeMaps)
+	creatorVersion string               // Version string to embed in the file
 }
 
 // NewWriter creates a new dedup file writer.
@@ -82,48 +81,32 @@ func (w *Writer) SetRangeMaps(rangeMaps []RangeMapData) {
 
 // resolveVersion sets the final file version based on configured features.
 func (w *Writer) resolveVersion() {
-	hasRangeMaps := w.rangeMaps != nil
-	hasCreator := w.creatorVersion != ""
-	hasBitShift := w.hasBitShiftEntries
-
-	// V9/V10 require a creator version string because the reader unconditionally
-	// parses one for versions >= 5. Without it the file would be malformed.
-	if hasBitShift && !hasCreator {
-		panic("mkvdup: bit-shifted entries require SetCreatorVersion to be called before writing")
-	}
-
-	switch {
-	case hasRangeMaps && hasBitShift:
-		w.header.Version = VersionRangeMapBitShift // V10
-	case hasRangeMaps && hasCreator:
-		w.header.Version = VersionRangeMapUsed // V8
-	case hasRangeMaps:
-		w.header.Version = VersionRangeMap // V4
-	case hasBitShift:
-		w.header.Version = VersionBitShift // V9
-	case hasCreator:
-		w.header.Version = VersionUsed // V7
-	default:
-		w.header.Version = Version // V3
+	if w.rangeMaps != nil {
+		if w.creatorVersion != "" {
+			w.header.Version = VersionRangeMapUsed // V8
+		} else {
+			w.header.Version = VersionRangeMap // V4
+		}
+	} else {
+		if w.creatorVersion != "" {
+			w.header.Version = VersionUsed // V7
+		} else {
+			w.header.Version = Version // V3
+		}
 	}
 }
 
 // computeUsedFlags scans entries and marks which source files are referenced.
-// Also detects whether any entries use bit-shift encoding.
 func (w *Writer) computeUsedFlags() {
 	for i := range w.sourceFiles {
 		w.sourceFiles[i].Used = false
 	}
-	w.hasBitShiftEntries = false
 	for _, e := range w.entries {
 		if e.Source > 0 {
 			idx := int(e.Source - 1)
 			if idx < len(w.sourceFiles) {
 				w.sourceFiles[idx].Used = true
 			}
-		}
-		if e.BitShiftAmount > 0 {
-			w.hasBitShiftEntries = true
 		}
 	}
 }
@@ -328,8 +311,7 @@ func (w *Writer) Close() error {
 
 func (w *Writer) calculateSourceFilesSize() int64 {
 	var size int64
-	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed ||
-		w.header.Version == VersionBitShift || w.header.Version == VersionRangeMapBitShift
+	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed
 	for _, sf := range w.sourceFiles {
 		// PathLen (2) + Path (variable) + Size (8) + Checksum (8) [+ Used (1)]
 		size += 2 + int64(len(sf.RelativePath)) + 8 + 8
@@ -411,8 +393,7 @@ func (w *Writer) writeHeader() error {
 }
 
 func (w *Writer) writeSourceFiles() error {
-	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed ||
-		w.header.Version == VersionBitShift || w.header.Version == VersionRangeMapBitShift
+	hasUsed := w.header.Version == VersionUsed || w.header.Version == VersionRangeMapUsed
 	for _, sf := range w.sourceFiles {
 		// Write path length
 		pathLen := uint16(len(sf.RelativePath))
@@ -468,16 +449,13 @@ func (w *Writer) writeEntriesWithProgress(progress WriteProgressFunc, written *i
 		binary.LittleEndian.PutUint16(entryBuf[16:18], entry.Source)
 		binary.LittleEndian.PutUint64(entryBuf[18:26], uint64(entry.SourceOffset))
 
-		// ES flags byte: bit 0 = IsVideo, bit 1 = IsLPCM, bits 2-4 = BitShiftAmount
+		// ES flags byte: bit 0 = IsVideo, bit 1 = IsLPCM
 		var esFlags uint8
 		if entry.IsVideo {
 			esFlags |= 1
 		}
 		if entry.IsLPCM {
 			esFlags |= 2
-		}
-		if entry.BitShiftAmount > 0 {
-			esFlags |= (entry.BitShiftAmount & 0x07) << 2
 		}
 		entryBuf[26] = esFlags
 		entryBuf[27] = entry.AudioSubStreamID

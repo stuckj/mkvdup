@@ -3,19 +3,13 @@ package matcher
 import (
 	"fmt"
 
-	"github.com/stuckj/mkvdup/internal/bitshift"
 	"github.com/stuckj/mkvdup/internal/mkv"
 	"github.com/stuckj/mkvdup/internal/source"
 )
 
-// maxDivergenceOffset is the maximum byte offset from the NAL start where
-// divergence (bit-shift) can begin. H.264 slice headers typically diverge
-// within the first 5-10 bytes; 20 provides margin for unusual encodings.
-const maxDivergenceOffset = 20
-
-// bitShiftVerifyLen is the number of bytes used for initial shift verification
-// before committing to a full-NAL check.
-const bitShiftVerifyLen = 64
+// localityVerifyLen is the minimum number of bytes needed for a reliable
+// locality-based match. NALs smaller than this are skipped.
+const localityVerifyLen = 64
 
 // alignSearchRange is the number of byte offsets to try in each direction
 // when aligning the predicted source offset to the actual NAL header position.
@@ -23,31 +17,30 @@ const bitShiftVerifyLen = 64
 // differences (length prefix size vs start code size).
 const alignSearchRange = 3
 
-// minAlignBytes is the minimum number of pre-divergence bytes that must match
+// minAlignBytes is the minimum number of leading bytes that must match
 // to confirm alignment between MKV and source NAL data. Set to 4 to avoid
 // false positives — H.264 NALs have predictable first 2 bytes (NAL type +
 // first slice header byte), so 2 bytes is insufficient across 7 candidates.
 const minAlignBytes = 4
 
-// tryBitShiftMatch attempts to recover a NAL that failed hash-based matching
+// tryLocalityMatch attempts to recover a NAL that failed hash-based matching
 // by using the per-track locality hint to predict the source location. This
-// recovers both bit-shifted NALs (where extraction tools modified VLC-coded
-// header fields) and NALs that the indexer missed during source indexing.
+// recovers NALs that the indexer missed during source indexing — the bytes
+// exist in the source but were never hashed into the index.
 //
-// The approach compares pre-divergence bytes at nearby offsets to align the
-// prediction, then either returns a normal match (if all bytes match) or
-// detects the bit-shift amount and returns a shifted match.
+// The approach compares leading bytes at nearby offsets to align the
+// prediction, then verifies the full NAL matches byte-for-byte.
 //
-// Returns a matchedRegion (normal or bit-shifted), or nil if no match found.
-func (m *Matcher) tryBitShiftMatch(
+// Returns a normal matchedRegion, or nil if no match found.
+func (m *Matcher) tryLocalityMatch(
 	pkt mkv.Packet,
 	syncOff int,
 	mkvNALData []byte,
 	hint *trackLocalityHint,
 	nalSize int,
 ) *matchedRegion {
-	m.diagBitShiftAttempts.Add(1)
-	debugN := m.diagBitShiftAttempts.Load()
+	m.diagLocalityAttempts.Add(1)
+	debugN := m.diagLocalityAttempts.Load()
 	debug := m.verboseWriter != nil && debugN <= 10
 
 	// Need a valid locality hint with lastSrcEnd set
@@ -60,8 +53,8 @@ func (m *Matcher) tryBitShiftMatch(
 		return nil
 	}
 
-	// NAL must be at least large enough to have a header + some shifted data
-	if nalSize < bitShiftVerifyLen || len(mkvNALData) < nalSize {
+	// NAL must be at least large enough for a reliable match
+	if nalSize < localityVerifyLen || len(mkvNALData) < nalSize {
 		return nil
 	}
 
@@ -83,8 +76,8 @@ func (m *Matcher) tryBitShiftMatch(
 	}
 
 	// Try to align the predicted offset to the actual NAL header position
-	// by comparing pre-divergence bytes. The prediction can be off by a few
-	// bytes due to AVCC (4-byte length prefix) vs Annex B (3-4 byte start code)
+	// by comparing leading bytes. The prediction can be off by a few bytes
+	// due to AVCC (4-byte length prefix) vs Annex B (3-4 byte start code)
 	// framing differences. We try offsets around the prediction and look for
 	// the first position where the initial bytes match the MKV NAL data.
 	srcNALOffset := int64(-1)
@@ -125,124 +118,46 @@ func (m *Matcher) tryBitShiftMatch(
 		return nil
 	}
 
-	// Read source NAL data at the aligned offset.
-	// We need nalSize+1 bytes: nalSize for comparison + 1 for the shift transform.
-	srcReadSize := nalSize + 1
+	// Read source NAL data at the aligned offset and verify full match.
 	srcLoc := source.Location{
 		FileIndex: hintFileIndex,
 		Offset:    srcNALOffset,
 		IsVideo:   true,
 	}
-	srcData, err := m.sourceIndex.ReadESDataAt(srcLoc, srcReadSize)
-	if err != nil || len(srcData) < srcReadSize {
+	srcData, err := m.sourceIndex.ReadESDataAt(srcLoc, nalSize)
+	if err != nil || len(srcData) < nalSize {
 		if debug {
-			fmt.Fprintf(m.verboseWriter, "[locality#%d] source read failed: err=%v len=%d need=%d\n", debugN, err, len(srcData), srcReadSize)
+			fmt.Fprintf(m.verboseWriter, "[locality#%d] source read failed: err=%v len=%d need=%d\n", debugN, err, len(srcData), nalSize)
 		}
 		return nil
 	}
 
-	// Find divergence point: compare MKV vs source byte-by-byte.
-	// The NAL header byte and possibly a few slice header bytes match exactly.
-	divergeAt := -1
-	for i := 0; i < nalSize && i < len(srcData); i++ {
+	// Verify every byte matches
+	for i := 0; i < nalSize; i++ {
 		if mkvNALData[i] != srcData[i] {
-			divergeAt = i
-			break
+			if debug {
+				fmt.Fprintf(m.verboseWriter, "[locality#%d] mismatch at byte %d: src=%02x mkv=%02x\n", debugN, i, srcData[i], mkvNALData[i])
+			}
+			return nil
 		}
+	}
+
+	// Success — exact match found via locality prediction.
+	if debug {
+		fmt.Fprintf(m.verboseWriter, "[locality#%d] exact match at srcOff=%d\n", debugN, srcNALOffset)
 	}
 
 	mkvStart := pkt.Offset + int64(syncOff)
 	mkvEnd := mkvStart + int64(nalSize)
 
-	// If no divergence found, the bytes match perfectly — the indexer missed
-	// this NAL during source indexing but the locality prediction found it.
-	// Return a normal (non-shifted) matched region to recover it from delta.
-	if divergeAt < 0 {
-		if debug {
-			fmt.Fprintf(m.verboseWriter, "[locality#%d] exact match at srcOff=%d\n", debugN, srcNALOffset)
-		}
-		m.diagBitShiftMatched.Add(1)
-		m.diagBitShiftMatchedBytes.Add(int64(nalSize))
-		return &matchedRegion{
-			mkvStart:  mkvStart,
-			mkvEnd:    mkvEnd,
-			fileIndex: hintFileIndex,
-			srcOffset: srcNALOffset,
-			isVideo:   true,
-		}
-	}
-
-	// If divergence is at byte 0, the NAL header doesn't match — wrong source location.
-	// If divergence is too far in, this isn't a header modification.
-	if divergeAt == 0 || divergeAt > maxDivergenceOffset {
-		if debug {
-			fmt.Fprintf(m.verboseWriter, "[locality#%d] divergence at %d (limit %d), not a bit-shift\n", debugN, divergeAt, maxDivergenceOffset)
-		}
-		return nil
-	}
-
-	if debug {
-		fmt.Fprintf(m.verboseWriter, "[locality#%d] divergence at byte %d, trying shifts\n", debugN, divergeAt)
-	}
-
-	// Try each shift amount 1-7. The relationship after divergence is:
-	// mkv[j] = (src[j] << shift) | (src[j+1] >> (8 - shift))
-	verifyLen := bitShiftVerifyLen
-	if verifyLen > nalSize-divergeAt {
-		verifyLen = nalSize - divergeAt
-	}
-	// Need verifyLen+1 source bytes for the verify (Verify reads src[j+1])
-	if divergeAt+verifyLen+1 > len(srcData) {
-		verifyLen = len(srcData) - divergeAt - 1
-	}
-	if verifyLen < 8 {
-		return nil // Too few bytes to reliably verify
-	}
-
-	var foundShift uint8
-	for shift := uint8(1); shift <= 7; shift++ {
-		if bitshift.Verify(srcData[divergeAt:divergeAt+verifyLen+1], shift, mkvNALData[divergeAt:divergeAt+verifyLen]) {
-			foundShift = shift
-			break
-		}
-	}
-
-	if foundShift == 0 {
-		if debug {
-			fmt.Fprintf(m.verboseWriter, "[locality#%d] no shift matched\n", debugN)
-		}
-		return nil
-	}
-
-	// Full NAL verification with the detected shift
-	fullVerifyLen := nalSize - divergeAt
-	if divergeAt+fullVerifyLen+1 > len(srcData) {
-		fullVerifyLen = len(srcData) - divergeAt - 1
-	}
-	if fullVerifyLen > verifyLen {
-		if !bitshift.Verify(srcData[divergeAt:divergeAt+fullVerifyLen+1], foundShift, mkvNALData[divergeAt:divergeAt+fullVerifyLen]) {
-			return nil
-		}
-	}
-
-	// Success! Record as a bit-shifted match.
-	if debug {
-		fmt.Fprintf(m.verboseWriter, "[locality#%d] bit-shift match: shift=%d divergeAt=%d\n", debugN, foundShift, divergeAt)
-	}
-
-	m.diagBitShiftMatched.Add(1)
-	m.diagBitShiftMatchedBytes.Add(int64(nalSize))
-	m.diagBitShiftByAmount[foundShift].Add(1)
+	m.diagLocalityMatched.Add(1)
+	m.diagLocalityMatchedBytes.Add(int64(nalSize))
 
 	return &matchedRegion{
-		mkvStart:         mkvStart,
-		mkvEnd:           mkvEnd,
-		fileIndex:        hintFileIndex,
-		srcOffset:        srcNALOffset,
-		isVideo:          true,
-		audioSubStreamID: 0,
-		isLPCM:           false,
-		bitShift:         foundShift,
-		divergenceOffset: int64(divergeAt),
+		mkvStart:  mkvStart,
+		mkvEnd:    mkvEnd,
+		fileIndex: hintFileIndex,
+		srcOffset: srcNALOffset,
+		isVideo:   true,
 	}
 }

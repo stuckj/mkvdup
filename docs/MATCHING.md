@@ -403,53 +403,53 @@ DVD LPCM also supports 20-bit and 24-bit sample depths, which use a grouped big-
 
 Since 20-bit and 24-bit DVD LPCM is extremely rare in practice, these formats are not handled — their audio data falls through to delta storage.
 
-## Bit-Shifted NAL Recovery
+## Locality-Based NAL Recovery
 
-On Blu-ray H.264 content, video extraction tools modify slice header fields (`first_mb_in_slice`, `slice_type`, `frame_num`) during remux. These fields are Exp-Golomb coded at the bit level with no byte-alignment boundary before the slice data. Modifying a field shifts all subsequent bits by 1-7 positions, making every byte after the modification point differ from the source.
+When hash-based matching fails for a video NAL (the hash is not found in the source index), the matcher attempts to recover it using the per-track locality hint. This handles NALs that the source indexer missed during indexing — the bytes exist in the source but were never hashed into the index.
 
-### Detection
+### How It Works
 
-When hash-based matching fails for an H.264 slice NAL (types 1 and 5), the matcher attempts bit-shift recovery:
+1. Use the per-track locality hint (`lastSrcEnd` + `lastMkvEnd`) to predict where the current NAL should be in the source elementary stream
+2. Probe a small window of offsets around the predicted location (±3 bytes to account for AVCC vs Annex B framing differences)
+3. At each candidate offset, compare the first 4 bytes against the MKV NAL data to confirm alignment
+4. If aligned, read the full NAL from the source and verify every byte matches
 
-1. Use the per-track locality hint to predict the source location of the NAL
-2. Probe a small window of source offsets around the predicted location and, at each candidate offset, compare the first few bytes of the source NAL to the MKV NAL to find an aligned match
-3. Compare MKV vs source byte-by-byte to find the divergence point (typically within the first 5-10 bytes)
-4. Try all 7 possible shift amounts (1-7) at the divergence point
-5. Verify the shift produces matching bytes across the full NAL
+This works because consecutive NALs on the same track are packed sequentially in both MKV and source. After a successful match (hash-based or locality-based), the hint tracks where the match ended, providing an accurate prediction for the next NAL's source position.
 
-The bit-shift relationship after divergence is:
-```
-mkv[j] = (src[j] << shift) | (src[j+1] >> (8 - shift))
-```
+### Why NALs Get Missed by the Indexer
 
-### Storage
+The source indexer scans M2TS elementary streams for NAL start codes and hashes 64-byte windows at each sync point. In some cases, NALs can be missed:
 
-Each recovered NAL is stored as two consecutive entries (see [File Format](FILE_FORMAT.md#bit-shifted-entries-version-910)):
+- NALs at PES packet boundaries where the parser doesn't detect the start code
+- NALs in M2TS segments with unusual packet interleaving
+- Edge cases in the ES range extraction for multi-PID streams
 
-1. A small delta entry for the pre-divergence header bytes (1-10 bytes)
-2. A bit-shifted source entry with the shift amount in ESFlags bits 2-4
+The locality recovery catches these cases by using spatial prediction rather than relying on the hash index.
 
-### FUSE Reconstruction
+### Scope
 
-During reads, the FUSE reader detects bit-shifted entries and applies the transform using a pooled buffer. The transform is a simple per-byte operation (two shifts + OR) with negligible CPU cost at typical Blu-ray bitrates (~600 KB/s through the transform at 50 MB/s stream rate with ~1.2% affected).
+Locality recovery applies to all video codecs on ES-based sources (Blu-ray):
+- **H.264/H.265**: AVCC/HVCC length-prefixed NALs
+- **VC-1**: Annex B start-code-separated frames
+- **MPEG-2**: Annex B start-code-separated NALs
+
+The NAL must be at least 64 bytes (the hash window size) and must have an exact size from a known next sync point.
 
 ### Remaining Unmatched NALs
 
-After bit-shift recovery, the remaining unmatched video NALs are:
-- **AUD, SEI, SPS NALs** (<64 bytes): Metadata modified during remux, inherently unmatchable
-- **Failed predictions**: NALs where the locality hint was stale (e.g., after a scene change) and no source candidate was found
+After locality recovery, the remaining unmatched video NALs are:
+- **Small metadata NALs** (<64 bytes): AUD, SEI, SPS, PPS — these are inherently unmatchable as extraction tools modify their contents during remux
+- **Failed predictions**: NALs where the locality hint was stale (e.g., after a scene change or the first NAL on a track)
 
 ### Diagnostic Output
 
-The `--verbose` flag reports bit-shift recovery statistics:
+The `--verbose` flag reports locality recovery statistics:
 
 ```
-Bit-shift recovery:
-  Attempts:  9434
-  Matched:   9321
-  Bytes:     312456789
-  Shift 2:   4521
-  Shift 3:   4800
+Locality recovery:
+  Attempts:  557710
+  Matched:   5518
+  Bytes:     166617544
 ```
 
 ## Related Documentation

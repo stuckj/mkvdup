@@ -40,8 +40,7 @@ func (m *Matcher) mergeRegions() {
 		sameMapping := curr.fileIndex == last.fileIndex &&
 			curr.srcOffset == expectedSrcOffset &&
 			curr.isVideo == last.isVideo &&
-			curr.audioSubStreamID == last.audioSubStreamID &&
-			curr.bitShift == last.bitShift
+			curr.audioSubStreamID == last.audioSubStreamID
 
 		if sameMapping {
 			// Same source, consistent mapping - safe to extend since both regions
@@ -52,15 +51,6 @@ func (m *Matcher) mergeRegions() {
 		} else if curr.mkvEnd > last.mkvEnd {
 			// Different source or inconsistent mapping. The earlier region (last)
 			// keeps priority. Clip curr to start where last ends.
-			//
-			// Bit-shifted regions cannot be clipped because divergenceOffset is
-			// relative to the original mkvStart and would become invalid after
-			// trimming. Drop them instead (the overlapping bytes go to delta).
-			// For AVCC tracks this is effectively unreachable since expansion
-			// cannot cross NAL boundaries.
-			if curr.bitShift > 0 {
-				continue
-			}
 			overlap := last.mkvEnd - curr.mkvStart
 			curr.mkvStart = last.mkvEnd
 			curr.srcOffset += overlap
@@ -99,58 +89,17 @@ func (m *Matcher) buildEntries() ([]Entry, *DeltaWriter, error) {
 			offsetInRegion := pos - inRegion.mkvStart
 			regionLen := inRegion.mkvEnd - pos
 
-			if inRegion.bitShift > 0 && inRegion.divergenceOffset > 0 && offsetInRegion < inRegion.divergenceOffset {
-				// Bit-shifted region: emit two entries.
-				// 1. Small delta entry for pre-divergence header bytes.
-				preDivLen := inRegion.divergenceOffset - offsetInRegion
-				if preDivLen > regionLen {
-					preDivLen = regionLen
-				}
-				entries = append(entries, Entry{
-					MkvOffset:    pos,
-					Length:       preDivLen,
-					Source:       0,
-					SourceOffset: deltaOffset,
-				})
-				if err := deltaWriter.Write(m.mkvData[pos : pos+preDivLen]); err != nil {
-					deltaWriter.Close()
-					return nil, nil, fmt.Errorf("write delta: %w", err)
-				}
-				deltaOffset += preDivLen
-				pos += preDivLen
-				regionLen -= preDivLen
+			entries = append(entries, Entry{
+				MkvOffset:        pos,
+				Length:           regionLen,
+				Source:           uint16(inRegion.fileIndex + 1),
+				SourceOffset:     inRegion.srcOffset + offsetInRegion,
+				IsVideo:          inRegion.isVideo,
+				AudioSubStreamID: inRegion.audioSubStreamID,
+				IsLPCM:           inRegion.isLPCM,
+			})
 
-				// 2. Bit-shifted source entry for post-divergence data.
-				if regionLen > 0 {
-					entries = append(entries, Entry{
-						MkvOffset:        pos,
-						Length:           regionLen,
-						Source:           uint16(inRegion.fileIndex + 1),
-						SourceOffset:     inRegion.srcOffset + (pos - inRegion.mkvStart),
-						IsVideo:          inRegion.isVideo,
-						AudioSubStreamID: inRegion.audioSubStreamID,
-						IsLPCM:           inRegion.isLPCM,
-						BitShiftAmount:   inRegion.bitShift,
-					})
-				}
-				pos = inRegion.mkvEnd
-			} else {
-				// Normal matched entry (or bit-shifted with no pre-divergence bytes)
-				entry := Entry{
-					MkvOffset:        pos,
-					Length:           regionLen,
-					Source:           uint16(inRegion.fileIndex + 1),
-					SourceOffset:     inRegion.srcOffset + offsetInRegion,
-					IsVideo:          inRegion.isVideo,
-					AudioSubStreamID: inRegion.audioSubStreamID,
-					IsLPCM:           inRegion.isLPCM,
-				}
-				if inRegion.bitShift > 0 {
-					entry.BitShiftAmount = inRegion.bitShift
-				}
-				entries = append(entries, entry)
-				pos = inRegion.mkvEnd
-			}
+			pos = inRegion.mkvEnd
 			regionIdx++
 		} else {
 			gapEnd := m.mkvSize
