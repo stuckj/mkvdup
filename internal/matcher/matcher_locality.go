@@ -58,12 +58,19 @@ func (m *Matcher) tryLocalityMatch(
 		return nil
 	}
 
-	// Predict approximate source ES offset. The MKV and source NALs are
-	// packed sequentially on the same track, so the offset delta between
-	// consecutive NALs is similar (differing only by framing: AVCC length
-	// prefix vs Annex B start code, typically ±1 byte).
+	// Predict approximate source ES offset. Within a single MKV packet,
+	// NALs are packed sequentially, so the MKV offset delta closely
+	// matches the source ES offset delta (differing only by framing:
+	// AVCC length prefix vs Annex B start code, typically ±1 byte).
+	// Across packets, MKV offsets include container overhead (cluster/block
+	// headers, other tracks' data) that doesn't exist in the source ES,
+	// making the prediction unreliable. Skip if the gap is too large.
 	currentMkvOff := pkt.Offset + int64(syncOff)
-	predictedSrcOff := lastSrcEnd + (currentMkvOff - lastMkvEnd)
+	mkvDelta := currentMkvOff - lastMkvEnd
+	if mkvDelta < 0 || mkvDelta > int64(nalSize)*2 {
+		return nil
+	}
+	predictedSrcOff := lastSrcEnd + mkvDelta
 	if predictedSrcOff < 0 {
 		return nil
 	}

@@ -222,7 +222,7 @@ func (w *Writer) Write() error {
 
 // WriteWithProgress writes the dedup file with progress reporting.
 func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
-	// Scan entries for used flags and bit-shift detection, then determine version.
+	// Scan entries to compute per-source Used flags, then determine file version.
 	w.computeUsedFlags()
 	w.resolveVersion()
 

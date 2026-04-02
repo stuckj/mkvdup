@@ -203,7 +203,7 @@ func (r *Reader) initEntryAccess() error {
 		// Build block index for fast random access lookup
 		r.buildBlockIndex()
 
-		// V4/V6/V8/V10: parse range map section
+		// V4/V6/V8: parse range map section
 		if r.hasRangeMaps() {
 			if err := r.initRangeMaps(); err != nil {
 				r.entriesErr = fmt.Errorf("init range maps: %w", err)
@@ -243,7 +243,7 @@ func (r *Reader) initRangeMaps() error {
 	return nil
 }
 
-// hasRangeMaps returns true if this dedup file uses range maps (V4/V6/V8/V10).
+// hasRangeMaps returns true if this dedup file uses range maps (V4/V6/V8).
 func (r *Reader) hasRangeMaps() bool {
 	switch r.file.Header.Version {
 	case VersionRangeMap, VersionRangeMapCreator, VersionRangeMapUsed:
@@ -252,7 +252,7 @@ func (r *Reader) hasRangeMaps() bool {
 	return false
 }
 
-// HasRangeMaps returns true if this dedup file uses V4/V6/V8/V10 range maps.
+// HasRangeMaps returns true if this dedup file uses V4/V6/V8 range maps.
 // This checks the header version (available immediately after NewReaderLazy)
 // rather than the lazily-loaded range map data, so it's safe to call
 // before the first ReadAt.

@@ -106,8 +106,8 @@ type trackLocalityHint struct {
 	fileIndex  atomic.Uint32
 	offset     atomic.Int64
 	valid      atomic.Bool
-	lastSrcEnd atomic.Int64 // End of last matched source region (for bit-shift prediction)
-	lastMkvEnd atomic.Int64 // End of last matched MKV region (for bit-shift prediction)
+	lastSrcEnd atomic.Int64 // End of last matched source region (for locality recovery)
+	lastMkvEnd atomic.Int64 // End of last matched MKV region (for locality recovery)
 }
 
 type Matcher struct {
