@@ -36,24 +36,13 @@ func (m *Matcher) tryLocalityMatch(
 	pkt mkv.Packet,
 	syncOff int,
 	mkvNALData []byte,
-	hint *trackLocalityHint,
+	loc packetLocality,
 	nalSize int,
 ) *matchedRegion {
-	m.diagLocalityAttempts.Add(1)
-	debugN := m.diagLocalityAttempts.Load()
-	debug := m.verboseWriter != nil && debugN <= 10
-
-	// Need a valid locality hint with lastSrcEnd set
-	if hint == nil || !hint.valid.Load() {
+	// Only attempt if we have valid per-packet locality and a large enough NAL
+	if !loc.valid || loc.srcEnd <= 0 || loc.mkvEnd <= 0 {
 		return nil
 	}
-	lastSrcEnd := hint.lastSrcEnd.Load()
-	lastMkvEnd := hint.lastMkvEnd.Load()
-	if lastSrcEnd <= 0 || lastMkvEnd <= 0 {
-		return nil
-	}
-
-	// NAL must be at least large enough for a reliable match
 	if nalSize < localityVerifyLen || len(mkvNALData) < nalSize {
 		return nil
 	}
@@ -66,16 +55,21 @@ func (m *Matcher) tryLocalityMatch(
 	// headers, other tracks' data) that doesn't exist in the source ES,
 	// making the prediction unreliable. Skip if the gap is too large.
 	currentMkvOff := pkt.Offset + int64(syncOff)
-	mkvDelta := currentMkvOff - lastMkvEnd
+	mkvDelta := currentMkvOff - loc.mkvEnd
 	if mkvDelta < 0 || mkvDelta > int64(nalSize)*2 {
 		return nil
 	}
-	predictedSrcOff := lastSrcEnd + mkvDelta
+	predictedSrcOff := loc.srcEnd + mkvDelta
 	if predictedSrcOff < 0 {
 		return nil
 	}
 
-	hintFileIndex := uint16(hint.fileIndex.Load())
+	// Count actual IO-probing attempts (after all early-exit guards)
+	m.diagLocalityAttempts.Add(1)
+	debugN := m.diagLocalityAttempts.Load()
+	debug := m.verboseWriter != nil && debugN <= 10
+
+	hintFileIndex := loc.fileIdx
 
 	if debug {
 		fmt.Fprintf(m.verboseWriter, "[locality#%d] mkvOff=%d nalSize=%d nalHdr=%02x predictedSrc=%d fileIdx=%d\n",
