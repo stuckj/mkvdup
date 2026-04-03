@@ -26,9 +26,11 @@ type batchEdgeInfo struct {
 	tailLocality packetLocality
 	// headLocality is the locality state after the first packet in the batch.
 	headLocality packetLocality
-	// edgeMissHead is true if the first NAL of the first packet had a hash miss.
+	// edgeMissHead is true if the first NAL of the first packet was unmatched
+	// (failed both hash-based and locality-based matching).
 	edgeMissHead bool
-	// edgeMissTail is true if the last NAL of the last packet had a hash miss.
+	// edgeMissTail is true if the last NAL of the last packet was unmatched
+	// (failed both hash-based and locality-based matching).
 	edgeMissTail bool
 	// headPkt/tailPkt are the first/last packets for edge retry.
 	headPkt mkv.Packet
@@ -101,7 +103,7 @@ func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int
 	wg.Wait()
 
 	// Inter-batch edge sync (deterministic sequential pass)
-	m.syncBatchEdges(packets, batchEdges, batchResults)
+	m.syncBatchEdges(batchEdges, batchResults)
 
 	// Merge all batch results in batch-index order (deterministic)
 	for _, results := range batchResults {
@@ -138,6 +140,7 @@ func (m *Matcher) processBatch(
 	edge.firstTrack = batchPackets[0].TrackNum
 	edge.lastTrack = batchPackets[len(batchPackets)-1].TrackNum
 
+	headEdgeRecorded := false
 	for i, pkt := range batchPackets {
 		// Reset locality when track changes within the batch
 		if i > 0 && pkt.TrackNum != batchPackets[i-1].TrackNum {
@@ -169,12 +172,18 @@ func (m *Matcher) processBatch(
 
 		// Record edge info for first and last packets
 		if i == 0 {
-			edge.headLocality = loc
 			edge.edgeMissHead = edgeMiss.firstNALMiss
 			edge.headPkt = pkt
 			edge.headSyncOff = edgeMiss.firstNALSyncOff
 			edge.headNALSize = edgeMiss.firstNALSize
 			edge.headNALSizeExact = edgeMiss.firstNALSizeExact
+		}
+		// Capture the first valid locality in the batch for edge sync.
+		// If the first packet has no matches, we need locality from a
+		// later packet so the previous batch's tail edge can be retried.
+		if !headEdgeRecorded && loc.valid {
+			edge.headLocality = loc
+			headEdgeRecorded = true
 		}
 		if i == len(batchPackets)-1 {
 			edge.tailLocality = loc
@@ -189,8 +198,8 @@ func (m *Matcher) processBatch(
 	batchResults[batchIdx] = results
 }
 
-// edgeMissInfo records whether the first/last NAL in a packet had a hash miss,
-// for inter-batch edge sync.
+// edgeMissInfo records whether the first/last NAL in a packet was unmatched
+// (failed both hash-based and locality-based matching), for inter-batch edge sync.
 type edgeMissInfo struct {
 	firstNALMiss      bool
 	firstNALSyncOff   int
@@ -396,8 +405,10 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 }
 
 // syncBatchEdges performs a deterministic sequential pass over batch boundaries
-// to retry edge NALs that had hash misses using locality from adjacent batches.
-func (m *Matcher) syncBatchEdges(_ []mkv.Packet, batchEdges []batchEdgeInfo, batchResults [][]matchedRegion) {
+// to retry edge NALs that were unmatched using locality from adjacent batches.
+// Edge sync adds regions to already-processed packets; it does not change
+// packet-level match counts since those were determined during batch processing.
+func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]matchedRegion) {
 	for i := 0; i < len(batchEdges)-1; i++ {
 		curr := &batchEdges[i]
 		next := &batchEdges[i+1]
@@ -427,7 +438,7 @@ func (m *Matcher) syncBatchEdges(_ []mkv.Packet, batchEdges []batchEdgeInfo, bat
 			}
 		}
 
-		// If the first NAL of batch i+1 had a hash miss, retry with locality from batch i
+		// If the first NAL of batch i+1 was unmatched, retry with locality from batch i
 		if next.edgeMissHead && curr.tailLocality.valid && next.headNALSizeExact {
 			pkt := next.headPkt
 			if m.sourceIndex.UsesESOffsets {
