@@ -182,6 +182,10 @@ func generateDeterminismTestData(t *testing.T) (string, []mkv.Packet, []mkv.Trac
 
 // TestMatchDeterminism verifies that matching the same inputs with different
 // worker counts produces identical results every time.
+//
+// Note: This test uses UsesESOffsets=false (DVD-style raw offsets), so the
+// inter-batch edge sync path (which requires UsesESOffsets for tryLocalityMatch)
+// is not exercised here. That path is validated by real-world Blu-ray tests.
 func TestMatchDeterminism(t *testing.T) {
 	mkvPath, packets, tracks, idx := generateDeterminismTestData(t)
 

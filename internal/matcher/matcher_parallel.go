@@ -24,7 +24,7 @@ type batchEdgeInfo struct {
 	lastTrack  uint64
 	// tailLocality is the locality state after the last packet in the batch.
 	tailLocality packetLocality
-	// headLocality is the locality state after the first packet in the batch.
+	// headLocality is the first valid locality observed in the batch.
 	headLocality packetLocality
 	// edgeMissHead is true if the first NAL of the first packet was unmatched
 	// (failed both hash-based and locality-based matching).
@@ -311,8 +311,12 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 			continue
 		}
 
-		// Within a batch, intra-packet coverage skipping is deterministic
-		// since the batch is processed sequentially by one goroutine.
+		// Skip sync points already covered. The global bitmap is shared across
+		// batches, but cross-batch writes don't affect determinism: packets are
+		// pre-sorted by track, so concurrent batches process different tracks
+		// whose expansion can't produce matching bytes (different codec data).
+		// Same-track batches are sequential in the sorted order, so their
+		// coverage writes are consistent regardless of worker assignment.
 		if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
 			continue
 		}
