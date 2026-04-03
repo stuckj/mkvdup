@@ -170,7 +170,7 @@ github.com/stuckj/mkvdup/internal/dedup/reader.go:659:			readEntry				25.0%
 github.com/stuckj/mkvdup/internal/dedup/reader.go:695:			lpcmAlignedRead				30.0%
 github.com/stuckj/mkvdup/internal/dedup/reader.go:705:			readDelta				40.0%
 github.com/stuckj/mkvdup/internal/dedup/reader.go:716:			readViaRangeMapInto			41.0%
-github.com/stuckj/mkvdup/internal/dedup/reader.go:745:			readSourceInto				30.8%
+github.com/stuckj/mkvdup/internal/dedup/reader.go:745:			readSourceInto				26.9%
 github.com/stuckj/mkvdup/internal/dedup/reader.go:769:			parseHeaderOnly				36.2%
 github.com/stuckj/mkvdup/internal/dedup/reader.go:903:			VerifyIntegrity				30.2%
 github.com/stuckj/mkvdup/internal/dedup/reader.go:974:			calculateSourceFilesSize		70.0%
