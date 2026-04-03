@@ -119,7 +119,6 @@ type Matcher struct {
 	mkvSize        int64
 	windowSize     int
 	matchedRegions []matchedRegion
-	regionsMu      sync.Mutex             // Protects matchedRegions for concurrent access
 	trackTypes     map[int]int            // Map from track number to track type
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
 	numWorkers     int                    // Number of worker goroutines for parallel matching
@@ -134,7 +133,6 @@ type Matcher struct {
 
 	// Diagnostic counters for investigating match failures
 	diagVideoPacketsTotal       atomic.Int64 // Total video packets processed
-	diagVideoPacketsCoverage    atomic.Int64 // Video packets skipped (coverage check)
 	diagVideoNALsTotal          atomic.Int64 // Total video NAL sync points tried
 	diagVideoNALsTooSmall       atomic.Int64 // NALs where window didn't fit
 	diagVideoNALsHashNotFound   atomic.Int64 // NALs where hash wasn't in index
@@ -254,7 +252,6 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.isPCMTrack = make(map[int]bool)
 	m.isTrueHDTrack = make(map[int]bool)
 	m.diagVideoPacketsTotal.Store(0)
-	m.diagVideoPacketsCoverage.Store(0)
 	m.diagVideoNALsTotal.Store(0)
 	m.diagVideoNALsTooSmall.Store(0)
 	m.diagVideoNALsHashNotFound.Store(0)
@@ -342,7 +339,6 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		w := m.verboseWriter
 		fmt.Fprintf(w, "\n=== Video Matching Diagnostics ===\n")
 		fmt.Fprintf(w, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
-		fmt.Fprintf(w, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
 		fmt.Fprintf(w, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
 		fmt.Fprintf(w, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
 		fmt.Fprintf(w, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())
