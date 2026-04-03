@@ -85,19 +85,10 @@ func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	// Initialize coverage bitmap
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
-
-	// Set up locality hint pointing to the correct file
-	hint := m.trackHints[1]
-	hint.mu.Lock()
-	hint.fileIdx = 0
-	hint.offset = 0
-	hint.valid = true
-	hint.mu.Unlock()
 
 	// Create packet
 	pkt := mkv.Packet{
@@ -185,17 +176,9 @@ func TestPhase2ShortCircuit_LargeFrame(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
-
-	hint := m.trackHints[1]
-	hint.mu.Lock()
-	hint.fileIdx = 0
-	hint.offset = 0
-	hint.valid = true
-	hint.mu.Unlock()
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
@@ -278,17 +261,9 @@ func TestPhase2ShortCircuit_LPCMNotShortCircuited(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
-
-	hint := m.trackHints[1]
-	hint.mu.Lock()
-	hint.fileIdx = 0
-	hint.offset = 0
-	hint.valid = true
-	hint.mu.Unlock()
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
@@ -368,12 +343,11 @@ func TestPhase2Fallback_NoHint(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
 
-	// No hint set — hint.valid is false (zero value)
+	// No hint set — locality is empty (zero value)
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
 	// With no valid hint, Phase 1 is skipped entirely, so Phase 2 must run
@@ -499,17 +473,9 @@ func TestNALSizeExact_PreventsShortCircuit(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
-
-	hint := m.trackHints[1]
-	hint.mu.Lock()
-	hint.fileIdx = 0
-	hint.offset = 0
-	hint.valid = true
-	hint.mu.Unlock()
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 

@@ -101,19 +101,6 @@ type trackCodecInfo struct {
 	nalLengthSize int // 0 = Annex B (start codes), 1/2/4 = AVCC/HVCC (length-prefixed NAL units)
 }
 
-// trackCrossPacketHint stores per-track locality state for cross-packet
-// handoff. Protected by a mutex to avoid torn reads when multiple
-// goroutines process different packets on the same track concurrently.
-// Read once at packet start, written once after the last match in a packet.
-type trackCrossPacketHint struct {
-	mu      sync.Mutex
-	valid   bool
-	fileIdx uint16
-	offset  int64 // Midpoint of last matched source region (for Phase 1 hash locality)
-	srcEnd  int64 // End of last matched source region (for locality recovery)
-	mkvEnd  int64 // End of last matched MKV region (for locality recovery)
-}
-
 // packetLocality tracks per-packet locality state for deterministic
 // intra-packet matching. Updated sequentially by a single goroutine,
 // eliminating torn reads from shared state.
@@ -144,12 +131,6 @@ type Matcher struct {
 	// A chunk is marked covered when a matched region fully contains it.
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
 	coverageMu    sync.RWMutex
-
-	// Per-track locality hints. Each track gets its own hint so interleaved
-	// packets from different tracks (e.g. multiple DTS streams) don't thrash
-	// a single shared hint. Created in Match() before workers start; the map
-	// itself is read-only during matching, each hint is mutex-synchronized.
-	trackHints map[uint64]*trackCrossPacketHint
 
 	// Diagnostic counters for investigating match failures
 	diagVideoPacketsTotal       atomic.Int64 // Total video packets processed
