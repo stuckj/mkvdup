@@ -85,7 +85,7 @@ func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackLocalityHint{1: {}}
+	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	// Initialize coverage bitmap
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
@@ -93,9 +93,11 @@ func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 
 	// Set up locality hint pointing to the correct file
 	hint := m.trackHints[1]
-	hint.fileIndex.Store(0) // Correct file
-	hint.offset.Store(0)
-	hint.valid.Store(true)
+	hint.mu.Lock()
+	hint.fileIdx = 0
+	hint.offset = 0
+	hint.valid = true
+	hint.mu.Unlock()
 
 	// Create packet
 	pkt := mkv.Packet{
@@ -105,8 +107,8 @@ func TestPhase2ShortCircuit_DTSFrameSize(t *testing.T) {
 	}
 
 	// Call tryMatchFromOffsetParallel with DTS-like nalSize (nalSizeExact=true)
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, dtsFrameSize, true)
-	if !matched {
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, packetLocality{valid: true, fileIdx: 0, offset: 0}, dtsFrameSize, true)
+	if matched == nil {
 		t.Fatal("expected match but got none")
 	}
 
@@ -183,20 +185,22 @@ func TestPhase2ShortCircuit_LargeFrame(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackLocalityHint{1: {}}
+	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
 
 	hint := m.trackHints[1]
-	hint.fileIndex.Store(0)
-	hint.offset.Store(0)
-	hint.valid.Store(true)
+	hint.mu.Lock()
+	hint.fileIdx = 0
+	hint.offset = 0
+	hint.valid = true
+	hint.mu.Unlock()
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, largeNALSize, true)
-	if !matched {
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, packetLocality{valid: true, fileIdx: 0, offset: 0}, largeNALSize, true)
+	if matched == nil {
 		t.Fatal("expected match but got none")
 	}
 
@@ -274,20 +278,22 @@ func TestPhase2ShortCircuit_LPCMNotShortCircuited(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackLocalityHint{1: {}}
+	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
 
 	hint := m.trackHints[1]
-	hint.fileIndex.Store(0)
-	hint.offset.Store(0)
-	hint.valid.Store(true)
+	hint.mu.Lock()
+	hint.fileIdx = 0
+	hint.offset = 0
+	hint.valid = true
+	hint.mu.Unlock()
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, lpcmNALSize, true)
-	if !matched {
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, packetLocality{valid: true, fileIdx: 0, offset: 0}, lpcmNALSize, true)
+	if matched == nil {
 		t.Fatal("expected match but got none")
 	}
 
@@ -362,7 +368,7 @@ func TestPhase2Fallback_NoHint(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackLocalityHint{1: {}}
+	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
@@ -371,8 +377,8 @@ func TestPhase2Fallback_NoHint(t *testing.T) {
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
 	// With no valid hint, Phase 1 is skipped entirely, so Phase 2 must run
-	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, m.trackHints[1], dtsFrameSize, true)
-	if !matched {
+	matched := m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, packetLocality{}, dtsFrameSize, true)
+	if matched == nil {
 		t.Fatal("expected match but got none")
 	}
 
@@ -493,22 +499,24 @@ func TestNALSizeExact_PreventsShortCircuit(t *testing.T) {
 	m.mkvSize = int64(len(mkvData))
 	m.trackTypes = map[int]int{1: mkv.TrackTypeAudio}
 	m.trackCodecs = map[int]trackCodecInfo{1: {trackType: mkv.TrackTypeAudio}}
-	m.trackHints = map[uint64]*trackLocalityHint{1: {}}
+	m.trackHints = map[uint64]*trackCrossPacketHint{1: {}}
 
 	numChunks := (m.mkvSize + coverageChunkSize - 1) / coverageChunkSize
 	m.coveredChunks = make([]uint64, (numChunks+63)/64)
 
 	hint := m.trackHints[1]
-	hint.fileIndex.Store(0)
-	hint.offset.Store(0)
-	hint.valid.Store(true)
+	hint.mu.Lock()
+	hint.fileIdx = 0
+	hint.offset = 0
+	hint.valid = true
+	hint.mu.Unlock()
 
 	pkt := mkv.Packet{Offset: 0, Size: int64(len(mkvData)), TrackNum: 1}
 
 	// nalSizeExact=false: Phase 1 finds a 512-byte match (== nalSize) but
 	// the short-circuit must NOT fire because nalSizeExact is false.
 	// Phase 2 should still run.
-	m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, hint, nalSize, false)
+	m.tryMatchFromOffsetParallel(pkt, 0, mkvData, false, packetLocality{valid: true, fileIdx: 0, offset: 0}, nalSize, false)
 
 	phase1Skips := m.diagPhase1Skips.Load()
 	phase2Fallbacks := m.diagPhase2Fallbacks.Load()

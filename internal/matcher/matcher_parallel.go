@@ -141,8 +141,42 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		syncPoints = source.FindAudioSyncPoints(data)
 	}
 
-	// Look up per-track locality hint once per packet (not per sync point).
-	hint := m.trackHints[pkt.TrackNum]
+	// Read cross-packet hint once at packet start (mutex-protected, consistent snapshot).
+	crossHint := m.trackHints[pkt.TrackNum]
+	var pktLoc packetLocality
+	crossHint.mu.Lock()
+	if crossHint.valid {
+		pktLoc.valid = true
+		pktLoc.fileIdx = crossHint.fileIdx
+		pktLoc.offset = crossHint.offset
+		pktLoc.srcEnd = crossHint.srcEnd
+		pktLoc.mkvEnd = crossHint.mkvEnd
+	}
+	crossHint.mu.Unlock()
+
+	// recordMatch handles bookkeeping for a successful match (hash-based
+	// or locality-based): adds the region, marks coverage, updates state.
+	recordMatch := func(region *matchedRegion, nalSize int, nalType ...byte) {
+		matchLen := region.mkvEnd - region.mkvStart
+		m.regionsMu.Lock()
+		m.matchedRegions = append(m.matchedRegions, *region)
+		m.regionsMu.Unlock()
+		m.markChunksCovered(region.mkvStart, region.mkvEnd)
+		// Update per-packet locality (deterministic, goroutine-local)
+		pktLoc.valid = true
+		pktLoc.fileIdx = region.fileIndex
+		pktLoc.offset = region.srcOffset + matchLen/2
+		pktLoc.srcEnd = region.srcOffset + matchLen
+		pktLoc.mkvEnd = region.mkvEnd
+		if isVideo {
+			m.diagVideoNALsMatched.Add(1)
+			m.diagVideoNALsMatchedBytes.Add(matchLen)
+			m.diagNALSizeMatched[nalSizeBucket(nalSize)].Add(1)
+			if len(nalType) > 0 {
+				m.diagNALTypeMatched[nalType[0]].Add(1)
+			}
+		}
+	}
 
 	// For AVCC/HVCC video, each NAL unit has different framing bytes than the
 	// source (length prefix vs start code), so expansion stops at NAL boundaries.
@@ -175,22 +209,41 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 		// Compute NAL/frame size from distance to next sync point.
 		nalSize, nalSizeExact := computeNALSize(syncPoints, i, syncOff, len(data), isVideo, codecInfo.nalLengthSize)
 
-		// Track NAL type for video diagnostics (H.264 only —
-		// HEVC uses different NAL type encoding, MPEG-2 uses start code types)
-		var matched bool
-		if isVideo && m.isAVCTrack[int(pkt.TrackNum)] && syncOff < len(data) {
-			nalType := data[syncOff] & 0x1F
+		// H.264 NAL type diagnostics (other codecs use different type encodings)
+		var nalType byte
+		isAVC := isVideo && m.isAVCTrack[int(pkt.TrackNum)] && syncOff < len(data)
+		if isAVC {
+			nalType = data[syncOff] & 0x1F
 			m.diagNALTypeTotal[nalType].Add(1)
-			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize, nalSizeExact, nalType)
-		} else {
-			matched = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, hint, nalSize, nalSizeExact)
 		}
 
-		if matched {
+		// Hash-based matching (all codecs)
+		var region *matchedRegion
+		if isAVC {
+			region = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, pktLoc, nalSize, nalSizeExact, nalType)
+		} else {
+			region = m.tryMatchFromOffsetParallel(pkt, int64(syncOff), data[syncOff:], isVideo, pktLoc, nalSize, nalSizeExact)
+		}
+
+		// Locality-based recovery for unmatched video NALs (all video codecs)
+		if region == nil && isVideo && m.sourceIndex.UsesESOffsets && nalSizeExact {
+			region = m.tryLocalityMatch(pkt, syncOff, data[syncOff:], pktLoc, nalSize)
+		}
+
+		if region != nil {
+			if isAVC {
+				recordMatch(region, nalSize, nalType)
+			} else {
+				recordMatch(region, nalSize)
+			}
+		} else if isVideo {
+			m.diagNALSizeUnmatched[nalSizeBucket(nalSize)].Add(1)
+		}
+
+		if region != nil {
 			anyMatched = true
-			// Early return once the packet is fully covered
 			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
-				return true
+				break
 			}
 		}
 	}
@@ -213,15 +266,16 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 			if syncOff+m.windowSize > len(fullData) {
 				continue
 			}
-			// Skip sync points whose chunk is already covered
 			if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
 				continue
 			}
 			moreNALSize, moreNALSizeExact := computeNALSize(moreSyncPoints, moreIdx, syncOff, len(fullData), isVideo, codecInfo.nalLengthSize)
-			if m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, hint, moreNALSize, moreNALSizeExact) {
+			region := m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, pktLoc, moreNALSize, moreNALSizeExact)
+			if region != nil {
+				recordMatch(region, moreNALSize)
 				anyMatched = true
 				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
-					return true
+					break
 				}
 			}
 		}
@@ -229,23 +283,37 @@ func (m *Matcher) matchPacketParallel(pkt mkv.Packet) bool {
 
 	// Also try from packet start (in case it's already aligned)
 	if !anyMatched {
-		if m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo, hint, len(data), false) {
+		region := m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo, pktLoc, len(data), false)
+		if region != nil {
+			recordMatch(region, len(data))
 			anyMatched = true
 		}
+	}
+
+	// Write back cross-packet hint (mutex-protected, consistent snapshot)
+	if pktLoc.valid {
+		crossHint.mu.Lock()
+		crossHint.valid = true
+		crossHint.fileIdx = pktLoc.fileIdx
+		crossHint.offset = pktLoc.offset
+		crossHint.srcEnd = pktLoc.srcEnd
+		crossHint.mkvEnd = pktLoc.mkvEnd
+		crossHint.mu.Unlock()
 	}
 
 	return anyMatched
 }
 
-// tryMatchFromOffsetParallel is a thread-safe version of tryMatchFromOffset.
+// tryMatchFromOffsetParallel attempts hash-based matching for a NAL at the given
+// offset. Returns the matched region or nil. The caller handles bookkeeping
+// (adding to matchedRegions, marking coverage, updating locality state).
+//
 // Uses two-phase locality-aware matching:
-//   - Phase 1: If a locality hint exists, try the closest locations first.
-//     If any produces a match >= localityGoodMatchThreshold, accept immediately.
-//   - Phase 2: Fall back to trying all remaining locations (handles scene changes,
-//     chapter boundaries, multi-file sources).
-func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool, hint *trackLocalityHint, nalSize int, nalSizeExact bool, nalType ...byte) bool {
+//   - Phase 1: If packet locality exists, try the closest hash locations first.
+//   - Phase 2: Fall back to trying all remaining locations.
+func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int64, data []byte, isVideo bool, loc packetLocality, nalSize int, nalSizeExact bool, nalType ...byte) *matchedRegion {
 	if len(data) < m.windowSize {
-		return false
+		return nil
 	}
 
 	m.diagTotalSyncPoints.Add(1)
@@ -258,7 +326,6 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	if len(locations) == 0 {
 		if isVideo {
 			m.diagVideoNALsHashNotFound.Add(1)
-			m.diagNALSizeUnmatched[nalSizeBucket(nalSize)].Add(1)
 			if len(nalType) > 0 {
 				m.diagNALTypeNotFound[nalType[0]].Add(1)
 			}
@@ -274,7 +341,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 				m.diagExamplesMu.Unlock()
 			}
 		}
-		return false
+		return nil
 	}
 
 	var bestMatch *matchedRegion
@@ -285,18 +352,15 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	var triedIndices [localityNearbyCount]int
 	triedCount := 0
 
-	// Phase 1: Locality-aware search — try nearby locations first (per-track hint)
-	if hint != nil && hint.valid.Load() && len(locations) > 1 {
-		hintFile := uint16(hint.fileIndex.Load())
-		hintOffset := hint.offset.Load()
-
-		nearby := nearbyLocationIndices(locations, hintFile, hintOffset, localityNearbyCount)
+	// Phase 1: Locality-aware search — try nearby locations first (per-packet locality)
+	if loc.valid && len(locations) > 1 {
+		nearby := nearbyLocationIndices(locations, loc.fileIdx, loc.offset, localityNearbyCount)
 		for _, idx := range nearby {
 			triedIndices[triedCount] = idx
 			triedCount++
-			loc := locations[idx]
+			l := locations[idx]
 
-			if m.sourceIndex.UsesESOffsets && loc.IsVideo != isVideo {
+			if m.sourceIndex.UsesESOffsets && l.IsVideo != isVideo {
 				if isVideo {
 					m.diagVideoNALsSkippedIsVideo.Add(1)
 				}
@@ -304,18 +368,13 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			}
 
 			triedVerify = true
-			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
+			region := m.tryVerifyAndExpand(pkt, l, offsetInPacket, isVideo)
 			if region != nil {
 				matchLen := region.mkvEnd - region.mkvStart
 				if matchLen > bestMatchLen {
 					bestMatch = region
 					bestMatchLen = matchLen
 				}
-				// Short-circuit: a match this large is almost certainly the best.
-				// Also short-circuit when the match covers the entire frame/NAL,
-				// since no improvement is possible. Only apply the nalSize check
-				// when nalSize >= windowSize to avoid false positives on LPCM
-				// (8-byte sync intervals where short matches may be collisions).
 				if bestMatchLen >= localityGoodMatchThreshold || (nalSizeExact && nalSize >= m.windowSize && bestMatchLen >= int64(nalSize)) {
 					break
 				}
@@ -323,8 +382,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 		}
 	}
 
-	// Phase 2: Full search of remaining locations (skip if Phase 1 found a good match
-	// or the match already covers the entire frame/NAL)
+	// Phase 2: Full search of remaining locations
 	phase2Skipped := bestMatchLen >= localityGoodMatchThreshold || (nalSizeExact && nalSize >= m.windowSize && bestMatchLen >= int64(nalSize))
 	if phase2Skipped {
 		m.diagPhase1Skips.Add(1)
@@ -332,8 +390,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	if !phase2Skipped {
 		m.diagPhase2Fallbacks.Add(1)
 		verifyAttempts := 0
-		for i, loc := range locations {
-			// Skip indices already tried in Phase 1 (linear scan of small array)
+		for i, l := range locations {
 			alreadyTried := false
 			for t := 0; t < triedCount; t++ {
 				if triedIndices[t] == i {
@@ -344,7 +401,7 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			if alreadyTried {
 				continue
 			}
-			if m.sourceIndex.UsesESOffsets && loc.IsVideo != isVideo {
+			if m.sourceIndex.UsesESOffsets && l.IsVideo != isVideo {
 				if isVideo {
 					m.diagVideoNALsSkippedIsVideo.Add(1)
 				}
@@ -354,21 +411,19 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 			triedVerify = true
 			verifyAttempts++
 			m.diagPhase2Locations.Add(1)
-			region := m.tryVerifyAndExpand(pkt, loc, offsetInPacket, isVideo)
+			region := m.tryVerifyAndExpand(pkt, l, offsetInPacket, isVideo)
 			if region != nil {
 				matchLen := region.mkvEnd - region.mkvStart
 				if matchLen > bestMatchLen {
 					bestMatch = region
 					bestMatchLen = matchLen
 				}
-				// Early exit: stop searching once we have a good enough match
 				if bestMatchLen >= localityGoodMatchThreshold || (nalSizeExact && nalSize >= m.windowSize && bestMatchLen >= int64(nalSize)) {
 					m.diagPhase2EarlyExits.Add(1)
 					break
 				}
 			}
 
-			// Cap verify attempts to prevent I/O thrashing on hash collisions
 			if verifyAttempts >= phase2MaxVerifyAttempts {
 				m.diagPhase2Capped.Add(1)
 				break
@@ -377,37 +432,17 @@ func (m *Matcher) tryMatchFromOffsetParallel(pkt mkv.Packet, offsetInPacket int6
 	}
 
 	if bestMatch != nil {
-		m.regionsMu.Lock()
-		m.matchedRegions = append(m.matchedRegions, *bestMatch)
-		m.regionsMu.Unlock()
-		// Mark chunks as covered for fast coverage checks
-		m.markChunksCovered(bestMatch.mkvStart, bestMatch.mkvEnd)
-		// Update per-track locality hint with midpoint of matched source region
-		if hint != nil {
-			hint.fileIndex.Store(uint32(bestMatch.fileIndex))
-			hint.offset.Store(bestMatch.srcOffset + bestMatchLen/2)
-			hint.valid.Store(true)
-		}
-		if isVideo {
-			m.diagVideoNALsMatched.Add(1)
-			m.diagVideoNALsMatchedBytes.Add(bestMatchLen)
-			m.diagNALSizeMatched[nalSizeBucket(nalSize)].Add(1)
-			if len(nalType) > 0 {
-				m.diagNALTypeMatched[nalType[0]].Add(1)
-			}
-		}
-		return true
+		return bestMatch
 	}
 
 	if isVideo {
-		m.diagNALSizeUnmatched[nalSizeBucket(nalSize)].Add(1)
 		if triedVerify {
 			m.diagVideoNALsVerifyFailed.Add(1)
 		} else {
 			m.diagVideoNALsAllSkipped.Add(1)
 		}
 	}
-	return false
+	return nil
 }
 
 // nearbyLocationIndices returns up to N indices into locations that are closest

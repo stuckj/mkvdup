@@ -522,3 +522,32 @@ func TestWriter_RoundTrip_V5_LargeEntryCount(t *testing.T) {
 		}
 	}
 }
+
+func TestWriter_RoundTrip_CreatorVersion_V7(t *testing.T) {
+	dir := t.TempDir()
+
+	path := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0x1111,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "test-v1",
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 100, Source: 1, SourceOffset: 0},
+			},
+			MatchedBytes: 100,
+			TotalPackets: 1,
+		},
+	})
+
+	r, err := NewReaderLazy(path, dir)
+	if err != nil {
+		t.Fatalf("NewReaderLazy: %v", err)
+	}
+	defer r.Close()
+
+	info := r.Info()
+	if got := info["version"].(uint32); got != VersionUsed {
+		t.Errorf("version = %d, want %d (V7)", got, VersionUsed)
+	}
+}

@@ -222,9 +222,9 @@ func (w *Writer) Write() error {
 
 // WriteWithProgress writes the dedup file with progress reporting.
 func (w *Writer) WriteWithProgress(progress WriteProgressFunc) error {
-	// Determine final file version based on configured features.
-	w.resolveVersion()
+	// Scan entries to compute per-source Used flags, then determine file version.
 	w.computeUsedFlags()
+	w.resolveVersion()
 
 	// Use pre-encoded range maps if available (from EncodeRangeMaps),
 	// otherwise encode now.

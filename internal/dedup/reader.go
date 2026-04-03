@@ -204,7 +204,7 @@ func (r *Reader) initEntryAccess() error {
 		r.buildBlockIndex()
 
 		// V4/V6/V8: parse range map section
-		if r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator || r.file.Header.Version == VersionRangeMapUsed {
+		if r.hasRangeMaps() {
 			if err := r.initRangeMaps(); err != nil {
 				r.entriesErr = fmt.Errorf("init range maps: %w", err)
 				return
@@ -243,17 +243,30 @@ func (r *Reader) initRangeMaps() error {
 	return nil
 }
 
+// hasRangeMaps returns true if this dedup file uses range maps (V4/V6/V8).
+func (r *Reader) hasRangeMaps() bool {
+	switch r.file.Header.Version {
+	case VersionRangeMap, VersionRangeMapCreator, VersionRangeMapUsed:
+		return true
+	}
+	return false
+}
+
 // HasRangeMaps returns true if this dedup file uses V4/V6/V8 range maps.
 // This checks the header version (available immediately after NewReaderLazy)
 // rather than the lazily-loaded range map data, so it's safe to call
 // before the first ReadAt.
 func (r *Reader) HasRangeMaps() bool {
-	return r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator || r.file.Header.Version == VersionRangeMapUsed
+	return r.hasRangeMaps()
 }
 
-// HasSourceUsedFlags returns true if the dedup file has per-source-file Used flags (V7/V8).
+// HasSourceUsedFlags returns true if the dedup file has per-source-file Used flags (V7+).
 func (r *Reader) HasSourceUsedFlags() bool {
-	return r.file.Header.Version == VersionUsed || r.file.Header.Version == VersionRangeMapUsed
+	switch r.file.Header.Version {
+	case VersionUsed, VersionRangeMapUsed:
+		return true
+	}
+	return false
 }
 
 // buildBlockIndex creates a mapping from block numbers to entry indices.
@@ -772,7 +785,8 @@ func parseHeaderOnly(r io.Reader) (*File, error) {
 	}
 	// Support versions 3-8. Older versions must be recreated.
 	switch file.Header.Version {
-	case Version, VersionRangeMap, VersionCreator, VersionRangeMapCreator, VersionUsed, VersionRangeMapUsed:
+	case Version, VersionRangeMap, VersionCreator, VersionRangeMapCreator,
+		VersionUsed, VersionRangeMapUsed:
 		// OK
 	case 1:
 		return nil, fmt.Errorf("unsupported version 1 (uses ES offsets); please recreate with 'mkvdup create'")
@@ -892,9 +906,8 @@ func (r *Reader) VerifyIntegrity() error {
 		return fmt.Errorf("init entry access: %w", err)
 	}
 
-	hasRangeMaps := r.file.Header.Version == VersionRangeMap || r.file.Header.Version == VersionRangeMapCreator || r.file.Header.Version == VersionRangeMapUsed
 	footerSz := int64(FooterSize)
-	if hasRangeMaps {
+	if r.hasRangeMaps() {
 		footerSz = int64(FooterV4Size)
 	}
 
@@ -913,7 +926,7 @@ func (r *Reader) VerifyIntegrity() error {
 	off += 8
 	footer.DeltaChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
 	off += 8
-	if hasRangeMaps {
+	if r.hasRangeMaps() {
 		footer.RangeMapChecksum = binary.LittleEndian.Uint64(footerData[off : off+8])
 		off += 8
 	}
@@ -941,7 +954,7 @@ func (r *Reader) VerifyIntegrity() error {
 	}
 
 	// V4/V6: verify range map checksum
-	if hasRangeMaps {
+	if r.hasRangeMaps() {
 		rangeMapOffset := r.file.DeltaOffset + r.file.Header.DeltaSize
 		rangeMapSize := int(footerOffset - rangeMapOffset)
 		if rangeMapSize > 0 {
@@ -960,7 +973,7 @@ func (r *Reader) VerifyIntegrity() error {
 
 func (r *Reader) calculateSourceFilesSize() int64 {
 	var size int64
-	hasUsed := r.file.Header.Version == VersionUsed || r.file.Header.Version == VersionRangeMapUsed
+	hasUsed := r.HasSourceUsedFlags()
 	for _, sf := range r.file.SourceFiles {
 		size += 2 + int64(len(sf.RelativePath)) + 8 + 8
 		if hasUsed {

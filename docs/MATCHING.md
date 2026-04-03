@@ -403,57 +403,54 @@ DVD LPCM also supports 20-bit and 24-bit sample depths, which use a grouped big-
 
 Since 20-bit and 24-bit DVD LPCM is extremely rare in practice, these formats are not handled — their audio data falls through to delta storage.
 
-## Known Limitation: H.264 Slice Header Modifications
+## Locality-Based NAL Recovery
 
-On Blu-ray H.264 content, approximately 1.3-1.5% of non-IDR slice NALs and IDR slice NALs cannot be matched to the source. This is caused by video extraction tools modifying H.264 slice header fields during remux.
+When hash-based matching fails for a video NAL (the hash is not found in the source index), the matcher attempts to recover it using the per-track locality hint. This handles NALs that the source indexer missed during indexing — the bytes exist in the source but were never hashed into the index.
 
-### Root Cause
+### How It Works
 
-H.264 slice headers are bit-packed using Exp-Golomb coding. Fields like `first_mb_in_slice`, `slice_type`, and `frame_num` are encoded at the bit level, and there is **no byte-alignment boundary** between the slice header and the slice data that follows it. When a video extraction tool modifies any of these fields:
+1. Use the per-track locality hint (`lastSrcEnd` + `lastMkvEnd`) to predict where the current NAL should be in the source elementary stream
+2. Probe a small window of offsets around the predicted location (±3 bytes to account for AVCC vs Annex B framing differences)
+3. At each candidate offset, compare the first 4 bytes against the MKV NAL data to confirm alignment
+4. If aligned, read the full NAL from the source and verify every byte matches
 
-1. The modified field may encode to a different number of bits
-2. All subsequent bits in the NAL shift by a non-byte-aligned amount
-3. Every byte from the modified field onward differs from the source
+This works because consecutive NALs on the same track are packed sequentially in both MKV and source. After a successful match (hash-based or locality-based), the hint tracks where the match ended, providing an accurate prediction for the next NAL's source position.
 
-This means the slice data payload is identical between source and MKV, but shifted by N bits (where N is not a multiple of 8). No fixed byte-offset hash window can match, because every single byte in the NAL body is different.
+### Why NALs Get Missed by the Indexer
 
-### Evidence
+The source indexer scans M2TS elementary streams for NAL start codes and hashes 64-byte windows at each sync point. In some cases, NALs can be missed:
 
-Testing confirmed this with a full-NAL window scan diagnostic:
-- For large unmatched NALs (32KB-59KB), **zero out of 500-900+** 64-byte hash windows across the entire NAL matched anything in the source index
-- Both primary hash (bytes 0-63) and all subsequent windows failed
-- This affects ~1.4% of non-IDR slices and ~1.3% of IDR slices consistently across multiple discs
+- NALs at PES packet boundaries where the parser doesn't detect the start code
+- NALs in M2TS segments with unusual packet interleaving
+- Edge cases in the ES range extraction for multi-PID streams
 
-### Why We Don't Handle This
+The locality recovery catches these cases by using spatial prediction rather than relying on the hash index.
 
-Recovering these NALs would require either:
+### Scope
 
-1. **Bit-level alignment**: Detect the bit shift and reconstruct the original byte boundaries. This would require H.264 slice header parsing and per-byte bit-shift operations during FUSE reads.
+Locality recovery applies to all video codecs on ES-based sources (Blu-ray):
+- **H.264/H.265**: AVCC/HVCC length-prefixed NALs
+- **VC-1**: Annex B start-code-separated frames
+- **MPEG-2**: Annex B start-code-separated NALs
 
-2. **Store a transform**: Record the modified header bytes and bit-shift amount, then apply a per-byte transform during reconstruction.
+The NAL must be at least 64 bytes (the hash window size) and must have an exact size from a known next sync point.
 
-Both approaches would **break the zero-copy FUSE mount model**. Currently, the FUSE mount returns mmap'd slices directly from source files with no transformation. Adding per-byte bit-shift operations on ~1.4% of video data would add CPU overhead and latency to every read touching an affected NAL.
+### Remaining Unmatched NALs
 
-The trade-off is not worthwhile: accepting the ~1.4% miss rate results in space savings of 93-97% on Blu-ray content, and the unmatched data is stored as delta (adding roughly 200-400 MB to a typical feature film's dedup file).
+After locality recovery, the remaining unmatched video NALs are:
+- **Small metadata NALs** (<64 bytes): AUD, SEI, SPS, PPS — these are inherently unmatchable as extraction tools modify their contents during remux
+- **Failed predictions**: NALs where the locality hint was stale (e.g., after a scene change or the first NAL on a track)
 
 ### Diagnostic Output
 
-The `--verbose` flag reports per-NAL-type and per-NAL-size statistics that show the impact:
+The `--verbose` flag reports locality recovery statistics:
 
 ```
-Per-NAL-type breakdown (H.264, type: total / matched / not_found / miss%):
-  type  1 ( non-IDR slice):   672740 /   663419 /     9321 (1.4% miss)
-  type  5 (     IDR slice):     8724 /     8611 /      113 (1.3% miss)
-
-Video NAL size distribution (matched / unmatched):
-       <64B:        3 matched,   367711 unmatched
-    64-127B:     7746 matched,        0 unmatched
-   128B-1KB:      321 matched,      179 unmatched
-   1KB-32KB:   299492 matched,     2526 unmatched
-      32KB+:   372194 matched,     5680 unmatched
+Locality recovery:
+  Attempts:  557710
+  Matched:   5518
+  Bytes:     166617544
 ```
-
-The small (<64B) unmatched NALs are AUD, SEI, and SPS NALs which are inherently unmatchable (metadata that changes during remux). The large (1KB+) unmatched NALs are the slice header modification cases described above.
 
 ## Related Documentation
 

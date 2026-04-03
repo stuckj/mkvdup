@@ -100,12 +100,28 @@ type trackCodecInfo struct {
 	nalLengthSize int // 0 = Annex B (start codes), 1/2/4 = AVCC/HVCC (length-prefixed NAL units)
 }
 
-// trackLocalityHint stores per-track locality state so that interleaved
-// packets from different tracks don't thrash a single shared hint.
-type trackLocalityHint struct {
-	fileIndex atomic.Uint32
-	offset    atomic.Int64
-	valid     atomic.Bool
+// trackCrossPacketHint stores per-track locality state for cross-packet
+// handoff. Protected by a mutex to avoid torn reads when multiple
+// goroutines process different packets on the same track concurrently.
+// Read once at packet start, written once after the last match in a packet.
+type trackCrossPacketHint struct {
+	mu      sync.Mutex
+	valid   bool
+	fileIdx uint16
+	offset  int64 // Midpoint of last matched source region (for Phase 1 hash locality)
+	srcEnd  int64 // End of last matched source region (for locality recovery)
+	mkvEnd  int64 // End of last matched MKV region (for locality recovery)
+}
+
+// packetLocality tracks per-packet locality state for deterministic
+// intra-packet matching. Updated sequentially by a single goroutine,
+// eliminating torn reads from shared state.
+type packetLocality struct {
+	valid   bool
+	fileIdx uint16
+	offset  int64 // Midpoint of last match (for Phase 1)
+	srcEnd  int64 // End of last matched source region
+	mkvEnd  int64 // End of last matched MKV region
 }
 
 type Matcher struct {
@@ -131,8 +147,8 @@ type Matcher struct {
 	// Per-track locality hints. Each track gets its own hint so interleaved
 	// packets from different tracks (e.g. multiple DTS streams) don't thrash
 	// a single shared hint. Created in Match() before workers start; the map
-	// itself is read-only during matching, only the atomic fields are written.
-	trackHints map[uint64]*trackLocalityHint
+	// itself is read-only during matching, each hint is mutex-synchronized.
+	trackHints map[uint64]*trackCrossPacketHint
 
 	// Diagnostic counters for investigating match failures
 	diagVideoPacketsTotal       atomic.Int64 // Total video packets processed
@@ -162,6 +178,11 @@ type Matcher struct {
 	diagPhase2Capped     atomic.Int64 // Times Phase 2 hit the verify attempt cap
 	diagPhase1Skips      atomic.Int64 // Times Phase 2 was skipped (Phase 1 sufficient)
 	diagTotalSyncPoints  atomic.Int64 // Total match attempts (all track types)
+
+	// Locality recovery diagnostics
+	diagLocalityAttempts     atomic.Int64 // Times locality recovery was attempted
+	diagLocalityMatched      atomic.Int64 // Times locality recovery succeeded
+	diagLocalityMatchedBytes atomic.Int64 // Total bytes recovered via locality
 
 	// First few hash-not-found examples for debugging
 	diagExamplesMu     sync.Mutex
@@ -281,10 +302,10 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.diagExamplesMu.Unlock()
 
 	// Initialize per-track locality hints so each track has its own hint.
-	// Zero value of trackLocalityHint has valid == false, which is correct.
-	m.trackHints = make(map[uint64]*trackLocalityHint, len(tracks))
+	// Zero value of trackCrossPacketHint has valid == false, which is correct.
+	m.trackHints = make(map[uint64]*trackCrossPacketHint, len(tracks))
 	for _, t := range tracks {
-		m.trackHints[t.Number] = &trackLocalityHint{}
+		m.trackHints[t.Number] = &trackCrossPacketHint{}
 	}
 
 	// Build track type and codec info maps
@@ -387,6 +408,11 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		fmt.Fprintf(w, "Phase 2 total locations checked: %d\n", m.diagPhase2Locations.Load())
 		fmt.Fprintf(w, "Phase 2 early exits: %d\n", m.diagPhase2EarlyExits.Load())
 		fmt.Fprintf(w, "Phase 2 capped (hit %d limit): %d\n", phase2MaxVerifyAttempts, m.diagPhase2Capped.Load())
+
+		fmt.Fprintf(w, "\nLocality recovery:\n")
+		fmt.Fprintf(w, "  Attempts:  %d\n", m.diagLocalityAttempts.Load())
+		fmt.Fprintf(w, "  Matched:   %d\n", m.diagLocalityMatched.Load())
+		fmt.Fprintf(w, "  Bytes:     %d\n", m.diagLocalityMatchedBytes.Load())
 
 		fmt.Fprintf(w, "\nFirst hash-not-found examples:\n")
 		for _, ex := range m.diagExamplesOutput {

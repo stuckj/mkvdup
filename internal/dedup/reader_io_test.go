@@ -2,7 +2,11 @@ package dedup
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stuckj/mkvdup/internal/matcher"
+	"github.com/stuckj/mkvdup/internal/source"
 )
 
 func TestReadAt_BeyondFileEnd(t *testing.T) {
@@ -253,5 +257,89 @@ func TestInfo(t *testing.T) {
 	// V3 file should have empty creator version
 	if info["creator_version"].(string) != "" {
 		t.Errorf("info[creator_version] = %v, want empty string", info["creator_version"])
+	}
+}
+
+func TestReadAt_SourceBacked(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create source data with a known pattern.
+	srcData := make([]byte, 200)
+	for i := range srcData {
+		srcData[i] = byte(i * 7 & 0xFF)
+	}
+
+	// Create source file
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	srcPath := filepath.Join(srcDir, "source.vob")
+	if err := os.WriteFile(srcPath, srcData, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Write dedup file with: delta (10 bytes) + source-matched (90 bytes)
+	deltaBytes := srcData[:10]
+	dedupPath := writeTestDedupFile(t, dir, writeTestOptions{
+		originalSize:     100,
+		originalChecksum: 0xAAAA,
+		sourceType:       source.TypeDVD,
+		creatorVersion:   "test-v1",
+		sourceFiles: []source.File{
+			{RelativePath: "source.vob", Size: int64(len(srcData)), Checksum: 0xBBBB},
+		},
+		result: &matcher.Result{
+			Entries: []matcher.Entry{
+				{MkvOffset: 0, Length: 10, Source: 0, SourceOffset: 0},
+				{MkvOffset: 10, Length: 90, Source: 1, SourceOffset: 10, IsVideo: true},
+			},
+			DeltaData:      deltaBytes,
+			MatchedBytes:   90,
+			UnmatchedBytes: 10,
+			TotalPackets:   1,
+		},
+	})
+
+	r, err := NewReader(dedupPath, srcDir)
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+	defer r.Close()
+
+	if err := r.LoadSourceFiles(); err != nil {
+		t.Fatalf("LoadSourceFiles: %v", err)
+	}
+
+	// Full read
+	buf := make([]byte, 100)
+	n, err := r.ReadAt(buf, 0)
+	if err != nil {
+		t.Fatalf("ReadAt full: %v", err)
+	}
+	if n != 100 {
+		t.Fatalf("ReadAt full: got %d bytes, want 100", n)
+	}
+	for i := 0; i < 100; i++ {
+		if buf[i] != srcData[i] {
+			t.Errorf("byte %d: got %02x, want %02x", i, buf[i], srcData[i])
+			break
+		}
+	}
+
+	// Partial read spanning delta and source entries
+	partialBuf := make([]byte, 20)
+	n, err = r.ReadAt(partialBuf, 5)
+	if err != nil {
+		t.Fatalf("ReadAt partial: %v", err)
+	}
+	if n != 20 {
+		t.Fatalf("ReadAt partial: got %d bytes, want 20", n)
+	}
+	for i := range partialBuf {
+		if partialBuf[i] != srcData[5+i] {
+			t.Errorf("partial byte %d: got %02x, want %02x", i, partialBuf[i], srcData[5+i])
+			break
+		}
 	}
 }
