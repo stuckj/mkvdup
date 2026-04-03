@@ -81,9 +81,10 @@ func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int
 	batchResults := make([][]matchedRegion, numBatches)
 	// Per-batch edge info for inter-batch sync
 	batchEdges := make([]batchEdgeInfo, numBatches)
+	// Per-packet match status — true if any NAL in the packet matched
+	packetMatched := make([]bool, totalPackets)
 
 	var nextBatch atomic.Int64
-	var matchedCount atomic.Int64
 	var processedCount atomic.Int64
 
 	var wg sync.WaitGroup
@@ -96,21 +97,33 @@ func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int
 				if idx >= numBatches {
 					return
 				}
-				m.processBatch(packets, idx, batchResults, batchEdges, &matchedCount, &processedCount, progress, totalPackets)
+				m.processBatch(packets, idx, batchResults, batchEdges, packetMatched, &processedCount, progress, totalPackets)
 			}
 		}()
 	}
 	wg.Wait()
 
 	// Inter-batch edge sync (deterministic sequential pass)
-	m.syncBatchEdges(batchEdges, batchResults)
+	m.syncBatchEdges(batchEdges, batchResults, packetMatched)
 
 	// Merge all batch results in batch-index order (deterministic)
-	for _, results := range batchResults {
+	// and count matched packets from the per-packet booleans.
+	matchedCount := 0
+	for i, results := range batchResults {
 		m.matchedRegions = append(m.matchedRegions, results...)
+		start := i * batchSize
+		end := start + batchSize
+		if end > totalPackets {
+			end = totalPackets
+		}
+		for j := start; j < end; j++ {
+			if packetMatched[j] {
+				matchedCount++
+			}
+		}
 	}
 
-	return int(matchedCount.Load())
+	return matchedCount
 }
 
 // processBatch processes a single batch of packets sequentially.
@@ -120,7 +133,7 @@ func (m *Matcher) processBatch(
 	batchIdx int,
 	batchResults [][]matchedRegion,
 	batchEdges []batchEdgeInfo,
-	matchedCount *atomic.Int64,
+	packetMatched []bool,
 	processedCount *atomic.Int64,
 	progress ProgressFunc,
 	totalPackets int,
@@ -162,9 +175,7 @@ func (m *Matcher) processBatch(
 
 		results = append(results, pktResults...)
 
-		if matched {
-			matchedCount.Add(1)
-		}
+		packetMatched[start+i] = matched
 		count := processedCount.Add(1)
 		if progress != nil && count%1000 == 0 {
 			progress(int(count), totalPackets)
@@ -406,9 +417,8 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 
 // syncBatchEdges performs a deterministic sequential pass over batch boundaries
 // to retry edge NALs that were unmatched using locality from adjacent batches.
-// Edge sync adds regions to already-processed packets; it does not change
-// packet-level match counts since those were determined during batch processing.
-func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]matchedRegion) {
+// If a recovery succeeds, packetMatched is updated for the affected packet.
+func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]matchedRegion, packetMatched []bool) {
 	for i := 0; i < len(batchEdges)-1; i++ {
 		curr := &batchEdges[i]
 		next := &batchEdges[i+1]
@@ -418,7 +428,7 @@ func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]ma
 			continue
 		}
 
-		// If the last NAL of batch i had a hash miss, retry with locality from batch i+1
+		// If the last NAL of batch i was unmatched, retry with locality from batch i+1
 		if curr.edgeMissTail && next.headLocality.valid && curr.tailNALSizeExact {
 			pkt := curr.tailPkt
 			if m.sourceIndex.UsesESOffsets {
@@ -433,6 +443,11 @@ func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]ma
 					if region != nil {
 						batchResults[i] = append(batchResults[i], *region)
 						m.markChunksCovered(region.mkvStart, region.mkvEnd)
+						tailPktIdx := (i+1)*batchSize - 1
+						if tailPktIdx >= len(packetMatched) {
+							tailPktIdx = len(packetMatched) - 1
+						}
+						packetMatched[tailPktIdx] = true
 					}
 				}
 			}
@@ -453,6 +468,7 @@ func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]ma
 					if region != nil {
 						batchResults[i+1] = append(batchResults[i+1], *region)
 						m.markChunksCovered(region.mkvStart, region.mkvEnd)
+						packetMatched[(i+1)*batchSize] = true
 					}
 				}
 			}
