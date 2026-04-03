@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -301,13 +302,6 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.diagExamplesOutput = nil
 	m.diagExamplesMu.Unlock()
 
-	// Initialize per-track locality hints so each track has its own hint.
-	// Zero value of trackCrossPacketHint has valid == false, which is correct.
-	m.trackHints = make(map[uint64]*trackCrossPacketHint, len(tracks))
-	for _, t := range tracks {
-		m.trackHints[t.Number] = &trackCrossPacketHint{}
-	}
-
 	// Build track type and codec info maps
 	for _, t := range tracks {
 		m.trackTypes[int(t.Number)] = t.Type
@@ -347,7 +341,15 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		TotalPackets: len(packets),
 	}
 
-	// Use parallel processing with worker pool
+	// Pre-sort packets by track number so each batch contains consecutive
+	// same-track packets. This makes intra-batch locality deterministic and
+	// ensures different batches operate on non-overlapping MKV offset ranges.
+	// Stable sort preserves original MKV order within each track.
+	sort.SliceStable(packets, func(i, j int) bool {
+		return packets[i].TrackNum < packets[j].TrackNum
+	})
+
+	// Use parallel processing with deterministic batched workers
 	result.MatchedPackets = m.matchParallel(packets, progress)
 
 	if progress != nil {
