@@ -162,9 +162,7 @@ func (m *Matcher) processBatch(
 	// Batch-local coverage bitmap for deterministic intra-batch skipping.
 	// Only reads from this bitmap (not the global one) to avoid cross-batch
 	// interference from concurrent same-track batches.
-	batchStartOff := batchPackets[0].Offset
-	batchEndOff := batchPackets[len(batchPackets)-1].Offset + batchPackets[len(batchPackets)-1].Size
-	localCov := newLocalCoverage(batchStartOff, batchEndOff)
+	localCov := newLocalCoverage(batchPackets)
 
 	// Batch-local state
 	var results []matchedRegion
@@ -712,23 +710,43 @@ func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hi
 	return result
 }
 
-// localCoverage is a batch-local coverage bitmap covering a specific MKV offset range.
-// Used for deterministic intra-batch coverage skipping without cross-batch interference.
+// localCoverage is a sparse batch-local coverage bitmap for deterministic
+// intra-batch coverage skipping without cross-batch interference.
+// Uses a map from absolute chunk index to dense bitmap index, so memory is
+// proportional to actual packet data (not the MKV offset span, which can be
+// large for sparse tracks like subtitles).
 type localCoverage struct {
-	bits       []uint64
-	baseChunk  int64 // first chunk index this bitmap covers
-	chunkCount int64 // number of chunks covered
+	bits     []uint64       // dense bitmap indexed by position
+	chunkMap map[int64]int  // absolute chunk index -> dense index
 }
 
-// newLocalCoverage creates a coverage bitmap for the MKV offset range [startOff, endOff).
-func newLocalCoverage(startOff, endOff int64) localCoverage {
-	baseChunk := startOff / coverageChunkSize
-	endChunk := (endOff - 1) / coverageChunkSize
-	chunkCount := endChunk - baseChunk + 1
+// newLocalCoverage creates a sparse coverage bitmap covering only the chunks
+// that the given packets actually occupy.
+func newLocalCoverage(packets []mkv.Packet) localCoverage {
+	if len(packets) == 0 {
+		return localCoverage{}
+	}
+
+	// Collect all chunk indices touched by the packets
+	chunkMap := make(map[int64]int)
+	idx := 0
+	for _, pkt := range packets {
+		if pkt.Size <= 0 {
+			continue
+		}
+		startChunk := pkt.Offset / coverageChunkSize
+		endChunk := (pkt.Offset + pkt.Size - 1) / coverageChunkSize
+		for chunk := startChunk; chunk <= endChunk; chunk++ {
+			if _, exists := chunkMap[chunk]; !exists {
+				chunkMap[chunk] = idx
+				idx++
+			}
+		}
+	}
+
 	return localCoverage{
-		bits:       make([]uint64, (chunkCount+63)/64),
-		baseChunk:  baseChunk,
-		chunkCount: chunkCount,
+		bits:     make([]uint64, (idx+63)/64),
+		chunkMap: chunkMap,
 	}
 }
 
@@ -736,25 +754,20 @@ func newLocalCoverage(startOff, endOff int64) localCoverage {
 func (lc *localCoverage) markCovered(start, end int64) {
 	firstFullChunk := (start + coverageChunkSize - 1) / coverageChunkSize
 	lastFullChunk := (end / coverageChunkSize) - 1
-	if firstFullChunk > lastFullChunk {
-		return
-	}
 	for chunk := firstFullChunk; chunk <= lastFullChunk; chunk++ {
-		rel := chunk - lc.baseChunk
-		if rel < 0 || rel >= lc.chunkCount {
-			continue
+		if idx, ok := lc.chunkMap[chunk]; ok {
+			lc.bits[idx/64] |= 1 << uint(idx%64)
 		}
-		lc.bits[rel/64] |= 1 << uint(rel%64)
 	}
 }
 
 // isChunkCovered checks if the chunk containing absOffset is covered.
 func (lc *localCoverage) isChunkCovered(absOffset int64) bool {
-	rel := absOffset/coverageChunkSize - lc.baseChunk
-	if rel < 0 || rel >= lc.chunkCount {
+	idx, ok := lc.chunkMap[absOffset/coverageChunkSize]
+	if !ok {
 		return false
 	}
-	return lc.bits[rel/64]&(1<<uint(rel%64)) != 0
+	return lc.bits[idx/64]&(1<<uint(idx%64)) != 0
 }
 
 // isRangeCovered checks if all chunks in [offset, offset+size) are covered.
@@ -762,11 +775,11 @@ func (lc *localCoverage) isRangeCovered(offset, size int64) bool {
 	startChunk := offset / coverageChunkSize
 	endChunk := (offset + size - 1) / coverageChunkSize
 	for chunk := startChunk; chunk <= endChunk; chunk++ {
-		rel := chunk - lc.baseChunk
-		if rel < 0 || rel >= lc.chunkCount {
+		idx, ok := lc.chunkMap[chunk]
+		if !ok {
 			return false
 		}
-		if lc.bits[rel/64]&(1<<uint(rel%64)) == 0 {
+		if lc.bits[idx/64]&(1<<uint(idx%64)) == 0 {
 			return false
 		}
 	}
