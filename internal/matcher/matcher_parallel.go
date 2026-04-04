@@ -406,6 +406,13 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 			}
 			moreNALSize, moreNALSizeExact := computeNALSize(moreSyncPoints, moreIdx, syncOff, len(fullData), isVideo, codecInfo.nalLengthSize)
 			region := m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, pktLoc, moreNALSize, moreNALSizeExact)
+
+			matched := region != nil
+			edgeMiss.lastNALMiss = !matched
+			edgeMiss.lastNALSyncOff = syncOff
+			edgeMiss.lastNALSize = moreNALSize
+			edgeMiss.lastNALSizeExact = moreNALSizeExact
+
 			if region != nil {
 				recordMatch(region, moreNALSize)
 				anyMatched = true

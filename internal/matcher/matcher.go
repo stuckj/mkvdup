@@ -319,16 +319,18 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		TotalPackets: len(packets),
 	}
 
-	// Pre-sort packets by track number. matchParallel builds batches that
-	// never cross track boundaries, so each batch contains consecutive
-	// same-track packets with a deterministic locality chain.
-	// Stable sort preserves original MKV order within each track.
-	sort.SliceStable(packets, func(i, j int) bool {
-		return packets[i].TrackNum < packets[j].TrackNum
+	// Sort a copy by track number so the caller's slice is not mutated.
+	// matchParallel builds batches that never cross track boundaries,
+	// so each batch contains consecutive same-track packets with a
+	// deterministic locality chain.
+	sortedPackets := make([]mkv.Packet, len(packets))
+	copy(sortedPackets, packets)
+	sort.SliceStable(sortedPackets, func(i, j int) bool {
+		return sortedPackets[i].TrackNum < sortedPackets[j].TrackNum
 	})
 
 	// Use parallel processing with deterministic batched workers
-	result.MatchedPackets = m.matchParallel(packets, progress)
+	result.MatchedPackets = m.matchParallel(sortedPackets, progress)
 
 	if progress != nil {
 		progress(len(packets), len(packets))
