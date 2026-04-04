@@ -159,6 +159,13 @@ func (m *Matcher) processBatch(
 ) {
 	batchPackets := packets[br.start:br.end]
 
+	// Batch-local coverage bitmap for deterministic intra-batch skipping.
+	// Only reads from this bitmap (not the global one) to avoid cross-batch
+	// interference from concurrent same-track batches.
+	batchStartOff := batchPackets[0].Offset
+	batchEndOff := batchPackets[len(batchPackets)-1].Offset + batchPackets[len(batchPackets)-1].Size
+	localCov := newLocalCoverage(batchStartOff, batchEndOff)
+
 	// Batch-local state
 	var results []matchedRegion
 	var loc packetLocality // carried across packets within the batch
@@ -169,7 +176,7 @@ func (m *Matcher) processBatch(
 
 	headEdgeRecorded := false
 	for i, pkt := range batchPackets {
-		matched, pktResults, edgeMiss := m.matchPacketBatch(pkt, loc)
+		matched, pktResults, edgeMiss := m.matchPacketBatch(pkt, loc, &localCov)
 
 		// Update batch-local locality from this packet's results
 		if len(pktResults) > 0 {
@@ -232,8 +239,10 @@ type edgeMissInfo struct {
 }
 
 // matchPacketBatch processes a single packet with batch-local state.
+// Coverage reads use the batch-local bitmap (localCov) for determinism;
+// coverage writes go to both localCov and the global bitmap (for TrueHD gap-fill).
 // Returns whether any NAL matched, the list of matched regions, and edge miss info.
-func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []matchedRegion, edgeMissInfo) {
+func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality, localCov *localCoverage) (bool, []matchedRegion, edgeMissInfo) {
 	var results []matchedRegion
 	var edgeMiss edgeMissInfo
 
@@ -293,6 +302,7 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 	recordMatch := func(region *matchedRegion, nalSize int, nalType ...byte) {
 		matchLen := region.mkvEnd - region.mkvStart
 		results = append(results, *region)
+		localCov.markCovered(region.mkvStart, region.mkvEnd)
 		m.markChunksCovered(region.mkvStart, region.mkvEnd)
 		pktLoc.valid = true
 		pktLoc.fileIdx = region.fileIndex
@@ -320,13 +330,10 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 			continue
 		}
 
-		// Skip sync points already covered. The global bitmap is shared across
-		// batches, but cross-batch writes don't affect determinism: packets are
-		// pre-sorted by track, so concurrent batches process different tracks
-		// whose expansion can't produce matching bytes (different codec data).
-		// Same-track batches are sequential in the sorted order, so their
-		// coverage writes are consistent regardless of worker assignment.
-		if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
+		// Skip sync points already covered by this batch's own matches.
+		// Reads from the batch-local bitmap to avoid cross-batch interference
+		// from concurrent same-track batches, ensuring deterministic skipping.
+		if localCov.isChunkCovered(pkt.Offset + int64(syncOff)) {
 			continue
 		}
 
@@ -380,14 +387,14 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 
 		if matched {
 			anyMatched = true
-			if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+			if localCov.isRangeCovered(pkt.Offset, pkt.Size) {
 				break
 			}
 		}
 	}
 
 	// For Annex B video, scan rest of packet for additional sync points
-	if isVideo && !useFullPacket && !m.isRangeCoveredParallel(pkt.Offset, pkt.Size) && pkt.Size > 4096 {
+	if isVideo && !useFullPacket && !localCov.isRangeCovered(pkt.Offset, pkt.Size) && pkt.Size > 4096 {
 		fullEnd := pkt.Offset + pkt.Size
 		if fullEnd > m.mkvSize {
 			fullEnd = m.mkvSize
@@ -401,7 +408,7 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 			if syncOff+m.windowSize > len(fullData) {
 				continue
 			}
-			if m.isChunkCoveredParallel(pkt.Offset + int64(syncOff)) {
+			if localCov.isChunkCovered(pkt.Offset + int64(syncOff)) {
 				continue
 			}
 			moreNALSize, moreNALSizeExact := computeNALSize(moreSyncPoints, moreIdx, syncOff, len(fullData), isVideo, codecInfo.nalLengthSize)
@@ -416,7 +423,7 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 			if region != nil {
 				recordMatch(region, moreNALSize)
 				anyMatched = true
-				if m.isRangeCoveredParallel(pkt.Offset, pkt.Size) {
+				if localCov.isRangeCovered(pkt.Offset, pkt.Size) {
 					break
 				}
 			}
@@ -705,6 +712,67 @@ func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hi
 	return result
 }
 
+// localCoverage is a batch-local coverage bitmap covering a specific MKV offset range.
+// Used for deterministic intra-batch coverage skipping without cross-batch interference.
+type localCoverage struct {
+	bits       []uint64
+	baseChunk  int64 // first chunk index this bitmap covers
+	chunkCount int64 // number of chunks covered
+}
+
+// newLocalCoverage creates a coverage bitmap for the MKV offset range [startOff, endOff).
+func newLocalCoverage(startOff, endOff int64) localCoverage {
+	baseChunk := startOff / coverageChunkSize
+	endChunk := (endOff - 1) / coverageChunkSize
+	chunkCount := endChunk - baseChunk + 1
+	return localCoverage{
+		bits:       make([]uint64, (chunkCount+63)/64),
+		baseChunk:  baseChunk,
+		chunkCount: chunkCount,
+	}
+}
+
+// markCovered marks chunks fully contained within [start, end) as covered.
+func (lc *localCoverage) markCovered(start, end int64) {
+	firstFullChunk := (start + coverageChunkSize - 1) / coverageChunkSize
+	lastFullChunk := (end / coverageChunkSize) - 1
+	if firstFullChunk > lastFullChunk {
+		return
+	}
+	for chunk := firstFullChunk; chunk <= lastFullChunk; chunk++ {
+		rel := chunk - lc.baseChunk
+		if rel < 0 || rel >= lc.chunkCount {
+			continue
+		}
+		lc.bits[rel/64] |= 1 << uint(rel%64)
+	}
+}
+
+// isChunkCovered checks if the chunk containing absOffset is covered.
+func (lc *localCoverage) isChunkCovered(absOffset int64) bool {
+	rel := absOffset/coverageChunkSize - lc.baseChunk
+	if rel < 0 || rel >= lc.chunkCount {
+		return false
+	}
+	return lc.bits[rel/64]&(1<<uint(rel%64)) != 0
+}
+
+// isRangeCovered checks if all chunks in [offset, offset+size) are covered.
+func (lc *localCoverage) isRangeCovered(offset, size int64) bool {
+	startChunk := offset / coverageChunkSize
+	endChunk := (offset + size - 1) / coverageChunkSize
+	for chunk := startChunk; chunk <= endChunk; chunk++ {
+		rel := chunk - lc.baseChunk
+		if rel < 0 || rel >= lc.chunkCount {
+			return false
+		}
+		if lc.bits[rel/64]&(1<<uint(rel%64)) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // isRangeCoveredParallel checks if a range is likely covered using a coverage bitmap.
 // This is an O(1) check using chunk-level granularity. It may have false positives
 // (multiple regions covering different chunks) but that's acceptable since we merge
@@ -727,23 +795,6 @@ func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool {
 		}
 	}
 	return true
-}
-
-// isChunkCoveredParallel checks if the chunk containing absOffset is already covered.
-// This is used to skip sync points that fall within already-matched regions,
-// avoiding redundant hash lookups and source reads.
-func (m *Matcher) isChunkCoveredParallel(absOffset int64) bool {
-	chunk := absOffset / coverageChunkSize
-	wordIdx := chunk / 64
-	bitIdx := uint(chunk % 64)
-
-	m.coverageMu.RLock()
-	defer m.coverageMu.RUnlock()
-
-	if wordIdx >= int64(len(m.coveredChunks)) {
-		return false
-	}
-	return m.coveredChunks[wordIdx]&(1<<bitIdx) != 0
 }
 
 // markChunksCovered marks the chunks fully contained within a region as covered.
