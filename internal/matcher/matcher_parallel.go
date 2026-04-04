@@ -773,30 +773,6 @@ func (lc *localCoverage) isRangeCovered(offset, size int64) bool {
 	return true
 }
 
-// isRangeCoveredParallel checks if a range is likely covered using a coverage bitmap.
-// This is an O(1) check using chunk-level granularity. It may have false positives
-// (multiple regions covering different chunks) but that's acceptable since we merge
-// overlapping regions at the end anyway.
-func (m *Matcher) isRangeCoveredParallel(offset, size int64) bool {
-	startChunk := offset / coverageChunkSize
-	endChunk := (offset + size - 1) / coverageChunkSize
-
-	m.coverageMu.RLock()
-	defer m.coverageMu.RUnlock()
-
-	for chunk := startChunk; chunk <= endChunk; chunk++ {
-		wordIdx := chunk / 64
-		bitIdx := uint(chunk % 64)
-		if wordIdx >= int64(len(m.coveredChunks)) {
-			return false
-		}
-		if m.coveredChunks[wordIdx]&(1<<bitIdx) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
 // markChunksCovered marks the chunks fully contained within a region as covered.
 func (m *Matcher) markChunksCovered(start, end int64) {
 	firstFullChunk := (start + coverageChunkSize - 1) / coverageChunkSize
