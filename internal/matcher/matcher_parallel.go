@@ -716,8 +716,8 @@ func nearbyLocationIndices(locations []source.Location, hintFileIndex uint16, hi
 // proportional to actual packet data (not the MKV offset span, which can be
 // large for sparse tracks like subtitles).
 type localCoverage struct {
-	bits     []uint64       // dense bitmap indexed by position
-	chunkMap map[int64]int  // absolute chunk index -> dense index
+	bits     []uint64      // dense bitmap indexed by position
+	chunkMap map[int64]int // absolute chunk index -> dense index
 }
 
 // newLocalCoverage creates a sparse coverage bitmap covering only the chunks
