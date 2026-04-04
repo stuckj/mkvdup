@@ -64,18 +64,40 @@ func computeNALSize(syncPoints []int, i, syncOff, dataLen int, isVideo bool, nal
 	return nalSize, false
 }
 
+// batchRange tracks the start/end packet indices for a batch.
+type batchRange struct {
+	start int // inclusive index into packets slice
+	end   int // exclusive index into packets slice
+}
+
 // matchParallel processes packets using deterministic batched workers.
 // Packets must be pre-sorted by track number before calling this function.
-// The batch boundaries are fixed, and each batch is processed sequentially
-// by a single goroutine, making the output deterministic regardless of
-// goroutine scheduling or CPU count.
+// Batches never cross track boundaries — each batch contains packets from
+// exactly one track. Within a track, packets are split into chunks of up
+// to batchSize. This makes intra-batch locality fully deterministic.
 func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int {
 	totalPackets := len(packets)
 	if totalPackets == 0 {
 		return 0
 	}
 
-	numBatches := (totalPackets + batchSize - 1) / batchSize
+	// Build track-aware batches: split at track boundaries, then chunk
+	// each track's packets into batches of up to batchSize.
+	var batches []batchRange
+	trackStart := 0
+	for i := 1; i <= totalPackets; i++ {
+		if i == totalPackets || packets[i].TrackNum != packets[trackStart].TrackNum {
+			for j := trackStart; j < i; j += batchSize {
+				end := j + batchSize
+				if end > i {
+					end = i
+				}
+				batches = append(batches, batchRange{start: j, end: end})
+			}
+			trackStart = i
+		}
+	}
+	numBatches := len(batches)
 
 	// Per-batch results — each batch appends to its own slice (no locking needed)
 	batchResults := make([][]matchedRegion, numBatches)
@@ -97,26 +119,21 @@ func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int
 				if idx >= numBatches {
 					return
 				}
-				m.processBatch(packets, idx, batchResults, batchEdges, packetMatched, &processedCount, progress, totalPackets)
+				m.processBatch(packets, batches[idx], idx, batchResults, batchEdges, packetMatched, &processedCount, progress, totalPackets)
 			}
 		}()
 	}
 	wg.Wait()
 
 	// Inter-batch edge sync (deterministic sequential pass)
-	m.syncBatchEdges(batchEdges, batchResults, packetMatched)
+	m.syncBatchEdges(batches, batchEdges, batchResults, packetMatched)
 
 	// Merge all batch results in batch-index order (deterministic)
 	// and count matched packets from the per-packet booleans.
 	matchedCount := 0
 	for i, results := range batchResults {
 		m.matchedRegions = append(m.matchedRegions, results...)
-		start := i * batchSize
-		end := start + batchSize
-		if end > totalPackets {
-			end = totalPackets
-		}
-		for j := start; j < end; j++ {
+		for j := batches[i].start; j < batches[i].end; j++ {
 			if packetMatched[j] {
 				matchedCount++
 			}
@@ -127,9 +144,11 @@ func (m *Matcher) matchParallel(packets []mkv.Packet, progress ProgressFunc) int
 }
 
 // processBatch processes a single batch of packets sequentially.
-// All locality state is batch-local. Results are appended to batchResults[batchIdx].
+// Each batch contains packets from exactly one track (guaranteed by
+// track-aware batch construction). Results are appended to batchResults[batchIdx].
 func (m *Matcher) processBatch(
 	packets []mkv.Packet,
+	br batchRange,
 	batchIdx int,
 	batchResults [][]matchedRegion,
 	batchEdges []batchEdgeInfo,
@@ -138,12 +157,7 @@ func (m *Matcher) processBatch(
 	progress ProgressFunc,
 	totalPackets int,
 ) {
-	start := batchIdx * batchSize
-	end := start + batchSize
-	if end > len(packets) {
-		end = len(packets)
-	}
-	batchPackets := packets[start:end]
+	batchPackets := packets[br.start:br.end]
 
 	// Batch-local state
 	var results []matchedRegion
@@ -151,15 +165,10 @@ func (m *Matcher) processBatch(
 
 	edge := &batchEdges[batchIdx]
 	edge.firstTrack = batchPackets[0].TrackNum
-	edge.lastTrack = batchPackets[len(batchPackets)-1].TrackNum
+	edge.lastTrack = batchPackets[0].TrackNum // single-track batch
 
 	headEdgeRecorded := false
 	for i, pkt := range batchPackets {
-		// Reset locality when track changes within the batch
-		if i > 0 && pkt.TrackNum != batchPackets[i-1].TrackNum {
-			loc = packetLocality{}
-		}
-
 		matched, pktResults, edgeMiss := m.matchPacketBatch(pkt, loc)
 
 		// Update batch-local locality from this packet's results
@@ -175,7 +184,7 @@ func (m *Matcher) processBatch(
 
 		results = append(results, pktResults...)
 
-		packetMatched[start+i] = matched
+		packetMatched[br.start+i] = matched
 		count := processedCount.Add(1)
 		if progress != nil && count%1000 == 0 {
 			progress(int(count), totalPackets)
@@ -421,38 +430,42 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality) (bool, []
 
 // syncBatchEdges performs a deterministic sequential pass over batch boundaries
 // to retry edge NALs that were unmatched using locality from adjacent batches.
+// Only runs for video tracks (tryLocalityMatch is video-specific).
 // If a recovery succeeds, packetMatched is updated for the affected packet.
-func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]matchedRegion, packetMatched []bool) {
+func (m *Matcher) syncBatchEdges(batches []batchRange, batchEdges []batchEdgeInfo, batchResults [][]matchedRegion, packetMatched []bool) {
 	for i := 0; i < len(batchEdges)-1; i++ {
 		curr := &batchEdges[i]
 		next := &batchEdges[i+1]
 
-		// Only sync if adjacent batches share the same track at the boundary
+		// Only sync adjacent batches on the same track
 		if curr.lastTrack != next.firstTrack {
+			continue
+		}
+
+		// tryLocalityMatch is video-specific (uses ES offsets with IsVideo: true)
+		if m.trackTypes[int(curr.lastTrack)] != mkv.TrackTypeVideo {
+			continue
+		}
+
+		if !m.sourceIndex.UsesESOffsets {
 			continue
 		}
 
 		// If the last NAL of batch i was unmatched, retry with locality from batch i+1
 		if curr.edgeMissTail && next.headLocality.valid && curr.tailNALSizeExact {
 			pkt := curr.tailPkt
-			if m.sourceIndex.UsesESOffsets {
-				syncOff := curr.tailSyncOff
-				endOffset := pkt.Offset + pkt.Size
-				if endOffset > m.mkvSize {
-					endOffset = m.mkvSize
-				}
-				data := m.mkvData[pkt.Offset:endOffset]
-				if syncOff+m.windowSize <= len(data) {
-					region := m.tryLocalityMatch(pkt, syncOff, data[syncOff:], next.headLocality, curr.tailNALSize)
-					if region != nil {
-						batchResults[i] = append(batchResults[i], *region)
-						m.markChunksCovered(region.mkvStart, region.mkvEnd)
-						tailPktIdx := (i+1)*batchSize - 1
-						if tailPktIdx >= len(packetMatched) {
-							tailPktIdx = len(packetMatched) - 1
-						}
-						packetMatched[tailPktIdx] = true
-					}
+			syncOff := curr.tailSyncOff
+			endOffset := pkt.Offset + pkt.Size
+			if endOffset > m.mkvSize {
+				endOffset = m.mkvSize
+			}
+			data := m.mkvData[pkt.Offset:endOffset]
+			if syncOff+m.windowSize <= len(data) {
+				region := m.tryLocalityMatch(pkt, syncOff, data[syncOff:], next.headLocality, curr.tailNALSize)
+				if region != nil {
+					batchResults[i] = append(batchResults[i], *region)
+					m.markChunksCovered(region.mkvStart, region.mkvEnd)
+					packetMatched[batches[i].end-1] = true
 				}
 			}
 		}
@@ -460,20 +473,18 @@ func (m *Matcher) syncBatchEdges(batchEdges []batchEdgeInfo, batchResults [][]ma
 		// If the first NAL of batch i+1 was unmatched, retry with locality from batch i
 		if next.edgeMissHead && curr.tailLocality.valid && next.headNALSizeExact {
 			pkt := next.headPkt
-			if m.sourceIndex.UsesESOffsets {
-				syncOff := next.headSyncOff
-				endOffset := pkt.Offset + pkt.Size
-				if endOffset > m.mkvSize {
-					endOffset = m.mkvSize
-				}
-				data := m.mkvData[pkt.Offset:endOffset]
-				if syncOff+m.windowSize <= len(data) {
-					region := m.tryLocalityMatch(pkt, syncOff, data[syncOff:], curr.tailLocality, next.headNALSize)
-					if region != nil {
-						batchResults[i+1] = append(batchResults[i+1], *region)
-						m.markChunksCovered(region.mkvStart, region.mkvEnd)
-						packetMatched[(i+1)*batchSize] = true
-					}
+			syncOff := next.headSyncOff
+			endOffset := pkt.Offset + pkt.Size
+			if endOffset > m.mkvSize {
+				endOffset = m.mkvSize
+			}
+			data := m.mkvData[pkt.Offset:endOffset]
+			if syncOff+m.windowSize <= len(data) {
+				region := m.tryLocalityMatch(pkt, syncOff, data[syncOff:], curr.tailLocality, next.headNALSize)
+				if region != nil {
+					batchResults[i+1] = append(batchResults[i+1], *region)
+					m.markChunksCovered(region.mkvStart, region.mkvEnd)
+					packetMatched[batches[i+1].start] = true
 				}
 			}
 		}

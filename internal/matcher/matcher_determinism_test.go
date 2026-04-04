@@ -165,6 +165,7 @@ func generateDeterminismTestData(t *testing.T) (string, []mkv.Packet, []mkv.Trac
 			})
 		}
 	}
+	idx.SortLocationsByOffset()
 
 	tmpDir := t.TempDir()
 	mkvPath := filepath.Join(tmpDir, "test.mkv")
