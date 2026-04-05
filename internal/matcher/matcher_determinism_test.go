@@ -206,11 +206,7 @@ func TestMatchDeterminism(t *testing.T) {
 			}
 			m.SetNumWorkers(workers)
 
-			// Copy packets since Match sorts them
-			pktCopy := make([]mkv.Packet, len(packets))
-			copy(pktCopy, packets)
-
-			result, err := m.Match(mkvPath, pktCopy, tracks, nil)
+			result, err := m.Match(mkvPath, packets, tracks, nil)
 			if err != nil {
 				m.Close()
 				t.Fatalf("Match(workers=%d, run=%d): %v", workers, run, err)

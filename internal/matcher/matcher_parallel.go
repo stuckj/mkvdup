@@ -26,11 +26,13 @@ type batchEdgeInfo struct {
 	tailLocality packetLocality
 	// headLocality is the first valid locality observed in the batch.
 	headLocality packetLocality
-	// edgeMissHead is true if the first NAL of the first packet was unmatched
-	// (failed both hash-based and locality-based matching).
+	// edgeMissHead is true if the first attempted uncovered sync point in
+	// the first packet was unmatched (failed both hash-based and locality-based
+	// matching). Sync points skipped by coverage or size checks are not counted.
 	edgeMissHead bool
-	// edgeMissTail is true if the last NAL of the last packet was unmatched
-	// (failed both hash-based and locality-based matching).
+	// edgeMissTail is true if the last attempted uncovered sync point in
+	// the last packet was unmatched (failed both hash-based and locality-based
+	// matching). Sync points skipped by coverage or size checks are not counted.
 	edgeMissTail bool
 	// headPkt/tailPkt are the first/last packets for edge retry.
 	headPkt mkv.Packet
