@@ -428,6 +428,12 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality, localCov 
 		}
 	}
 
+	// If all sync points were skipped due to intra-batch coverage (e.g., a
+	// previous packet's expansion covered this packet), count it as matched.
+	if !anyMatched && localCov.isRangeCovered(pkt.Offset, pkt.Size) {
+		anyMatched = true
+	}
+
 	// Try from packet start if nothing matched
 	if !anyMatched {
 		region := m.tryMatchFromOffsetParallel(pkt, 0, data, isVideo, pktLoc, len(data), false)

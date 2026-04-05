@@ -217,6 +217,7 @@ func TestMatchDeterminism(t *testing.T) {
 			}
 
 			if result.MatchedBytes == 0 {
+				result.Close()
 				m.Close()
 				t.Fatalf("Match(workers=%d, run=%d): no bytes matched", workers, run)
 			}
@@ -227,6 +228,7 @@ func TestMatchDeterminism(t *testing.T) {
 				referenceMatchedBytes = result.MatchedBytes
 				referenceUnmatchedBytes = result.UnmatchedBytes
 				referenceMatchedPackets = result.MatchedPackets
+				result.Close()
 				m.Close()
 				continue
 			}
@@ -257,6 +259,7 @@ func TestMatchDeterminism(t *testing.T) {
 				}
 			}
 
+			result.Close()
 			m.Close()
 		}
 	}
