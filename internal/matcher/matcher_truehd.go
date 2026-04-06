@@ -82,14 +82,12 @@ func (m *Matcher) fillTrueHDTrackGaps(trackNum int, pkts []mkv.Packet) {
 	}
 
 	// Collect matched regions that fall within this track's packets.
-	m.regionsMu.Lock()
 	var trackRegions []matchedRegion
 	for _, r := range m.matchedRegions {
 		if findPacketIdx(r.mkvStart) >= 0 {
 			trackRegions = append(trackRegions, r)
 		}
 	}
-	m.regionsMu.Unlock()
 
 	if len(trackRegions) < 2 {
 		if m.verboseWriter != nil {
@@ -175,9 +173,7 @@ func (m *Matcher) fillTrueHDTrackGaps(trackNum int, pkts []mkv.Packet) {
 
 	// Add all new regions
 	if len(newRegions) > 0 {
-		m.regionsMu.Lock()
 		m.matchedRegions = append(m.matchedRegions, newRegions...)
-		m.regionsMu.Unlock()
 		for i := range newRegions {
 			m.markChunksCovered(newRegions[i].mkvStart, newRegions[i].mkvEnd)
 		}

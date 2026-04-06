@@ -6,6 +6,8 @@
 
 ## Overview
 
+**Deterministic output:** Given the same MKV file and source directory, `mkvdup create` always produces the same `.mkvdup` file regardless of CPU count, goroutine scheduling, or other runtime factors. This is achieved through track-aware batching with batch-local coverage tracking and deterministic inter-batch edge synchronization.
+
 The matching process involves five stages:
 1. **Source Indexer** - Build a hash index of the source media
 2. **MKV Parser** - Extract codec data locations from the MKV

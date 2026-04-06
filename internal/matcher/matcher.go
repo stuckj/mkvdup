@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -100,19 +101,6 @@ type trackCodecInfo struct {
 	nalLengthSize int // 0 = Annex B (start codes), 1/2/4 = AVCC/HVCC (length-prefixed NAL units)
 }
 
-// trackCrossPacketHint stores per-track locality state for cross-packet
-// handoff. Protected by a mutex to avoid torn reads when multiple
-// goroutines process different packets on the same track concurrently.
-// Read once at packet start, written once after the last match in a packet.
-type trackCrossPacketHint struct {
-	mu      sync.Mutex
-	valid   bool
-	fileIdx uint16
-	offset  int64 // Midpoint of last matched source region (for Phase 1 hash locality)
-	srcEnd  int64 // End of last matched source region (for locality recovery)
-	mkvEnd  int64 // End of last matched MKV region (for locality recovery)
-}
-
 // packetLocality tracks per-packet locality state for deterministic
 // intra-packet matching. Updated sequentially by a single goroutine,
 // eliminating torn reads from shared state.
@@ -131,7 +119,6 @@ type Matcher struct {
 	mkvSize        int64
 	windowSize     int
 	matchedRegions []matchedRegion
-	regionsMu      sync.Mutex             // Protects matchedRegions for concurrent access
 	trackTypes     map[int]int            // Map from track number to track type
 	trackCodecs    map[int]trackCodecInfo // Map from track number to codec info
 	numWorkers     int                    // Number of worker goroutines for parallel matching
@@ -144,15 +131,8 @@ type Matcher struct {
 	coveredChunks []uint64 // Bitmap: bit i = chunk i is covered
 	coverageMu    sync.RWMutex
 
-	// Per-track locality hints. Each track gets its own hint so interleaved
-	// packets from different tracks (e.g. multiple DTS streams) don't thrash
-	// a single shared hint. Created in Match() before workers start; the map
-	// itself is read-only during matching, each hint is mutex-synchronized.
-	trackHints map[uint64]*trackCrossPacketHint
-
 	// Diagnostic counters for investigating match failures
 	diagVideoPacketsTotal       atomic.Int64 // Total video packets processed
-	diagVideoPacketsCoverage    atomic.Int64 // Video packets skipped (coverage check)
 	diagVideoNALsTotal          atomic.Int64 // Total video NAL sync points tried
 	diagVideoNALsTooSmall       atomic.Int64 // NALs where window didn't fit
 	diagVideoNALsHashNotFound   atomic.Int64 // NALs where hash wasn't in index
@@ -272,7 +252,6 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.isPCMTrack = make(map[int]bool)
 	m.isTrueHDTrack = make(map[int]bool)
 	m.diagVideoPacketsTotal.Store(0)
-	m.diagVideoPacketsCoverage.Store(0)
 	m.diagVideoNALsTotal.Store(0)
 	m.diagVideoNALsTooSmall.Store(0)
 	m.diagVideoNALsHashNotFound.Store(0)
@@ -300,13 +279,6 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 	m.diagExamplesCount = 0
 	m.diagExamplesOutput = nil
 	m.diagExamplesMu.Unlock()
-
-	// Initialize per-track locality hints so each track has its own hint.
-	// Zero value of trackCrossPacketHint has valid == false, which is correct.
-	m.trackHints = make(map[uint64]*trackCrossPacketHint, len(tracks))
-	for _, t := range tracks {
-		m.trackHints[t.Number] = &trackCrossPacketHint{}
-	}
 
 	// Build track type and codec info maps
 	for _, t := range tracks {
@@ -347,8 +319,18 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		TotalPackets: len(packets),
 	}
 
-	// Use parallel processing with worker pool
-	result.MatchedPackets = m.matchParallel(packets, progress)
+	// Sort a copy by track number so the caller's slice is not mutated.
+	// matchParallel builds batches that never cross track boundaries,
+	// so each batch contains consecutive same-track packets with a
+	// deterministic locality chain.
+	sortedPackets := make([]mkv.Packet, len(packets))
+	copy(sortedPackets, packets)
+	sort.SliceStable(sortedPackets, func(i, j int) bool {
+		return sortedPackets[i].TrackNum < sortedPackets[j].TrackNum
+	})
+
+	// Use parallel processing with deterministic batched workers
+	result.MatchedPackets = m.matchParallel(sortedPackets, progress)
 
 	if progress != nil {
 		progress(len(packets), len(packets))
@@ -359,7 +341,6 @@ func (m *Matcher) Match(mkvPath string, packets []mkv.Packet, tracks []mkv.Track
 		w := m.verboseWriter
 		fmt.Fprintf(w, "\n=== Video Matching Diagnostics ===\n")
 		fmt.Fprintf(w, "Video packets total:        %d\n", m.diagVideoPacketsTotal.Load())
-		fmt.Fprintf(w, "Video packets skip-covered: %d\n", m.diagVideoPacketsCoverage.Load())
 		fmt.Fprintf(w, "Video NALs total:           %d\n", m.diagVideoNALsTotal.Load())
 		fmt.Fprintf(w, "Video NALs too small:       %d\n", m.diagVideoNALsTooSmall.Load())
 		fmt.Fprintf(w, "Video NALs hash not found:  %d\n", m.diagVideoNALsHashNotFound.Load())

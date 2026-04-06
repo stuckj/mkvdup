@@ -6,6 +6,8 @@ This system deduplicates MKV files ripped from DVDs or Blu-rays against their so
 
 **Goal:** Store a 3.4GB MKV as ~50-55MB by referencing the source media for shared codec data.
 
+**Deterministic:** Given the same inputs, `mkvdup create` always produces the same output, regardless of CPU count or runtime scheduling.
+
 ## Documentation
 
 | Document | Description |
