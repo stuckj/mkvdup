@@ -23,9 +23,8 @@ type batchEdgeInfo struct {
 	firstTrack uint64
 	lastTrack  uint64
 	// tailLocality is the locality state after the last packet in the batch.
+	// Used by edge sync to retry the next batch's head NAL.
 	tailLocality packetLocality
-	// headLocality is the first valid locality observed in the batch.
-	headLocality packetLocality
 	// edgeMissHead is true if the first attempted uncovered sync point in
 	// the first packet was unmatched (failed both hash-based and locality-based
 	// matching). Sync points skipped by coverage or size checks are not counted.
@@ -166,7 +165,6 @@ func (m *Matcher) processBatch(
 	edge.firstTrack = batchPackets[0].TrackNum
 	edge.lastTrack = batchPackets[0].TrackNum // single-track batch
 
-	headEdgeRecorded := false
 	for i, pkt := range batchPackets {
 		matched, pktResults, edgeMiss := m.matchPacketBatch(pkt, loc, &localCov)
 
@@ -196,13 +194,6 @@ func (m *Matcher) processBatch(
 			edge.headSyncOff = edgeMiss.firstNALSyncOff
 			edge.headNALSize = edgeMiss.firstNALSize
 			edge.headNALSizeExact = edgeMiss.firstNALSizeExact
-		}
-		// Capture the first valid locality in the batch for edge sync.
-		// If the first packet has no matches, we need locality from a
-		// later packet so the previous batch's tail edge can be retried.
-		if !headEdgeRecorded && loc.valid {
-			edge.headLocality = loc
-			headEdgeRecorded = true
 		}
 		if i == len(batchPackets)-1 {
 			edge.tailLocality = loc
