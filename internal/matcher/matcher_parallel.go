@@ -461,6 +461,14 @@ func (m *Matcher) syncBatchEdges(batches []batchRange, batchEdges []batchEdgeInf
 					batchResults[i+1] = append(batchResults[i+1], *region)
 					m.markChunksCovered(region.mkvStart, region.mkvEnd)
 					packetMatched[batches[i+1].start] = true
+					matchLen := region.mkvEnd - region.mkvStart
+					next.tailLocality = packetLocality{
+						valid:   true,
+						fileIdx: region.fileIndex,
+						offset:  region.srcOffset + matchLen/2,
+						srcEnd:  region.srcOffset + matchLen,
+						mkvEnd:  region.mkvEnd,
+					}
 				}
 			}
 		}
