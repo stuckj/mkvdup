@@ -733,6 +733,9 @@ func (lc *localCoverage) isChunkCovered(absOffset int64) bool {
 
 // isRangeCovered checks if all chunks in [offset, offset+size) are covered.
 func (lc *localCoverage) isRangeCovered(offset, size int64) bool {
+	if size <= 0 {
+		return false
+	}
 	startChunk := offset / coverageChunkSize
 	endChunk := (offset + size - 1) / coverageChunkSize
 	for chunk := startChunk; chunk <= endChunk; chunk++ {
