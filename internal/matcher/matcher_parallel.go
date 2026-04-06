@@ -30,21 +30,13 @@ type batchEdgeInfo struct {
 	// the first packet was unmatched (failed both hash-based and locality-based
 	// matching). Sync points skipped by coverage or size checks are not counted.
 	edgeMissHead bool
-	// edgeMissTail is true if the last attempted uncovered sync point in
-	// the last packet was unmatched (failed both hash-based and locality-based
-	// matching). Sync points skipped by coverage or size checks are not counted.
-	edgeMissTail bool
-	// headPkt/tailPkt are the first/last packets for edge retry.
+	// headPkt is the first packet in the batch, for edge retry.
 	headPkt mkv.Packet
-	tailPkt mkv.Packet
-	// headSyncOff/tailSyncOff are the sync offsets of the edge NALs.
+	// headSyncOff is the sync offset of the head edge NAL.
 	headSyncOff int
-	tailSyncOff int
-	// headNALSize/tailNALSize and exact flags for the edge NALs.
+	// headNALSize and exact flag for the head edge NAL.
 	headNALSize      int
 	headNALSizeExact bool
-	tailNALSize      int
-	tailNALSizeExact bool
 }
 
 // computeNALSize computes the NAL/sync-unit or frame size from the sync point layout.
@@ -214,28 +206,20 @@ func (m *Matcher) processBatch(
 		}
 		if i == len(batchPackets)-1 {
 			edge.tailLocality = loc
-			edge.edgeMissTail = edgeMiss.lastNALMiss
-			edge.tailPkt = pkt
-			edge.tailSyncOff = edgeMiss.lastNALSyncOff
-			edge.tailNALSize = edgeMiss.lastNALSize
-			edge.tailNALSizeExact = edgeMiss.lastNALSizeExact
 		}
 	}
 
 	batchResults[batchIdx] = results
 }
 
-// edgeMissInfo records whether the first/last NAL in a packet was unmatched
-// (failed both hash-based and locality-based matching), for inter-batch edge sync.
+// edgeMissInfo records whether the first attempted uncovered sync point in a
+// packet was unmatched (failed both hash-based and locality-based matching),
+// for inter-batch edge sync.
 type edgeMissInfo struct {
 	firstNALMiss      bool
 	firstNALSyncOff   int
 	firstNALSize      int
 	firstNALSizeExact bool
-	lastNALMiss       bool
-	lastNALSyncOff    int
-	lastNALSize       int
-	lastNALSizeExact  bool
 }
 
 // matchPacketBatch processes a single packet with batch-local state.
@@ -380,11 +364,6 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality, localCov 
 			edgeMiss.firstNALSize = nalSize
 			edgeMiss.firstNALSizeExact = nalSizeExact
 		}
-		edgeMiss.lastNALMiss = !matched
-		edgeMiss.lastNALSyncOff = syncOff
-		edgeMiss.lastNALSize = nalSize
-		edgeMiss.lastNALSizeExact = nalSizeExact
-
 		if matched {
 			anyMatched = true
 			if localCov.isRangeCovered(pkt.Offset, pkt.Size) {
@@ -413,13 +392,6 @@ func (m *Matcher) matchPacketBatch(pkt mkv.Packet, loc packetLocality, localCov 
 			}
 			moreNALSize, moreNALSizeExact := computeNALSize(moreSyncPoints, moreIdx, syncOff, len(fullData), isVideo, codecInfo.nalLengthSize)
 			region := m.tryMatchFromOffsetParallel(pkt, int64(syncOff), fullData[syncOff:], isVideo, pktLoc, moreNALSize, moreNALSizeExact)
-
-			matched := region != nil
-			edgeMiss.lastNALMiss = !matched
-			edgeMiss.lastNALSyncOff = syncOff
-			edgeMiss.lastNALSize = moreNALSize
-			edgeMiss.lastNALSizeExact = moreNALSizeExact
-
 			if region != nil {
 				recordMatch(region, moreNALSize)
 				anyMatched = true
@@ -471,26 +443,9 @@ func (m *Matcher) syncBatchEdges(batches []batchRange, batchEdges []batchEdgeInf
 			continue
 		}
 
-		// If the last NAL of batch i was unmatched, retry with locality from batch i+1
-		if curr.edgeMissTail && next.headLocality.valid && curr.tailNALSizeExact {
-			pkt := curr.tailPkt
-			syncOff := curr.tailSyncOff
-			endOffset := pkt.Offset + pkt.Size
-			if endOffset > m.mkvSize {
-				endOffset = m.mkvSize
-			}
-			data := m.mkvData[pkt.Offset:endOffset]
-			if syncOff+m.windowSize <= len(data) {
-				region := m.tryLocalityMatch(pkt, syncOff, data[syncOff:], next.headLocality, curr.tailNALSize)
-				if region != nil {
-					batchResults[i] = append(batchResults[i], *region)
-					m.markChunksCovered(region.mkvStart, region.mkvEnd)
-					packetMatched[batches[i].end-1] = true
-				}
-			}
-		}
-
-		// If the first NAL of batch i+1 was unmatched, retry with locality from batch i
+		// If the first NAL of batch i+1 was unmatched, retry with locality from batch i.
+		// Note: tail-edge retry (batch i's last NAL using batch i+1's locality) is not
+		// supported because tryLocalityMatch only predicts forward (mkvDelta >= 0).
 		if next.edgeMissHead && curr.tailLocality.valid && next.headNALSizeExact {
 			pkt := next.headPkt
 			syncOff := next.headSyncOff
