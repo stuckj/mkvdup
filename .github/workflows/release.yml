@@ -674,6 +674,75 @@ jobs:
           git diff --staged --quiet || git commit -m "Update formula for ${{ needs.prepare.outputs.tag }}"
           git push
 
+  update-nix:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ secrets.BENCHMARK_PAT || github.token }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Update version in Nix files
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Update version in flake.nix
+          sed -i "s/version = \".*\";/version = \"${VERSION}\";/" flake.nix
+
+          # Update version in default.nix
+          sed -i "s/version = \".*\";/version = \"${VERSION}\";/" default.nix
+
+      - name: Compute vendorHash
+        id: vendor-hash
+        run: |
+          # Stage Nix files so they're visible to nix build
+          git add flake.nix default.nix
+
+          # Try building with the current vendorHash - if it works, no update needed
+          if nix build .#mkvdup-canary 2>/dev/null; then
+            HASH=$(grep 'vendorHash' flake.nix | sed 's/.*"\(sha256-[^"]*\)".*/\1/')
+            echo "hash=${HASH}" >> $GITHUB_OUTPUT
+            echo "Existing vendorHash is still valid: ${HASH}"
+            exit 0
+          fi
+
+          # Extract the correct hash from the build error
+          BUILD_OUTPUT=$(nix build .#mkvdup-canary 2>&1 || true)
+          HASH=$(echo "$BUILD_OUTPUT" | grep 'got:' | awk '{print $2}')
+
+          if [[ -z "$HASH" ]]; then
+            echo "::error::Could not determine vendorHash from nix build output"
+            echo "$BUILD_OUTPUT"
+            exit 1
+          fi
+
+          echo "hash=${HASH}" >> $GITHUB_OUTPUT
+          echo "Computed vendorHash: ${HASH}"
+
+      - name: Update vendorHash in Nix files
+        env:
+          VENDOR_HASH: ${{ steps.vendor-hash.outputs.hash }}
+        run: |
+          sed -i "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${VENDOR_HASH}\";|" flake.nix
+          sed -i "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${VENDOR_HASH}\";|" default.nix
+
+          echo "Updated flake.nix and default.nix:"
+          grep -n 'version\|vendorHash' flake.nix
+          grep -n 'version\|vendorHash' default.nix
+
+      - name: Commit and push Nix updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flake.nix default.nix flake.lock
+          git diff --staged --quiet || git commit -m "Update Nix files for ${{ needs.prepare.outputs.tag }} [skip ci]"
+          git push
+
   publish-repo:
     needs: [prepare, build]
     runs-on: ubuntu-latest
