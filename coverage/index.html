@@ -6398,7 +6398,7 @@ type RawEntry struct {
 //        bits 2-7: reserved
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1251110">{
+func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1251182">{
         e := Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -6594,7 +6594,7 @@ func findDefaults(ranges []source.PESPayloadRange) (defaultGap int64, defaultSiz
         <span class="cov2" title="28">var bestGap int64
         bestGapCount := 0
         for gap, count := range gapCounts </span><span class="cov3" title="38">{
-                if count &gt; bestGapCount </span><span class="cov2" title="30">{
+                if count &gt; bestGapCount </span><span class="cov2" title="29">{
                         bestGap = gap
                         bestGapCount = count
                 }</span>
@@ -6609,7 +6609,7 @@ func findDefaults(ranges []source.PESPayloadRange) (defaultGap int64, defaultSiz
         <span class="cov2" title="28">var bestSize int
         bestSizeCount := 0
         for size, count := range sizeCounts </span><span class="cov3" title="44">{
-                if count &gt; bestSizeCount </span><span class="cov2" title="29">{
+                if count &gt; bestSizeCount </span><span class="cov2" title="30">{
                         bestSize = size
                         bestSizeCount = count
                 }</span>
@@ -7579,7 +7579,7 @@ func (r *Reader) Close() error <span class="cov3" title="172">{
 
 // initEntryAccess initializes direct mmap access to entries (no parsing into []Entry).
 // This is called lazily on first entry access.
-func (r *Reader) initEntryAccess() error <span class="cov6" title="8084">{
+func (r *Reader) initEntryAccess() error <span class="cov6" title="8085">{
         r.entriesOnce.Do(func() </span><span class="cov3" title="128">{
                 // Calculate index start offset
                 r.indexStart = r.file.headerSize + r.calculateSourceFilesSize()
@@ -7604,7 +7604,7 @@ func (r *Reader) initEntryAccess() error <span class="cov6" title="8084">{
                         }</span>
                 }
         })
-        <span class="cov6" title="8084">return r.entriesErr</span>
+        <span class="cov6" title="8085">return r.entriesErr</span>
 }
 
 // initRangeMaps parses the range map section from the mmap'd dedup file.
@@ -7704,7 +7704,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) {
 
 </span></span></span>        // Check cache first (with lock)
         r</span>.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov6" title="7866">{
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov6" title="7842">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
@@ -7742,7 +7742,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) {
 </span>
 /<span class="cov0" title="0">/ getMkvOffset returns just the MkvOffset for entry </span>at idx (for binary search).
 // This avoids full entry parsing when only the offset is needed.
-func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7475121">{
+func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7475271">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
@@ -7758,19 +7758,19 @@ func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="
 
 </span>// getEntryLength returns just the Length for entry at idx (for binary search).
 /<span class="cov0" title="0">/ This avoids full entry parsing when only offset an</span>d length are needed.
-func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov4" title="447">{
+func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov4" title="597">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
         </span>// Length is at offset 8 within each entry (after MkvOffset)
-        <span class="cov4" title="443">offset := r.indexStart + int64(idx)*EntrySize + 8
+        <span class="cov4" title="593">offset := r.indexStart + int64(idx)*EntrySize + 8
         data := r.dedupMmap.Slice(offset, 8)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 </span>
-        <span class="cov4" title="443">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov4" title="593">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 /</span>/ OriginalSize returns the size of the original MKV file.
@@ -7823,7 +7823,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 </span></span>                return 0, fmt.Errorf("init entry access: %w", err)
         }</span></span>
 
-        <span class="cov5" title="6275">if offset &gt;= r.file.Header.OriginalSize </span>{
+        <span class="cov5" title="6276">if offset &gt;= r.file.Header.OriginalSize </span>{
                 return 0, io.EOF
         }
 
@@ -7836,7 +7836,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
 </span>                remaining = int(r.file.Header.OriginalSize - offset)
         }</span>
 
-        <span class="cov6" title="7919">endOffset := offset + int64(remaining)
+        <span class="cov6" title="7920">endOffset := offset + int64(remaining)
 
         // Find starting entry index (zero-allocation inline lookup)
         startIdx := r.findStartEntry(offset)
@@ -7849,7 +7849,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
                 <span class="cov0" title="0">}
 
 </span>                // Calcul</span>ate overlap
-                <span class="cov8" title="1256672">entryEnd := entry.MkvOffset + entry.Length
+                <span class="cov8" title="1256720">entryEnd := entry.MkvOffset + entry.Length
                 readStart := offset
                 if readStart &lt; entry.MkvOffset </span><span class="cov0" title="0">{
                         readStart = entry.MkvOffset
@@ -7906,7 +7906,7 @@ func (r *Reader) ReadAt(buf []byte, offset int64) (int, error) {
                         }</span></span>
                 }
 
-                <span class="cov8" title="1256672">totalRead += readLen
+                <span class="cov8" title="1256720">totalRead += readLen
                 remaining -= readLen
                 offset = readEnd</span>
         }
@@ -7940,9 +7940,9 @@ func (r *Reader) findStartEntry(offset int64) int {
                 if blockNum &gt;= len(r.blockIndex) </span>{
                         blockNum = len(r.blockIndex) - 1
                 }
-                </span></span><span class="cov3" title="72">lo = r.blockIndex[blockNum]
+                </span></span><span class="cov3" title="97">lo = r.blockIndex[blockNum]
 
-                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov3" title="63">{
+                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov3" title="88">{
                         hi = r.blockIndex[blockNum+1] + 1
                         if hi &gt; r.entryCount </span></span>{
                                 hi = </span>r.entryCount
@@ -7956,7 +7956,7 @@ func (r *Reader) findStartEntry(offset int64) int {
         }</span></span>
 
         // Binary search within [lo, hi) for first entry whose range covers offset
-        <span class="cov3" title="73">return lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov4" title="381">{
+        <span class="cov3" title="98">return lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov4" title="531">{
                 mkvOffset, ok := r.getMkvOffset(lo + i)
                 if !ok </span></span>{
                 </span>        return true
@@ -8102,7 +8102,7 @@ func (r </span><span class="cov0" title="0">*Reader) readDelta(offset int64, siz
         if data == nil </span>{
 </span>                return nil, fmt.Errorf("delta offset out of range")
         }</span></span>
-        <span class="cov7" title="221660">return data, nil</span>
+        <span class="cov7" title="221681">return data, nil</span>
 }<span class="cov0" title="0">
 
 // readViaRangeMap</span><span class="cov0" title="0">Into reads via range map directly into dest, avoiding allocation.
@@ -8135,7 +8135,7 @@ func (r *Reader) readViaR</span><span class="cov0" title="0">angeMapInto(fileInd
 </span></span></span>}
 </span>
 // </span>readSourceInto reads source file data directly into dest.
-fu<span class="cov0" title="0">nc (r *Rea</span>der) readSourceInto(fileIndex int, offset int64, dest []byte) error <span class="cov8" title="960705">{
+fu<span class="cov0" title="0">nc (r *Rea</span>der) readSourceInto(fileIndex int, offset int64, dest []byte) error <span class="cov8" title="960732">{
         if fileIndex &lt; 0 || fileIndex &gt;= len(r.sourceFiles) </span><span class="cov0" title="0">{
                 return fmt.Errorf("invalid file index: %d", fileIndex)
         }</span>
@@ -8143,8 +8143,8 @@ fu<span class="cov0" title="0">nc (r *Rea</span>der) readSourceInto(fileIndex in
 </span></span></span></span></span>                return fmt.Errorf("source file %d not loaded", fileIndex)
         }</span></span>
 
-</span>        <span class="cov8" title="960705">n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
-        if n == len(dest) </span><span class="cov8" title="960705">{
+</span>        <span class="cov8" title="960732">n, err := r.sourceFiles[fileIndex].ReadAt(dest, offset)
+        if n == len(dest) </span><span class="cov8" title="960732">{
                 if err == io.EOF </span><span class="cov0" title="0">{
                         return nil
                 }</span>
@@ -9084,7 +9084,7 @@ func (a *dedupReaderAdapter) SourceFileInfo() []SourceFileInfo <span class="cov0
         <span class="cov0" title="0">return infos</span>
 }
 
-func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) <span class="cov10" title="6275">{
+func (a *dedupReaderAdapter) ReadAt(p []byte, off int64) (n int, err error) <span class="cov10" title="6276">{
         return a.reader.ReadAt(p, off)
 }</span>
 
@@ -9330,17 +9330,17 @@ func (cw *ConfigWatcher) eventLoop() <span class="cov6" title="10">{
         }</span>
         <span class="cov6" title="10">defer debounceTimer.Stop()
 
-        for </span><span class="cov10" title="51">{
+        for </span><span class="cov10" title="53">{
                 select </span>{
-                case event, ok := &lt;-cw.watcher.Events:<span class="cov9" title="33">
+                case event, ok := &lt;-cw.watcher.Events:<span class="cov9" title="35">
                         if !ok </span><span class="cov0" title="0">{
                                 return
                         }</span>
-                        <span class="cov9" title="33">if event.Op&amp;(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 </span><span class="cov0" title="0">{
+                        <span class="cov9" title="35">if event.Op&amp;(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 </span><span class="cov0" title="0">{
                                 continue</span>
                         }
                         // Check if this event is for a tracked config file.
-                        <span class="cov9" title="33">cw.mu.Lock()
+                        <span class="cov9" title="35">cw.mu.Lock()
                         tracked := cw.configFiles[event.Name]
                         cw.mu.Unlock()
                         if !tracked </span><span class="cov5" title="6">{
@@ -9348,13 +9348,13 @@ func (cw *ConfigWatcher) eventLoop() <span class="cov6" title="10">{
                         }
                         // Reset debounce timer — drain channel if Stop reports
                         // the timer already fired to prevent a stale tick.
-                        <span class="cov8" title="27">if !debounceTimer.Stop() </span><span class="cov5" title="8">{
+                        <span class="cov8" title="29">if !debounceTimer.Stop() </span><span class="cov5" title="8">{
                                 select </span>{
                                 case &lt;-debounceTimer.C:<span class="cov0" title="0"></span>
                                 default:<span class="cov5" title="8"></span>
                                 }
                         }
-                        <span class="cov8" title="27">debounceTimer.Reset(configDebounceDelay)</span>
+                        <span class="cov8" title="29">debounceTimer.Reset(configDebounceDelay)</span>
 
                 case &lt;-debounceTimer.C:<span class="cov5" title="8">
                         // Guard against select choosing the timer case when stopCh
@@ -9385,7 +9385,7 @@ func (cw *ConfigWatcher) pollLoop() <span class="cov6" title="10">{
         ticker := time.NewTicker(cw.pollInterval)
         defer ticker.Stop()
 
-        for </span><span class="cov7" title="14">{
+        for </span><span class="cov6" title="14">{
                 select </span>{
                 case &lt;-ticker.C:<span class="cov4" title="4">
                         select </span>{
@@ -10342,7 +10342,7 @@ func (n *MKVFSNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 }
 
 // Read implements fs.NodeReader - reads data from the file.
-func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov8" title="6284">{
+func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) <span class="cov8" title="6285">{
         // Permission checks are handled by the kernel via default_permissions mount option.
 
         n.file.mu.RLock()
@@ -10355,7 +10355,7 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
                 <span class="cov1" title="2">return nil, syscall.EIO</span>
         }
 
-        <span class="cov8" title="6282">if n.file.reader == nil </span><span class="cov1" title="2">{
+        <span class="cov8" title="6283">if n.file.reader == nil </span><span class="cov1" title="2">{
                 // Reader not initialized
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Read error: %s: reader not initialized", n.file.Name)
@@ -10364,17 +10364,17 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
         }
 
         // Clamp read to file size
-        <span class="cov8" title="6280">if off &gt;= n.file.Size </span><span class="cov1" title="2">{
+        <span class="cov8" title="6281">if off &gt;= n.file.Size </span><span class="cov1" title="2">{
                 return fuse.ReadResultData(nil), 0
         }</span>
 
-        <span class="cov8" title="6278">endOff := off + int64(len(dest))
+        <span class="cov8" title="6279">endOff := off + int64(len(dest))
         if endOff &gt; n.file.Size </span><span class="cov1" title="1">{
                 dest = dest[:n.file.Size-off]
         }</span>
 
         // Read from dedup reader
-        <span class="cov8" title="6278">nRead, err := n.file.reader.ReadAt(dest, off)
+        <span class="cov8" title="6279">nRead, err := n.file.reader.ReadAt(dest, off)
         if err != nil &amp;&amp; nRead == 0 </span><span class="cov0" title="0">{
                 if n.verbose </span><span class="cov0" title="0">{
                         log.Printf("Read error: %s at offset %d: %v", n.file.Name, off, err)
@@ -10382,11 +10382,11 @@ func (n *MKVFSNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off
                 <span class="cov0" title="0">return nil, syscall.EIO</span>
         }
 
-        <span class="cov8" title="6278">if n.verbose </span><span class="cov0" title="0">{
+        <span class="cov8" title="6279">if n.verbose </span><span class="cov0" title="0">{
                 log.Printf("Read: %s offset=%d len=%d read=%d", n.file.Name, off, len(dest), nRead)
         }</span>
 
-        <span class="cov8" title="6278">return fuse.ReadResultData(dest[:nRead]), 0</span>
+        <span class="cov8" title="6279">return fuse.ReadResultData(dest[:nRead]), 0</span>
 }
 
 // ensureReader ensures the dedup reader is initialized.
@@ -11450,14 +11450,14 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         gid = s.defaults.FileGID
         mode = s.defaults.FileMode
 
-        if p, ok := s.files[path]; ok </span><span class="cov9" title="262">{
-                if p.UID != nil </span><span class="cov9" title="253">{
+        if p, ok := s.files[path]; ok </span><span class="cov9" title="261">{
+                if p.UID != nil </span><span class="cov9" title="252">{
                         uid = *p.UID
                 }</span>
-                <span class="cov9" title="262">if p.GID != nil </span><span class="cov5" title="21">{
+                <span class="cov9" title="261">if p.GID != nil </span><span class="cov5" title="21">{
                         gid = *p.GID
                 }</span>
-                <span class="cov9" title="262">if p.Mode != nil </span><span class="cov5" title="19">{
+                <span class="cov9" title="261">if p.Mode != nil </span><span class="cov5" title="19">{
                         mode = *p.Mode
                 }</span>
         }
@@ -15810,15 +15810,15 @@ func (m *File) Len() int <span class="cov1" title="2">{
 
 // Slice returns a sub-slice of the mapped data without copying.
 // Returns nil if the range is out of bounds.
-func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="8948384">{
+func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="8948777">{
         if offset &lt; 0 || offset &gt;= m.size </span><span class="cov1" title="3">{
                 return nil
         }</span>
-        <span class="cov9" title="8948381">end := offset + int64(size)
+        <span class="cov9" title="8948774">end := offset + int64(size)
         if end &gt; m.size </span><span class="cov1" title="1">{
                 end = m.size
         }</span>
-        <span class="cov9" title="8948381">return m.data[offset:end]</span>
+        <span class="cov9" title="8948774">return m.data[offset:end]</span>
 }
 
 // Advise provides hints to the kernel about expected access patterns.
@@ -15832,21 +15832,21 @@ func (m *File) Advise(advice int) error <span class="cov2" title="28">{
 }
 
 // ReadAt implements io.ReaderAt by copying from the mmap'd data.
-func (m *File) ReadAt(p []byte, off int64) (int, error) <span class="cov8" title="960710">{
+func (m *File) ReadAt(p []byte, off int64) (int, error) <span class="cov8" title="960737">{
         if len(p) == 0 </span><span class="cov1" title="1">{
                 return 0, nil
         }</span>
-        <span class="cov8" title="960709">if off &lt; 0 </span><span class="cov1" title="1">{
+        <span class="cov8" title="960736">if off &lt; 0 </span><span class="cov1" title="1">{
                 return 0, os.ErrInvalid
         }</span>
-        <span class="cov8" title="960708">if off &gt;= m.size </span><span class="cov1" title="2">{
+        <span class="cov8" title="960735">if off &gt;= m.size </span><span class="cov1" title="2">{
                 return 0, io.EOF
         }</span>
-        <span class="cov8" title="960706">n := copy(p, m.data[off:])
+        <span class="cov8" title="960733">n := copy(p, m.data[off:])
         if n &lt; len(p) </span><span class="cov1" title="1">{
                 return n, io.EOF
         }</span>
-        <span class="cov8" title="960705">return n, nil</span>
+        <span class="cov8" title="960732">return n, nil</span>
 }
 
 // Close unmaps the file from memory.
