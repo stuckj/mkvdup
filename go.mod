@@ -6,7 +6,7 @@ toolchain go1.25.8
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/hanwen/go-fuse/v2 v2.9.0
+	github.com/hanwen/go-fuse/v2 v2.10.1
 	golang.org/x/sys v0.42.0
 )
 
