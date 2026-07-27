@@ -160,6 +160,67 @@ EOF
 sudo dnf install mkvdup
 ```
 
+### Nix
+
+Stable mkvdup lives in [nixpkgs](https://github.com/NixOS/nixpkgs) as
+`pkgs/by-name/mk/mkvdup/package.nix`, so users install it with pre-built binaries from Hydra and
+no flakes required:
+
+```bash
+nix profile install nixpkgs#mkvdup     # or add `mkvdup` to environment.systemPackages
+```
+
+Canary builds come from this repo's own `flake.nix` (or `default.nix` for non-flake users):
+
+```bash
+nix profile install github:stuckj/mkvdup#mkvdup-canary
+nix-build                              # non-flake equivalent, result in ./result
+```
+
+## Nix Maintenance
+
+Both halves are meant to stay current on their own. What to watch for:
+
+### Stable (nixpkgs)
+
+- `nix/nixpkgs/package.nix` in this repo is the **reference copy** of what was submitted upstream.
+  It is not built by anything here — it exists so the upstream derivation is reviewable alongside
+  the code, and so a re-submission or a manual bump has a starting point.
+- After a release, the [`r-ryantm`](https://github.com/r-ryantm) bot usually opens a version-bump
+  PR against nixpkgs within a few days. **Approve it** — that is the normal update path. As a
+  listed maintainer you are auto-requested for review.
+- If the bot misses a release, or a release changes the build (new files in `postInstall`, a new
+  `subPackages` entry, a license change), open the nixpkgs PR by hand and mirror the same edit
+  back into `nix/nixpkgs/package.nix` so the two do not drift.
+- Changes that alter how mkvdup is *built* — not just its version — always need a hand-written
+  nixpkgs PR. The bot only bumps `version`, `hash`, and `vendorHash`.
+
+### Canary (in-repo flake)
+
+The canary side is fully automated — there is no manual step in the normal course of events.
+`flake.nix` and `default.nix` pin a `vendorHash` over the Go module set, which goes stale whenever
+`go.mod`/`go.sum` changes. Two workflows keep it fresh, both calling
+`scripts/update-nix-vendor-hash.sh`:
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `release.yml` (`update-nix` job) | Every release | Rewrites `version` in `flake.nix`/`default.nix`, refreshes `vendorHash`, commits to `main` |
+| `nix-canary-hash.yml` | Push to `main` touching `go.mod`/`go.sum`, or manual dispatch | Refreshes `vendorHash`, commits to `main` |
+
+The second one exists because dependency bumps land between releases. Without it, a Dependabot
+merge leaves `nix build .#mkvdup-canary` broken on `main` until the next release. The nixpkgs
+package is never affected either way — it pins an immutable release tag.
+
+To refresh the hash by hand (needs `nix` with flakes enabled):
+
+```bash
+./scripts/update-nix-vendor-hash.sh   # updates both files, verifies the result
+nix flake check
+```
+
+If the script reports a build failure that isn't a hash mismatch, the canary is genuinely broken
+and needs a code fix — it deliberately refuses to rewrite the hash in that case.
+
 ## Troubleshooting
 
 ### Build Failures

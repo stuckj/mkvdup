@@ -697,39 +697,11 @@ jobs:
           # Update version in default.nix
           sed -i "s/version = \".*\";/version = \"${VERSION}\";/" default.nix
 
-      - name: Compute vendorHash
-        id: vendor-hash
-        run: |
-          # Stage Nix files so they're visible to nix build
-          git add flake.nix default.nix
-
-          # Try building with the current vendorHash - if it works, no update needed
-          if nix build .#mkvdup-canary 2>/dev/null; then
-            HASH=$(grep 'vendorHash' flake.nix | sed 's/.*"\(sha256-[^"]*\)".*/\1/')
-            echo "hash=${HASH}" >> $GITHUB_OUTPUT
-            echo "Existing vendorHash is still valid: ${HASH}"
-            exit 0
-          fi
-
-          # Extract the correct hash from the build error
-          BUILD_OUTPUT=$(nix build .#mkvdup-canary 2>&1 || true)
-          HASH=$(echo "$BUILD_OUTPUT" | grep 'got:' | awk '{print $2}')
-
-          if [[ -z "$HASH" ]]; then
-            echo "::error::Could not determine vendorHash from nix build output"
-            echo "$BUILD_OUTPUT"
-            exit 1
-          fi
-
-          echo "hash=${HASH}" >> $GITHUB_OUTPUT
-          echo "Computed vendorHash: ${HASH}"
-
       - name: Update vendorHash in Nix files
-        env:
-          VENDOR_HASH: ${{ steps.vendor-hash.outputs.hash }}
         run: |
-          sed -i "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${VENDOR_HASH}\";|" flake.nix
-          sed -i "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${VENDOR_HASH}\";|" default.nix
+          # Shared with the nix-canary-hash workflow, which keeps the same hash
+          # fresh between releases when dependencies change.
+          ./scripts/update-nix-vendor-hash.sh
 
           echo "Updated flake.nix and default.nix:"
           grep -n 'version\|vendorHash' flake.nix

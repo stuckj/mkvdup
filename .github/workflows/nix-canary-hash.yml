@@ -1,0 +1,48 @@
+name: Refresh Nix Canary Hash
+
+# The canary flake pins a vendorHash over the Go module set. Dependency bumps
+# (Dependabot and friends) change go.mod/go.sum, which invalidates that hash and
+# leaves `nix build .#mkvdup-canary` broken on main until the next release runs
+# the release workflow's update-nix job. This closes that window.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - go.mod
+      - go.sum
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Serialize: two dependency bumps landing together would otherwise race on the
+# push back to main.
+concurrency:
+  group: nix-canary-hash
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          token: ${{ secrets.BENCHMARK_PAT || github.token }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Refresh vendorHash
+        run: ./scripts/update-nix-vendor-hash.sh
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flake.nix default.nix
+          git diff --staged --quiet && echo "vendorHash already current, nothing to commit" && exit 0
+          git commit -m "Refresh Nix canary vendorHash after dependency bump [skip ci]"
+          git push

@@ -22,7 +22,7 @@
           pname = "mkvdup-canary";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-5eT01KiQREYHZlMb+adavO2G2MbGAKOh8MdwV/dnOzg=";
+          vendorHash = "sha256-aCPVeVKyXtVf/NICq3PUsfU1yw6HuQfHGtAFywY6c1U=";
           subPackages = [ "cmd/mkvdup" ];
           ldflags = [
             "-s"
@@ -30,12 +30,21 @@
             "-X main.version=${version}"
           ];
           nativeBuildInputs = [ pkgs.installShellFiles ];
+          # docs/mkvdup.1 is a template expanded by the release tooling; do the
+          # same here so the canary man page isn't full of @PACKAGE_NAME@.
+          postPatch = ''
+            substituteInPlace docs/mkvdup.1 \
+              --replace-fail '@PACKAGE_NAME_UPPER@' 'MKVDUP-CANARY' \
+              --replace-fail '@PACKAGE_NAME@' 'mkvdup-canary'
+            mv docs/mkvdup.1 docs/mkvdup-canary.1
+          '';
           postInstall = ''
             mv $out/bin/mkvdup $out/bin/mkvdup-canary
-            installManPage docs/mkvdup.1
-            installShellCompletion --bash scripts/mkvdup-completion.bash
-            installShellCompletion --zsh scripts/mkvdup-completion.zsh
-            installShellCompletion --fish scripts/mkvdup.fish
+            installManPage docs/mkvdup-canary.1
+            installShellCompletion --cmd mkvdup-canary \
+              --bash scripts/mkvdup-completion.bash \
+              --zsh scripts/mkvdup-completion.zsh \
+              --fish scripts/mkvdup.fish
             install -Dm755 scripts/mount.fuse.mkvdup $out/bin/mount.fuse.mkvdup-canary
           '';
           meta = {
