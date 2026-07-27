@@ -5,7 +5,7 @@
 pkgs.buildGoModule {
   pname = "mkvdup-canary";
   # Version is updated by the release workflow before tagging
-  version = "1.8.1-canary.1";
+  version = "1.8.1";
   src = ./.;
   vendorHash = "sha256-aCPVeVKyXtVf/NICq3PUsfU1yw6HuQfHGtAFywY6c1U=";
   subPackages = [ "cmd/mkvdup" ];

@@ -17,7 +17,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         # Version is updated by the release workflow before tagging
-        version = "1.8.1-canary.1";
+        version = "1.8.1";
         mkvdup-canary = pkgs.buildGoModule {
           pname = "mkvdup-canary";
           inherit version;
