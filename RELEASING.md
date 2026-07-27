@@ -162,44 +162,19 @@ sudo dnf install mkvdup
 
 ### Nix
 
-Stable mkvdup lives in [nixpkgs](https://github.com/NixOS/nixpkgs) as
-`pkgs/by-name/mk/mkvdup/package.nix`, so users install it with pre-built binaries from Hydra and
-no flakes required:
+There is no separate canary channel to publish to, unlike the APT/YUM repositories above. The flake
+builds `src = ./.`, so the flake reference *is* the selector and users point it at whatever ref they
+want. See [Installation → NixOS / Nix](README.md#nixos--nix) for the user-facing commands.
 
-```bash
-nix profile install nixpkgs#mkvdup     # or add `mkvdup` to environment.systemPackages
-```
+The flake exposes two packages, differing only in the installed command name so a canary can sit
+alongside a stable install:
 
-Canary builds come from this repo's own `flake.nix`. Because the flake builds `src = ./.`, the flake
-reference *is* the selector — point it at whatever ref you want to test. There is no separate canary
-channel to publish to, unlike the APT/YUM repositories above:
+| Output | Command | Intended ref |
+|--------|---------|--------------|
+| `#mkvdup` | `mkvdup` | a release tag |
+| `#mkvdup-canary` (also `default`) | `mkvdup-canary` | a development branch, or a canary tag |
 
-```bash
-# a development branch (slashes in branch names are fine)
-nix shell github:stuckj/mkvdup/feat/my-branch#mkvdup-canary      # ephemeral, nothing installed
-nix profile install github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
-
-# an immutable canary tag, if you want a reproducible pin
-nix profile install github:stuckj/mkvdup/v1.8.2-canary.1#mkvdup-canary
-
-nix-build                              # non-flake, builds the local tree into ./result
-```
-
-`nix shell` is usually the right tool for "test this branch with a real binary" — it puts
-`mkvdup-canary` on `PATH` for that shell only, with no install or uninstall step. Installing from a
-branch pins the revision Nix resolved at the time; use `nix profile upgrade` to move it forward.
-
-The canary binary is named `mkvdup-canary`, so it coexists with a stable `mkvdup` rather than
-colliding with it.
-
-**This only works if the ref's committed `vendorHash` matches that ref's `go.sum`.** A branch
-inherits a correct hash from main, so the usual case needs nothing. If the branch changed
-`go.mod`/`go.sum`, the build fails with a hash mismatch that prints the correct value — run
-`./scripts/update-nix-vendor-hash.sh` on the branch and commit the result, and the ref becomes
-installable for good.
-
-On NixOS, mkvdup needs `fusermount3` from fuse3 at runtime; set `programs.fuse.userAllowOther = true;`
-if you mount with `allow_other`.
+Release tags up to and including `v1.8.0` predate the flake and cannot be installed this way.
 
 ## Nix Maintenance
 
@@ -228,12 +203,21 @@ The canary side is fully automated — there is no manual step in the normal cou
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
+| `nix-canary-hash.yml` | Push to **any branch** touching `go.mod`/`go.sum`, or manual dispatch | Refreshes `vendorHash` and pushes it back to that same branch |
 | `release.yml` (`update-nix` job) | Every release | Rewrites `version` in `flake.nix`/`default.nix`, refreshes `vendorHash`, commits to `main` |
-| `nix-canary-hash.yml` | Push to `main` touching `go.mod`/`go.sum`, or manual dispatch | Refreshes `vendorHash`, commits to `main` |
 
-The second one exists because dependency bumps land between releases. Without it, a Dependabot
-merge leaves `nix build .#mkvdup-canary` broken on `main` until the next release. The nixpkgs
-package is never affected either way — it pins an immutable release tag.
+The first one runs on every branch, not just `main`, and that matters: canaries are cut from
+development branches, and a dependency bump is simultaneously the case where you most want a canary
+and the thing that invalidates the hash. Refreshing on the branch is what keeps
+`nix profile install github:stuckj/mkvdup/<branch>#mkvdup-canary` working with no manual step.
+
+Merging such a branch into `main` carries the refreshed hash along with the `go.sum` that produced
+it, so `main` normally needs nothing of its own — the hash is a function of `go.mod`/`go.sum`, not
+of the source tree. The exception is a merge that combines dependency changes from two branches:
+the resulting `go.sum` is a union that neither branch pinned, and `main`'s own run of the workflow
+catches that.
+
+The nixpkgs package is never affected either way — it pins an immutable release tag.
 
 To refresh the hash by hand (needs `nix` with flakes enabled):
 

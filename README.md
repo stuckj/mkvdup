@@ -102,6 +102,53 @@ sudo dnf install mkvdup-canary
 
 </details>
 
+### NixOS / Nix
+
+Once mkvdup lands in [nixpkgs](https://github.com/NixOS/nixpkgs) (submission pending) that becomes
+the recommended route — pre-built binaries, no flakes needed:
+
+```bash
+nix profile install nixpkgs#mkvdup     # or add mkvdup to environment.systemPackages
+```
+
+Until then, install from this repo's flake. Release tags up to and including `v1.8.0` predate the
+flake, so use a tag from the next release onward:
+
+```bash
+nix profile install github:stuckj/mkvdup/v<version>#mkvdup
+```
+
+Declaratively, add this repo as a flake input and put `mkvdup.packages.${system}.mkvdup` in
+`environment.systemPackages` (or `home.packages`).
+
+mkvdup mounts FUSE filesystems, so it needs `fusermount3` from fuse3 at runtime. On NixOS, set
+`programs.fuse.userAllowOther = true;` if you mount with `allow_other`.
+
+<details>
+<summary><strong>Canary (pre-release)</strong></summary>
+
+Nix needs no separate canary repository — the flake reference *is* the selector, so you can build
+any branch, tag or commit directly. It installs as `mkvdup-canary`, alongside a stable `mkvdup`.
+
+```bash
+# try a development branch without installing anything
+nix shell github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
+
+# or install it
+nix profile install github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
+
+# or pin an immutable canary tag
+nix profile install github:stuckj/mkvdup/v1.8.1-canary.1#mkvdup-canary
+```
+
+`nix shell` is usually the right tool for testing a branch: the binary is on `PATH` for that shell
+only, with nothing to uninstall afterwards. Branch names containing `/` work as written.
+
+Installing from a branch pins the revision Nix resolved at the time, so use `nix profile upgrade` to
+move it forward.
+
+</details>
+
 ### From Source
 
 ```bash
