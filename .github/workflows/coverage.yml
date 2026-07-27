@@ -13,6 +13,13 @@ on:
         default: false
         type: boolean
 
+# Superseded PR runs are cancelled so a rapid series of pushes doesn't leave
+# several ~45 minute integration runs competing for runners. Deliberately never
+# cancels on main: those runs publish coverage and must complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: write
   pull-requests: write

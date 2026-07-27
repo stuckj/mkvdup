@@ -11,6 +11,11 @@ on:
         required: false
         default: ''
 
+# NOTE: intentionally has no `concurrency` block. The other workflows cancel
+# superseded PR runs, but a release must never be cancelled part-way: it
+# publishes a tag, a GitHub release, APT/YUM packages, a Homebrew formula and a
+# Nix bump. Interrupting it between those leaves exactly the inconsistent state
+# the job ordering here exists to prevent.
 permissions:
   contents: write
   pages: write
