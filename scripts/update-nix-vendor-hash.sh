@@ -12,7 +12,9 @@
 # Writes the hash actually in use to stdout; progress goes to stderr. Exits
 # non-zero if the hash could not be determined.
 #
-# Requires: nix (with flakes enabled), git.
+# Only edits the two files; staging and committing is left to the caller.
+#
+# Requires: nix (with flakes enabled).
 
 set -euo pipefail
 
@@ -20,10 +22,6 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 nix_files=(flake.nix default.nix)
-
-# Flakes only see files git knows about. A caller may have just rewritten the
-# version strings, so stage the Nix files to be sure nix builds what's on disk.
-git add "${nix_files[@]}"
 
 read_hash() {
   sed -n 's/.*vendorHash = "\(sha256-[^"]*\)".*/\1/p' "$1" | head -1
@@ -33,9 +31,11 @@ read_hash() {
 # extension, so `sed -i <expr> <file>` fails there. This script is documented as
 # hand-runnable, so don't depend on GNU sed. Write back with `cat` rather than
 # `mv` so the file keeps its original mode and inode — mktemp creates 0600.
+# mktemp gets an explicit template too: the bare form is a GNU extension that
+# BSD/macOS mktemp rejects.
 write_hash() {
   local file=$1 hash=$2 tmp
-  tmp=$(mktemp)
+  tmp=$(mktemp "${TMPDIR:-/tmp}/mkvdup-vendor-hash.XXXXXX")
   sed "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${hash}\";|" "$file" >"$tmp"
   cat "$tmp" >"$file"
   rm -f "$tmp"
@@ -55,7 +55,6 @@ sync_default() {
   fi
   if [[ "$default_hash" != "$flake_hash" ]]; then
     write_hash default.nix "$flake_hash"
-    git add default.nix
     echo "default.nix was out of sync (${default_hash}); set to ${flake_hash}" >&2
   fi
 }
@@ -94,7 +93,6 @@ fi
 for f in "${nix_files[@]}"; do
   write_hash "$f" "$new_hash"
 done
-git add "${nix_files[@]}"
 
 # Prove the new hash is right rather than trusting the parse.
 if ! nix build .#mkvdup-canary --no-link >/dev/null 2>&1; then
