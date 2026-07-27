@@ -17,12 +17,12 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         # Version is updated by the release workflow before tagging
-        version = "1.7.1-canary.0";
+        version = "1.8.1-canary.1";
         mkvdup-canary = pkgs.buildGoModule {
           pname = "mkvdup-canary";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-5eT01KiQREYHZlMb+adavO2G2MbGAKOh8MdwV/dnOzg=";
+          vendorHash = "sha256-aCPVeVKyXtVf/NICq3PUsfU1yw6HuQfHGtAFywY6c1U=";
           subPackages = [ "cmd/mkvdup" ];
           ldflags = [
             "-s"
