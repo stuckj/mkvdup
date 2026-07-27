@@ -6,26 +6,29 @@ Guidelines for contributing to mkvdup.
 
 ## Development Environment
 
-Use `gvm` (Go Version Manager) for Go. Source it before running Go commands:
-```bash
-source ~/.gvm/scripts/gvm && go build ...
-```
+- **Go 1.25 or newer** (see `go.mod`). Any installation method works — the version manager you
+  use is up to you; CI uses `actions/setup-go`.
+- **libfuse development headers and `fuse3`**, needed to build and to run the FUSE tests:
+  ```bash
+  sudo apt-get install -y libfuse-dev fuse3
+  ```
+- **`ffmpeg`** is additionally required to generate test data for the integration suites.
 
 ## Pre-Commit Checklist
 
-Run these checks before committing code:
+Run these checks before committing code. They mirror what CI enforces, so passing locally
+should mean passing in CI:
 
 ```bash
-source ~/.gvm/scripts/gvm
-
-# Format all Go files
+# Format all Go files (CI fails the build if `gofmt -l .` reports anything)
 gofmt -w .
 
 # Check for common issues
 go vet ./...
 
-# Run linter
-golint ./...
+# Run the linter CI uses
+go install honnef.co/go/tools/cmd/staticcheck@v0.6.0
+staticcheck ./...
 
 # Run tests with race detection
 go test -race ./...
@@ -48,7 +51,8 @@ go build ./...
 
 - Run `gofmt` or `goimports` on all code before committing
 - Follow [Effective Go](https://go.dev/doc/effective_go) guidelines
-- Use `golint` and `go vet` to catch common issues
+- Use `staticcheck` and `go vet` to catch common issues — both run in CI on every PR
+  (`golint` is deprecated upstream and is not used by this project)
 - Keep functions focused and reasonably sized
 - Use meaningful variable and function names
 
@@ -103,11 +107,13 @@ go test -tags=integration,nonroot -run TestFUSE_Permission ./internal/fuse/...
 - Dedup file format tests (header, footer, roundtrip)
 
 **Integration tests:**
-- End-to-end: Create dedup → verify → compare SHA256
-- FUSE playback: Mount, play in VLC/mpv, verify no artifacts
+- End-to-end: Create dedup → verify → compare xxhash checksums against the original MKV
 - Stress test: Multiple concurrent reads, random seeks
 - Lazy loading tests (mmap on open, unmap on close)
 - Graceful degradation tests (single file error doesn't affect others)
+
+**Manual verification** (not automated — no CI equivalent):
+- FUSE playback: mount, play a virtual file in VLC/mpv, confirm no artifacts or stalls
 
 **Edge case tests:**
 - Empty files, tiny files, corrupted sources, missing sources
@@ -142,12 +148,17 @@ go test -tags=integration,nonroot -run TestFUSE_Permission ./internal/fuse/...
 
 ### Benchmarks
 
-Performance benchmarks track dedup reader operations. CI uses `benchstat` for statistically
-significant regression detection (>10% slowdown with p<0.05).
+Performance benchmarks cover the dedup reader, MKV parsing, source indexing, and matching.
+CI uses `benchstat` for statistically significant regression detection (>10% slowdown with
+p<0.05).
 
-**Run benchmarks locally:**
+**Run benchmarks locally** (same packages CI benchmarks, at a lower `-count` for speed):
 ```bash
-go test -bench=. -benchmem -count=5 ./internal/dedup/...
+go test -bench=. -benchmem -count=5 \
+  ./internal/dedup/... \
+  ./internal/mkv/... \
+  ./internal/source/... \
+  ./internal/matcher/...
 ```
 
 **Compare against baseline (optional, for local development):**
