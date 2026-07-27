@@ -24,6 +24,14 @@ mkvdup --log-file /path/to/logfile <command> [args...]
 # Enable verbose diagnostics in log file only (not on console)
 mkvdup --log-verbose --log-file /path/to/logfile <command> [args...]
 
+# Show help, either overall or for a specific command
+mkvdup -h
+mkvdup --help
+mkvdup <command> --help
+
+# Print the version and exit
+mkvdup --version
+
 # Examples:
 mkvdup -v create video.mkv /source/dir
 mkvdup -q create video.mkv /source/dir
