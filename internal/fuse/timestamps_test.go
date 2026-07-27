@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -307,7 +308,7 @@ func TestMKVFSNode_Setattr_SizeStillRejected(t *testing.T) {
 
 func TestMKVFSDirNode_Getattr_StableTime(t *testing.T) {
 	store := NewPermissionStore("", DefaultPerms(), false)
-	d := &MKVFSDirNode{name: "Movies", path: "Movies", permStore: store,
+	d := &MKVFSDirNode{name: "Movies", path: "Movies", permStore: store, mtime: fsStartTime,
 		files: map[string]*MKVFile{}, subdirs: map[string]*MKVFSDirNode{}}
 
 	var out fuse.AttrOut
@@ -315,7 +316,184 @@ func TestMKVFSDirNode_Getattr_StableTime(t *testing.T) {
 		t.Fatalf("Getattr errno %d", errno)
 	}
 	if out.Mtime != uint64(fsStartTime.Unix()) {
-		t.Errorf("dir Mtime = %d, want fsStartTime %d", out.Mtime, fsStartTime.Unix())
+		t.Errorf("dir Mtime = %d, want mount time %d", out.Mtime, fsStartTime.Unix())
+	}
+}
+
+// --- Directory mtime follows POSIX add/remove semantics ---
+
+// dirMtimeOf returns the mtime a directory reports via Getattr.
+func dirMtimeOf(t *testing.T, d *MKVFSDirNode) uint64 {
+	t.Helper()
+	var out fuse.AttrOut
+	if errno := d.Getattr(context.Background(), nil, &out); errno != 0 {
+		t.Fatalf("Getattr errno %d", errno)
+	}
+	return out.Mtime
+}
+
+func TestDirMtime_BuiltTreeUsesMountTime(t *testing.T) {
+	f := &MKVFile{Name: "Movies/Action/a.mkv"}
+	root := BuildDirectoryTree([]*MKVFile{f}, false, nil, nil)
+
+	movies := root.subdirs["Movies"]
+	action := movies.subdirs["Action"]
+	for name, d := range map[string]*MKVFSDirNode{"root": root, "Movies": movies, "Action": action} {
+		if got := dirMtimeOf(t, d); got != uint64(fsStartTime.Unix()) {
+			t.Errorf("%s mtime = %d, want mount time %d", name, got, fsStartTime.Unix())
+		}
+	}
+}
+
+func TestDirMtime_AddUpdatesOnlyImmediateParent(t *testing.T) {
+	// Start with Movies/Action/a.mkv
+	root := BuildDirectoryTree([]*MKVFile{{Name: "Movies/Action/a.mkv"}}, false, nil, nil)
+	movies := root.subdirs["Movies"]
+	action := movies.subdirs["Action"]
+
+	rootBefore := dirMtimeOf(t, root)
+	moviesBefore := dirMtimeOf(t, movies)
+	actionBefore := dirMtimeOf(t, action)
+
+	// Add a sibling file inside Movies/Action.
+	newTree := BuildDirectoryTree([]*MKVFile{
+		{Name: "Movies/Action/a.mkv"},
+		{Name: "Movies/Action/b.mkv"},
+	}, false, nil, nil)
+	mergeDirectoryTreeAt(root, newTree, time.Unix(1_700_000_000, 0))
+
+	// Only the directory that directly gained the entry advances.
+	if got := dirMtimeOf(t, action); got != 1_700_000_000 {
+		t.Errorf("Action mtime = %d, want 1700000000 (gained a child)", got)
+	}
+	if got := dirMtimeOf(t, movies); got != moviesBefore {
+		t.Errorf("Movies mtime = %d, want unchanged %d (no direct child change)", got, moviesBefore)
+	}
+	if got := dirMtimeOf(t, root); got != rootBefore {
+		t.Errorf("root mtime = %d, want unchanged %d (no direct child change)", got, rootBefore)
+	}
+	if actionBefore == 1_700_000_000 {
+		t.Fatal("test setup: Action mtime already equalled the merge time")
+	}
+}
+
+func TestDirMtime_RemoveUpdatesParent(t *testing.T) {
+	root := BuildDirectoryTree([]*MKVFile{
+		{Name: "Movies/Action/a.mkv"},
+		{Name: "Movies/Action/b.mkv"},
+	}, false, nil, nil)
+	action := root.subdirs["Movies"].subdirs["Action"]
+
+	newTree := BuildDirectoryTree([]*MKVFile{{Name: "Movies/Action/a.mkv"}}, false, nil, nil)
+	mergeDirectoryTreeAt(root, newTree, time.Unix(1_700_000_500, 0))
+
+	if got := dirMtimeOf(t, action); got != 1_700_000_500 {
+		t.Errorf("Action mtime = %d, want 1700000500 (lost a child)", got)
+	}
+}
+
+func TestDirMtime_ContentChangeDoesNotTouchParent(t *testing.T) {
+	// Same file set, but the file's dedup path changes — an in-place content
+	// change, not an add/remove. POSIX: the directory mtime must not move.
+	root := BuildDirectoryTree([]*MKVFile{{Name: "a.mkv", DedupPath: "/old.mkvdup"}}, false, nil, nil)
+	before := dirMtimeOf(t, root)
+
+	newTree := BuildDirectoryTree([]*MKVFile{{Name: "a.mkv", DedupPath: "/new.mkvdup"}}, false, nil, nil)
+	mergeDirectoryTreeAt(root, newTree, time.Unix(1_700_001_000, 0))
+
+	if got := dirMtimeOf(t, root); got != before {
+		t.Errorf("root mtime = %d, want unchanged %d (content change is not add/remove)", got, before)
+	}
+}
+
+func TestDirMtime_NewSubtreeStamped(t *testing.T) {
+	root := BuildDirectoryTree([]*MKVFile{{Name: "a.mkv"}}, false, nil, nil)
+
+	newTree := BuildDirectoryTree([]*MKVFile{
+		{Name: "a.mkv"},
+		{Name: "New/Deep/b.mkv"},
+	}, false, nil, nil)
+	mergeDirectoryTreeAt(root, newTree, time.Unix(1_700_002_000, 0))
+
+	// Root gained "New"; the whole new subtree was created at merge time.
+	if got := dirMtimeOf(t, root); got != 1_700_002_000 {
+		t.Errorf("root mtime = %d, want 1700002000", got)
+	}
+	newDir := root.subdirs["New"]
+	if got := dirMtimeOf(t, newDir); got != 1_700_002_000 {
+		t.Errorf("New mtime = %d, want 1700002000", got)
+	}
+	if got := dirMtimeOf(t, newDir.subdirs["Deep"]); got != 1_700_002_000 {
+		t.Errorf("New/Deep mtime = %d, want 1700002000", got)
+	}
+}
+
+func TestDirMtime_OverrideWins(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+	override := int64(1_234_567_890)
+	if err := store.SetDirMtime("Movies", &override); err != nil {
+		t.Fatalf("SetDirMtime: %v", err)
+	}
+
+	root := BuildDirectoryTree([]*MKVFile{{Name: "Movies/a.mkv"}}, false, nil, store)
+	movies := root.subdirs["Movies"]
+
+	// Even after an add/remove bumps the node's own mtime, the override wins.
+	newTree := BuildDirectoryTree([]*MKVFile{
+		{Name: "Movies/a.mkv"},
+		{Name: "Movies/b.mkv"},
+	}, false, nil, store)
+	mergeDirectoryTreeAt(root, newTree, time.Unix(1_700_003_000, 0))
+
+	if got := dirMtimeOf(t, movies); got != uint64(override) {
+		t.Errorf("Movies mtime = %d, want override %d", got, override)
+	}
+}
+
+// --- Clearing an override must not leave an empty entry ---
+
+func TestPermissionStore_ClearMtime_RemovesEmptyEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "permissions.yaml")
+	store := NewPermissionStore(path, DefaultPerms(), false)
+
+	mtime := int64(1_600_000_000)
+	if err := store.SetFileMtime("v.mkv", &mtime); err != nil {
+		t.Fatalf("SetFileMtime: %v", err)
+	}
+	if err := store.SetFileMtime("v.mkv", nil); err != nil {
+		t.Fatalf("clear SetFileMtime: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read permissions: %v", err)
+	}
+	if strings.Contains(string(data), "v.mkv") {
+		t.Errorf("cleared entry still persisted:\n%s", data)
+	}
+}
+
+func TestPermissionStore_ClearMtime_KeepsEntryWithPerms(t *testing.T) {
+	store := NewPermissionStore("", DefaultPerms(), false)
+
+	mode := uint32(0640)
+	if err := store.SetFilePerms("v.mkv", nil, nil, &mode); err != nil {
+		t.Fatalf("SetFilePerms: %v", err)
+	}
+	mtime := int64(1_600_000_000)
+	if err := store.SetFileMtime("v.mkv", &mtime); err != nil {
+		t.Fatalf("SetFileMtime: %v", err)
+	}
+	if err := store.SetFileMtime("v.mkv", nil); err != nil {
+		t.Fatalf("clear SetFileMtime: %v", err)
+	}
+
+	// mtime gone, but the mode override must survive.
+	if got := store.GetFileMtimeOverride("v.mkv"); got != nil {
+		t.Errorf("mtime override = %v, want nil", got)
+	}
+	if _, _, gotMode := store.GetFilePerms("v.mkv"); gotMode != mode {
+		t.Errorf("mode = %o, want %o (entry must not be dropped)", gotMode, mode)
 	}
 }
 

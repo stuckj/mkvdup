@@ -11,9 +11,13 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-// fsStartTime is a stable reference timestamp used for virtual directories,
-// which have no backing file on disk. It is captured once at process start so
-// directory timestamps don't change on every stat.
+// fsStartTime is the baseline timestamp for virtual directories, captured once
+// at process start. Virtual files and directories all come into existence when
+// the filesystem is mounted, so mount time is the POSIX-correct mtime for a
+// directory that has not changed since: a directory's mtime reflects when an
+// entry was last added to or removed from it. Runtime additions/removals (via
+// config reload) update the affected directory's mtime to the time of the
+// change — see mergeDirectoryTree.
 var fsStartTime = time.Now()
 
 // MKVFile represents a virtual MKV file backed by a dedup file.
@@ -131,6 +135,11 @@ type MKVFSDirNode struct {
 	mu      sync.RWMutex
 	verbose bool
 
+	// mtime is the directory's modification time. It starts at mount time and
+	// advances only when a direct child (file or subdirectory) is added or
+	// removed, matching POSIX directory semantics. Guarded by mu.
+	mtime time.Time
+
 	// Factory for creating file nodes (injected from root)
 	readerFactory ReaderFactory
 
@@ -191,10 +200,15 @@ func fileTimes(store *PermissionStore, path string, f *MKVFile) (atime, mtime, c
 }
 
 // dirTimes returns the (atime, mtime, ctime) in Unix seconds for a virtual
-// directory. Directories have no backing file, so they default to a stable
-// reference time (fsStartTime), overridable via the permissions store.
-func dirTimes(store *PermissionStore, path string) (atime, mtime, ctime uint64) {
-	m := fsStartTime.Unix()
+// directory. dirMtime is the node's own mtime (mount time, advanced when a
+// direct child is added or removed); an explicit permissions-store override
+// takes precedence. Callers read dirMtime while holding the node's lock and
+// pass it in, since this helper must not acquire node locks itself.
+func dirTimes(store *PermissionStore, path string, dirMtime time.Time) (atime, mtime, ctime uint64) {
+	if dirMtime.IsZero() {
+		dirMtime = fsStartTime
+	}
+	m := dirMtime.Unix()
 	if store != nil {
 		if override := store.GetDirMtimeOverride(path); override != nil {
 			m = *override

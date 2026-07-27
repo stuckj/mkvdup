@@ -450,14 +450,16 @@ func (r *MKVFSRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Att
 	out.Mode = fuse.S_IFDIR | mode
 	out.Uid = uid
 	out.Gid = gid
-	atime, mtime, ctime := dirTimes(r.permStore, "")
-	applyTimes(&out.Attr, atime, mtime, ctime)
 	out.Nlink = 2
+	rootMtime := fsStartTime
 	if r.rootDir != nil {
 		r.rootDir.mu.RLock()
 		out.Nlink += uint32(len(r.rootDir.subdirs))
+		rootMtime = r.rootDir.mtime
 		r.rootDir.mu.RUnlock()
 	}
+	atime, mtime, ctime := dirTimes(r.permStore, "", rootMtime)
+	applyTimes(&out.Attr, atime, mtime, ctime)
 	return 0
 }
 
@@ -510,6 +512,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			// Lock subdir to safely access its fields
 			subdir.mu.RLock()
 			subdirCount := len(subdir.subdirs)
+			subdirMtime := subdir.mtime
 			subdir.mu.RUnlock()
 
 			uid, gid, mode := getDirPerms(r.permStore, subdir.path)
@@ -517,7 +520,7 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			out.Mode = fuse.S_IFDIR | mode
 			out.Uid = uid
 			out.Gid = gid
-			atime, mtime, ctime := dirTimes(r.permStore, subdir.path)
+			atime, mtime, ctime := dirTimes(r.permStore, subdir.path, subdirMtime)
 			applyTimes(&out.Attr, atime, mtime, ctime)
 			out.Nlink = 2 + uint32(subdirCount)
 

@@ -268,9 +268,15 @@ Access is checked by the kernel based on the `uid`, `gid`, and `mode` reported f
 
 Virtual files report a **modification time (`mtime`) derived from their `.mkvdup` dedup
 file's mtime**. The dedup file is the artifact `mkvdup create` produces, so its timestamp
-is the most meaningful "when did this virtual file's content last change" — far better than
-the previous behavior, which reported the current time on every `stat`. Virtual directories,
-which have no backing file, report a stable reference time captured at mount.
+records when the virtual file's content last changed.
+
+Virtual directories follow standard Unix directory semantics: a directory's mtime reflects
+when an entry was last **added to or removed from it**, not when its contents changed. Since
+every virtual file and directory comes into existence when the filesystem is mounted,
+directories start at the mount time. If a later config reload adds or removes an entry, only
+the directory that directly contained it is updated (to the time of the change) — the update
+is not propagated to parent directories, and changing a file's own mtime never affects the
+directory holding it.
 
 - **Override:** `touch`/`utimes` on a virtual file or directory records an explicit `mtime`
   override, stored in the permissions file alongside any `chmod`/`chown` overrides (see
@@ -336,7 +342,7 @@ directories:
 
 **Field semantics:**
 - `uid`, `gid`, `mode`: Only specified fields are overridden; `null` or omitted fields inherit from defaults
-- `mtime`: Optional modification-time override in Unix seconds (set via `touch`/`utimes`). Omitted → the timestamp is derived from the dedup file (files) or a stable mount reference time (directories). Only `mtime` is tracked; `atime` is reported equal to `mtime`.
+- `mtime`: Optional modification-time override in Unix seconds (set via `touch`/`utimes`). Omitted → the timestamp is derived from the dedup file (files) or from mount time and entry add/remove events (directories). Only `mtime` is tracked; `atime` is reported equal to `mtime`.
 - Paths are relative to the mount root (no leading slash)
 - Mode values are stored in octal
 

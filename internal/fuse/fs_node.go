@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -103,20 +102,15 @@ func (n *MKVFSNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 
 	// Handle utimes (touch). Only mtime is persisted; atime is accepted but not
 	// tracked (so `touch -a` succeeds as a no-op). utimes requires root or the
-	// file owner, mirroring chmod.
-	if in.Valid&(fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW) != 0 {
+	// file owner, mirroring chmod. GetMTime resolves FATTR_MTIME_NOW for us.
+	if mtimeVal, ok := in.GetMTime(); ok {
 		if errno := CheckChmod(caller, fileUID); errno != 0 {
 			if n.verbose {
 				log.Printf("Setattr: utimes permission denied for %s (caller uid=%d)", n.path, caller.Uid)
 			}
 			return errno
 		}
-		var mtime int64
-		if in.Valid&fuse.FATTR_MTIME_NOW != 0 {
-			mtime = time.Now().Unix()
-		} else {
-			mtime = int64(in.Mtime)
-		}
+		mtime := mtimeVal.Unix()
 		if err := n.permStore.SetFileMtime(n.path, &mtime); err != nil {
 			if n.verbose {
 				log.Printf("Setattr error (mtime): %s: %v", n.path, err)

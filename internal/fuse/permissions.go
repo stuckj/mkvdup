@@ -18,8 +18,8 @@ import (
 
 // Perms holds uid, gid, mode, and an optional modification-time override for a
 // file or directory. Nil uid/gid/mode inherit from defaults; a nil Mtime means
-// the timestamp is derived (from the dedup file for files, or a stable
-// reference time for directories) rather than overridden.
+// the timestamp is derived (from the dedup file for files, or from mount time
+// and entry add/remove events for directories) rather than overridden.
 type Perms struct {
 	UID  *uint32 `yaml:"uid,omitempty"`
 	GID  *uint32 `yaml:"gid,omitempty"`
@@ -27,6 +27,12 @@ type Perms struct {
 	// Mtime is an explicit modification-time override in Unix seconds, set via
 	// touch/utimes. Only mtime is tracked; atime is reported equal to mtime.
 	Mtime *int64 `yaml:"mtime,omitempty"`
+}
+
+// isEmpty reports whether no field is overridden, meaning the entry carries no
+// information and can be dropped rather than persisted as an empty map.
+func (p *Perms) isEmpty() bool {
+	return p.UID == nil && p.GID == nil && p.Mode == nil && p.Mtime == nil
 }
 
 // Defaults holds default permissions for files and directories.
@@ -401,6 +407,11 @@ func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
 		p.Mtime = &v
 	} else {
 		p.Mtime = nil
+		// Drop the entry entirely if nothing is overridden anymore, so we don't
+		// persist a useless "path: {}" stanza in the permissions file.
+		if p.isEmpty() {
+			delete(s.files, path)
+		}
 	}
 	s.mu.Unlock()
 
@@ -430,6 +441,11 @@ func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
 		p.Mtime = &v
 	} else {
 		p.Mtime = nil
+		// Drop the entry entirely if nothing is overridden anymore, so we don't
+		// persist a useless "path: {}" stanza in the permissions file.
+		if p.isEmpty() {
+			delete(s.dirs, path)
+		}
 	}
 	s.mu.Unlock()
 

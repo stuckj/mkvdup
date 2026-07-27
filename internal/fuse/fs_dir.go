@@ -5,7 +5,6 @@ import (
 	"log"
 	"sort"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -87,6 +86,7 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 		// Lock subdir to safely access its fields
 		subdir.mu.RLock()
 		subdirCount := len(subdir.subdirs)
+		subdirMtime := subdir.mtime
 		subdir.mu.RUnlock()
 
 		uid, gid, mode := getDirPerms(d.permStore, subdir.path)
@@ -94,7 +94,7 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 		out.Mode = fuse.S_IFDIR | mode
 		out.Uid = uid
 		out.Gid = gid
-		atime, mtime, ctime := dirTimes(d.permStore, subdir.path)
+		atime, mtime, ctime := dirTimes(d.permStore, subdir.path, subdirMtime)
 		applyTimes(&out.Attr, atime, mtime, ctime)
 		out.Nlink = 2 + uint32(subdirCount)
 
@@ -154,7 +154,7 @@ func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.
 	out.Mode = fuse.S_IFDIR | mode
 	out.Uid = uid
 	out.Gid = gid
-	atime, mtime, ctime := dirTimes(d.permStore, d.path)
+	atime, mtime, ctime := dirTimes(d.permStore, d.path, d.mtime)
 	applyTimes(&out.Attr, atime, mtime, ctime)
 	out.Nlink = 2 + uint32(len(d.subdirs))
 	return 0
@@ -237,19 +237,15 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 
 	// Handle utimes (touch). Only mtime is persisted; atime is accepted but not
 	// tracked. utimes requires root or the directory owner, mirroring chmod.
-	if in.Valid&(fuse.FATTR_MTIME|fuse.FATTR_MTIME_NOW) != 0 {
+	// GetMTime resolves FATTR_MTIME_NOW for us.
+	if mtimeVal, ok := in.GetMTime(); ok {
 		if errno := CheckChmod(caller, dirUID); errno != 0 {
 			if d.verbose {
 				log.Printf("Setattr: utimes permission denied for %s (caller uid=%d)", d.path, caller.Uid)
 			}
 			return errno
 		}
-		var mtime int64
-		if in.Valid&fuse.FATTR_MTIME_NOW != 0 {
-			mtime = time.Now().Unix()
-		} else {
-			mtime = int64(in.Mtime)
-		}
+		mtime := mtimeVal.Unix()
 		if err := d.permStore.SetDirMtime(d.path, &mtime); err != nil {
 			if d.verbose {
 				log.Printf("Setattr error (mtime): %s: %v", d.path, err)

@@ -280,8 +280,18 @@ drain:
 		sw.mu.Unlock()
 	}
 
+	// Count distinct directories — source and dedup files often share one, and
+	// summing the two sets would double-count the overlap.
+	allWatchDirs := make(map[string]bool, len(watchDirs)+len(dedupWatchDirs))
+	for dir := range watchDirs {
+		allWatchDirs[dir] = true
+	}
+	for dir := range dedupWatchDirs {
+		allWatchDirs[dir] = true
+	}
+
 	sw.logFn("source-watch: monitoring %d source files, %d dedup files in %d directories (action=%s)",
-		len(newReverse), len(newDedupReverse), len(watchDirs)+len(dedupWatchDirs), sw.action)
+		len(newReverse), len(newDedupReverse), len(allWatchDirs), sw.action)
 }
 
 // watchedDirs returns the set of currently watched directories (both source

@@ -4,6 +4,7 @@ import (
 	"log"
 	"path"
 	"strings"
+	"time"
 )
 
 // BuildDirectoryTree creates a directory tree from files with path-containing names.
@@ -29,6 +30,7 @@ func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFact
 		verbose:       verbose,
 		readerFactory: readerFactory,
 		permStore:     permStore,
+		mtime:         fsStartTime,
 	}
 
 	for _, file := range files {
@@ -100,6 +102,7 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
 				verbose:       verbose,
 				readerFactory: readerFactory,
 				permStore:     permStore,
+				mtime:         fsStartTime,
 			}
 			current.subdirs[dirName] = subdir
 		}
@@ -130,14 +133,31 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
 // number — swapping the root directory won't affect already-cached inodes.
 // Instead, we update existing MKVFSDirNode objects' files and subdirs maps
 // so cached inodes see the new data.
+//
+// Directory mtimes follow POSIX semantics: a directory's mtime advances to the
+// time of the merge only if a direct child (file or subdirectory) was added or
+// removed. Directories whose contents merely changed in place — e.g. a file's
+// dedup path or its derived mtime — keep their existing mtime, and the change
+// is not propagated to ancestors.
 func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
+	mergeDirectoryTreeAt(existing, newTree, time.Now())
+}
+
+// mergeDirectoryTreeAt is mergeDirectoryTree with an explicit timestamp so a
+// single reload stamps every affected directory identically.
+func mergeDirectoryTreeAt(existing, newTree *MKVFSDirNode, now time.Time) {
 	existing.mu.Lock()
 	defer existing.mu.Unlock()
+
+	// childrenChanged tracks whether an entry was added to or removed from this
+	// directory, which is what POSIX says updates a directory's mtime.
+	childrenChanged := false
 
 	// Remove files that are no longer present
 	for name := range existing.files {
 		if _, inNew := newTree.files[name]; !inNew {
 			delete(existing.files, name)
+			childrenChanged = true
 		}
 	}
 
@@ -149,6 +169,7 @@ func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
 			existingFile.mu.Unlock()
 		} else {
 			existing.files[name] = newFile
+			childrenChanged = true
 		}
 	}
 
@@ -156,6 +177,7 @@ func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
 	for name := range existing.subdirs {
 		if _, inNew := newTree.subdirs[name]; !inNew {
 			delete(existing.subdirs, name)
+			childrenChanged = true
 		}
 	}
 
@@ -163,9 +185,29 @@ func mergeDirectoryTree(existing, newTree *MKVFSDirNode) {
 	for name, newSubdir := range newTree.subdirs {
 		existingSubdir, exists := existing.subdirs[name]
 		if !exists {
+			// Freshly created directory: it and everything under it came into
+			// existence now, so stamp the whole subtree.
+			stampDirTree(newSubdir, now)
 			existing.subdirs[name] = newSubdir
+			childrenChanged = true
 		} else {
-			mergeDirectoryTree(existingSubdir, newSubdir)
+			mergeDirectoryTreeAt(existingSubdir, newSubdir, now)
 		}
+	}
+
+	if childrenChanged {
+		existing.mtime = now
+	}
+}
+
+// stampDirTree sets mtime on d and all of its descendant directories. Used for
+// subtrees that are newly created during a reload, since every entry in them
+// was added at that moment.
+func stampDirTree(d *MKVFSDirNode, now time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.mtime = now
+	for _, sub := range d.subdirs {
+		stampDirTree(sub, now)
 	}
 }
