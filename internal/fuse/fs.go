@@ -79,10 +79,25 @@ func (f *MKVFile) DerivedMtime() time.Time {
 // mtime. It returns true if the value changed. Used by the source watcher when
 // a dedup file's timestamp changes so the new mtime becomes visible.
 func (f *MKVFile) RefreshDerivedMtime() bool {
-	newMtime := statMtime(f.DedupPath) // stat without holding the lock
+	// Snapshot the path under the lock: this runs on the watcher goroutine and
+	// DedupPath is rewritten by updateFrom during a reload, so reading it
+	// unlocked would be a data race. The stat itself stays outside the lock.
+	f.mu.RLock()
+	path := f.DedupPath
+	f.mu.RUnlock()
+
+	newMtime := statMtime(path)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	// A reload may have swapped the dedup file while we were stat'ing. The value
+	// we just read belongs to the old file, so discard it rather than caching it
+	// against the new path — updateFrom already cleared derivedSet, and the next
+	// Getattr or refresh will derive correctly from the new path.
+	if f.DedupPath != path {
+		return false
+	}
 
 	// No value cached yet means nothing has ever been reported to the kernel,
 	// so there is nothing to invalidate: record the baseline and report "no

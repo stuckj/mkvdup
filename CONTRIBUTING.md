@@ -57,7 +57,10 @@ go build ./...
 - Write tests alongside implementation (test-driven when practical)
 - Use table-driven tests for cases with multiple inputs
 - Aim for high test coverage on critical paths (matching, file format, FUSE reads)
-- Use `go test -race` to detect data races in concurrent code (also run in CI)
+- Use `go test -race` to detect data races in concurrent code. CI runs the detector in the
+  **Unit Tests** job only — the integration jobs do not, because `-race` on a multi-hour
+  dedup run is impractical. Concurrency regression tests therefore belong in the unit suite,
+  where the detector will actually see them.
 - Integration tests should use temporary directories and clean up after themselves
 
 ### Never skip a test to express "cannot run here"

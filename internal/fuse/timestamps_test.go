@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -77,6 +78,69 @@ func TestMKVFile_RefreshDerivedMtime_FirstDeriveIsNotAChange(t *testing.T) {
 	}
 	if changed := f.RefreshDerivedMtime(); !changed {
 		t.Error("real mtime change after baseline was not reported")
+	}
+}
+
+// TestMKVFile_RefreshDerivedMtime_RaceWithReload exercises the real-world
+// pairing that made this a bug: the watcher goroutine refreshing a file's
+// derived mtime while a config reload rewrites DedupPath underneath it. Run
+// under -race, an unlocked read of DedupPath here is reported as a data race.
+func TestMKVFile_RefreshDerivedMtime_RaceWithReload(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.mkvdup")
+	pathB := filepath.Join(dir, "b.mkvdup")
+	writeFileWithMtime(t, pathA, time.Unix(1_600_000_000, 0))
+	writeFileWithMtime(t, pathB, time.Unix(1_650_000_000, 0))
+
+	f := &MKVFile{Name: "v.mkv", DedupPath: pathA}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Watcher goroutine: refresh in a tight loop.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				f.RefreshDerivedMtime()
+			}
+		}
+	}()
+
+	// Reload goroutine: swap the dedup path back and forth, exactly as
+	// mergeDirectoryTree/Reload do (updateFrom under the write lock).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range 300 {
+			src := &MKVFile{Name: "v.mkv", DedupPath: pathA}
+			if i%2 == 1 {
+				src.DedupPath = pathB
+			}
+			f.mu.Lock()
+			f.updateFrom(src)
+			f.mu.Unlock()
+		}
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	// Whichever path won the last write, the cached mtime must correspond to it
+	// and never be a value carried over from the other file.
+	f.mu.RLock()
+	gotPath, gotMtime, wasSet := f.DedupPath, f.derivedMtime, f.derivedSet
+	f.mu.RUnlock()
+	if wasSet {
+		want := statMtime(gotPath)
+		if !gotMtime.Equal(want) {
+			t.Errorf("cached mtime %v does not match current DedupPath %s (want %v)", gotMtime, gotPath, want)
+		}
 	}
 }
 

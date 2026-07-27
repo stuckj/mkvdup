@@ -36,9 +36,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse-dev fuse3
 
-      - name: Run unit tests with coverage
+      # -race is the only CI job running the detector. CONTRIBUTING has long
+      # claimed races were caught in CI; they were not, which is how the
+      # RefreshDerivedMtime/updateFrom race reached main-line review.
+      - name: Run unit tests with coverage and race detection
         run: |
           go tool gotestsum --junitfile unit-results.xml -- \
+            -race \
             -coverprofile=unit-coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
