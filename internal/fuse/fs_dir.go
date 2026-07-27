@@ -5,7 +5,6 @@ import (
 	"log"
 	"sort"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -87,17 +86,16 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 		// Lock subdir to safely access its fields
 		subdir.mu.RLock()
 		subdirCount := len(subdir.subdirs)
+		subdirMtime := subdir.mtime
 		subdir.mu.RUnlock()
 
 		uid, gid, mode := getDirPerms(d.permStore, subdir.path)
 
-		now := time.Now()
 		out.Mode = fuse.S_IFDIR | mode
 		out.Uid = uid
 		out.Gid = gid
-		out.Atime = uint64(now.Unix())
-		out.Mtime = uint64(now.Unix())
-		out.Ctime = uint64(now.Unix())
+		atime, mtime, ctime := dirTimes(d.permStore, subdir.path, subdirMtime)
+		applyTimes(&out.Attr, atime, mtime, ctime)
 		out.Nlink = 2 + uint32(subdirCount)
 
 		stable := fs.StableAttr{
@@ -123,14 +121,12 @@ func (d *MKVFSDirNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 
 		uid, gid, mode := getFilePerms(d.permStore, filePath)
 
-		now := time.Now()
 		out.Size = uint64(file.Size)
 		out.Mode = fuse.S_IFREG | mode
 		out.Uid = uid
 		out.Gid = gid
-		out.Atime = uint64(now.Unix())
-		out.Mtime = uint64(now.Unix())
-		out.Ctime = uint64(now.Unix())
+		atime, mtime, ctime := fileTimes(d.permStore, filePath, file)
+		applyTimes(&out.Attr, atime, mtime, ctime)
 		out.Nlink = 1
 
 		node := &MKVFSNode{file: file, path: filePath, verbose: d.verbose, permStore: d.permStore}
@@ -153,16 +149,13 @@ func (d *MKVFSDirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	now := time.Now()
-
 	uid, gid, mode := getDirPerms(d.permStore, d.path)
 
 	out.Mode = fuse.S_IFDIR | mode
 	out.Uid = uid
 	out.Gid = gid
-	out.Atime = uint64(now.Unix())
-	out.Mtime = uint64(now.Unix())
-	out.Ctime = uint64(now.Unix())
+	atime, mtime, ctime := dirTimes(d.permStore, d.path, d.mtime)
+	applyTimes(&out.Attr, atime, mtime, ctime)
 	out.Nlink = 2 + uint32(len(d.subdirs))
 	return 0
 }
@@ -174,9 +167,10 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 		return syscall.EROFS
 	}
 
-	// Only UID, GID, and mode changes are supported. All other setattr operations
-	// (e.g. size truncation, atime/mtime updates) must fail on this read-only FS.
-	supportedMask := uint32(fuse.FATTR_UID | fuse.FATTR_GID | fuse.FATTR_MODE)
+	// Supported: chmod/chown and utimes (mtime/atime). Any other setattr
+	// operation (e.g. size truncation) must fail on this read-only FS.
+	supportedMask := uint32(fuse.FATTR_UID | fuse.FATTR_GID | fuse.FATTR_MODE |
+		fuse.FATTR_MTIME | fuse.FATTR_ATIME | fuse.FATTR_MTIME_NOW | fuse.FATTR_ATIME_NOW)
 	if in.Valid&^supportedMask != 0 {
 		return syscall.EROFS
 	}
@@ -239,6 +233,25 @@ func (d *MKVFSDirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.S
 			log.Printf("Setattr error: %s: %v", d.path, err)
 		}
 		return syscall.EIO
+	}
+
+	// Handle utimes (touch). Only mtime is persisted; atime is accepted but not
+	// tracked. utimes requires root or the directory owner, mirroring chmod.
+	// GetMTime resolves FATTR_MTIME_NOW for us.
+	if mtimeVal, ok := in.GetMTime(); ok {
+		if errno := CheckChmod(caller, dirUID); errno != 0 {
+			if d.verbose {
+				log.Printf("Setattr: utimes permission denied for %s (caller uid=%d)", d.path, caller.Uid)
+			}
+			return errno
+		}
+		mtime := mtimeVal.Unix()
+		if err := d.permStore.SetDirMtime(d.path, &mtime); err != nil {
+			if d.verbose {
+				log.Printf("Setattr error (mtime): %s: %v", d.path, err)
+			}
+			return syscall.EIO
+		}
 	}
 
 	if d.verbose {

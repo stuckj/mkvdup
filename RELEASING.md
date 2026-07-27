@@ -40,17 +40,29 @@ Releases are created via the GitHub Actions workflow:
 
 1. Go to Actions → "Build and Release Packages"
 2. Click "Run workflow"
-3. Enter the version number (without `v` prefix, e.g., `1.0.0`)
-4. Optionally specify a commit SHA (defaults to latest non-benchmark commit on main)
+3. Enter the version number (without `v` prefix, e.g., `1.0.0`). The workflow rejects a
+   leading `v` and derives the tag itself.
+4. Optionally specify a commit SHA. The default is the latest non-benchmark commit on the
+   branch the workflow was dispatched from — **not** necessarily `main`.
 5. Click "Run workflow"
 
 The workflow will:
-1. Create and push a version tag (e.g., `v1.0.0`)
-2. Build packages for amd64 and arm64
-3. Create a GitHub release with the packages attached
-4. Update the APT and YUM repositories on GitHub Pages
 
-**Note:** Do not manually create tags before running the workflow - the workflow creates tags automatically and will fail if the tag already exists.
+1. Resolve the version and commit, and verify the tag does not already exist on the remote
+2. Build packages for amd64 and arm64
+3. Create the GitHub release **and the tag together**, pointing at the resolved commit
+4. Update the APT and YUM repositories on GitHub Pages, and the Homebrew and Nix files
+
+**Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
+user-visible — tag, release, packages, formula and Nix bumps — is created until every build
+has succeeded. An earlier version pushed the tag first, so a failed build left a dangling tag
+pointing at a release that never happened *and* blocked retrying the same version, because of
+the existence check in step 1.
+
+**Note:** Do not manually create tags before running the workflow. It creates the tag itself
+and will fail if the tag already exists. If a run fails after the tag was created (only
+possible on versions of the workflow predating the change above), delete the tag before
+retrying that same version.
 
 ## Version Numbering
 

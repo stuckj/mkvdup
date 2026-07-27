@@ -242,7 +242,9 @@ mkvdup mount --on-config-change warn /mnt/videos config.yaml
 
 ## Permissions and Ownership
 
-Virtual files and directories support `chmod` and `chown` operations. Permission metadata is stored in a separate YAML file, keeping `.mkvdup` files immutable while allowing customization.
+Virtual files and directories support `chmod`, `chown`, and `touch`/`utimes` operations.
+Permission and timestamp metadata is stored in a separate YAML file, keeping `.mkvdup` files
+immutable while allowing customization.
 
 ### Access Checking
 
@@ -261,6 +263,33 @@ Access is checked by the kernel based on the `uid`, `gid`, and `mode` reported f
 - **chown UID:** Only root can change file ownership
 - **chown GID:** Root can change to any GID; file owner can change to any group they belong to (primary or supplementary)
 - **chmod:** Only root or the file owner can change permissions
+
+### Timestamps
+
+Virtual files report a **modification time (`mtime`) derived from their `.mkvdup` dedup
+file's mtime**. The dedup file is the artifact `mkvdup create` produces, so its timestamp
+records when the virtual file's content last changed.
+
+Virtual directories follow standard Unix directory semantics: a directory's mtime reflects
+when an entry was last **added to or removed from it**, not when its contents changed. Since
+every virtual file and directory comes into existence when the filesystem is mounted,
+directories start at the mount time. If a later config reload adds or removes an entry, only
+the directory that directly contained it is updated (to the time of the change) — the update
+is not propagated to parent directories, and changing a file's own mtime never affects the
+directory holding it.
+
+- **Override:** `touch`/`utimes` on a virtual file or directory records an explicit `mtime`
+  override, stored in the permissions file alongside any `chmod`/`chown` overrides (see
+  [Permissions File Format](#permissions-file-format)). Overrides persist across daemon
+  restarts and SIGHUP reloads.
+- **Permission:** Changing the time requires root or the file owner (same rule as `chmod`).
+- **`atime` is not tracked:** access time is always reported equal to `mtime` (this avoids
+  per-read overhead), and `ctime` also equals `mtime`. `touch -a` (atime only) succeeds but
+  is a no-op.
+- **Live updates:** if a dedup file's mtime changes while mounted (e.g. it is regenerated in
+  place), the derived mtime is refreshed automatically and the kernel's attribute cache is
+  invalidated (see [Source File Watching](#source-file-watching)). Dedup **content** changes
+  are a separate concern and still require a reload.
 
 ### Permissions File Location
 
@@ -298,6 +327,7 @@ files:
     uid: 1000
     gid: 1001
     mode: 0640
+    mtime: 1717243200  # optional mtime override (Unix seconds); omit to derive from the dedup file
   "Videos/Video2.mkv":
     mode: 0444  # inherits uid/gid from defaults
 
@@ -312,6 +342,7 @@ directories:
 
 **Field semantics:**
 - `uid`, `gid`, `mode`: Only specified fields are overridden; `null` or omitted fields inherit from defaults
+- `mtime`: Optional modification-time override in Unix seconds (set via `touch`/`utimes`). Omitted → the timestamp is derived from the dedup file (files) or from mount time and entry add/remove events (directories). Only `mtime` is tracked; `atime` is reported equal to `mtime`.
 - Paths are relative to the mount root (no leading slash)
 - Mode values are stored in octal
 
@@ -337,8 +368,8 @@ mkvdup mount --permissions-file /var/lib/mkvdup/permissions.yaml /mnt/videos con
 
 **Note:** The fstab mount helper (`mount.fuse.mkvdup`) automatically enables `allow_other` so that root can access the filesystem for `chown`/`chmod` operations via `sudo`.
 
-**On chmod/chown:**
-1. Permission changes are saved immediately to the permissions file
+**On chmod/chown/touch:**
+1. Permission and mtime changes are saved immediately to the permissions file
 2. The permissions file's parent directory (e.g., `~/.config/mkvdup/`) is created if it doesn't exist
 3. Changes persist across daemon restarts
 
@@ -448,7 +479,15 @@ mkvdup mount --source-read-timeout 1m /mnt/videos config.yaml
 
 At mount time, source file metadata (path, size, checksum) is read from each dedup file header. A reverse mapping is built from source files to the virtual files that depend on them.
 
-**Local filesystems:** Monitored via inotify (reacts to write, create, rename, and remove events).
+**Dedup files (timestamp only):** In addition to source files, each `.mkvdup` dedup file is
+watched for **timestamp** changes so a virtual file's [derived mtime](#timestamps) stays live.
+When a dedup file's mtime changes (e.g. it is regenerated in place), the affected virtual
+files' derived mtimes are refreshed and the kernel's attribute cache is invalidated. This path
+is timestamp-only: it never disables files, and a source-file `touch` never triggers the
+integrity actions below. Dedup **content** integrity is not watched — an in-place content edit
+can break offset mapping, so those changes require a reload.
+
+**Local filesystems:** Monitored via inotify (reacts to write, create, rename, and remove events; dedup files additionally react to timestamp/`IN_ATTRIB` events).
 
 **Network filesystems (NFS, CIFS/SMB):** inotify does not work on network mounts. The watcher automatically falls back to polling (stat at a configurable interval, default 60 seconds, comparing mtime). Source file reads on network filesystems use `pread(2)` instead of `mmap()` to avoid SIGBUS crashes, with automatic retry on transient errors (ESTALE, ETIMEDOUT, etc.) and stale file handle recovery.
 

@@ -44,53 +44,9 @@ func TestCheckFileOwnership_RootMode(t *testing.T) {
 	}
 }
 
-func TestCheckFileOwnership_GroupWritable(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("requires root")
-	}
-
-	old := Geteuid
-	defer func() { Geteuid = old }()
-	Geteuid = func() int { return 0 }
-
-	f, err := os.CreateTemp(t.TempDir(), "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	if err := os.Chmod(f.Name(), 0664); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-
-	err = CheckFileOwnership(f.Name())
-	if err == nil {
-		t.Fatal("expected error for group-writable file")
-	}
-}
-
-func TestCheckFileOwnership_WorldWritable(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("requires root")
-	}
-
-	old := Geteuid
-	defer func() { Geteuid = old }()
-	Geteuid = func() int { return 0 }
-
-	f, err := os.CreateTemp(t.TempDir(), "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	if err := os.Chmod(f.Name(), 0646); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-
-	err = CheckFileOwnership(f.Name())
-	if err == nil {
-		t.Fatal("expected error for world-writable file")
-	}
-}
+// TestCheckFileOwnership_GroupWritable, _WorldWritable and
+// TestCheckDirectory_RejectsNonDirectory require root and live in
+// security_root_test.go behind the `rootonly` build tag.
 
 func TestCheckFileOwnership_ResolvesSymlinks(t *testing.T) {
 	old := Geteuid
@@ -253,27 +209,5 @@ func TestCheckDirectory_SkipsWhenNotRoot(t *testing.T) {
 
 	if err := CheckDirectory("/nonexistent"); err != nil {
 		t.Fatalf("expected nil when not root, got: %v", err)
-	}
-}
-
-func TestCheckDirectory_RejectsNonDirectory(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("requires root")
-	}
-
-	old := Geteuid
-	defer func() { Geteuid = old }()
-	Geteuid = func() int { return 0 }
-
-	// Create a regular file
-	f, err := os.CreateTemp(t.TempDir(), "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-
-	err = CheckDirectory(f.Name())
-	if err == nil {
-		t.Fatal("expected error for non-directory path")
 	}
 }
