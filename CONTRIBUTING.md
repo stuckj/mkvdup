@@ -60,6 +60,35 @@ go build ./...
 - Use `go test -race` to detect data races in concurrent code (also run in CI)
 - Integration tests should use temporary directories and clean up after themselves
 
+### Never skip a test to express "cannot run here"
+
+**CI fails if any test is skipped.** A skipped test is indistinguishable from a passing one in
+a green build, which is exactly how seven tests once went completely unexecuted in CI (#201).
+
+If a test can only run in a particular context, exclude it with a **build tag** so it is never
+scheduled, rather than scheduling it and calling `t.Skip`:
+
+| Tag | Meaning | Where it runs |
+|-----|---------|---------------|
+| `rootonly` | Requires `euid == 0` (chown, NFS setup, ownership checks) | Root CI steps |
+| `nonroot` | Requires a non-root user — root bypasses the checks being tested | The non-root CI step |
+| `integration` | Needs FUSE, testdata, or a real mount | Integration jobs |
+
+Combine them as needed, e.g. `//go:build integration && nonroot`. Tagged files should call the
+`requireRoot` / `requireNonRoot` helpers, which **fail** rather than skip if built into the
+wrong context — so a misconfiguration is loud instead of silent.
+
+Reserve `t.Skip` for genuine environment preconditions that CI is expected to satisfy (e.g.
+FUSE unavailable). If one of those fires in CI, the run fails on purpose: the environment
+regressed and the gap should not be hidden.
+
+```bash
+go test ./...                                          # unit
+go test -tags=rootonly ./internal/security/...         # as root
+go test -tags=integration ./internal/fuse/...          # integration
+go test -tags=integration,nonroot -run TestFUSE_Permission ./internal/fuse/...
+```
+
 ### Key Test Categories
 
 **Unit tests:**

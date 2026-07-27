@@ -44,6 +44,20 @@ jobs:
             -coverpkg=./... \
             ./...
 
+      # Root-gated unit tests live behind the `rootonly` build tag, so they are
+      # not compiled into the run above and must be executed separately as root.
+      # Without this they never execute at all (see #201).
+      - name: Run root-only unit tests
+        run: |
+          GO=$(which go)
+          sudo -E "$GO" tool gotestsum --junitfile unit-rootonly-results.xml -- \
+            -tags=rootonly \
+            ./internal/security/...
+
+      - name: Fail on skipped tests
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check-no-skips.py unit-results.xml unit-rootonly-results.xml
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
         with:
@@ -118,15 +132,35 @@ jobs:
           # FUSE tests use DVD testdata, so they run here
           # sudo -E preserves MKVDUP_TESTDATA and enables NFS integration test
           # Use full path to go binary — sudo resolves to system Go, not setup-go's
+          # The `rootonly` tag compiles in the tests that require root (chown,
+          # root-bypass, NFS); without it they would not be built at all.
           GO=$(which go)
           sudo -E "$GO" tool gotestsum --junitfile dvd-results.xml -- \
-            -tags=integration \
+            -tags=integration,rootonly \
             -skip 'TestFullDedupCycle_Bluray' \
             -coverprofile=dvd-coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
             -timeout=0 \
             ./internal/dedup/... ./internal/fuse/...
+
+      # The permission tests verify that the kernel DENIES access via
+      # default_permissions, which root bypasses entirely. They are tagged
+      # `nonroot` and must run without sudo — this is the only job that
+      # exercises a non-root FUSE mount (see #201).
+      - name: Run non-root FUSE permission tests
+        env:
+          MKVDUP_TESTDATA: /tmp/mkvdup-testdata
+        run: |
+          go tool gotestsum --junitfile fuse-nonroot-results.xml -- \
+            -tags=integration,nonroot \
+            -run 'TestFUSE_Permission' \
+            -timeout=0 \
+            ./internal/fuse/...
+
+      - name: Fail on skipped tests
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check-no-skips.py dvd-results.xml fuse-nonroot-results.xml
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
@@ -196,6 +230,10 @@ jobs:
             -coverpkg=./... \
             -timeout=0 \
             ./internal/dedup/...
+
+      - name: Fail on skipped tests
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check-no-skips.py bluray-results.xml
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7

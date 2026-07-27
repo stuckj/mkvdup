@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && rootonly
 
 package fuse_test
 
@@ -21,9 +21,7 @@ import (
 // the adapter layer.
 func TestNFSPreadFallback_Integration(t *testing.T) {
 	// Requires root for NFS setup
-	if os.Geteuid() != 0 {
-		t.Skip("NFS integration test requires root privileges")
-	}
+	requireRoot(t)
 
 	// Check for nfs-kernel-server
 	if _, err := exec.LookPath("exportfs"); err != nil {
