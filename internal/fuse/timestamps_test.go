@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/stuckj/mkvdup/internal/dedup"
 )
 
 // writeFileWithMtime creates a file at path with the given content and mtime.
@@ -447,6 +448,151 @@ func TestDirMtime_OverrideWins(t *testing.T) {
 
 	if got := dirMtimeOf(t, movies); got != uint64(override) {
 		t.Errorf("Movies mtime = %d, want override %d", got, override)
+	}
+}
+
+// --- Directory mtime through the real Reload() path ---
+// These mirror the SIGHUP integration tests but run without a FUSE mount.
+// They compare time.Time values rather than the second-granularity values
+// Getattr reports, since a reload here happens within the same second as mount.
+
+// nodeMtime reads a directory node's mtime under its lock.
+func nodeMtime(d *MKVFSDirNode) time.Time {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.mtime
+}
+
+func reloadDirFixture(t *testing.T) (*MKVFSRoot, *MKVFSDirNode, *MKVFSDirNode) {
+	t.Helper()
+	factory := &mockReaderFactory{
+		readers: map[string]*mockReader{
+			"/data/a.dedup": {originalSize: 100},
+			"/data/b.dedup": {originalSize: 200},
+		},
+	}
+	root, err := NewMKVFSFromConfigs([]dedup.Config{
+		{Name: "Movies/Action/a.mkv", DedupFile: "/data/a.dedup", SourceDir: "/src"},
+	}, false, factory, nil)
+	if err != nil {
+		t.Fatalf("NewMKVFSFromConfigs: %v", err)
+	}
+	movies := root.rootDir.subdirs["Movies"]
+	if movies == nil {
+		t.Fatal("Movies directory not created")
+	}
+	action := movies.subdirs["Action"]
+	if action == nil {
+		t.Fatal("Movies/Action directory not created")
+	}
+	return root, movies, action
+}
+
+func TestMKVFSRoot_Reload_DirMtime_AddUpdatesOnlyParent(t *testing.T) {
+	root, movies, action := reloadDirFixture(t)
+
+	rootBefore := nodeMtime(root.rootDir)
+	moviesBefore := nodeMtime(movies)
+	actionBefore := nodeMtime(action)
+
+	if err := root.Reload([]dedup.Config{
+		{Name: "Movies/Action/a.mkv", DedupFile: "/data/a.dedup", SourceDir: "/src"},
+		{Name: "Movies/Action/b.mkv", DedupFile: "/data/b.dedup", SourceDir: "/src"},
+	}, nil); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	if !nodeMtime(action).After(actionBefore) {
+		t.Errorf("Movies/Action mtime did not advance after gaining a child (%v)", nodeMtime(action))
+	}
+	if !nodeMtime(movies).Equal(moviesBefore) {
+		t.Errorf("Movies mtime changed to %v, want unchanged %v", nodeMtime(movies), moviesBefore)
+	}
+	if !nodeMtime(root.rootDir).Equal(rootBefore) {
+		t.Errorf("root mtime changed to %v, want unchanged %v", nodeMtime(root.rootDir), rootBefore)
+	}
+}
+
+func TestMKVFSRoot_Reload_DirMtime_RemoveUpdatesParent(t *testing.T) {
+	root, movies, action := reloadDirFixture(t)
+
+	// Add, then remove, so we isolate the removal.
+	if err := root.Reload([]dedup.Config{
+		{Name: "Movies/Action/a.mkv", DedupFile: "/data/a.dedup", SourceDir: "/src"},
+		{Name: "Movies/Action/b.mkv", DedupFile: "/data/b.dedup", SourceDir: "/src"},
+	}, nil); err != nil {
+		t.Fatalf("Reload (add): %v", err)
+	}
+	moviesBefore := nodeMtime(movies)
+	afterAdd := nodeMtime(action)
+
+	if err := root.Reload([]dedup.Config{
+		{Name: "Movies/Action/a.mkv", DedupFile: "/data/a.dedup", SourceDir: "/src"},
+	}, nil); err != nil {
+		t.Fatalf("Reload (remove): %v", err)
+	}
+
+	if !nodeMtime(action).After(afterAdd) {
+		t.Errorf("Movies/Action mtime did not advance after losing a child (%v)", nodeMtime(action))
+	}
+	if !nodeMtime(movies).Equal(moviesBefore) {
+		t.Errorf("Movies mtime changed to %v, want unchanged %v", nodeMtime(movies), moviesBefore)
+	}
+}
+
+func TestMKVFSRoot_Reload_DirMtime_NoOpReloadKeepsMtime(t *testing.T) {
+	root, movies, action := reloadDirFixture(t)
+
+	rootBefore := nodeMtime(root.rootDir)
+	moviesBefore := nodeMtime(movies)
+	actionBefore := nodeMtime(action)
+
+	// Reload with an identical file set — nothing added or removed.
+	if err := root.Reload([]dedup.Config{
+		{Name: "Movies/Action/a.mkv", DedupFile: "/data/a.dedup", SourceDir: "/src"},
+	}, nil); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	if !nodeMtime(action).Equal(actionBefore) {
+		t.Errorf("Movies/Action mtime changed on no-op reload: %v, want %v", nodeMtime(action), actionBefore)
+	}
+	if !nodeMtime(movies).Equal(moviesBefore) {
+		t.Errorf("Movies mtime changed on no-op reload: %v, want %v", nodeMtime(movies), moviesBefore)
+	}
+	if !nodeMtime(root.rootDir).Equal(rootBefore) {
+		t.Errorf("root mtime changed on no-op reload: %v, want %v", nodeMtime(root.rootDir), rootBefore)
+	}
+}
+
+func TestMKVFSRoot_Reload_DirMtime_NewDirectorySubtreeStamped(t *testing.T) {
+	root, _, _ := reloadDirFixture(t)
+	rootBefore := nodeMtime(root.rootDir)
+
+	if err := root.Reload([]dedup.Config{
+		{Name: "Movies/Action/a.mkv", DedupFile: "/data/a.dedup", SourceDir: "/src"},
+		{Name: "New/Deep/b.mkv", DedupFile: "/data/b.dedup", SourceDir: "/src"},
+	}, nil); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	// Root directly gained "New", so root advances.
+	if !nodeMtime(root.rootDir).After(rootBefore) {
+		t.Errorf("root mtime did not advance after gaining a subdirectory (%v)", nodeMtime(root.rootDir))
+	}
+	newDir := root.rootDir.subdirs["New"]
+	if newDir == nil {
+		t.Fatal("New directory not created")
+	}
+	deep := newDir.subdirs["Deep"]
+	if deep == nil {
+		t.Fatal("New/Deep directory not created")
+	}
+	// The whole newly created subtree is stamped, not left at mount time.
+	for name, d := range map[string]*MKVFSDirNode{"New": newDir, "New/Deep": deep} {
+		if !nodeMtime(d).After(rootBefore) {
+			t.Errorf("%s mtime = %v, want later than mount time %v", name, nodeMtime(d), rootBefore)
+		}
 	}
 }
 
