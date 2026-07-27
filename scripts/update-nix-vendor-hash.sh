@@ -29,6 +29,37 @@ read_hash() {
   sed -n 's/.*vendorHash = "\(sha256-[^"]*\)".*/\1/p' "$1" | head -1
 }
 
+# Portable in-place edit: BSD/macOS sed reads the argument after -i as a backup
+# extension, so `sed -i <expr> <file>` fails there. This script is documented as
+# hand-runnable, so don't depend on GNU sed. Write back with `cat` rather than
+# `mv` so the file keeps its original mode and inode — mktemp creates 0600.
+write_hash() {
+  local file=$1 hash=$2 tmp
+  tmp=$(mktemp)
+  sed "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${hash}\";|" "$file" >"$tmp"
+  cat "$tmp" >"$file"
+  rm -f "$tmp"
+}
+
+# Nothing ever builds default.nix — not this script, which builds the flake, and
+# not CI. Its hash matching flake.nix's is therefore the only thing keeping
+# `nix-build` working for non-flake users, so check it explicitly rather than
+# inferring it from a successful flake build. The two always carry the same
+# value: same go.mod/go.sum, and every writer below sets both.
+sync_default() {
+  local flake_hash=$1 default_hash
+  default_hash=$(read_hash default.nix)
+  if [[ -z "$default_hash" ]]; then
+    echo "error: no vendorHash found in default.nix" >&2
+    exit 1
+  fi
+  if [[ "$default_hash" != "$flake_hash" ]]; then
+    write_hash default.nix "$flake_hash"
+    git add default.nix
+    echo "default.nix was out of sync (${default_hash}); set to ${flake_hash}" >&2
+  fi
+}
+
 current=$(read_hash flake.nix)
 if [[ -z "$current" ]]; then
   echo "error: no vendorHash found in flake.nix" >&2
@@ -36,6 +67,7 @@ if [[ -z "$current" ]]; then
 fi
 
 if nix build .#mkvdup-canary --no-link >/dev/null 2>&1; then
+  sync_default "$current"
   echo "vendorHash is already current: ${current}" >&2
   echo "$current"
   exit 0
@@ -60,7 +92,7 @@ if [[ -z "$new_hash" ]]; then
 fi
 
 for f in "${nix_files[@]}"; do
-  sed -i "s|vendorHash = \"sha256-[^\"]*\";|vendorHash = \"${new_hash}\";|" "$f"
+  write_hash "$f" "$new_hash"
 done
 git add "${nix_files[@]}"
 
