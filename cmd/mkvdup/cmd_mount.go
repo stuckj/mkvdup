@@ -191,6 +191,10 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		if err != nil {
 			log.Printf("source-watch: warning: failed to create watcher: %v", err)
 		} else {
+			// Let the watcher invalidate a file's cached kernel attributes when
+			// its dedup file's mtime changes, so the new derived mtime is seen
+			// immediately.
+			sourceWatcher.SetAttrInvalidator(root.InvalidateFileAttr)
 			sourceWatcher.Update(root.Files(), &mkvfuse.DefaultReaderFactory{ReadTimeout: opts.SourceReadTimeout})
 			sourceWatcher.Start()
 		}

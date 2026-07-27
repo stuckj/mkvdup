@@ -45,6 +45,20 @@ type SourceWatcher struct {
 	// for directories that use polling instead of inotify.
 	pollFiles map[string]time.Time
 
+	// dedupReverse maps absolute .mkvdup dedup file paths to the virtual files
+	// backed by them. Dedup files are watched for timestamp changes only, to
+	// keep each virtual file's derived mtime live; content changes remain a
+	// reload concern and never trigger the integrity (disable) path.
+	dedupReverse map[string][]*MKVFile
+
+	// dedupPollFiles is the set of dedup file paths on network filesystems that
+	// must be polled for mtime changes (inotify doesn't work there).
+	dedupPollFiles map[string]bool
+
+	// invalidateAttr, when set, is invoked with a virtual file's path after its
+	// derived mtime is refreshed so the kernel drops its cached attributes.
+	invalidateAttr func(virtualPath string)
+
 	action string // "warn", "disable", "checksum"
 	logFn  func(string, ...interface{})
 	mu     sync.RWMutex
@@ -104,6 +118,8 @@ func NewSourceWatcher(action string, pollInterval time.Duration, onErrorCommand 
 		checksums:       make(map[string]uint64),
 		sizes:           make(map[string]int64),
 		pollFiles:       make(map[string]time.Time),
+		dedupReverse:    make(map[string][]*MKVFile),
+		dedupPollFiles:  make(map[string]bool),
 		action:          action,
 		logFn:           logFn,
 		checksumCh:      make(chan checksumRequest, 256),
@@ -112,6 +128,15 @@ func NewSourceWatcher(action string, pollInterval time.Duration, onErrorCommand 
 		notifier:        notifier,
 		stopCh:          make(chan struct{}),
 	}, nil
+}
+
+// SetAttrInvalidator sets the callback used to invalidate a virtual file's
+// cached kernel attributes after its derived mtime is refreshed. Must be called
+// before Start().
+func (sw *SourceWatcher) SetAttrInvalidator(fn func(virtualPath string)) {
+	sw.mu.Lock()
+	sw.invalidateAttr = fn
+	sw.mu.Unlock()
 }
 
 // Update rebuilds the watcher's source file mappings from the current file set.
@@ -130,8 +155,17 @@ func (sw *SourceWatcher) Update(files map[string]*MKVFile, readerFactory ReaderF
 	newChecksums := make(map[string]uint64)
 	newSizes := make(map[string]int64)
 	watchDirs := make(map[string]bool)
+	newDedupReverse := make(map[string][]*MKVFile)
+	dedupWatchDirs := make(map[string]bool)
 
 	for _, file := range files {
+		// Track the dedup file for timestamp-only watching (drives the virtual
+		// file's derived mtime). Done before the header read so a temporarily
+		// unreadable dedup file is still watched for when it reappears.
+		dedupAbs := filepath.Clean(file.DedupPath)
+		newDedupReverse[dedupAbs] = append(newDedupReverse[dedupAbs], file)
+		dedupWatchDirs[filepath.Dir(dedupAbs)] = true
+
 		reader, err := readerFactory.NewReaderLazy(file.DedupPath, file.SourceDir)
 		if err != nil {
 			sw.logFn("source-watch: warning: cannot read dedup header for %s: %v", file.Name, err)
@@ -177,6 +211,8 @@ drain:
 	sw.checksums = newChecksums
 	sw.sizes = newSizes
 	sw.pollFiles = make(map[string]time.Time)
+	sw.dedupReverse = newDedupReverse
+	sw.dedupPollFiles = make(map[string]bool)
 	sw.mu.Unlock()
 
 	// Phase 3: Update inotify watches without the lock.
@@ -213,21 +249,49 @@ drain:
 		}
 	}
 
+	// Set up dedup-file watches (timestamp-only; drives derived mtime refresh).
+	// Local dedup dirs use inotify (added to the shared fsnotify watcher);
+	// network-FS dedup files are polled.
+	dedupPathsByDir := make(map[string][]string)
+	for absPath := range newDedupReverse {
+		dir := filepath.Dir(absPath)
+		dedupPathsByDir[dir] = append(dedupPathsByDir[dir], absPath)
+	}
+	newDedupPollFiles := make(map[string]bool)
+	for dir := range dedupWatchDirs {
+		if isNetworkFS(dir) {
+			for _, absPath := range dedupPathsByDir[dir] {
+				newDedupPollFiles[absPath] = true
+			}
+		} else {
+			if err := sw.watcher.Add(dir); err != nil {
+				sw.logFn("source-watch: warning: cannot watch dedup dir %s: %v", dir, err)
+			}
+		}
+	}
+
 	// Phase 4: Set poll files under the lock.
-	if len(newPollFiles) > 0 {
+	if len(newPollFiles) > 0 || len(newDedupPollFiles) > 0 {
 		sw.mu.Lock()
-		sw.pollFiles = newPollFiles
+		if len(newPollFiles) > 0 {
+			sw.pollFiles = newPollFiles
+		}
+		sw.dedupPollFiles = newDedupPollFiles
 		sw.mu.Unlock()
 	}
 
-	sw.logFn("source-watch: monitoring %d source files in %d directories (action=%s)",
-		len(newReverse), len(watchDirs), sw.action)
+	sw.logFn("source-watch: monitoring %d source files, %d dedup files in %d directories (action=%s)",
+		len(newReverse), len(newDedupReverse), len(watchDirs)+len(dedupWatchDirs), sw.action)
 }
 
-// watchedDirs returns the set of currently watched directories.
+// watchedDirs returns the set of currently watched directories (both source
+// directories and dedup-file directories).
 func (sw *SourceWatcher) watchedDirs() map[string]bool {
 	dirs := make(map[string]bool)
 	for path := range sw.reverse {
+		dirs[filepath.Dir(path)] = true
+	}
+	for path := range sw.dedupReverse {
 		dirs[filepath.Dir(path)] = true
 	}
 	return dirs
@@ -283,11 +347,16 @@ func (sw *SourceWatcher) eventLoop() {
 			if !ok {
 				return
 			}
-			// React to writes, creates (overwrites), renames, and removals
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
-				continue
+			// Dedup files: refresh the derived mtime on any event that can
+			// change it (including Chmod/IN_ATTRIB from touch). No-ops if the
+			// path isn't a tracked dedup file.
+			sw.refreshDedupMtime(event.Name)
+			// Source files: integrity handling for content changes only.
+			// Chmod is intentionally excluded so a source-file `touch` does not
+			// disable the virtual file.
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) != 0 {
+				sw.handleChange(event.Name)
 			}
-			sw.handleChange(event.Name)
 
 		case err, ok := <-sw.watcher.Errors:
 			if !ok {
@@ -371,6 +440,44 @@ func (sw *SourceWatcher) pollCheck() {
 	// Process changes — handleChange acquires the lock per-path.
 	for _, absPath := range changedPaths {
 		sw.handleChange(absPath)
+	}
+
+	// Refresh dedup-file mtimes for network-FS dedup files. refreshDedupMtime
+	// re-stats and only acts (and invalidates) when the mtime actually changed.
+	sw.mu.RLock()
+	dedupPaths := make([]string, 0, len(sw.dedupPollFiles))
+	for p := range sw.dedupPollFiles {
+		dedupPaths = append(dedupPaths, p)
+	}
+	sw.mu.RUnlock()
+	for _, p := range dedupPaths {
+		sw.refreshDedupMtime(p)
+	}
+}
+
+// refreshDedupMtime re-derives the mtime for the virtual files backed by the
+// given dedup file path and, if it changed, invalidates their cached kernel
+// attributes so the new mtime is visible immediately. It is a no-op if absPath
+// is not a tracked dedup file. This path never disables files — dedup content
+// integrity is intentionally out of scope (a reload handles content changes).
+func (sw *SourceWatcher) refreshDedupMtime(absPath string) {
+	cleaned := filepath.Clean(absPath)
+
+	sw.mu.RLock()
+	affected := sw.dedupReverse[cleaned]
+	invalidate := sw.invalidateAttr
+	sw.mu.RUnlock()
+
+	if len(affected) == 0 {
+		return // Not a tracked dedup file
+	}
+	for _, f := range affected {
+		if f.RefreshDerivedMtime() {
+			sw.logFn("source-watch: dedup file mtime changed: %s (refreshing %s)", cleaned, f.Name)
+			if invalidate != nil {
+				invalidate(f.Name)
+			}
+		}
 	}
 }
 

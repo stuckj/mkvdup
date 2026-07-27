@@ -2,11 +2,19 @@
 package fuse
 
 import (
+	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 )
+
+// fsStartTime is a stable reference timestamp used for virtual directories,
+// which have no backing file on disk. It is captured once at process start so
+// directory timestamps don't change on every stat.
+var fsStartTime = time.Now()
 
 // MKVFile represents a virtual MKV file backed by a dedup file.
 type MKVFile struct {
@@ -22,8 +30,59 @@ type MKVFile struct {
 	// When true, Open/Read return EIO. Reset to false on reload.
 	disabled bool
 
+	// derivedMtime caches the virtual file's modification time, derived from
+	// the dedup (.mkvdup) file's mtime. Computed lazily on first stat and
+	// refreshed by the source watcher when the dedup file changes. Guarded by mu.
+	derivedMtime time.Time
+	derivedSet   bool
+
 	// Factory for lazy initialization (injected from root)
 	readerFactory ReaderFactory
+}
+
+// statMtime returns the mtime of the file at path, or fsStartTime if it cannot
+// be stat'd (a stable fallback so timestamps don't flap on transient errors).
+func statMtime(path string) time.Time {
+	if info, err := os.Stat(path); err == nil {
+		return info.ModTime()
+	}
+	return fsStartTime
+}
+
+// DerivedMtime returns the virtual file's modification time, derived from the
+// dedup file's mtime. The value is computed lazily on first call and cached.
+func (f *MKVFile) DerivedMtime() time.Time {
+	f.mu.RLock()
+	if f.derivedSet {
+		m := f.derivedMtime
+		f.mu.RUnlock()
+		return m
+	}
+	f.mu.RUnlock()
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.derivedSet {
+		f.derivedMtime = statMtime(f.DedupPath)
+		f.derivedSet = true
+	}
+	return f.derivedMtime
+}
+
+// RefreshDerivedMtime re-stats the dedup file and updates the cached derived
+// mtime. It returns true if the value changed. Used by the source watcher when
+// a dedup file's timestamp changes so the new mtime becomes visible.
+func (f *MKVFile) RefreshDerivedMtime() bool {
+	newMtime := statMtime(f.DedupPath) // stat without holding the lock
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.derivedSet && f.derivedMtime.Equal(newMtime) {
+		return false
+	}
+	f.derivedMtime = newMtime
+	f.derivedSet = true
+	return true
 }
 
 // MKVFSRoot is the root node of the FUSE filesystem.
@@ -113,4 +172,46 @@ func getDirPerms(store *PermissionStore, path string) (uid, gid, mode uint32) {
 		return store.GetDirPerms(path)
 	}
 	return 0, 0, 0555
+}
+
+// fileTimes returns the (atime, mtime, ctime) in Unix seconds for a virtual
+// file. mtime is the dedup file's derived mtime, or the permissions-store
+// override if one is set. atime and ctime mirror mtime: atime is deliberately
+// not tracked (avoids read-time cost), and ctime has no independent meaning on
+// this synthetic filesystem.
+func fileTimes(store *PermissionStore, path string, f *MKVFile) (atime, mtime, ctime uint64) {
+	m := f.DerivedMtime().Unix()
+	if store != nil {
+		if override := store.GetFileMtimeOverride(path); override != nil {
+			m = *override
+		}
+	}
+	um := uint64(m)
+	return um, um, um
+}
+
+// dirTimes returns the (atime, mtime, ctime) in Unix seconds for a virtual
+// directory. Directories have no backing file, so they default to a stable
+// reference time (fsStartTime), overridable via the permissions store.
+func dirTimes(store *PermissionStore, path string) (atime, mtime, ctime uint64) {
+	m := fsStartTime.Unix()
+	if store != nil {
+		if override := store.GetDirMtimeOverride(path); override != nil {
+			m = *override
+		}
+	}
+	um := uint64(m)
+	return um, um, um
+}
+
+// applyTimes sets the atime/mtime/ctime (in seconds) on a fuse.Attr and zeroes
+// the nanosecond fields. Shared by all Getattr and Lookup handlers so file and
+// directory nodes report timestamps consistently.
+func applyTimes(attr *fuse.Attr, atime, mtime, ctime uint64) {
+	attr.Atime = atime
+	attr.Mtime = mtime
+	attr.Ctime = ctime
+	attr.Atimensec = 0
+	attr.Mtimensec = 0
+	attr.Ctimensec = 0
 }

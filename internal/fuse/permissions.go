@@ -16,12 +16,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Perms holds uid, gid, and mode for a file or directory.
-// Nil values indicate the field should inherit from defaults.
+// Perms holds uid, gid, mode, and an optional modification-time override for a
+// file or directory. Nil uid/gid/mode inherit from defaults; a nil Mtime means
+// the timestamp is derived (from the dedup file for files, or a stable
+// reference time for directories) rather than overridden.
 type Perms struct {
 	UID  *uint32 `yaml:"uid,omitempty"`
 	GID  *uint32 `yaml:"gid,omitempty"`
 	Mode *uint32 `yaml:"mode,omitempty"`
+	// Mtime is an explicit modification-time override in Unix seconds, set via
+	// touch/utimes. Only mtime is tracked; atime is reported equal to mtime.
+	Mtime *int64 `yaml:"mtime,omitempty"`
 }
 
 // Defaults holds default permissions for files and directories.
@@ -243,6 +248,30 @@ func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) {
 	return uid, gid, mode
 }
 
+// GetFileMtimeOverride returns the explicit mtime override (Unix seconds) for a
+// file, or nil if none is set (in which case the derived mtime is used).
+func (s *PermissionStore) GetFileMtimeOverride(path string) *int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if p, ok := s.files[path]; ok && p.Mtime != nil {
+		m := *p.Mtime
+		return &m
+	}
+	return nil
+}
+
+// GetDirMtimeOverride returns the explicit mtime override (Unix seconds) for a
+// directory, or nil if none is set.
+func (s *PermissionStore) GetDirMtimeOverride(path string) *int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if p, ok := s.dirs[path]; ok && p.Mtime != nil {
+		m := *p.Mtime
+		return &m
+	}
+	return nil
+}
+
 // SetFilePerms sets permissions for a file.
 // Only non-nil values are updated; nil values leave existing values unchanged.
 // Automatically saves to disk.
@@ -348,6 +377,64 @@ func (s *PermissionStore) RemoveDirPerms(path string) error {
 
 	if s.verbose {
 		log.Printf("RemoveDirPerms: %s", path)
+	}
+
+	return s.Save()
+}
+
+// SetFileMtime sets (or, when mtime is nil, clears) the modification-time
+// override for a file. Existing uid/gid/mode overrides are preserved.
+// Automatically saves to disk.
+func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
+	s.mu.Lock()
+	p, ok := s.files[path]
+	if !ok {
+		if mtime == nil {
+			s.mu.Unlock()
+			return nil // nothing to clear
+		}
+		p = &Perms{}
+		s.files[path] = p
+	}
+	if mtime != nil {
+		v := *mtime
+		p.Mtime = &v
+	} else {
+		p.Mtime = nil
+	}
+	s.mu.Unlock()
+
+	if s.verbose {
+		log.Printf("SetFileMtime: %s mtime=%v", path, mtime)
+	}
+
+	return s.Save()
+}
+
+// SetDirMtime sets (or, when mtime is nil, clears) the modification-time
+// override for a directory. Existing uid/gid/mode overrides are preserved.
+// Automatically saves to disk.
+func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
+	s.mu.Lock()
+	p, ok := s.dirs[path]
+	if !ok {
+		if mtime == nil {
+			s.mu.Unlock()
+			return nil // nothing to clear
+		}
+		p = &Perms{}
+		s.dirs[path] = p
+	}
+	if mtime != nil {
+		v := *mtime
+		p.Mtime = &v
+	} else {
+		p.Mtime = nil
+	}
+	s.mu.Unlock()
+
+	if s.verbose {
+		log.Printf("SetDirMtime: %s mtime=%v", path, mtime)
 	}
 
 	return s.Save()

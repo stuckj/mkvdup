@@ -20,7 +20,7 @@ This tool is intended for personal backup and archival of legally owned media. I
 - **DVD support** - Works with ISO files containing VOB (MPEG-PS) content
 - **Blu-ray support** - Works with BDMV directory structures and Blu-ray ISO files
 - **FUSE filesystem** - Mount deduplicated files and access them transparently
-- **Permission customization** - `chmod`/`chown` support with persistent metadata storage
+- **Permission & timestamp customization** - `chmod`/`chown`/`touch` support with persistent metadata storage (file mtimes are derived from the dedup file and overridable)
 - **Verification** - Byte-for-byte verification of reconstructed files
 
 ## Installation

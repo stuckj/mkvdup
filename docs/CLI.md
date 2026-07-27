@@ -251,6 +251,10 @@ New permissions are written to:
 - `~/.config/mkvdup/permissions.yaml` (for non-root users)
 - `/etc/mkvdup/permissions.yaml` (when running as root, unless `~/.config/mkvdup/permissions.yaml` exists)
 
+The permissions file also stores per-file/-directory **mtime overrides** set via
+`touch`/`utimes`. By default a virtual file's mtime is derived from its `.mkvdup` dedup
+file; see [Timestamps](FUSE.md#timestamps) for details.
+
 ### verify
 
 Verify an existing dedup file against the original MKV.
