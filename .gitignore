@@ -28,6 +28,10 @@ go.work
 .DS_Store
 Thumbs.db
 
+# Core dumps
+/core
+core.*
+
 # Build artifacts
 /dist/
 /bin/
@@ -41,3 +45,6 @@ Thumbs.db
 *.log
 
 .claude/settings.local.json
+
+# Claude Code local worktrees (kept as siblings of the repo, never in-tree)
+.claude/worktrees/
