@@ -11,13 +11,15 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-// fsStartTime is the baseline timestamp for virtual directories, captured once
-// at process start. Virtual files and directories all come into existence when
-// the filesystem is mounted, so mount time is the POSIX-correct mtime for a
-// directory that has not changed since: a directory's mtime reflects when an
-// entry was last added to or removed from it. Runtime additions/removals (via
-// config reload) update the affected directory's mtime to the time of the
-// change — see mergeDirectoryTree.
+// fsStartTime is a last-resort fallback timestamp for a directory node that
+// somehow carries no mtime of its own (zero value). Real directory mtimes are
+// stamped by BuildDirectoryTree at the moment the tree is built — mount time
+// for the initial build — because every virtual entry comes into existence
+// then. A directory's mtime thereafter reflects when an entry was last added to
+// or removed from it; see mergeDirectoryTree.
+//
+// Note this is captured at package init, which precedes the mount by however
+// long startup takes, so it must not be used as the mount baseline itself.
 var fsStartTime = time.Now()
 
 // MKVFile represents a virtual MKV file backed by a dedup file.
@@ -81,11 +83,22 @@ func (f *MKVFile) RefreshDerivedMtime() bool {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.derivedSet && f.derivedMtime.Equal(newMtime) {
+
+	// No value cached yet means nothing has ever been reported to the kernel,
+	// so there is nothing to invalidate: record the baseline and report "no
+	// change". Without this, the first poll after mount or after a reload
+	// (which clears the cache via updateFrom) would claim the mtime changed and
+	// trigger a pointless invalidation plus a misleading log line.
+	if !f.derivedSet {
+		f.derivedMtime = newMtime
+		f.derivedSet = true
+		return false
+	}
+
+	if f.derivedMtime.Equal(newMtime) {
 		return false
 	}
 	f.derivedMtime = newMtime
-	f.derivedSet = true
 	return true
 }
 

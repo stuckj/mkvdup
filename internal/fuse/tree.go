@@ -22,6 +22,12 @@ import (
 //   - Duplicate paths: later file wins, warning logged
 //   - File/directory collision: directory wins, file skipped with warning
 func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) *MKVFSDirNode {
+	// Every directory in this tree comes into existence now: at mount for the
+	// initial build, or at reload for a rebuild. Capture the time once so the
+	// whole tree is stamped consistently. (On reload, mergeDirectoryTreeAt
+	// re-stamps genuinely new subtrees and leaves untouched directories alone.)
+	now := time.Now()
+
 	root := &MKVFSDirNode{
 		name:          "",
 		path:          "",
@@ -30,18 +36,18 @@ func BuildDirectoryTree(files []*MKVFile, verbose bool, readerFactory ReaderFact
 		verbose:       verbose,
 		readerFactory: readerFactory,
 		permStore:     permStore,
-		mtime:         fsStartTime,
+		mtime:         now,
 	}
 
 	for _, file := range files {
-		insertFile(root, file, verbose, readerFactory, permStore)
+		insertFile(root, file, verbose, readerFactory, permStore, now)
 	}
 
 	return root
 }
 
 // insertFile inserts a file into the directory tree, creating directories as needed.
-func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore) {
+func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory ReaderFactory, permStore *PermissionStore, now time.Time) {
 	// Validate: reject paths with ".." components (security)
 	if strings.Contains(file.Name, "..") {
 		log.Printf("Warning: skipping file with invalid path (contains '..'): %s", file.Name)
@@ -102,7 +108,7 @@ func insertFile(root *MKVFSDirNode, file *MKVFile, verbose bool, readerFactory R
 				verbose:       verbose,
 				readerFactory: readerFactory,
 				permStore:     permStore,
-				mtime:         fsStartTime,
+				mtime:         now,
 			}
 			current.subdirs[dirName] = subdir
 		}

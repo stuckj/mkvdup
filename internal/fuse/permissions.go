@@ -35,6 +35,30 @@ func (p *Perms) isEmpty() bool {
 	return p.UID == nil && p.GID == nil && p.Mode == nil && p.Mtime == nil
 }
 
+// The optional-override setters take pointers, so logging them with %v prints
+// an address rather than a value. These render the value (or "unset") instead.
+
+func logU32(p *uint32) string {
+	if p == nil {
+		return "unset"
+	}
+	return strconv.FormatUint(uint64(*p), 10)
+}
+
+func logMode(p *uint32) string {
+	if p == nil {
+		return "unset"
+	}
+	return "0" + strconv.FormatUint(uint64(*p), 8)
+}
+
+func logI64(p *int64) string {
+	if p == nil {
+		return "unset"
+	}
+	return strconv.FormatInt(*p, 10)
+}
+
 // Defaults holds default permissions for files and directories.
 type Defaults struct {
 	FileUID  uint32 `yaml:"file_uid"`
@@ -313,7 +337,7 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
 	s.mu.Unlock()
 
 	if s.verbose {
-		log.Printf("SetFilePerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
+		log.Printf("SetFilePerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
 	return s.Save()
@@ -368,7 +392,7 @@ func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint3
 	s.mu.Unlock()
 
 	if s.verbose {
-		log.Printf("SetDirPerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
+		log.Printf("SetDirPerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
 	return s.Save()
@@ -416,7 +440,7 @@ func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
 	s.mu.Unlock()
 
 	if s.verbose {
-		log.Printf("SetFileMtime: %s mtime=%v", path, mtime)
+		log.Printf("SetFileMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
 	return s.Save()
@@ -450,7 +474,7 @@ func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
 	s.mu.Unlock()
 
 	if s.verbose {
-		log.Printf("SetDirMtime: %s mtime=%v", path, mtime)
+		log.Printf("SetDirMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
 	return s.Save()

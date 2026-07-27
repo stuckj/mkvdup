@@ -53,6 +53,33 @@ func TestMKVFile_DerivedMtime_MissingFileFallback(t *testing.T) {
 	}
 }
 
+func TestMKVFile_RefreshDerivedMtime_FirstDeriveIsNotAChange(t *testing.T) {
+	dir := t.TempDir()
+	dedupPath := filepath.Join(dir, "v.mkvdup")
+	want := time.Unix(1_600_000_000, 0)
+	writeFileWithMtime(t, dedupPath, want)
+
+	// Cache never populated (as after mount, or after updateFrom clears it on
+	// reload). Nothing has been reported to the kernel, so there is nothing to
+	// invalidate and this must not report a change.
+	f := &MKVFile{Name: "v.mkv", DedupPath: dedupPath}
+	if changed := f.RefreshDerivedMtime(); changed {
+		t.Error("first refresh reported a change; nothing was cached to change from")
+	}
+	if got := f.DerivedMtime(); got.Unix() != want.Unix() {
+		t.Errorf("baseline not recorded: DerivedMtime = %d, want %d", got.Unix(), want.Unix())
+	}
+
+	// A genuine change after the baseline is still reported.
+	newMtime := time.Unix(1_650_000_000, 0)
+	if err := os.Chtimes(dedupPath, newMtime, newMtime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if changed := f.RefreshDerivedMtime(); !changed {
+		t.Error("real mtime change after baseline was not reported")
+	}
+}
+
 func TestMKVFile_RefreshDerivedMtime(t *testing.T) {
 	dir := t.TempDir()
 	dedupPath := filepath.Join(dir, "v.mkvdup")
@@ -333,15 +360,21 @@ func dirMtimeOf(t *testing.T, d *MKVFSDirNode) uint64 {
 	return out.Mtime
 }
 
-func TestDirMtime_BuiltTreeUsesMountTime(t *testing.T) {
+func TestDirMtime_BuiltTreeUsesBuildTime(t *testing.T) {
+	// Directories are stamped when the tree is built (mount time for the real
+	// filesystem), not at package init — so assert the value falls inside the
+	// build window rather than matching fsStartTime exactly.
+	before := time.Now().Add(-2 * time.Second).Unix()
 	f := &MKVFile{Name: "Movies/Action/a.mkv"}
 	root := BuildDirectoryTree([]*MKVFile{f}, false, nil, nil)
+	after := time.Now().Add(2 * time.Second).Unix()
 
 	movies := root.subdirs["Movies"]
 	action := movies.subdirs["Action"]
 	for name, d := range map[string]*MKVFSDirNode{"root": root, "Movies": movies, "Action": action} {
-		if got := dirMtimeOf(t, d); got != uint64(fsStartTime.Unix()) {
-			t.Errorf("%s mtime = %d, want mount time %d", name, got, fsStartTime.Unix())
+		got := int64(dirMtimeOf(t, d))
+		if got < before || got > after {
+			t.Errorf("%s mtime = %d, want within build window [%d, %d]", name, got, before, after)
 		}
 	}
 }
