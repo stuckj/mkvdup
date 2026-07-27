@@ -170,12 +170,36 @@ no flakes required:
 nix profile install nixpkgs#mkvdup     # or add `mkvdup` to environment.systemPackages
 ```
 
-Canary builds come from this repo's own `flake.nix` (or `default.nix` for non-flake users):
+Canary builds come from this repo's own `flake.nix`. Because the flake builds `src = ./.`, the flake
+reference *is* the selector — point it at whatever ref you want to test. There is no separate canary
+channel to publish to, unlike the APT/YUM repositories above:
 
 ```bash
-nix profile install github:stuckj/mkvdup#mkvdup-canary
-nix-build                              # non-flake equivalent, result in ./result
+# a development branch (slashes in branch names are fine)
+nix shell github:stuckj/mkvdup/feat/my-branch#mkvdup-canary      # ephemeral, nothing installed
+nix profile install github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
+
+# an immutable canary tag, if you want a reproducible pin
+nix profile install github:stuckj/mkvdup/v1.8.2-canary.1#mkvdup-canary
+
+nix-build                              # non-flake, builds the local tree into ./result
 ```
+
+`nix shell` is usually the right tool for "test this branch with a real binary" — it puts
+`mkvdup-canary` on `PATH` for that shell only, with no install or uninstall step. Installing from a
+branch pins the revision Nix resolved at the time; use `nix profile upgrade` to move it forward.
+
+The canary binary is named `mkvdup-canary`, so it coexists with a stable `mkvdup` rather than
+colliding with it.
+
+**This only works if the ref's committed `vendorHash` matches that ref's `go.sum`.** A branch
+inherits a correct hash from main, so the usual case needs nothing. If the branch changed
+`go.mod`/`go.sum`, the build fails with a hash mismatch that prints the correct value — run
+`./scripts/update-nix-vendor-hash.sh` on the branch and commit the result, and the ref becomes
+installable for good.
+
+On NixOS, mkvdup needs `fusermount3` from fuse3 at runtime; set `programs.fuse.userAllowOther = true;`
+if you mount with `allow_other`.
 
 ## Nix Maintenance
 
