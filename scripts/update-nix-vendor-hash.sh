@@ -65,7 +65,12 @@ if [[ -z "$current" ]]; then
   exit 1
 fi
 
-if nix build .#mkvdup-canary --no-link >/dev/null 2>&1; then
+# One build serves both purposes: deciding whether the hash is current, and
+# supplying the mismatch output to parse. Don't split it into a detect build and
+# a capture build — nix discards the output of a fixed-output derivation that
+# fails its hash check, so the second build would re-download the entire module
+# set, and the mismatch path is the common one.
+if build_output=$(nix build .#mkvdup-canary --no-link 2>&1); then
   sync_default "$current"
   echo "vendorHash is already current: ${current}" >&2
   echo "$current"
@@ -75,8 +80,6 @@ fi
 # The build failed. Nix reports the correct hash in the mismatch error, but it
 # may also have failed for an unrelated reason — only treat it as a hash
 # refresh if a mismatch is actually what we got.
-build_output=$(nix build .#mkvdup-canary --no-link 2>&1 || true)
-
 if ! grep -q "hash mismatch in fixed-output derivation" <<<"$build_output"; then
   echo "error: nix build failed for a reason other than a vendorHash mismatch:" >&2
   echo "$build_output" >&2

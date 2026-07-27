@@ -30,6 +30,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: main
+          # Full history: the push step rebases onto origin/main if main moved,
+          # and a shallow clone has no merge base to rebase against.
+          fetch-depth: 0
           token: ${{ secrets.BENCHMARK_PAT || github.token }}
 
       - name: Install Nix
@@ -45,4 +48,24 @@ jobs:
           git add flake.nix default.nix
           git diff --staged --quiet && echo "vendorHash already current, nothing to commit" && exit 0
           git commit -m "Refresh Nix canary vendorHash after dependency bump [skip ci]"
-          git push
+
+          # main can advance while the nix build runs, which rejects the push as
+          # non-fast-forward. Left unhandled that strands the hash as stale until
+          # someone reruns by hand, since the paths filter only fires on the next
+          # go.mod/go.sum change. Rebase onto the new main and retry; the commit
+          # is local and has never been pushed, so rebasing it is safe.
+          #
+          # If what advanced main was itself a go.mod/go.sum change, the paths
+          # filter queues another run behind this one — the concurrency group
+          # serializes them — and that run recomputes against the newer tree.
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "::notice::push rejected on attempt ${attempt}; rebasing onto origin/main"
+            git fetch origin main
+            git rebase origin/main
+          done
+
+          echo "::error::could not push the vendorHash refresh after 3 attempts"
+          exit 1
