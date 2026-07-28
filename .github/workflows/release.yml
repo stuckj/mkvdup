@@ -122,7 +122,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25'  # keep in sync with the pinned nfpm version below
+          go-version: '1.26'  # keep in sync with the pinned nfpm version below
 
       - name: Build binary
         env:
@@ -147,9 +147,14 @@ jobs:
           fi
 
       # Pinned deliberately. nfpm@latest previously broke releases by raising its
-      # Go requirement out from under this workflow (v2.47.0 needs Go >= 1.26.4,
-      # while this job builds with Go 1.25), which fails the build with
-      # GOTOOLCHAIN=local. v2.46.0 is the last release that supports Go 1.25.
+      # Go requirement out from under this workflow (v2.47.0 needs Go >= 1.26.4),
+      # which fails the build with GOTOOLCHAIN=local.
+      #
+      # Left at v2.46.0 while go-version moved to 1.26: v2.46.0 builds fine on a
+      # newer toolchain, so nothing is broken by holding it here. Moving to
+      # v2.47.0+ additionally requires the resolved 1.26.x to be >= 1.26.4, which
+      # 'go-version: 1.26' does not by itself guarantee -- pin the patch, or
+      # confirm what setup-go resolves, before bumping.
       # Bump this together with go-version above, not independently.
       # Matches how benchstat and staticcheck are pinned in the other workflows.
       - name: Install nfpm
