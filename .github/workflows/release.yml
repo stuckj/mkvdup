@@ -702,12 +702,47 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: main
+          # Full history: the containment check below needs the release commit
+          # and main's history, and the push step rebases if main moved.
+          fetch-depth: 0
           token: ${{ secrets.BENCHMARK_PAT || github.token }}
 
+      # This job rewrites main's Nix files, so it must only run when main
+      # actually contains the code being released. Canaries are normally cut
+      # from development branches, and without this main ends up claiming a
+      # version whose source is not there — `nix profile install
+      # github:stuckj/mkvdup#mkvdup-canary` builds main's HEAD, so the reported
+      # version and the binary would describe different code.
+      #
+      # Testing containment rather than `github.ref_name == 'main'` is what
+      # makes this right in every direction: a canary legitimately cut from main
+      # still updates it, and a release dispatched from main with a `commit`
+      # input pointing at a branch correctly does not.
+      - name: Check the release commit is on main
+        id: guard
+        env:
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          if git merge-base --is-ancestor "${COMMIT}" HEAD; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${COMMIT} is not on main; leaving main's Nix files alone"
+            {
+              echo "### Nix files not updated"
+              echo
+              echo "\`${COMMIT}\` is not an ancestor of \`main\`, so this release was cut from"
+              echo "another branch. Updating main's Nix files would make them claim a version"
+              echo "whose code is not on main."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install Nix
+        if: steps.guard.outputs.run == 'true'
         uses: cachix/install-nix-action@v31
 
       - name: Update version in Nix files
+        if: steps.guard.outputs.run == 'true'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
@@ -718,6 +753,7 @@ jobs:
           sed -i "s/version = \".*\";/version = \"${VERSION}\";/" default.nix
 
       - name: Update vendorHash in Nix files
+        if: steps.guard.outputs.run == 'true'
         run: |
           # Shared with the nix-canary-hash workflow, which keeps the same hash
           # fresh between releases when dependencies change.
@@ -728,12 +764,29 @@ jobs:
           grep -n 'version\|vendorHash' default.nix
 
       - name: Commit and push Nix updates
+        if: steps.guard.outputs.run == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add flake.nix default.nix flake.lock
-          git diff --staged --quiet || git commit -m "Update Nix files for ${{ needs.prepare.outputs.tag }} [skip ci]"
-          git push
+          git diff --staged --quiet && echo "Nix files already current, nothing to commit" && exit 0
+          git commit -m "Update Nix files for ${{ needs.prepare.outputs.tag }} [skip ci]"
+
+          # main can advance during the nix build, which rejects the push as
+          # non-fast-forward and would otherwise lose the bump entirely. Rebase
+          # onto the new main and retry; the commit is local and has never been
+          # pushed, so rebasing it is safe.
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "::notice::push rejected on attempt ${attempt}; rebasing onto origin/main"
+            git fetch origin main
+            git rebase origin/main
+          done
+
+          echo "::error::could not push the Nix updates after 3 attempts"
+          exit 1
 
   publish-repo:
     # Also gated on release: publishing APT/YUM packages for a version that has
