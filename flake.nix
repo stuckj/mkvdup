@@ -76,12 +76,11 @@
         mkvdup-canary = mkPackage { command = "mkvdup-canary"; };
       in
       {
-        # default stays the canary: this flake exists primarily to install
-        # unmerged branches. Stable installs should come from nixpkgs once
-        # mkvdup lands there; #mkvdup is for installing a release tag before
-        # then, or from a checkout.
+        # default is mkvdup: that is what someone installing this project
+        # expects to get. mkvdup-canary is for testing an unmerged branch, which
+        # is a deliberate act, so it should have to be asked for by name.
         packages = {
-          default = mkvdup-canary;
+          default = mkvdup;
           inherit mkvdup mkvdup-canary;
         };
       }

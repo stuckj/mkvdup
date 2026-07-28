@@ -3,9 +3,9 @@
 `package.nix` in this directory is the **reference copy** of the mkvdup derivation as it is meant
 to exist in [nixpkgs](https://github.com/NixOS/nixpkgs) at `pkgs/by-name/mk/mkvdup/package.nix`.
 
-Nothing in this repo builds it — `flake.nix` and `default.nix` build the *canary* from the working
-tree instead. This file exists so the upstream derivation is reviewable alongside the code, and so
-a re-submission or a manual version bump has a correct starting point.
+Nothing in this repo builds it — `flake.nix` and `default.nix` build from the working tree instead,
+against whatever ref you point them at. This file exists so the upstream derivation is reviewable
+alongside the code, and so a re-submission or a manual version bump has a correct starting point.
 
 It pins an immutable release tag, so it is never affected by dependency drift on `main`.
 
@@ -77,12 +77,20 @@ The recorded `src.hash` covers an immutable tag, so it should never need refresh
 nix run nixpkgs#nix-prefetch-github -- stuckj mkvdup --rev v<version>
 ```
 
-## Two things a reviewer may raise
+## Things a reviewer may raise
 
-- **`meta.platforms` is unset**, so it defaults to every platform Go supports, including Darwin.
-  mkvdup does ship macOS binaries, so claiming Darwin is honest — but the Go test suite that runs
-  in `checkPhase` is only exercised on Linux in this repo's CI. If ofborg's Darwin build fails,
-  the fix is a one-liner: add `platforms = lib.platforms.linux;` to `meta`.
+- **`meta.platforms` is Linux and Darwin**, matching what upstream builds and tests. It has to be
+  set explicitly: left unset it defaults to `go.meta.platforms`, which also contains
+  `i686-freebsd`, `x86_64-freebsd`, `aarch64-freebsd`, `wasm32-wasi` and `wasm64-wasi` — none of
+  which make sense for a FUSE filesystem that ships a bash `mount.fuse.*` helper.
+
+  In practice this resolves to the Linux doubles plus `aarch64-darwin` only: nixpkgs has dropped
+  `x86_64-darwin`, so `lib.platforms.darwin` no longer includes it. Intel macOS users get mkvdup
+  from Homebrew or the release tarballs instead — nothing to do about it here.
+
+  The Go test suite runs in `checkPhase` and is only exercised on Linux in this repo's CI, so a
+  Darwin failure in ofborg is possible. Narrow `platforms` if that happens, rather than dropping
+  the tests.
 - **The maintainer entry includes an email address.** That field is optional in nixpkgs; drop the
   `email` line if you'd rather not have it in a heavily-scraped repository.
 

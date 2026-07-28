@@ -54,5 +54,9 @@ buildGoModule rec {
     license = lib.licenses.mit;
     maintainers = with lib.maintainers; [ stuckj ];
     mainProgram = "mkvdup";
+    # Left unset this defaults to every platform the Go compiler supports, which
+    # includes FreeBSD and WASI. mkvdup is a FUSE filesystem shipping a bash
+    # mount helper, and upstream builds and tests only Linux and macOS.
+    platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 }

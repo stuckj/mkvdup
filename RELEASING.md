@@ -183,8 +183,8 @@ alongside a stable install:
 
 | Output | Command | Intended ref |
 |--------|---------|--------------|
-| `#mkvdup` | `mkvdup` | a release tag |
-| `#mkvdup-canary` (also `default`) | `mkvdup-canary` | a development branch, or a canary tag |
+| `#mkvdup` (also `default`) | `mkvdup` | a release tag |
+| `#mkvdup-canary` | `mkvdup-canary` | a development branch, or a canary tag |
 
 Both outputs are available from **`v1.8.2`** onward, the first release cut after this landed. Older
 tags are limited by what the flake contained at the time: `v1.8.1` has only `#mkvdup-canary`, and
