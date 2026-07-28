@@ -18,7 +18,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
         lib = pkgs.lib;
         # Version is updated by the release workflow before tagging
-        version = "1.7.1-canary.0";
+        version = "1.8.1";
 
         # Both outputs build the same source tree — the flake reference decides
         # *which* tree. They differ only in the installed command name, so a

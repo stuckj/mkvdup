@@ -31,11 +31,16 @@ on:
 permissions:
   contents: write
 
-# Keyed per branch, since refreshes on different branches are independent.
-# Superseded runs are cancelled because the output is derived — only the newest
-# tree matters, and the run that replaced it redoes the work.
+# Keyed per ref, matching the other workflows, since refreshes on different
+# branches are independent.
+#
+# Unlike coverage/benchmark this cancels on `main` too, deliberately. Those must
+# not be interrupted because they publish coverage and update the benchmark
+# baseline. Here the output is purely derived: only the newest tree matters, the
+# push is atomic so a cancel lands cleanly on either side of it, and whichever
+# run supersedes this one recomputes from scratch anyway.
 concurrency:
-  group: nix-canary-hash-${{ github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

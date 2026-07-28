@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -334,6 +333,33 @@ func (r *MKVFSRoot) SetMounted() {
 	r.mounted.Store(true)
 }
 
+// InvalidateFileAttr invalidates the kernel's cached attributes (and page
+// cache) for the virtual file at the given mount-relative path. Called by the
+// source watcher when a dedup file's mtime changes so the new derived mtime
+// becomes visible immediately, instead of waiting for the attr-cache timeout.
+//
+// Safe to call from any goroutine: it acquires and releases directory locks
+// internally (via findParentInode) and must NOT be called while holding
+// filesystem locks, since go-fuse may call back into the FS.
+func (r *MKVFSRoot) InvalidateFileAttr(virtualPath string) {
+	if !r.mounted.Load() {
+		return
+	}
+	parent, basename := r.findParentInode(virtualPath)
+	if parent == nil {
+		return
+	}
+	child := parent.GetChild(basename)
+	if child == nil || child.StableAttr().Ino == 0 {
+		// Kernel never cached this inode — nothing to invalidate.
+		return
+	}
+	// NotifyContent(0, 0) invalidates cached attributes and page cache for the
+	// inode (mirrors the reload path). For a timestamp-only change the content
+	// is unchanged, but re-reading is harmless and dedup mtime changes are rare.
+	child.NotifyContent(0, 0)
+}
+
 // emitReloadNotifications sends FUSE kernel notifications for files that
 // were added or removed during a config reload.
 func (r *MKVFSRoot) emitReloadNotifications(notifications []reloadNotification, changedDirs map[*fs.Inode]bool, logFn func(string, ...interface{})) {
@@ -419,22 +445,21 @@ func (r *MKVFSRoot) collectPathsRecursive(node *MKVFSDirNode, files, dirs map[st
 // This ensures the root directory uses permissions from the permission store,
 // consistent with all subdirectories.
 func (r *MKVFSRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	now := time.Now()
-
 	uid, gid, mode := getDirPerms(r.permStore, "")
 
 	out.Mode = fuse.S_IFDIR | mode
 	out.Uid = uid
 	out.Gid = gid
-	out.Atime = uint64(now.Unix())
-	out.Mtime = uint64(now.Unix())
-	out.Ctime = uint64(now.Unix())
 	out.Nlink = 2
+	rootMtime := fsStartTime
 	if r.rootDir != nil {
 		r.rootDir.mu.RLock()
 		out.Nlink += uint32(len(r.rootDir.subdirs))
+		rootMtime = r.rootDir.mtime
 		r.rootDir.mu.RUnlock()
 	}
+	atime, mtime, ctime := dirTimes(r.permStore, "", rootMtime)
+	applyTimes(&out.Attr, atime, mtime, ctime)
 	return 0
 }
 
@@ -487,17 +512,16 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			// Lock subdir to safely access its fields
 			subdir.mu.RLock()
 			subdirCount := len(subdir.subdirs)
+			subdirMtime := subdir.mtime
 			subdir.mu.RUnlock()
 
 			uid, gid, mode := getDirPerms(r.permStore, subdir.path)
 
-			now := time.Now()
 			out.Mode = fuse.S_IFDIR | mode
 			out.Uid = uid
 			out.Gid = gid
-			out.Atime = uint64(now.Unix())
-			out.Mtime = uint64(now.Unix())
-			out.Ctime = uint64(now.Unix())
+			atime, mtime, ctime := dirTimes(r.permStore, subdir.path, subdirMtime)
+			applyTimes(&out.Attr, atime, mtime, ctime)
 			out.Nlink = 2 + uint32(subdirCount)
 
 			stable := fs.StableAttr{
@@ -516,14 +540,12 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 			uid, gid, mode := getFilePerms(r.permStore, name)
 
-			now := time.Now()
 			out.Size = uint64(file.Size)
 			out.Mode = fuse.S_IFREG | mode
 			out.Uid = uid
 			out.Gid = gid
-			out.Atime = uint64(now.Unix())
-			out.Mtime = uint64(now.Unix())
-			out.Ctime = uint64(now.Unix())
+			atime, mtime, ctime := fileTimes(r.permStore, name, file)
+			applyTimes(&out.Attr, atime, mtime, ctime)
 			out.Nlink = 1
 
 			node := &MKVFSNode{file: file, path: name, verbose: r.verbose, permStore: r.permStore}
@@ -563,14 +585,12 @@ func (r *MKVFSRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	node := &MKVFSNode{file: file, path: name, verbose: r.verbose, permStore: r.permStore}
 
 	// Set attributes
-	now := time.Now()
 	out.Size = uint64(file.Size)
 	out.Mode = fuse.S_IFREG | mode
 	out.Uid = uid
 	out.Gid = gid
-	out.Atime = uint64(now.Unix())
-	out.Mtime = uint64(now.Unix())
-	out.Ctime = uint64(now.Unix())
+	atime, mtime, ctime := fileTimes(r.permStore, name, file)
+	applyTimes(&out.Attr, atime, mtime, ctime)
 
 	// Create inode with stable ID based on filename
 	stable := fs.StableAttr{

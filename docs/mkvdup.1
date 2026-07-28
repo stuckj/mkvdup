@@ -737,6 +737,48 @@ Dedup files containing the index and delta data
 .TP
 .I *.mkvdup.yaml
 Config files for mounting dedup files
+.TP
+.I ~/.config/@PACKAGE_NAME@/permissions.yaml
+Permission, ownership and timestamp overrides for virtual files and
+directories. Searched first, and the default write location for non-root
+users.
+.TP
+.I /etc/@PACKAGE_NAME@/permissions.yaml
+System-wide overrides. Used when the per-user file above does not exist, and
+the default write location when running as root. Override either with
+.B \-\-permissions\-file\fR.
+.SH TIMESTAMPS
+Virtual files report a modification time derived from their
+.I .mkvdup
+dedup file's mtime, so the timestamp reflects when the virtual file's content
+last changed rather than when it was last examined.
+.PP
+Virtual directories follow standard directory semantics: a directory's mtime
+records when an entry was last added to or removed from it, not when its
+contents changed. Since every virtual entry comes into existence at mount,
+directories start at the mount time. If a later configuration reload adds or
+removes an entry, only the directory that directly contained it is updated;
+the change is not propagated to parent directories.
+.PP
+Access time is always reported equal to the modification time and is not
+tracked separately, which avoids per-read overhead; change time is likewise
+reported equal to the modification time.
+.PP
+.B touch\fR(1)
+and
+.BR utimes (2)
+are supported on virtual files and directories, and require root or the file
+owner, the same rule as
+.BR chmod (2).
+The value is stored as an
+.I mtime
+override in the permissions file and persists across daemon restarts and
+reloads. Setting only the access time succeeds but has no effect.
+.PP
+If a dedup file's mtime changes while the filesystem is mounted, the derived
+modification time is refreshed automatically and the kernel's attribute cache
+is invalidated. Changes to a dedup file's contents are a separate matter and
+still require a reload.
 .SH FILE FORMAT
 The .mkvdup file format is versioned. The writer produces V7 (DVD) or V8
 (Blu-ray) files by default; older versions are supported for reading.

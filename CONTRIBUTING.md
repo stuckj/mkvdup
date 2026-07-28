@@ -6,26 +6,29 @@ Guidelines for contributing to mkvdup.
 
 ## Development Environment
 
-Use `gvm` (Go Version Manager) for Go. Source it before running Go commands:
-```bash
-source ~/.gvm/scripts/gvm && go build ...
-```
+- **Go 1.25 or newer** (see `go.mod`). Any installation method works — the version manager you
+  use is up to you; CI uses `actions/setup-go`.
+- **libfuse development headers and `fuse3`**, needed to build and to run the FUSE tests:
+  ```bash
+  sudo apt-get install -y libfuse-dev fuse3
+  ```
+- **`ffmpeg`** is additionally required to generate test data for the integration suites.
 
 ## Pre-Commit Checklist
 
-Run these checks before committing code:
+Run these checks before committing code. They mirror what CI enforces, so passing locally
+should mean passing in CI:
 
 ```bash
-source ~/.gvm/scripts/gvm
-
-# Format all Go files
+# Format all Go files (CI fails the build if `gofmt -l .` reports anything)
 gofmt -w .
 
 # Check for common issues
 go vet ./...
 
-# Run linter
-golint ./...
+# Run the linter CI uses
+go install honnef.co/go/tools/cmd/staticcheck@v0.6.0
+staticcheck ./...
 
 # Run tests with race detection
 go test -race ./...
@@ -48,7 +51,8 @@ go build ./...
 
 - Run `gofmt` or `goimports` on all code before committing
 - Follow [Effective Go](https://go.dev/doc/effective_go) guidelines
-- Use `golint` and `go vet` to catch common issues
+- Use `staticcheck` and `go vet` to catch common issues — both run in CI on every PR
+  (`golint` is deprecated upstream and is not used by this project)
 - Keep functions focused and reasonably sized
 - Use meaningful variable and function names
 
@@ -57,8 +61,40 @@ go build ./...
 - Write tests alongside implementation (test-driven when practical)
 - Use table-driven tests for cases with multiple inputs
 - Aim for high test coverage on critical paths (matching, file format, FUSE reads)
-- Use `go test -race` to detect data races in concurrent code (also run in CI)
+- Use `go test -race` to detect data races in concurrent code. CI runs the detector in the
+  **Unit Tests** job only — the integration jobs do not, because `-race` on a multi-hour
+  dedup run is impractical. Concurrency regression tests therefore belong in the unit suite,
+  where the detector will actually see them.
 - Integration tests should use temporary directories and clean up after themselves
+
+### Never skip a test to express "cannot run here"
+
+**CI fails if any test is skipped.** A skipped test is indistinguishable from a passing one in
+a green build, which is exactly how seven tests once went completely unexecuted in CI (#201).
+
+If a test can only run in a particular context, exclude it with a **build tag** so it is never
+scheduled, rather than scheduling it and calling `t.Skip`:
+
+| Tag | Meaning | Where it runs |
+|-----|---------|---------------|
+| `rootonly` | Requires `euid == 0` (chown, NFS setup, ownership checks) | Root CI steps |
+| `nonroot` | Requires a non-root user — root bypasses the checks being tested | The non-root CI step |
+| `integration` | Needs FUSE, testdata, or a real mount | Integration jobs |
+
+Combine them as needed, e.g. `//go:build integration && nonroot`. Tagged files should call the
+`requireRoot` / `requireNonRoot` helpers, which **fail** rather than skip if built into the
+wrong context — so a misconfiguration is loud instead of silent.
+
+Reserve `t.Skip` for genuine environment preconditions that CI is expected to satisfy (e.g.
+FUSE unavailable). If one of those fires in CI, the run fails on purpose: the environment
+regressed and the gap should not be hidden.
+
+```bash
+go test ./...                                          # unit
+go test -tags=rootonly ./internal/security/...         # as root
+go test -tags=integration ./internal/fuse/...          # integration
+go test -tags=integration,nonroot -run TestFUSE_Permission ./internal/fuse/...
+```
 
 ### Key Test Categories
 
@@ -71,11 +107,13 @@ go build ./...
 - Dedup file format tests (header, footer, roundtrip)
 
 **Integration tests:**
-- End-to-end: Create dedup → verify → compare SHA256
-- FUSE playback: Mount, play in VLC/mpv, verify no artifacts
+- End-to-end: Create dedup → verify → compare xxhash checksums against the original MKV
 - Stress test: Multiple concurrent reads, random seeks
 - Lazy loading tests (mmap on open, unmap on close)
 - Graceful degradation tests (single file error doesn't affect others)
+
+**Manual verification** (not automated — no CI equivalent):
+- FUSE playback: mount, play a virtual file in VLC/mpv, confirm no artifacts or stalls
 
 **Edge case tests:**
 - Empty files, tiny files, corrupted sources, missing sources
@@ -110,12 +148,17 @@ go build ./...
 
 ### Benchmarks
 
-Performance benchmarks track dedup reader operations. CI uses `benchstat` for statistically
-significant regression detection (>10% slowdown with p<0.05).
+Performance benchmarks cover the dedup reader, MKV parsing, source indexing, and matching.
+CI uses `benchstat` for statistically significant regression detection (>10% slowdown with
+p<0.05).
 
-**Run benchmarks locally:**
+**Run benchmarks locally** (same packages CI benchmarks, at a lower `-count` for speed):
 ```bash
-go test -bench=. -benchmem -count=5 ./internal/dedup/...
+go test -bench=. -benchmem -count=5 \
+  ./internal/dedup/... \
+  ./internal/mkv/... \
+  ./internal/source/... \
+  ./internal/matcher/...
 ```
 
 **Compare against baseline (optional, for local development):**

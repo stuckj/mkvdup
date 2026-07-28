@@ -20,7 +20,7 @@ This tool is intended for personal backup and archival of legally owned media. I
 - **DVD support** - Works with ISO files containing VOB (MPEG-PS) content
 - **Blu-ray support** - Works with BDMV directory structures and Blu-ray ISO files
 - **FUSE filesystem** - Mount deduplicated files and access them transparently
-- **Permission customization** - `chmod`/`chown` support with persistent metadata storage
+- **Permission & timestamp customization** - `chmod`/`chown`/`touch` support with persistent metadata storage (file mtimes are derived from the dedup file and overridable)
 - **Verification** - Byte-for-byte verification of reconstructed files
 
 ## Installation
@@ -111,12 +111,15 @@ the recommended route — pre-built binaries, no flakes needed:
 nix profile install nixpkgs#mkvdup     # or add mkvdup to environment.systemPackages
 ```
 
-Until then, install from this repo's flake. Release tags up to and including `v1.8.0` predate the
-flake, so use a tag from the next release onward:
+Until then, install from this repo's flake, pointing it at a release tag:
 
 ```bash
 nix profile install github:stuckj/mkvdup/v<version>#mkvdup
 ```
+
+Older tags are limited by what the flake looked like at the time: tags at or before `v1.8.1`
+predate the `#mkvdup` output (use `#mkvdup-canary` there, which installs the command as
+`mkvdup-canary`), and tags at or before `v1.8.0` have no flake at all.
 
 Declaratively, add this repo as a flake input and put `mkvdup.packages.${system}.mkvdup` in
 `environment.systemPackages` (or `home.packages`).

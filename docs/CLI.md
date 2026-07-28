@@ -24,6 +24,14 @@ mkvdup --log-file /path/to/logfile <command> [args...]
 # Enable verbose diagnostics in log file only (not on console)
 mkvdup --log-verbose --log-file /path/to/logfile <command> [args...]
 
+# Show help, either overall or for a specific command
+mkvdup -h
+mkvdup --help
+mkvdup <command> --help
+
+# Print the version and exit
+mkvdup --version
+
 # Examples:
 mkvdup -v create video.mkv /source/dir
 mkvdup -q create video.mkv /source/dir
@@ -250,6 +258,10 @@ Error notification on source integrity issues is configured via `on_error_comman
 New permissions are written to:
 - `~/.config/mkvdup/permissions.yaml` (for non-root users)
 - `/etc/mkvdup/permissions.yaml` (when running as root, unless `~/.config/mkvdup/permissions.yaml` exists)
+
+The permissions file also stores per-file/-directory **mtime overrides** set via
+`touch`/`utimes`. By default a virtual file's mtime is derived from its `.mkvdup` dedup
+file; see [Timestamps](FUSE.md#timestamps) for details.
 
 ### verify
 

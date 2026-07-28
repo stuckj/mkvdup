@@ -16,12 +16,47 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Perms holds uid, gid, and mode for a file or directory.
-// Nil values indicate the field should inherit from defaults.
+// Perms holds uid, gid, mode, and an optional modification-time override for a
+// file or directory. Nil uid/gid/mode inherit from defaults; a nil Mtime means
+// the timestamp is derived (from the dedup file for files, or from mount time
+// and entry add/remove events for directories) rather than overridden.
 type Perms struct {
 	UID  *uint32 `yaml:"uid,omitempty"`
 	GID  *uint32 `yaml:"gid,omitempty"`
 	Mode *uint32 `yaml:"mode,omitempty"`
+	// Mtime is an explicit modification-time override in Unix seconds, set via
+	// touch/utimes. Only mtime is tracked; atime is reported equal to mtime.
+	Mtime *int64 `yaml:"mtime,omitempty"`
+}
+
+// isEmpty reports whether no field is overridden, meaning the entry carries no
+// information and can be dropped rather than persisted as an empty map.
+func (p *Perms) isEmpty() bool {
+	return p.UID == nil && p.GID == nil && p.Mode == nil && p.Mtime == nil
+}
+
+// The optional-override setters take pointers, so logging them with %v prints
+// an address rather than a value. These render the value (or "unset") instead.
+
+func logU32(p *uint32) string {
+	if p == nil {
+		return "unset"
+	}
+	return strconv.FormatUint(uint64(*p), 10)
+}
+
+func logMode(p *uint32) string {
+	if p == nil {
+		return "unset"
+	}
+	return "0" + strconv.FormatUint(uint64(*p), 8)
+}
+
+func logI64(p *int64) string {
+	if p == nil {
+		return "unset"
+	}
+	return strconv.FormatInt(*p, 10)
 }
 
 // Defaults holds default permissions for files and directories.
@@ -243,6 +278,30 @@ func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) {
 	return uid, gid, mode
 }
 
+// GetFileMtimeOverride returns the explicit mtime override (Unix seconds) for a
+// file, or nil if none is set (in which case the derived mtime is used).
+func (s *PermissionStore) GetFileMtimeOverride(path string) *int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if p, ok := s.files[path]; ok && p.Mtime != nil {
+		m := *p.Mtime
+		return &m
+	}
+	return nil
+}
+
+// GetDirMtimeOverride returns the explicit mtime override (Unix seconds) for a
+// directory, or nil if none is set.
+func (s *PermissionStore) GetDirMtimeOverride(path string) *int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if p, ok := s.dirs[path]; ok && p.Mtime != nil {
+		m := *p.Mtime
+		return &m
+	}
+	return nil
+}
+
 // SetFilePerms sets permissions for a file.
 // Only non-nil values are updated; nil values leave existing values unchanged.
 // Automatically saves to disk.
@@ -278,7 +337,7 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
 	s.mu.Unlock()
 
 	if s.verbose {
-		log.Printf("SetFilePerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
+		log.Printf("SetFilePerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
 	return s.Save()
@@ -333,7 +392,7 @@ func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint3
 	s.mu.Unlock()
 
 	if s.verbose {
-		log.Printf("SetDirPerms: %s uid=%v gid=%v mode=%v", path, uid, gid, mode)
+		log.Printf("SetDirPerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
 	return s.Save()
@@ -348,6 +407,74 @@ func (s *PermissionStore) RemoveDirPerms(path string) error {
 
 	if s.verbose {
 		log.Printf("RemoveDirPerms: %s", path)
+	}
+
+	return s.Save()
+}
+
+// SetFileMtime sets (or, when mtime is nil, clears) the modification-time
+// override for a file. Existing uid/gid/mode overrides are preserved.
+// Automatically saves to disk.
+func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
+	s.mu.Lock()
+	p, ok := s.files[path]
+	if !ok {
+		if mtime == nil {
+			s.mu.Unlock()
+			return nil // nothing to clear
+		}
+		p = &Perms{}
+		s.files[path] = p
+	}
+	if mtime != nil {
+		v := *mtime
+		p.Mtime = &v
+	} else {
+		p.Mtime = nil
+		// Drop the entry entirely if nothing is overridden anymore, so we don't
+		// persist a useless "path: {}" stanza in the permissions file.
+		if p.isEmpty() {
+			delete(s.files, path)
+		}
+	}
+	s.mu.Unlock()
+
+	if s.verbose {
+		log.Printf("SetFileMtime: %s mtime=%s", path, logI64(mtime))
+	}
+
+	return s.Save()
+}
+
+// SetDirMtime sets (or, when mtime is nil, clears) the modification-time
+// override for a directory. Existing uid/gid/mode overrides are preserved.
+// Automatically saves to disk.
+func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
+	s.mu.Lock()
+	p, ok := s.dirs[path]
+	if !ok {
+		if mtime == nil {
+			s.mu.Unlock()
+			return nil // nothing to clear
+		}
+		p = &Perms{}
+		s.dirs[path] = p
+	}
+	if mtime != nil {
+		v := *mtime
+		p.Mtime = &v
+	} else {
+		p.Mtime = nil
+		// Drop the entry entirely if nothing is overridden anymore, so we don't
+		// persist a useless "path: {}" stanza in the permissions file.
+		if p.isEmpty() {
+			delete(s.dirs, path)
+		}
+	}
+	s.mu.Unlock()
+
+	if s.verbose {
+		log.Printf("SetDirMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
 	return s.Save()

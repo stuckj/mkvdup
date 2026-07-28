@@ -11,6 +11,11 @@ on:
         required: false
         default: ''
 
+# NOTE: intentionally has no `concurrency` block. The other workflows cancel
+# superseded PR runs, but a release must never be cancelled part-way: it
+# publishes a tag, a GitHub release, APT/YUM packages, a Homebrew formula and a
+# Nix bump. Interrupting it between those leaves exactly the inconsistent state
+# the job ordering here exists to prevent.
 permissions:
   contents: write
   pages: write
@@ -55,9 +60,11 @@ jobs:
           echo "is_canary=${IS_CANARY}" >> $GITHUB_OUTPUT
           echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
 
-          # Check if tag already exists
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "::error::Tag ${TAG} already exists"
+          # Check if tag already exists. Query the remote rather than the local
+          # clone: checkout uses a shallow fetch, so a local rev-parse can miss
+          # tags that do exist upstream.
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists on origin"
             exit 1
           fi
 
@@ -86,12 +93,11 @@ jobs:
           echo "Will create tag ${TAG} on commit:"
           git log -1 --oneline "${FULL_SHA}"
 
-      - name: Create and push tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.resolve.outputs.tag }}" "${{ steps.resolve.outputs.commit }}"
-          git push origin "${{ steps.resolve.outputs.tag }}"
+      # NOTE: the tag is deliberately NOT created here. It is created by the
+      # release job, at the resolved commit, only once every build has passed.
+      # Pushing it up front meant a failed build left a dangling tag pointing at
+      # a release that never happened, and blocked retrying the same version
+      # because of the existence check above.
 
   build:
     needs: prepare
@@ -116,7 +122,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'  # nfpm@latest requires Go >= 1.25
+          go-version: '1.25'  # keep in sync with the pinned nfpm version below
 
       - name: Build binary
         env:
@@ -140,9 +146,15 @@ jobs:
             cp docs/mkvdup.1 "docs/${PACKAGE_NAME}.1"
           fi
 
+      # Pinned deliberately. nfpm@latest previously broke releases by raising its
+      # Go requirement out from under this workflow (v2.47.0 needs Go >= 1.26.4,
+      # while this job builds with Go 1.25), which fails the build with
+      # GOTOOLCHAIN=local. v2.46.0 is the last release that supports Go 1.25.
+      # Bump this together with go-version above, not independently.
+      # Matches how benchstat and staticcheck are pinned in the other workflows.
       - name: Install nfpm
         if: matrix.goos == 'linux'
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.0
 
       - name: Build deb package
         if: matrix.goos == 'linux'
@@ -237,10 +249,15 @@ jobs:
       - name: List packages
         run: ls -la packages/
 
+      # This creates the tag as well as the release. target_commitish pins it to
+      # the commit prepare resolved; without it the tag would be created at the
+      # default branch head instead. Because this job needs [prepare, build],
+      # the tag only comes into existence after every build has succeeded.
       - name: Upload to Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit }}
           files: packages/*
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
@@ -675,7 +692,10 @@ jobs:
           git push
 
   update-nix:
-    needs: [prepare]
+    # Gated on build and release for the same reason the tag is: this job pushes
+    # a version bump to main, and a failed build previously left main claiming a
+    # version that was never released.
+    needs: [prepare, build, release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main branch
@@ -716,7 +736,10 @@ jobs:
           git push
 
   publish-repo:
-    needs: [prepare, build]
+    # Also gated on release: publishing APT/YUM packages for a version that has
+    # no tag and no GitHub release would leave users able to install something
+    # that does not officially exist.
+    needs: [prepare, build, release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
