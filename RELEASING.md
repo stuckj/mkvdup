@@ -186,9 +186,9 @@ alongside a stable install:
 | `#mkvdup` | `mkvdup` | a release tag |
 | `#mkvdup-canary` (also `default`) | `mkvdup-canary` | a development branch, or a canary tag |
 
-Older tags are limited by what the flake contained at the time: tags at or before `v1.8.1` predate
-the `#mkvdup` output, and tags at or before `v1.8.0` have no flake at all. The first tag carrying
-both outputs is the first release cut after this lands.
+Both outputs are available from **`v1.8.2`** onward, the first release cut after this landed. Older
+tags are limited by what the flake contained at the time: `v1.8.1` has only `#mkvdup-canary`, and
+tags at or before `v1.8.0` have no flake at all.
 
 ## Nix Maintenance
 

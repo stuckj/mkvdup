@@ -117,9 +117,9 @@ Until then, install from this repo's flake, pointing it at a release tag:
 nix profile install github:stuckj/mkvdup/v<version>#mkvdup
 ```
 
-Older tags are limited by what the flake looked like at the time: tags at or before `v1.8.1`
-predate the `#mkvdup` output (use `#mkvdup-canary` there, which installs the command as
-`mkvdup-canary`), and tags at or before `v1.8.0` have no flake at all.
+The `#mkvdup` output is available from **`v1.8.2`** onward. Older tags are limited by what the
+flake looked like at the time: `v1.8.1` offers only `#mkvdup-canary`, which installs the command as
+`mkvdup-canary`, and tags at or before `v1.8.0` have no flake at all.
 
 Declaratively, add this repo as a flake input and put `mkvdup.packages.${system}.mkvdup` in
 `environment.systemPackages` (or `home.packages`).
@@ -141,8 +141,12 @@ nix shell github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
 nix profile install github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
 
 # or pin an immutable canary tag
-nix profile install github:stuckj/mkvdup/v1.8.1-canary.1#mkvdup-canary
+nix profile install github:stuckj/mkvdup/v<version>-canary.N#mkvdup-canary
 ```
+
+Canary tags from `v1.8.2` onward are installable this way. Earlier ones were tagged before the
+hash automation existed and generally fail to build; check out the tag and run
+`./scripts/update-nix-vendor-hash.sh` if you need one of them.
 
 `nix shell` is usually the right tool for testing a branch: the binary is on `PATH` for that shell
 only, with nothing to uninstall afterwards. Branch names containing `/` work as written.
