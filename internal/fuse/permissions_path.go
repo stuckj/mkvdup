@@ -2,9 +2,12 @@ package fuse
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // appName is the directory name used under the state directories below. It is
@@ -17,11 +20,18 @@ const appName = "mkvdup"
 // mountpoint, so two mounts can never share a key space (see EscapeMountpoint).
 const permissionsDirName = "permissions.d"
 
+// legacyPathsForTest redirects the legacy search path so tests do not depend on
+// (or touch) real system locations. Nil in production, mirroring testCallerHook.
+var legacyPathsForTest []string
+
 // legacyPermissionsPaths are the pre-per-mount locations. They are read as a
 // one-time seed for a new per-mount file and are never written again, so an
 // existing installation keeps its overrides and any other mount can still seed
 // from the same file. Order is the historical search order.
 func legacyPermissionsPaths() []string {
+	if legacyPathsForTest != nil {
+		return legacyPathsForTest
+	}
 	paths := []string{filepath.Join("/etc", appName, "permissions.yaml")}
 	if home, err := os.UserHomeDir(); err == nil {
 		paths = append(paths, filepath.Join(home, ".config", appName, "permissions.yaml"))
@@ -106,6 +116,89 @@ func EscapeMountpoint(path string) string {
 		}
 	}
 	return b.String()
+}
+
+// SeedFromLegacy populates a mount's own permissions file, the first time that
+// file does not exist yet, from the pre-per-mount shared file.
+//
+// Only entries this mount can actually resolve are copied — validFiles and
+// validDirs are the same maps CleanupStale uses, so the filter that used to
+// *delete* another mount's entries is reused here to *select* this mount's own.
+// Each mount therefore converges on exactly the subset of the shared file that
+// was ever meaningful to it.
+//
+// The legacy file is never modified. Other mounts still need to seed from it,
+// and concurrent read-only seeds are safe.
+//
+// Returns the number of entries copied.
+func (s *PermissionStore) SeedFromLegacy(validFiles, validDirs map[string]bool) (int, error) {
+	if s.path == "" {
+		return 0, nil
+	}
+
+	// Seed only into a mount that has no file yet. Once the file exists — even
+	// empty — it is authoritative and the legacy file is irrelevant.
+	if _, err := os.Stat(s.path); err == nil {
+		return 0, nil
+	} else if !os.IsNotExist(err) {
+		return 0, fmt.Errorf("stat permissions file %s: %w", s.path, err)
+	}
+
+	var legacyPath string
+	var data []byte
+	for _, candidate := range legacyPermissionsPaths() {
+		// An explicit --permissions-file may name a legacy path; seeding a file
+		// from itself would be meaningless (and it does not exist anyway, or we
+		// would have returned above).
+		if filepath.Clean(candidate) == filepath.Clean(s.path) {
+			continue
+		}
+		b, err := os.ReadFile(candidate)
+		if err != nil {
+			continue // absent or unreadable: try the next
+		}
+		legacyPath, data = candidate, b
+		break
+	}
+	if legacyPath == "" {
+		return 0, nil // fresh install, nothing to migrate
+	}
+
+	var pf permissionsFile
+	if err := yaml.Unmarshal(data, &pf); err != nil {
+		return 0, fmt.Errorf("parse legacy permissions file %s: %w", legacyPath, err)
+	}
+
+	s.mu.Lock()
+	applyLoadedDefaults(&s.defaults, pf.Defaults)
+	copied := 0
+	for path, p := range pf.Files {
+		if p == nil || !validFiles[path] {
+			continue
+		}
+		entry := *p // copy: the store owns its entries' lifetime
+		s.files[path] = &entry
+		copied++
+	}
+	for path, p := range pf.Directories {
+		if p == nil || !validDirs[path] {
+			continue
+		}
+		entry := *p
+		s.dirs[path] = &entry
+		copied++
+	}
+	s.mu.Unlock()
+
+	// Write even when nothing matched: the file's existence is what stops this
+	// mount re-reading the legacy file on every start.
+	if err := s.Save(); err != nil {
+		return copied, fmt.Errorf("write seeded permissions to %s: %w", s.path, err)
+	}
+
+	log.Printf("Migrated %d permission entries for this mount from %s to %s (%s left unchanged)",
+		copied, legacyPath, s.path, legacyPath)
+	return copied, nil
 }
 
 // ResolvePermissionsPath determines which permissions file a mount uses.

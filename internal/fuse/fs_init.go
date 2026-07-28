@@ -140,25 +140,45 @@ func NewMKVFSWithFactories(configPaths []string, verbose bool, readerFactory Rea
 	}
 	root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory, permStore)
 
-	// Clean up stale permission entries if we have a permission store
-	if permStore != nil {
-		validFiles, validDirs := root.collectValidPaths()
-		removed := permStore.CleanupStale(validFiles, validDirs)
-		if removed > 0 {
-			if verbose {
-				log.Printf("Cleaned up %d stale permission entries", removed)
-			}
-			if err := permStore.Save(); err != nil {
-				log.Printf("Warning: failed to save permissions after cleanup: %v", err)
-			}
-		}
-	}
+	initPermissionState(root, permStore, verbose)
 
 	if verbose {
 		log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))
 	}
 
 	return root, nil
+}
+
+// initPermissionState brings a mount's permissions file up to date once the
+// directory tree exists. Both steps need the tree, which is why this runs after
+// BuildDirectoryTree rather than at store construction.
+//
+// Order matters: seeding must precede cleanup. Cleanup drops entries whose
+// paths this mount does not serve, so running it against a store that has not
+// been seeded yet would find nothing to keep.
+func initPermissionState(root *MKVFSRoot, permStore *PermissionStore, verbose bool) {
+	if permStore == nil {
+		return
+	}
+
+	validFiles, validDirs := root.collectValidPaths()
+
+	// First run for this mount: adopt whatever the legacy shared file held for
+	// it. A failure here is not fatal — the mount still works, it just starts
+	// from default permissions.
+	if _, err := permStore.SeedFromLegacy(validFiles, validDirs); err != nil {
+		log.Printf("Warning: failed to migrate permissions from the legacy file: %v", err)
+	}
+
+	removed := permStore.CleanupStale(validFiles, validDirs)
+	if removed > 0 {
+		if verbose {
+			log.Printf("Cleaned up %d stale permission entries", removed)
+		}
+		if err := permStore.Save(); err != nil {
+			log.Printf("Warning: failed to save permissions after cleanup: %v", err)
+		}
+	}
 }
 
 // maxParallelReaders limits concurrent dedup header reads to avoid
@@ -298,19 +318,7 @@ func NewMKVFSFromConfigs(configs []dedup.Config, verbose bool, readerFactory Rea
 	}
 	root.rootDir = BuildDirectoryTree(fileList, verbose, readerFactory, permStore)
 
-	// Clean up stale permission entries if we have a permission store
-	if permStore != nil {
-		validFiles, validDirs := root.collectValidPaths()
-		removed := permStore.CleanupStale(validFiles, validDirs)
-		if removed > 0 {
-			if verbose {
-				log.Printf("Cleaned up %d stale permission entries", removed)
-			}
-			if err := permStore.Save(); err != nil {
-				log.Printf("Warning: failed to save permissions after cleanup: %v", err)
-			}
-		}
-	}
+	initPermissionState(root, permStore, verbose)
 
 	if verbose {
 		log.Printf("Directory tree built with %d root entries", len(root.rootDir.files)+len(root.rootDir.subdirs))

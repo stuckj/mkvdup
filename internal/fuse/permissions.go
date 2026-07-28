@@ -81,6 +81,35 @@ func DefaultPerms() Defaults {
 	}
 }
 
+// applyLoadedDefaults overlays defaults read from a permissions file onto the
+// in-memory defaults, which start from the --default-* flags.
+//
+// Only non-zero values are taken, because Defaults uses plain uint32 and a zero
+// field is indistinguishable from "not specified". That makes uid/gid 0 — root,
+// and the default for every fstab mount — impossible to express in the file.
+// Tracked in #205; the fix is to make these fields pointers, at which point
+// this function collapses to a nil check.
+func applyLoadedDefaults(dst *Defaults, src Defaults) {
+	if src.FileMode != 0 {
+		dst.FileMode = src.FileMode
+	}
+	if src.FileUID != 0 {
+		dst.FileUID = src.FileUID
+	}
+	if src.FileGID != 0 {
+		dst.FileGID = src.FileGID
+	}
+	if src.DirMode != 0 {
+		dst.DirMode = src.DirMode
+	}
+	if src.DirUID != 0 {
+		dst.DirUID = src.DirUID
+	}
+	if src.DirGID != 0 {
+		dst.DirGID = src.DirGID
+	}
+}
+
 // permissionsFile is the structure of the permissions YAML file.
 type permissionsFile struct {
 	Defaults    Defaults          `yaml:"defaults"`
@@ -136,29 +165,7 @@ func (s *PermissionStore) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Override defaults if specified in file
-	if pf.Defaults.FileMode != 0 || pf.Defaults.FileUID != 0 || pf.Defaults.FileGID != 0 ||
-		pf.Defaults.DirMode != 0 || pf.Defaults.DirUID != 0 || pf.Defaults.DirGID != 0 {
-		// Only override non-zero values from file
-		if pf.Defaults.FileMode != 0 {
-			s.defaults.FileMode = pf.Defaults.FileMode
-		}
-		if pf.Defaults.FileUID != 0 {
-			s.defaults.FileUID = pf.Defaults.FileUID
-		}
-		if pf.Defaults.FileGID != 0 {
-			s.defaults.FileGID = pf.Defaults.FileGID
-		}
-		if pf.Defaults.DirMode != 0 {
-			s.defaults.DirMode = pf.Defaults.DirMode
-		}
-		if pf.Defaults.DirUID != 0 {
-			s.defaults.DirUID = pf.Defaults.DirUID
-		}
-		if pf.Defaults.DirGID != 0 {
-			s.defaults.DirGID = pf.Defaults.DirGID
-		}
-	}
+	applyLoadedDefaults(&s.defaults, pf.Defaults)
 
 	if pf.Files != nil {
 		s.files = pf.Files
