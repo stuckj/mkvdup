@@ -1,0 +1,95 @@
+name: Refresh Nix Canary Hash
+
+# The Nix packages pin a vendorHash over the Go module set, so any change to
+# go.mod/go.sum invalidates it and `nix build` starts failing for that ref.
+#
+# This has to work on every branch, not just main. Canaries are cut from
+# development branches so unmerged code can be tested with a real binary, and a
+# dependency bump is both the case where you most want a canary and the thing
+# that breaks the hash. So the job runs on whichever branch received the change
+# and pushes the refreshed hash back to that same branch, which keeps
+# `nix profile install github:stuckj/mkvdup/<branch>#mkvdup-canary` working
+# without anyone editing a hash by hand.
+#
+# Merging such a branch into main carries the refreshed hash along with the
+# go.sum that produced it, so main normally needs nothing of its own — the hash
+# is a function of go.mod/go.sum, not of the source tree. The exception is a
+# merge that combines dependency changes from two branches: the resulting go.sum
+# is a union that neither branch pinned, and main's own run of this workflow is
+# what catches that.
+
+on:
+  push:
+    # All branches including ones with slashes, but deliberately not tags: a tag
+    # push has no branch to push a fixup back to.
+    branches: ['**']
+    paths:
+      - go.mod
+      - go.sum
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Keyed per ref, matching the other workflows, since refreshes on different
+# branches are independent.
+#
+# Unlike coverage/benchmark this cancels on `main` too, deliberately. Those must
+# not be interrupted because they publish coverage and update the benchmark
+# baseline. Here the output is purely derived: only the newest tree matters, the
+# push is atomic so a cancel lands cleanly on either side of it, and whichever
+# run supersedes this one recomputes from scratch anyway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the pushed branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          # Full history: the push step rebases if the branch moved, and a
+          # shallow clone has no merge base to rebase against.
+          fetch-depth: 0
+          token: ${{ secrets.BENCHMARK_PAT || github.token }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Refresh vendorHash
+        run: ./scripts/update-nix-vendor-hash.sh
+
+      - name: Commit and push if changed
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flake.nix default.nix
+          git diff --staged --quiet && echo "vendorHash already current, nothing to commit" && exit 0
+
+          # [skip ci] because no PR CI job builds the Nix files, so re-running the
+          # full suite for a hash change buys nothing. Revisit if required status
+          # checks are ever enabled: a skipped head commit would then leave a PR
+          # unmergeable.
+          git commit -m "Refresh Nix canary vendorHash after dependency bump [skip ci]"
+
+          # The branch can advance while the nix build runs, which rejects the
+          # push as non-fast-forward. Left unhandled that strands the hash as
+          # stale until the next go.mod/go.sum change, since that is all the
+          # paths filter fires on. Rebase onto the updated branch and retry; the
+          # commit is local and has never been pushed, so rebasing it is safe.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${BRANCH}"; then
+              exit 0
+            fi
+            echo "::notice::push rejected on attempt ${attempt}; rebasing onto origin/${BRANCH}"
+            git fetch origin "${BRANCH}"
+            git rebase "origin/${BRANCH}"
+          done
+
+          echo "::error::could not push the vendorHash refresh after 3 attempts"
+          exit 1

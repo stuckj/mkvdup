@@ -172,6 +172,86 @@ EOF
 sudo dnf install mkvdup
 ```
 
+### Nix
+
+There is no separate canary channel to publish to, unlike the APT/YUM repositories above. The flake
+builds `src = ./.`, so the flake reference *is* the selector and users point it at whatever ref they
+want. See [Installation → NixOS / Nix](README.md#nixos--nix) for the user-facing commands.
+
+The flake exposes two packages, differing only in the installed command name so a canary can sit
+alongside a stable install:
+
+| Output | Command | Intended ref |
+|--------|---------|--------------|
+| `#mkvdup` (also `default`) | `mkvdup` | a release tag |
+| `#mkvdup-canary` | `mkvdup-canary` | a development branch, or a canary tag |
+
+Both outputs are available from **`v1.8.2`** onward, the first release cut after this landed. Older
+tags are limited by what the flake contained at the time: `v1.8.1` has only `#mkvdup-canary`, and
+tags at or before `v1.8.0` have no flake at all.
+
+## Nix Maintenance
+
+Both halves are meant to stay current on their own. What to watch for:
+
+### Stable (nixpkgs)
+
+- `nix/nixpkgs/package.nix` in this repo is the **reference copy** of what was submitted upstream.
+  It is not built by anything here — it exists so the upstream derivation is reviewable alongside
+  the code, and so a re-submission or a manual bump has a starting point.
+- After a release, the [`r-ryantm`](https://github.com/r-ryantm) bot usually opens a version-bump
+  PR against nixpkgs within a few days. **Approve it** — that is the normal update path. As a
+  listed maintainer you are auto-requested for review.
+- If the bot misses a release, or a release changes the build (new files in `postInstall`, a new
+  `subPackages` entry, a license change), open the nixpkgs PR by hand and mirror the same edit
+  back into `nix/nixpkgs/package.nix` so the two do not drift.
+- Changes that alter how mkvdup is *built* — not just its version — always need a hand-written
+  nixpkgs PR. The bot only bumps `version`, `hash`, and `vendorHash`.
+
+### Canary (in-repo flake)
+
+The canary side is fully automated — there is no manual step in the normal course of events.
+`flake.nix` and `default.nix` pin a `vendorHash` over the Go module set, which goes stale whenever
+`go.mod`/`go.sum` changes. Two workflows keep it fresh, both calling
+`scripts/update-nix-vendor-hash.sh`:
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `nix-canary-hash.yml` | Push to **any branch** touching `go.mod`/`go.sum`, or manual dispatch | Refreshes `vendorHash` and pushes it back to that same branch |
+| `release.yml` (`sync-nix` job) | Every release | Writes `version` and a refreshed `vendorHash` onto **the commit being released**, then the tag is created at the result |
+
+The first one runs on every branch, not just `main`, and that matters: canaries are cut from
+development branches, and a dependency bump is simultaneously the case where you most want a canary
+and the thing that invalidates the hash. Refreshing on the branch is what keeps
+`nix profile install github:stuckj/mkvdup/<branch>#mkvdup-canary` working with no manual step.
+
+`sync-nix` writes to the released ref rather than to `main`, which is what lets a canary tag report
+its own version. It runs after `build` — so nothing is pushed until every build has passed — and
+before `release`, so the tag can be created at the commit it produces. It stands down without
+touching anything when the release was dispatched from a tag, or when a `commit` input points
+somewhere other than the branch head; in both cases a bump would land on a commit that was never
+requested or built. Unlike `nix-canary-hash.yml` it does *not* rebase and retry a rejected push,
+because rebasing would move the bump onto commits that were never built. It fails instead, and the
+release should be re-run.
+
+Merging such a branch into `main` carries the refreshed hash along with the `go.sum` that produced
+it, so `main` normally needs nothing of its own — the hash is a function of `go.mod`/`go.sum`, not
+of the source tree. The exception is a merge that combines dependency changes from two branches:
+the resulting `go.sum` is a union that neither branch pinned, and `main`'s own run of the workflow
+catches that.
+
+The nixpkgs package is never affected either way — it pins an immutable release tag.
+
+To refresh the hash by hand (needs `nix` with flakes enabled):
+
+```bash
+./scripts/update-nix-vendor-hash.sh   # updates both files, verifies the result
+nix flake check
+```
+
+If the script reports a build failure that isn't a hash mismatch, the canary is genuinely broken
+and needs a code fix — it deliberately refuses to rewrite the hash in that case.
+
 ## Troubleshooting
 
 ### Build Failures

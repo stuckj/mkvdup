@@ -29,6 +29,13 @@ completely unexecuted behind green checks (#201).
 
 ## Tooling gotchas
 
+- **Put git worktrees *beside* the repo, never inside it.** The convention here is a sibling
+  directory named after the topic — `../mkvdup-fuse-timestamps`, `../mkvdup-nix-packaging`. A
+  worktree nested under the checkout is essentially a second clone living inside the repo, which
+  is confusing to browse and to reason about. Claude Code's `EnterWorktree` tool defaults to
+  `.claude/worktrees/<name>` *inside* the repo, so do not create one with it directly: run
+  `git worktree add ../mkvdup-<topic> -b <branch>` yourself, then enter it by passing that path
+  to `EnterWorktree`.
 - **`gh pr edit` is broken against this repo.** It fails on the deprecated projects-classic
   GraphQL field and **silently discards the edit** while appearing to succeed. Use the REST API
   instead:
