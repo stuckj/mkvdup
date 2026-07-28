@@ -141,11 +141,11 @@ nix shell github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
 nix profile install github:stuckj/mkvdup/feat/my-branch#mkvdup-canary
 
 # or pin an immutable canary tag
-nix profile install github:stuckj/mkvdup/v<version>-canary.N#mkvdup-canary
+nix profile install github:stuckj/mkvdup/v1.8.2-canary.1#mkvdup-canary
 ```
 
-Canary tags from `v1.8.2` onward are installable this way. Earlier ones were tagged before the
-hash automation existed and generally fail to build; check out the tag and run
+Canary tags from `v1.8.2-canary.1` onward are installable this way. Earlier ones were tagged
+before the hash automation existed and generally fail to build; check out the tag and run
 `./scripts/update-nix-vendor-hash.sh` if you need one of them.
 
 `nix shell` is usually the right tool for testing a branch: the binary is on `PATH` for that shell
