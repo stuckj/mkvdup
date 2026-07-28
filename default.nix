@@ -14,7 +14,7 @@ pkgs.buildGoModule rec {
   # Version is updated by the release workflow before tagging
   version = "1.8.2";
   src = ./.;
-  vendorHash = "sha256-aCPVeVKyXtVf/NICq3PUsfU1yw6HuQfHGtAFywY6c1U=";
+  vendorHash = "sha256-PjYhS3wYnXOIYxpjX5YsIsSqoY+ATOjR61cWH5HwCIU=";
   subPackages = [ "cmd/mkvdup" ];
   ldflags = [
     "-s"
