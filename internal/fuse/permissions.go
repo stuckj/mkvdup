@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -181,51 +180,37 @@ func (s *PermissionStore) Load() error {
 	return nil
 }
 
-// Save saves permissions to the file.
+// Save writes the whole in-memory state to the file, under the file lock and
+// via an atomic rename.
+//
+// Unlike the mutators, this deliberately does *not* merge with what is on disk:
+// it is a "publish my state" operation, used after seeding and after stale-entry
+// cleanup, where the in-memory state is the intended result. Individual
+// permission changes go through withFileLock instead, which applies a delta to
+// the current file contents and so cannot clobber a concurrent writer.
 func (s *PermissionStore) Save() error {
 	if s.path == "" {
 		return nil
 	}
 
-	s.mu.RLock()
-	// Deep copy the maps to avoid data races during marshalling.
-	// We copy both the map and the Perms values to ensure complete isolation.
-	pf := permissionsFile{
-		Defaults: s.defaults,
+	lock, err := acquireFileLock(lockPath(s.path))
+	if err != nil {
+		return err
 	}
-	if s.files != nil {
-		pf.Files = make(map[string]*Perms, len(s.files))
-		for k, v := range s.files {
-			if v != nil {
-				permsCopy := *v // copy the Perms struct
-				pf.Files[k] = &permsCopy
-			}
-		}
-	}
-	if s.dirs != nil {
-		pf.Directories = make(map[string]*Perms, len(s.dirs))
-		for k, v := range s.dirs {
-			if v != nil {
-				permsCopy := *v // copy the Perms struct
-				pf.Directories[k] = &permsCopy
-			}
-		}
-	}
-	s.mu.RUnlock()
+	defer lock.Close()
 
-	// Create parent directory if needed
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create permissions directory: %w", err)
-	}
+	s.mu.RLock()
+	// Deep copy so marshalling cannot race with a concurrent mutation.
+	pf := s.snapshotLocked()
+	s.mu.RUnlock()
 
 	data, err := yaml.Marshal(&pf)
 	if err != nil {
 		return fmt.Errorf("marshal permissions: %w", err)
 	}
 
-	if err := os.WriteFile(s.path, data, 0644); err != nil {
-		return fmt.Errorf("write permissions file: %w", err)
+	if err := writeFileAtomic(s.path, data, 0644); err != nil {
+		return err
 	}
 
 	if s.verbose {
@@ -309,25 +294,9 @@ func (s *PermissionStore) GetDirMtimeOverride(path string) *int64 {
 	return nil
 }
 
-// SetFilePerms sets permissions for a file.
-// Only non-nil values are updated; nil values leave existing values unchanged.
-// Automatically saves to disk.
-func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error {
-	s.mu.Lock()
-
-	// If all values are nil, nothing to do
-	if uid == nil && gid == nil && mode == nil {
-		s.mu.Unlock()
-		return nil
-	}
-
-	p, ok := s.files[path]
-	if !ok {
-		p = &Perms{}
-		s.files[path] = p
-	}
-
-	// Only update non-nil values; copy values so the store owns their lifetime.
+// applyOwnership overlays non-nil uid/gid/mode onto an entry, copying the
+// values so the store owns their lifetime.
+func applyOwnership(p *Perms, uid, gid, mode *uint32) {
 	if uid != nil {
 		v := *uid
 		p.UID = &v
@@ -340,151 +309,117 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
 		v := *mode
 		p.Mode = &v
 	}
+}
 
-	s.mu.Unlock()
+// SetFilePerms sets permissions for a file.
+// Only non-nil values are updated; nil values leave existing values unchanged.
+// Persisted immediately, as a locked read-modify-write of the file.
+func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error {
+	// If all values are nil, nothing to do
+	if uid == nil && gid == nil && mode == nil {
+		return nil
+	}
 
 	if s.verbose {
 		log.Printf("SetFilePerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
-	return s.Save()
+	return s.withFileLock(func(pf *permissionsFile) {
+		applyOwnership(entryFor(&pf.Files, path), uid, gid, mode)
+	})
 }
 
 // RemoveFilePerms removes all permission overrides for a file.
 // The file will use default permissions. Automatically saves to disk.
 func (s *PermissionStore) RemoveFilePerms(path string) error {
-	s.mu.Lock()
-	delete(s.files, path)
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("RemoveFilePerms: %s", path)
 	}
 
-	return s.Save()
+	return s.withFileLock(func(pf *permissionsFile) {
+		delete(pf.Files, path)
+	})
 }
 
 // SetDirPerms sets permissions for a directory.
 // Only non-nil values are updated; nil values leave existing values unchanged.
-// Automatically saves to disk.
+// Persisted immediately, as a locked read-modify-write of the file.
 func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint32) error {
-	s.mu.Lock()
-
 	// If all values are nil, nothing to do
 	if uid == nil && gid == nil && mode == nil {
-		s.mu.Unlock()
 		return nil
 	}
-
-	p, ok := s.dirs[path]
-	if !ok {
-		p = &Perms{}
-		s.dirs[path] = p
-	}
-
-	// Only update non-nil values; copy values so the store owns their lifetime.
-	if uid != nil {
-		v := *uid
-		p.UID = &v
-	}
-	if gid != nil {
-		v := *gid
-		p.GID = &v
-	}
-	if mode != nil {
-		v := *mode
-		p.Mode = &v
-	}
-
-	s.mu.Unlock()
 
 	if s.verbose {
 		log.Printf("SetDirPerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
-	return s.Save()
+	return s.withFileLock(func(pf *permissionsFile) {
+		applyOwnership(entryFor(&pf.Directories, path), uid, gid, mode)
+	})
 }
 
 // RemoveDirPerms removes all permission overrides for a directory.
 // The directory will use default permissions. Automatically saves to disk.
 func (s *PermissionStore) RemoveDirPerms(path string) error {
-	s.mu.Lock()
-	delete(s.dirs, path)
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("RemoveDirPerms: %s", path)
 	}
 
-	return s.Save()
+	return s.withFileLock(func(pf *permissionsFile) {
+		delete(pf.Directories, path)
+	})
 }
 
 // SetFileMtime sets (or, when mtime is nil, clears) the modification-time
 // override for a file. Existing uid/gid/mode overrides are preserved.
 // Automatically saves to disk.
 func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
-	s.mu.Lock()
-	p, ok := s.files[path]
-	if !ok {
-		if mtime == nil {
-			s.mu.Unlock()
-			return nil // nothing to clear
-		}
-		p = &Perms{}
-		s.files[path] = p
-	}
-	if mtime != nil {
-		v := *mtime
-		p.Mtime = &v
-	} else {
-		p.Mtime = nil
-		// Drop the entry entirely if nothing is overridden anymore, so we don't
-		// persist a useless "path: {}" stanza in the permissions file.
-		if p.isEmpty() {
-			delete(s.files, path)
-		}
-	}
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("SetFileMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
-	return s.Save()
+	return s.withFileLock(func(pf *permissionsFile) {
+		applyMtime(&pf.Files, path, mtime)
+	})
 }
 
 // SetDirMtime sets (or, when mtime is nil, clears) the modification-time
 // override for a directory. Existing uid/gid/mode overrides are preserved.
-// Automatically saves to disk.
+// Persisted immediately, as a locked read-modify-write of the file.
 func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
-	s.mu.Lock()
-	p, ok := s.dirs[path]
-	if !ok {
-		if mtime == nil {
-			s.mu.Unlock()
-			return nil // nothing to clear
-		}
-		p = &Perms{}
-		s.dirs[path] = p
-	}
-	if mtime != nil {
-		v := *mtime
-		p.Mtime = &v
-	} else {
-		p.Mtime = nil
-		// Drop the entry entirely if nothing is overridden anymore, so we don't
-		// persist a useless "path: {}" stanza in the permissions file.
-		if p.isEmpty() {
-			delete(s.dirs, path)
-		}
-	}
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("SetDirMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
-	return s.Save()
+	return s.withFileLock(func(pf *permissionsFile) {
+		applyMtime(&pf.Directories, path, mtime)
+	})
+}
+
+// applyMtime sets or clears the mtime override for path, leaving any
+// uid/gid/mode overrides alone.
+func applyMtime(m *map[string]*Perms, path string, mtime *int64) {
+	if mtime == nil {
+		// Nothing to clear if there is no entry.
+		if *m == nil {
+			return
+		}
+		p, ok := (*m)[path]
+		if !ok || p == nil {
+			return
+		}
+		p.Mtime = nil
+		// Drop the entry entirely if nothing is overridden anymore, so we don't
+		// persist a useless "path: {}" stanza in the permissions file.
+		if p.isEmpty() {
+			delete(*m, path)
+		}
+		return
+	}
+
+	v := *mtime
+	entryFor(m, path).Mtime = &v
 }
 
 // CleanupStale removes entries for paths that don't exist in the mounted filesystem.
