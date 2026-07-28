@@ -46,6 +46,37 @@ git push -u origin mkvdup-init
 Nothing needs to be added to `all-packages.nix` — the `pkgs/by-name/<shard>/<name>/` layout is
 auto-discovered, and `mk` is the correct shard for `mkvdup`.
 
+The commit message must be `mkvdup: init at <version>`, nixpkgs' convention for a new package,
+and must carry the `Assisted-by:` trailer described above. Note this differs from this repo's own
+convention — a `Co-authored-by:` trailer does **not** satisfy the nixpkgs policy.
+
+### PR description
+
+The policy requires the disclosure to appear in the pull request **separately** from the commit
+trailer, so the description needs its own note. Something like:
+
+```markdown
+mkvdup deduplicates MKV files against their source media (DVD ISOs, Blu-ray backups), storing an
+MKV as an index into the source plus whatever bytes are unique to it, and exposing the
+reconstructed files through FUSE.
+
+- Upstream: https://github.com/stuckj/mkvdup
+- Pure Go, no cgo. Builds and tests run in `checkPhase` on Linux and Darwin.
+- Runtime dependency on fuse3 for `fusermount3`; a `mount.fuse.mkvdup` helper is installed so the
+  filesystem can be mounted from fstab.
+
+I am the upstream author and am adding myself to `maintainers/maintainer-list.nix` in this PR.
+
+Built and tested locally with `nix-build -A mkvdup` and `nixpkgs-review`.
+
+Assistance disclosure, per the Automation/AI policy: the derivation was drafted with Claude Code
+(model Claude Opus 5). I have reviewed it, understand it, and verified it builds and behaves
+correctly; the same disclosure appears as an `Assisted-by:` trailer on the commit.
+```
+
+Adjust the last paragraph to match what actually happened before posting — the policy is about
+accurate disclosure, not a fixed wording, and you are the one accountable for the claim.
+
 ## Verifying before opening the PR
 
 ```bash
