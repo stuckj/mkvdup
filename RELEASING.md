@@ -218,12 +218,21 @@ The canary side is fully automated — there is no manual step in the normal cou
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `nix-canary-hash.yml` | Push to **any branch** touching `go.mod`/`go.sum`, or manual dispatch | Refreshes `vendorHash` and pushes it back to that same branch |
-| `release.yml` (`update-nix` job) | Every release | Rewrites `version` in `flake.nix`/`default.nix`, refreshes `vendorHash`, commits to `main` |
+| `release.yml` (`sync-nix` job) | Every release | Writes `version` and a refreshed `vendorHash` onto **the commit being released**, then the tag is created at the result |
 
 The first one runs on every branch, not just `main`, and that matters: canaries are cut from
 development branches, and a dependency bump is simultaneously the case where you most want a canary
 and the thing that invalidates the hash. Refreshing on the branch is what keeps
 `nix profile install github:stuckj/mkvdup/<branch>#mkvdup-canary` working with no manual step.
+
+`sync-nix` writes to the released ref rather than to `main`, which is what lets a canary tag report
+its own version. It runs after `build` — so nothing is pushed until every build has passed — and
+before `release`, so the tag can be created at the commit it produces. It stands down without
+touching anything when the release was dispatched from a tag, or when a `commit` input points
+somewhere other than the branch head; in both cases a bump would land on a commit that was never
+requested or built. Unlike `nix-canary-hash.yml` it does *not* rebase and retry a rejected push,
+because rebasing would move the bump onto commits that were never built. It fails instead, and the
+release should be re-run.
 
 Merging such a branch into `main` carries the refreshed hash along with the `go.sum` that produced
 it, so `main` normally needs nothing of its own — the hash is a function of `go.mod`/`go.sum`, not

@@ -237,7 +237,7 @@ jobs:
           path: "*.tar.gz"
 
   release:
-    needs: [prepare, build]
+    needs: [prepare, build, sync-nix]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -250,14 +250,16 @@ jobs:
         run: ls -la packages/
 
       # This creates the tag as well as the release. target_commitish pins it to
-      # the commit prepare resolved; without it the tag would be created at the
-      # default branch head instead. Because this job needs [prepare, build],
-      # the tag only comes into existence after every build has succeeded.
+      # the commit sync-nix produced — prepare's commit, plus the Nix version
+      # bump when there was one — so the tag carries its own version. Without it
+      # the tag would be created at the default branch head instead. Because this
+      # job needs build, the tag only comes into existence after every build has
+      # succeeded.
       - name: Upload to Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          target_commitish: ${{ needs.prepare.outputs.commit }}
+          target_commitish: ${{ needs.sync-nix.outputs.commit }}
           files: packages/*
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
@@ -691,102 +693,83 @@ jobs:
           git diff --staged --quiet || git commit -m "Update formula for ${{ needs.prepare.outputs.tag }}"
           git push
 
-  update-nix:
-    # Gated on build and release for the same reason the tag is: this job pushes
-    # a version bump to main, and a failed build previously left main claiming a
-    # version that was never released.
-    needs: [prepare, build, release]
+  # Writes the release version, and a refreshed vendorHash, into the Nix files on
+  # the ref being released, so the tag created below actually contains them.
+  #
+  # This is what makes `nix profile install github:stuckj/mkvdup/<tag>#mkvdup-canary`
+  # report the version on the tin. The old update-nix job wrote the bump to main
+  # instead of to the released ref, which got it wrong twice over: a canary tag
+  # inherited whatever version its branch happened to carry, and main was left
+  # claiming a version whose code was not on it.
+  #
+  # Ordering: after build, so nothing is pushed until every build has passed, and
+  # before release, so the tag can be created at the resulting commit.
+  sync-nix:
+    needs: [prepare, build]
     runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.sync.outputs.commit }}
     steps:
-      - name: Checkout main branch
+      - name: Checkout the released ref
         uses: actions/checkout@v7
         with:
-          ref: main
-          # Full history: the containment check below needs the release commit
-          # and main's history, and the push step rebases if main moved.
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
           token: ${{ secrets.BENCHMARK_PAT || github.token }}
 
-      # This job rewrites main's Nix files, so it must only run when main
-      # actually contains the code being released. Canaries are normally cut
-      # from development branches, and without this main ends up claiming a
-      # version whose source is not there — `nix profile install
-      # github:stuckj/mkvdup#mkvdup-canary` builds main's HEAD, so the reported
-      # version and the binary would describe different code.
-      #
-      # Testing containment rather than `github.ref_name == 'main'` is what
-      # makes this right in every direction: a canary legitimately cut from main
-      # still updates it, and a release dispatched from main with a `commit`
-      # input pointing at a branch correctly does not.
-      - name: Check the release commit is on main
-        id: guard
-        env:
-          COMMIT: ${{ needs.prepare.outputs.commit }}
-        run: |
-          if git merge-base --is-ancestor "${COMMIT}" HEAD; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::${COMMIT} is not on main; leaving main's Nix files alone"
-            {
-              echo "### Nix files not updated"
-              echo
-              echo "\`${COMMIT}\` is not an ancestor of \`main\`, so this release was cut from"
-              echo "another branch. Updating main's Nix files would make them claim a version"
-              echo "whose code is not on main."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: Install Nix
-        if: steps.guard.outputs.run == 'true'
         uses: cachix/install-nix-action@v31
 
-      - name: Update version in Nix files
-        if: steps.guard.outputs.run == 'true'
+      - name: Sync Nix files onto the released commit
+        id: sync
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+          BRANCH: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          # Update version in flake.nix
-          sed -i "s/version = \".*\";/version = \"${VERSION}\";/" flake.nix
+          # Falls back to tagging exactly what prepare resolved.
+          target="${COMMIT}"
+          sync=true
 
-          # Update version in default.nix
-          sed -i "s/version = \".*\";/version = \"${VERSION}\";/" default.nix
+          if [[ "${REF_TYPE}" != "branch" ]]; then
+            echo "::notice::dispatched from a ${REF_TYPE}, not a branch; leaving the Nix files alone"
+            sync=false
+          elif [[ "$(git rev-parse HEAD)" != "${COMMIT}" ]]; then
+            # A `commit` input pointing somewhere other than the branch head. A
+            # bump committed here would land on the head, so tagging it would
+            # release code that was neither requested nor built.
+            echo "::notice::${COMMIT} is not the head of ${BRANCH}; leaving the Nix files alone"
+            sync=false
+          fi
 
-      - name: Update vendorHash in Nix files
-        if: steps.guard.outputs.run == 'true'
-        run: |
-          # Shared with the nix-canary-hash workflow, which keeps the same hash
-          # fresh between releases when dependencies change.
-          ./scripts/update-nix-vendor-hash.sh
+          if [[ "${sync}" == true ]]; then
+            sed -i "s/version = \".*\";/version = \"${VERSION}\";/" flake.nix
+            sed -i "s/version = \".*\";/version = \"${VERSION}\";/" default.nix
+            ./scripts/update-nix-vendor-hash.sh
 
-          echo "Updated flake.nix and default.nix:"
-          grep -n 'version\|vendorHash' flake.nix
-          grep -n 'version\|vendorHash' default.nix
+            git add flake.nix default.nix flake.lock
+            if git diff --staged --quiet; then
+              echo "Nix files already current for ${TAG}"
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git commit -m "Update Nix files for ${TAG} [skip ci]"
 
-      - name: Commit and push Nix updates
-        if: steps.guard.outputs.run == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add flake.nix default.nix flake.lock
-          git diff --staged --quiet && echo "Nix files already current, nothing to commit" && exit 0
-          git commit -m "Update Nix files for ${{ needs.prepare.outputs.tag }} [skip ci]"
-
-          # main can advance during the nix build, which rejects the push as
-          # non-fast-forward and would otherwise lose the bump entirely. Rebase
-          # onto the new main and retry; the commit is local and has never been
-          # pushed, so rebasing it is safe.
-          for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
-              exit 0
+              # Deliberately no rebase-and-retry here, unlike nix-canary-hash:
+              # rebasing would move the bump onto commits that were never built,
+              # and the tag points at whatever this produces. Fail instead.
+              if ! git push origin "HEAD:${BRANCH}"; then
+                echo "::error::${BRANCH} moved during the release; re-run once it has settled"
+                exit 1
+              fi
+              target="$(git rev-parse HEAD)"
+              echo "Nix files synced onto ${target}"
             fi
-            echo "::notice::push rejected on attempt ${attempt}; rebasing onto origin/main"
-            git fetch origin main
-            git rebase origin/main
-          done
+          fi
 
-          echo "::error::could not push the Nix updates after 3 attempts"
-          exit 1
+          echo "commit=${target}" >> "$GITHUB_OUTPUT"
 
   publish-repo:
     # Also gated on release: publishing APT/YUM packages for a version that has
