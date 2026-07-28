@@ -3,11 +3,11 @@
 # Recompute the canary vendorHash in flake.nix and default.nix.
 #
 # buildGoModule pins the hash of the fetched Go module set, so any change to
-# go.mod/go.sum invalidates it and `nix build .#mkvdup-canary` starts failing.
-# This is run from two places:
+# go.mod/go.sum invalidates it and `nix build` starts failing — for both flake
+# outputs, which share the hash. This is run from two places:
 #
 #   - the release workflow, after the version strings are bumped
-#   - the nix-canary-hash workflow, whenever go.mod/go.sum lands on main
+#   - the nix-canary-hash workflow, whenever go.mod/go.sum lands on any branch
 #
 # Writes the hash actually in use to stdout; progress goes to stderr. Exits
 # non-zero if the hash could not be determined.
