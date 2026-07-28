@@ -122,10 +122,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          # Floor, not just a line: nfpm v2.47.0+ needs >= 1.26.4, and a bare
-          # '1.26' resolves to whatever the newest 1.26.x happens to be. The '~'
-          # keeps this on 1.26.x rather than rolling onto 1.27 unannounced.
-          go-version: '~1.26.4'  # keep in sync with the pinned nfpm version below
+          # Pinned exactly, like nfpm/benchstat/staticcheck: an unpinned '1.26'
+          # picks up new patch releases without warning, and a bare '>=' would
+          # roll onto 1.27 the day it ships. Must stay >= 1.26.4 for nfpm
+          # v2.47.0+.
+          go-version: '1.26.5'  # keep in sync with the pinned nfpm version below
 
       - name: Build binary
         env:
@@ -153,9 +154,9 @@ jobs:
       # Go requirement out from under this workflow (v2.47.0 needs Go >= 1.26.4),
       # which fails the build with GOTOOLCHAIN=local.
       #
-      # go-version above is now '~1.26.4', so that floor is satisfied and moving
-      # to v2.47.0+ is unblocked whenever wanted. Held at v2.46.0 here only
-      # because it works and the bump is a separate decision -- not because
+      # go-version above is now pinned to 1.26.5, so that floor is satisfied and
+      # moving to v2.47.0+ is unblocked whenever wanted. Held at v2.46.0 here
+      # only because it works and the bump is a separate decision -- not because
       # anything prevents it.
       # Bump this together with go-version above, not independently.
       # Matches how benchstat and staticcheck are pinned in the other workflows.
