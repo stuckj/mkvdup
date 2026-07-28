@@ -521,54 +521,8 @@ func (s *PermissionStore) Defaults() Defaults {
 	return s.defaults
 }
 
-// ResolvePermissionsPath determines which permissions file to use.
-// Priority:
-//  1. explicitPath (from --permissions-file flag)
-//  2. ~/.config/mkvdup/permissions.yaml (if exists) - for both root and non-root
-//  3. /etc/mkvdup/permissions.yaml (if exists AND running as root)
-//  4. Default based on euid: root uses /etc/, non-root uses ~/.config/
-//
-// Non-root users always get a user-writable path (unless explicitly overridden)
-// to avoid EACCES errors when saving permission changes.
-func ResolvePermissionsPath(explicitPath string) string {
-	if explicitPath != "" {
-		return explicitPath
-	}
-
-	home, err := os.UserHomeDir()
-	userPath := ""
-	if err == nil {
-		userPath = filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
-	}
-
-	// Check user config - takes priority for both root and non-root
-	if userPath != "" {
-		if _, err := os.Stat(userPath); err == nil {
-			return userPath
-		}
-	}
-
-	systemPath := "/etc/mkvdup/permissions.yaml"
-
-	// For root: check system config, then default to system path
-	if os.Geteuid() == 0 {
-		if _, err := os.Stat(systemPath); err == nil {
-			return systemPath
-		}
-		return systemPath
-	}
-
-	// For non-root: always use user path to ensure writability.
-	// Do NOT use system path even if it exists, as non-root users
-	// typically cannot write to /etc/ and chmod/chown operations
-	// would fail with EACCES.
-	if userPath != "" {
-		return userPath
-	}
-
-	// Fallback if no home directory (unusual for non-root)
-	return systemPath
-}
+// ResolvePermissionsPath now lives in permissions_path.go, alongside the
+// mountpoint-identity helpers it depends on.
 
 // CallerInfo represents the calling process's credentials.
 type CallerInfo struct {

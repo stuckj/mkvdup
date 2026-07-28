@@ -105,7 +105,11 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		DirGID:   opts.DefaultGID,
 		DirMode:  opts.DefaultDirMode,
 	}
-	permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile)
+	// Resolved before fs.Mount so the mountpoint is still an ordinary
+	// directory: the per-mount filename is derived from its canonical path, and
+	// resolving symlinks through a live FUSE mount would ask this filesystem
+	// about itself.
+	permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile, mountpoint)
 	permStore := mkvfuse.NewPermissionStore(permPath, defaults, verbose)
 	if err := permStore.Load(); err != nil {
 		if daemon.IsChild() {
