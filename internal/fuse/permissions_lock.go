@@ -171,7 +171,7 @@ func (s *PermissionStore) withFileLock(apply func(pf *permissionsFile)) error {
 		// Defaults come from this mount's --default-* flags, which the file does
 		// not own. In shared mode another mount's defaults are in there, so they
 		// are left exactly as read.
-		pf.Defaults = s.defaults
+		pf.Defaults = toFileDefaults(s.defaults)
 	}
 	s.mu.RUnlock()
 
@@ -207,7 +207,7 @@ func (s *PermissionStore) withFileLock(apply func(pf *permissionsFile)) error {
 
 // snapshotLocked builds a deep copy of the in-memory state. s.mu must be held.
 func (s *PermissionStore) snapshotLocked() permissionsFile {
-	pf := permissionsFile{Defaults: s.defaults}
+	pf := permissionsFile{Defaults: toFileDefaults(s.defaults)}
 	if s.mount != "" && !s.shared {
 		pf.Mount = s.mount
 	}

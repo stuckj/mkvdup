@@ -105,7 +105,7 @@ func TestStamp_SharedFileDoesNotPersistDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if onDisk.Defaults.FileUID == 4242 {
+	if onDisk.Defaults.FileUID != nil && *onDisk.Defaults.FileUID == 4242 {
 		t.Error("shared mode persisted this mount's defaults over the file's")
 	}
 	// The stamp must survive, or the sharing becomes invisible next time.

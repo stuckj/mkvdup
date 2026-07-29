@@ -58,7 +58,44 @@ func logI64(p *int64) string {
 	return strconv.FormatInt(*p, 10)
 }
 
-// Defaults holds default permissions for files and directories.
+// octalMode is a permission mode that marshals as familiar octal (0644) rather
+// than the decimal (420) previous versions wrote — which docs/FUSE.md has always
+// claimed was octal.
+//
+// Decoding is unaffected: YAML reads both an unquoted 0644 (leading zero means
+// octal) and a bare 420, so files written by older versions still load. Note a
+// *quoted* "0644" does not decode into an integer at all, which is why this
+// emits an unquoted !!int node rather than a string.
+type octalMode uint32
+
+func (m octalMode) MarshalYAML() (any, error) {
+	return &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!int",
+		Value: "0" + strconv.FormatUint(uint64(m), 8),
+	}, nil
+}
+
+// MarshalYAML writes Mode in octal while leaving the in-memory type a plain
+// *uint32, so callers are unaffected.
+func (p Perms) MarshalYAML() (any, error) {
+	type entry struct {
+		UID   *uint32    `yaml:"uid,omitempty"`
+		GID   *uint32    `yaml:"gid,omitempty"`
+		Mode  *octalMode `yaml:"mode,omitempty"`
+		Mtime *int64     `yaml:"mtime,omitempty"`
+	}
+	var mode *octalMode
+	if p.Mode != nil {
+		m := octalMode(*p.Mode)
+		mode = &m
+	}
+	return entry{UID: p.UID, GID: p.GID, Mode: mode, Mtime: p.Mtime}, nil
+}
+
+// Defaults holds the effective default permissions for files and directories.
+// Every field is always populated, so plain uint32 is right here — the
+// "unspecified" case only exists in the file, see fileDefaults.
 type Defaults struct {
 	FileUID  uint32 `yaml:"file_uid"`
 	FileGID  uint32 `yaml:"file_gid"`
@@ -66,6 +103,40 @@ type Defaults struct {
 	DirUID   uint32 `yaml:"dir_uid"`
 	DirGID   uint32 `yaml:"dir_gid"`
 	DirMode  uint32 `yaml:"dir_mode"`
+}
+
+// fileDefaults is the on-disk form of Defaults, where a field may legitimately
+// be absent.
+//
+// The pointers exist to distinguish "not specified" from a literal 0. With
+// plain uint32 they were the same value, so a uid or gid of 0 — root, and the
+// default for every fstab mount, since mount.fuse.mkvdup runs as root — could
+// not be written to the file at all: it was read back as "unspecified" and
+// silently discarded.
+type fileDefaults struct {
+	FileUID  *uint32    `yaml:"file_uid,omitempty"`
+	FileGID  *uint32    `yaml:"file_gid,omitempty"`
+	FileMode *octalMode `yaml:"file_mode,omitempty"`
+	DirUID   *uint32    `yaml:"dir_uid,omitempty"`
+	DirGID   *uint32    `yaml:"dir_gid,omitempty"`
+	DirMode  *octalMode `yaml:"dir_mode,omitempty"`
+}
+
+// toFileDefaults renders the effective defaults for writing. All six fields are
+// known, so all six are emitted — the file then records exactly what the mount
+// used, including zeros.
+func toFileDefaults(d Defaults) fileDefaults {
+	fileMode, dirMode := octalMode(d.FileMode), octalMode(d.DirMode)
+	fileUID, fileGID := d.FileUID, d.FileGID
+	dirUID, dirGID := d.DirUID, d.DirGID
+	return fileDefaults{
+		FileUID:  &fileUID,
+		FileGID:  &fileGID,
+		FileMode: &fileMode,
+		DirUID:   &dirUID,
+		DirGID:   &dirGID,
+		DirMode:  &dirMode,
+	}
 }
 
 // DefaultPerms returns the default permission values.
@@ -83,29 +154,26 @@ func DefaultPerms() Defaults {
 // applyLoadedDefaults overlays defaults read from a permissions file onto the
 // in-memory defaults, which start from the --default-* flags.
 //
-// Only non-zero values are taken, because Defaults uses plain uint32 and a zero
-// field is indistinguishable from "not specified". That makes uid/gid 0 — root,
-// and the default for every fstab mount — impossible to express in the file.
-// Tracked in #205; the fix is to make these fields pointers, at which point
-// this function collapses to a nil check.
-func applyLoadedDefaults(dst *Defaults, src Defaults) {
-	if src.FileMode != 0 {
-		dst.FileMode = src.FileMode
+// A present field wins, including an explicit 0. Absent fields leave the flag
+// value alone.
+func applyLoadedDefaults(dst *Defaults, src fileDefaults) {
+	if src.FileMode != nil {
+		dst.FileMode = uint32(*src.FileMode)
 	}
-	if src.FileUID != 0 {
-		dst.FileUID = src.FileUID
+	if src.FileUID != nil {
+		dst.FileUID = *src.FileUID
 	}
-	if src.FileGID != 0 {
-		dst.FileGID = src.FileGID
+	if src.FileGID != nil {
+		dst.FileGID = *src.FileGID
 	}
-	if src.DirMode != 0 {
-		dst.DirMode = src.DirMode
+	if src.DirMode != nil {
+		dst.DirMode = uint32(*src.DirMode)
 	}
-	if src.DirUID != 0 {
-		dst.DirUID = src.DirUID
+	if src.DirUID != nil {
+		dst.DirUID = *src.DirUID
 	}
-	if src.DirGID != 0 {
-		dst.DirGID = src.DirGID
+	if src.DirGID != nil {
+		dst.DirGID = *src.DirGID
 	}
 }
 
@@ -115,7 +183,7 @@ type permissionsFile struct {
 	// relative to a mount root and mean nothing without it, so the stamp is what
 	// lets a daemon notice it is looking at another mount's file.
 	Mount       string            `yaml:"mount,omitempty"`
-	Defaults    Defaults          `yaml:"defaults"`
+	Defaults    fileDefaults      `yaml:"defaults"`
 	Files       map[string]*Perms `yaml:"files,omitempty"`
 	Directories map[string]*Perms `yaml:"directories,omitempty"`
 }
