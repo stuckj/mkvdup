@@ -111,6 +111,10 @@ func applyLoadedDefaults(dst *Defaults, src Defaults) {
 
 // permissionsFile is the structure of the permissions YAML file.
 type permissionsFile struct {
+	// Mount records which mountpoint owns this file. Keys are virtual paths
+	// relative to a mount root and mean nothing without it, so the stamp is what
+	// lets a daemon notice it is looking at another mount's file.
+	Mount       string            `yaml:"mount,omitempty"`
 	Defaults    Defaults          `yaml:"defaults"`
 	Files       map[string]*Perms `yaml:"files,omitempty"`
 	Directories map[string]*Perms `yaml:"directories,omitempty"`
@@ -124,6 +128,38 @@ type PermissionStore struct {
 	dirs     map[string]*Perms
 	mu       sync.RWMutex
 	verbose  bool
+
+	// mount is this store's canonical mountpoint, used to stamp the file and to
+	// detect that another mount owns it. Empty means "unknown" (tests,
+	// programmatic use), which disables both stamping and the check.
+	mount string
+
+	// shared is set when the file carries a different mount's stamp, i.e. two
+	// mounts were deliberately pointed at one permissions_file=. The store then
+	// degrades safely rather than treating the file as its own: see sharedMode.
+	shared bool
+}
+
+// SetMountIdentity records which mountpoint this store belongs to, so its file
+// can be stamped and a foreign file recognised. Call before Load.
+func (s *PermissionStore) SetMountIdentity(mountpoint string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mount = CanonicalMountpoint(mountpoint)
+}
+
+// sharedMode reports whether this store is looking at a file stamped by a
+// different mount.
+//
+// Isolation cannot reach this case: an explicit --permissions-file may
+// deliberately point two mounts at one file. Rather than silently corrupting
+// it, the store stops doing the two things that assume sole ownership --
+// deleting entries it cannot account for, and persisting its own defaults over
+// the file's. Key collisions remain possible and are the operator's choice.
+func (s *PermissionStore) sharedMode() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.shared
 }
 
 // NewPermissionStore creates a new permission store.
@@ -164,6 +200,18 @@ func (s *PermissionStore) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A stamp naming a different mount means this file is shared. Warn once and
+	// degrade: the keys in it belong to someone else's virtual tree, so we must
+	// not prune them or overwrite their defaults.
+	wasShared := s.shared
+	s.shared = pf.Mount != "" && s.mount != "" && pf.Mount != s.mount
+	if s.shared && !wasShared {
+		log.Printf("Warning: permissions file %s is stamped for mount %q but this mount is %q; "+
+			"treating it as shared (stale-entry cleanup disabled, defaults not persisted). "+
+			"Give each mount its own permissions file to avoid key collisions.",
+			s.path, pf.Mount, s.mount)
+	}
+
 	applyLoadedDefaults(&s.defaults, pf.Defaults)
 
 	if pf.Files != nil {
@@ -203,6 +251,14 @@ func (s *PermissionStore) Save() error {
 	// Deep copy so marshalling cannot race with a concurrent mutation.
 	pf := s.snapshotLocked()
 	s.mu.RUnlock()
+
+	// In shared mode the stamp belongs to the mount that created the file;
+	// republishing without it would hide the sharing from the next Load.
+	if s.sharedMode() {
+		if onDisk, err := readPermissionsFile(s.path); err == nil {
+			pf.Mount = onDisk.Mount
+		}
+	}
 
 	data, err := yaml.Marshal(&pf)
 	if err != nil {
@@ -428,6 +484,16 @@ func applyMtime(m *map[string]*Perms, path string, mtime *int64) {
 func (s *PermissionStore) CleanupStale(validFiles, validDirs map[string]bool) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// In shared mode the file holds another mount's entries, whose paths are
+	// meaningless against this mount's tree. Pruning "unknown" keys there is
+	// exactly the deletion bug this change exists to fix, so do nothing.
+	if s.shared {
+		if s.verbose {
+			log.Printf("Skipping stale-entry cleanup: %s is shared with mount %q", s.path, s.mount)
+		}
+		return 0
+	}
 
 	removed := 0
 

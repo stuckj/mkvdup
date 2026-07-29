@@ -165,12 +165,19 @@ func (s *PermissionStore) withFileLock(apply func(pf *permissionsFile)) error {
 		return err
 	}
 
-	// Defaults come from this mount's --default-* flags, which the file does
-	// not own. Per-mount files make this unambiguous; a deliberately shared
-	// file is handled by the ownership stamp (#203).
 	s.mu.RLock()
-	pf.Defaults = s.defaults
+	shared, mount := s.shared, s.mount
+	if !shared {
+		// Defaults come from this mount's --default-* flags, which the file does
+		// not own. In shared mode another mount's defaults are in there, so they
+		// are left exactly as read.
+		pf.Defaults = s.defaults
+	}
 	s.mu.RUnlock()
+
+	if mount != "" && !shared {
+		pf.Mount = mount
+	}
 
 	apply(&pf)
 
@@ -201,6 +208,9 @@ func (s *PermissionStore) withFileLock(apply func(pf *permissionsFile)) error {
 // snapshotLocked builds a deep copy of the in-memory state. s.mu must be held.
 func (s *PermissionStore) snapshotLocked() permissionsFile {
 	pf := permissionsFile{Defaults: s.defaults}
+	if s.mount != "" && !s.shared {
+		pf.Mount = s.mount
+	}
 	if len(s.files) > 0 {
 		pf.Files = make(map[string]*Perms, len(s.files))
 		for k, v := range s.files {

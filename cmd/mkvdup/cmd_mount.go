@@ -111,6 +111,9 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 	// about itself.
 	permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile, mountpoint)
 	permStore := mkvfuse.NewPermissionStore(permPath, defaults, verbose)
+	// Stamps this mount's identity into the file, and lets the store notice if
+	// an explicit --permissions-file points it at another mount's file.
+	permStore.SetMountIdentity(mountpoint)
 	if err := permStore.Load(); err != nil {
 		if daemon.IsChild() {
 			daemon.NotifyError(fmt.Errorf("load permissions: %w", err))
