@@ -151,18 +151,17 @@ jobs:
           fi
 
       # Pinned deliberately. nfpm@latest previously broke releases by raising its
-      # Go requirement out from under this workflow (v2.47.0 needs Go >= 1.26.4),
-      # which fails the build with GOTOOLCHAIN=local.
+      # Go requirement out from under this workflow, which fails the build with
+      # GOTOOLCHAIN=local -- hence an exact version, matching how benchstat and
+      # staticcheck are pinned in the other workflows.
       #
-      # go-version above is now pinned to 1.26.5, so that floor is satisfied and
-      # moving to v2.47.0+ is unblocked whenever wanted. Held at v2.46.0 here
-      # only because it works and the bump is a separate decision -- not because
-      # anything prevents it.
-      # Bump this together with go-version above, not independently.
-      # Matches how benchstat and staticcheck are pinned in the other workflows.
+      # v2.47.0 requires Go >= 1.26.4, satisfied by go-version 1.26.5 above.
+      # Bump these two together, never independently: raising nfpm past what the
+      # pinned Go supports breaks releases *and only releases*, so it would not
+      # surface until a release was attempted.
       - name: Install nfpm
         if: matrix.goos == 'linux'
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.0
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
 
       - name: Build deb package
         if: matrix.goos == 'linux'
