@@ -738,15 +738,26 @@ Dedup files containing the index and delta data
 .I *.mkvdup.yaml
 Config files for mounting dedup files
 .TP
-.I ~/.config/@PACKAGE_NAME@/permissions.yaml
+.I /var/lib/@PACKAGE_NAME@/permissions.d/<mountpoint>.yaml
 Permission, ownership and timestamp overrides for virtual files and
-directories. Searched first, and the default write location for non-root
-users.
-.TP
-.I /etc/@PACKAGE_NAME@/permissions.yaml
-System-wide overrides. Used when the per-user file above does not exist, and
-the default write location when running as root. Override either with
+directories, when running as root. One file per mount, named after the
+mountpoint using systemd path escaping, so
+.I /mnt/videos
+becomes
+.IR mnt\-videos.yaml .
+Override keys are paths relative to the mount root and are only unique within
+a mount, which is why each mount has its own file. Override the location with
 .B \-\-permissions\-file\fR.
+.TP
+.I ~/.local/state/@PACKAGE_NAME@/permissions.d/<mountpoint>.yaml
+The same, for non-root users. Honours
+.B $XDG_STATE_HOME
+if set.
+.TP
+.I /etc/@PACKAGE_NAME@/permissions.yaml, ~/.config/@PACKAGE_NAME@/permissions.yaml
+Shared permissions files used by earlier versions. Read once to seed a mount's
+own file with the entries belonging to it, then left untouched. Safe to delete
+after every mount has started at least once.
 .SH TIMESTAMPS
 Virtual files report a modification time derived from their
 .I .mkvdup
