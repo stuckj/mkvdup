@@ -133,25 +133,25 @@ func readPermissionsFile(path string) (permissionsFile, error) {
 	return pf, nil
 }
 
-// withFileLock performs a read-modify-write of the permissions file under an
-// exclusive lock, then refreshes the in-memory cache from the result.
+// writeMerged performs a read-modify-write of the permissions file under an
+// exclusive lock: it reads what is on disk, lets apply overlay this mount's
+// pending changes onto it, and writes the result atomically.
 //
-// Reading inside the lock is the point. The previous implementation wrote its
+// Reading inside the lock is the point. The original implementation wrote its
 // whole in-memory snapshot, which was loaded at startup and never refreshed --
-// so any other writer's changes were silently erased. Applying a delta to the
-// state actually on disk is what makes concurrent writers safe.
+// so any other writer's changes were silently erased. Overlaying only the keys
+// this store actually changed is what makes concurrent writers safe.
 //
-// Read paths (GetFilePerms and friends) deliberately do not take this lock:
-// they serve from the in-memory cache, so FUSE getattr stays off the disk.
-func (s *PermissionStore) withFileLock(apply func(pf *permissionsFile)) error {
+// It deliberately does not copy the merged result back into the in-memory maps.
+// Those maps are already authoritative for the keys this store owns, and
+// adopting wholesale would discard any mutation that arrived while the write
+// was in flight. Other writers' entries are picked up by Load.
+//
+// Read paths (GetFilePerms and friends) never take this lock: they serve from
+// the in-memory cache, so FUSE getattr stays off the disk.
+func (s *PermissionStore) writeMerged(apply func(pf *permissionsFile)) error {
 	if s.path == "" {
-		// Not persisted: the in-memory maps are the entire store.
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		pf := s.snapshotLocked()
-		apply(&pf)
-		s.adoptLocked(pf)
-		return nil
+		return nil // not persisted; the in-memory maps are the whole store
 	}
 
 	lock, err := acquireFileLock(lockPath(s.path))
@@ -189,20 +189,10 @@ func (s *PermissionStore) withFileLock(apply func(pf *permissionsFile)) error {
 	// Skip a no-op write. chmod -R re-applying an identical mode is common, and
 	// every skipped write is a lock hold and two fsyncs avoided.
 	if existing, err := os.ReadFile(s.path); err == nil && string(existing) == string(data) {
-		s.mu.Lock()
-		s.adoptLocked(pf)
-		s.mu.Unlock()
 		return nil
 	}
 
-	if err := writeFileAtomic(s.path, data, 0644); err != nil {
-		return err
-	}
-
-	s.mu.Lock()
-	s.adoptLocked(pf)
-	s.mu.Unlock()
-	return nil
+	return writeFileAtomic(s.path, data, 0644)
 }
 
 // snapshotLocked builds a deep copy of the in-memory state. s.mu must be held.
@@ -230,25 +220,6 @@ func (s *PermissionStore) snapshotLocked() permissionsFile {
 		}
 	}
 	return pf
-}
-
-// adoptLocked replaces the in-memory cache with the just-persisted state, so
-// the cache cannot drift from the file. s.mu must be held.
-func (s *PermissionStore) adoptLocked(pf permissionsFile) {
-	s.files = make(map[string]*Perms, len(pf.Files))
-	for k, v := range pf.Files {
-		if v != nil {
-			entry := *v
-			s.files[k] = &entry
-		}
-	}
-	s.dirs = make(map[string]*Perms, len(pf.Directories))
-	for k, v := range pf.Directories {
-		if v != nil {
-			entry := *v
-			s.dirs[k] = &entry
-		}
-	}
 }
 
 // entryFor returns the entry for path in m, creating it if absent.

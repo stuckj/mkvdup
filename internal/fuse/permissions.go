@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"gopkg.in/yaml.v3"
@@ -206,6 +207,16 @@ type PermissionStore struct {
 	// mounts were deliberately pointed at one permissions_file=. The store then
 	// degrades safely rather than treating the file as its own: see sharedMode.
 	shared bool
+
+	// pending holds the entries whose in-memory value has not reached the file
+	// yet. Writes are debounced (see permissions_flush.go) because each one
+	// costs a lock, a parse and two fsyncs, which a recursive chmod would
+	// otherwise pay per file.
+	pending    map[permKey]struct{}
+	flushTimer *time.Timer
+	firstDirty time.Time
+	flushErr   error
+	closed     bool
 }
 
 // SetMountIdentity records which mountpoint this store belongs to, so its file
@@ -247,6 +258,16 @@ func NewPermissionStore(path string, defaults Defaults, verbose bool) *Permissio
 func (s *PermissionStore) Load() error {
 	if s.path == "" {
 		return nil
+	}
+
+	// Load replaces the in-memory maps with the file's contents, so anything
+	// still sitting in the debounce window would simply vanish -- a chmod
+	// moments before a SIGHUP reload would be silently discarded. Flushing here
+	// rather than at each call site means the ordering cannot be forgotten.
+	// A flush failure is not fatal: log it and load anyway, since refusing to
+	// reload would be worse than losing an unpersisted change.
+	if err := s.Flush(); err != nil {
+		log.Printf("Warning: failed to flush pending permission changes before reloading %s: %v", s.path, err)
 	}
 
 	data, err := os.ReadFile(s.path)
@@ -448,9 +469,12 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
 		log.Printf("SetFilePerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
-	return s.withFileLock(func(pf *permissionsFile) {
-		applyOwnership(entryFor(&pf.Files, path), uid, gid, mode)
-	})
+	s.mu.Lock()
+	applyOwnership(entryFor(&s.files, path), uid, gid, mode)
+	s.markDirtyLocked(permKey{path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // RemoveFilePerms removes all permission overrides for a file.
@@ -460,9 +484,12 @@ func (s *PermissionStore) RemoveFilePerms(path string) error {
 		log.Printf("RemoveFilePerms: %s", path)
 	}
 
-	return s.withFileLock(func(pf *permissionsFile) {
-		delete(pf.Files, path)
-	})
+	s.mu.Lock()
+	delete(s.files, path)
+	s.markDirtyLocked(permKey{path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // SetDirPerms sets permissions for a directory.
@@ -478,9 +505,12 @@ func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint3
 		log.Printf("SetDirPerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
-	return s.withFileLock(func(pf *permissionsFile) {
-		applyOwnership(entryFor(&pf.Directories, path), uid, gid, mode)
-	})
+	s.mu.Lock()
+	applyOwnership(entryFor(&s.dirs, path), uid, gid, mode)
+	s.markDirtyLocked(permKey{dir: true, path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // RemoveDirPerms removes all permission overrides for a directory.
@@ -490,9 +520,12 @@ func (s *PermissionStore) RemoveDirPerms(path string) error {
 		log.Printf("RemoveDirPerms: %s", path)
 	}
 
-	return s.withFileLock(func(pf *permissionsFile) {
-		delete(pf.Directories, path)
-	})
+	s.mu.Lock()
+	delete(s.dirs, path)
+	s.markDirtyLocked(permKey{dir: true, path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // SetFileMtime sets (or, when mtime is nil, clears) the modification-time
@@ -503,9 +536,12 @@ func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
 		log.Printf("SetFileMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
-	return s.withFileLock(func(pf *permissionsFile) {
-		applyMtime(&pf.Files, path, mtime)
-	})
+	s.mu.Lock()
+	applyMtime(&s.files, path, mtime)
+	s.markDirtyLocked(permKey{path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // SetDirMtime sets (or, when mtime is nil, clears) the modification-time
@@ -516,9 +552,12 @@ func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
 		log.Printf("SetDirMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
-	return s.withFileLock(func(pf *permissionsFile) {
-		applyMtime(&pf.Directories, path, mtime)
-	})
+	s.mu.Lock()
+	applyMtime(&s.dirs, path, mtime)
+	s.markDirtyLocked(permKey{dir: true, path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // applyMtime sets or clears the mtime override for path, leaving any
@@ -569,6 +608,7 @@ func (s *PermissionStore) CleanupStale(validFiles, validDirs map[string]bool) in
 	for path := range s.files {
 		if !validFiles[path] {
 			delete(s.files, path)
+			s.markDirtyLocked(permKey{path: path})
 			removed++
 			if s.verbose {
 				log.Printf("Removed stale file permission entry: %s", path)
@@ -580,6 +620,7 @@ func (s *PermissionStore) CleanupStale(validFiles, validDirs map[string]bool) in
 	for path := range s.dirs {
 		if !validDirs[path] {
 			delete(s.dirs, path)
+			s.markDirtyLocked(permKey{dir: true, path: path})
 			removed++
 			if s.verbose {
 				log.Printf("Removed stale directory permission entry: %s", path)

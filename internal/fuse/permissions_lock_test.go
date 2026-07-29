@@ -10,6 +10,20 @@ import (
 
 func mode(v uint32) *uint32 { return &v }
 
+// flush forces pending changes to disk.
+//
+// Writes are debounced, so a test that inspects the file (or reloads it through
+// a second store) must force the write first. There is deliberately no
+// synchronous mode to switch on: this is the same call the daemon makes at
+// unmount, on SIGTERM and before a reload, so tests exercise the production
+// write path rather than an alternative that only exists for them.
+func flush(t *testing.T, s *PermissionStore) {
+	t.Helper()
+	if err := s.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+}
+
 // The original lost-update bug: two stores on one file, each with a long-lived
 // in-memory copy loaded at startup. Before the locked read-modify-write, B's
 // save wrote B's whole stale view and erased A's change.
@@ -32,6 +46,8 @@ func TestWithFileLock_ConcurrentStoresDoNotClobber(t *testing.T) {
 	if err := b.SetFilePerms("B/two.mkv", nil, nil, mode(0600)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, a)
+	flush(t, b)
 
 	fresh := NewPermissionStore(path, DefaultPerms(), false)
 	if err := fresh.Load(); err != nil {
@@ -60,6 +76,10 @@ func TestWithFileLock_ConcurrentMutationsAllLand(t *testing.T) {
 			// the situation multiple mount daemons are in.
 			s := NewPermissionStore(path, DefaultPerms(), false)
 			if err := s.SetFilePerms(fileKey(i), nil, nil, mode(0600)); err != nil {
+				errs <- err
+				return
+			}
+			if err := s.Flush(); err != nil {
 				errs <- err
 			}
 		}(i)
@@ -97,6 +117,7 @@ func TestWriteFileAtomic_ReaderNeverSeesPartialFile(t *testing.T) {
 	if err := s.SetFilePerms("seed.mkv", nil, nil, mode(0644)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, s)
 
 	done := make(chan struct{})
 	var wg sync.WaitGroup
@@ -112,6 +133,7 @@ func TestWriteFileAtomic_ReaderNeverSeesPartialFile(t *testing.T) {
 			}
 			w := NewPermissionStore(path, DefaultPerms(), false)
 			_ = w.SetFilePerms(fileKey(i%50), nil, nil, mode(0600))
+			_ = w.Flush()
 		}
 	}()
 
@@ -190,6 +212,7 @@ func TestWriteFileAtomic_LeavesNoTempFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	flush(t, s)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

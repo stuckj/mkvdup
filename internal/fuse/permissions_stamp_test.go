@@ -17,6 +17,7 @@ func TestStamp_WrittenOnSave(t *testing.T) {
 	if err := s.SetFilePerms("one.mkv", nil, nil, mode(0640)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, s)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -36,6 +37,7 @@ func TestStamp_OmittedWithoutIdentity(t *testing.T) {
 	if err := s.SetFilePerms("one.mkv", nil, nil, mode(0640)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, s)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -56,6 +58,7 @@ func TestStamp_SharedFileDisablesCleanup(t *testing.T) {
 	if err := a.SetFilePerms("A/one.mkv", nil, nil, mode(0640)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, a)
 
 	// A different mount opens the same file.
 	b := NewPermissionStore(path, DefaultPerms(), false)
@@ -72,6 +75,7 @@ func TestStamp_SharedFileDisablesCleanup(t *testing.T) {
 	if removed := b.CleanupStale(map[string]bool{"B/two.mkv": true}, nil); removed != 0 {
 		t.Errorf("cleanup removed %d entries from a shared file; want 0", removed)
 	}
+	flush(t, b)
 
 	fresh := NewPermissionStore(path, DefaultPerms(), false)
 	if err := fresh.Load(); err != nil {
@@ -91,6 +95,7 @@ func TestStamp_SharedFileDoesNotPersistDefaults(t *testing.T) {
 	if err := a.SetFilePerms("A/one.mkv", nil, nil, mode(0640)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, a)
 
 	b := NewPermissionStore(path, Defaults{FileUID: 4242, FileGID: 4242, FileMode: 0400, DirMode: 0500}, false)
 	b.SetMountIdentity("/mnt/movies")
@@ -100,6 +105,7 @@ func TestStamp_SharedFileDoesNotPersistDefaults(t *testing.T) {
 	if err := b.SetFilePerms("B/two.mkv", nil, nil, mode(0600)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, b)
 
 	onDisk, err := readPermissionsFile(path)
 	if err != nil {
@@ -123,6 +129,7 @@ func TestStamp_SameMountIsNotShared(t *testing.T) {
 	if err := a.SetFilePerms("one.mkv", nil, nil, mode(0640)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, a)
 
 	b := NewPermissionStore(path, DefaultPerms(), false)
 	b.SetMountIdentity("/mnt/videos")
@@ -156,6 +163,7 @@ func TestStamp_UnstampedFileIsAdopted(t *testing.T) {
 	if err := s.SetFilePerms("two.mkv", nil, nil, mode(0600)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, s)
 	onDisk, err := readPermissionsFile(path)
 	if err != nil {
 		t.Fatal(err)

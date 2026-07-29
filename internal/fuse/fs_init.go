@@ -175,7 +175,10 @@ func initPermissionState(root *MKVFSRoot, permStore *PermissionStore, verbose bo
 		if verbose {
 			log.Printf("Cleaned up %d stale permission entries", removed)
 		}
-		if err := permStore.Save(); err != nil {
+		// Cleanup marks the removed keys pending; write them out now rather than
+		// waiting for the debounce, so a mount that never sees another change
+		// still persists the pruning.
+		if err := permStore.Flush(); err != nil {
 			log.Printf("Warning: failed to save permissions after cleanup: %v", err)
 		}
 	}

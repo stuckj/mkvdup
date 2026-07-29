@@ -106,6 +106,9 @@ func TestPermissionStore_LoadSave(t *testing.T) {
 		t.Fatalf("SetDirPerms failed: %v", err)
 	}
 
+	// Writes are debounced; force them out before reading the file back.
+	flush(t, store)
+
 	// Create a new store and load
 	store2 := NewPermissionStore(path, defaults, false)
 	err = store2.Load()
@@ -236,6 +239,8 @@ func TestPermissionStore_SetFilePerms(t *testing.T) {
 	if gotUID != uid {
 		t.Errorf("GetFilePerms uid = %d, want %d", gotUID, uid)
 	}
+
+	flush(t, store)
 
 	// Verify file was saved
 	if _, err := os.Stat(path); err != nil {
@@ -502,6 +507,8 @@ func TestPermissionStore_SaveCreatesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetFilePerms failed: %v", err)
 	}
+
+	flush(t, store)
 
 	// Verify nested directory was created
 	if _, err := os.Stat(filepath.Dir(nestedPath)); err != nil {

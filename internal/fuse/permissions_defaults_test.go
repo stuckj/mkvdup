@@ -91,6 +91,7 @@ func TestDefaults_ModesAreWrittenInOctal(t *testing.T) {
 	if err := s.SetDirPerms("d", nil, nil, mode(0750)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, s)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -120,6 +121,7 @@ func TestDefaults_OctalRoundTrips(t *testing.T) {
 	if err := s.SetFilePerms("one.mkv", nil, nil, mode(0640)); err != nil {
 		t.Fatal(err)
 	}
+	flush(t, s)
 
 	// Flags deliberately different, so anything inherited proves it came from disk.
 	fresh := NewPermissionStore(path, Defaults{FileUID: 9, FileGID: 9, FileMode: 0400, DirUID: 9, DirGID: 9, DirMode: 0500}, false)
