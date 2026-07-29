@@ -164,33 +164,46 @@ func TestWriteFileAtomic_ReaderNeverSeesPartialFile(t *testing.T) {
 	wg.Wait()
 }
 
-// A failed write must leave the previous file intact. os.WriteFile truncates
-// first, so a failure there could destroy good state; the temp+rename cannot.
-func TestWriteFileAtomic_FailureLeavesPreviousFileIntact(t *testing.T) {
+// A failed write must not destroy what is already there, and must not leave a
+// temp file behind. os.WriteFile truncates before writing, so a failure there
+// could destroy good state; a temp+rename never touches the target until the
+// rename, which either happens completely or not at all.
+//
+// The failure is forced through filesystem semantics rather than permissions:
+// renaming a file over a non-empty directory fails for root too, whereas a
+// read-only directory does not (CAP_DAC_OVERRIDE). This test therefore behaves
+// identically as root and non-root, so it needs no build tag and never skips.
+func TestWriteFileAtomic_FailureIsNonDestructive(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "permissions.yaml")
 
-	good := []byte("defaults:\n  file_mode: 292\n")
-	if err := writeFileAtomic(path, good, 0644); err != nil {
+	// The target already exists, holding state a failed write must not damage.
+	target := filepath.Join(dir, "permissions.yaml")
+	if err := os.Mkdir(target, 0755); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(target, "keep.txt")
+	if err := os.WriteFile(keep, []byte("preexisting"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Make the directory read-only so creating the temp file fails.
-	if err := os.Chmod(dir, 0500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
-
-	if err := writeFileAtomic(path, []byte("defaults:\n  file_mode: 384\n"), 0644); err == nil {
-		t.Skip("write unexpectedly succeeded (running as root?)")
+	if err := writeFileAtomic(target, []byte("defaults:\n  file_mode: 0600\n"), 0644); err == nil {
+		t.Fatal("expected the write to fail when the target cannot be replaced")
 	}
 
-	after, err := os.ReadFile(path)
+	// Target untouched.
+	if data, err := os.ReadFile(keep); err != nil || string(data) != "preexisting" {
+		t.Errorf("existing state damaged by a failed write: data=%q err=%v", data, err)
+	}
+
+	// And no litter: the temp file must be cleaned up on the failure path.
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("previous file is gone after a failed write: %v", err)
+		t.Fatal(err)
 	}
-	if string(after) != string(good) {
-		t.Errorf("previous contents damaged by a failed write:\n%s", after)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("temp file left behind after a failed write: %s", e.Name())
+		}
 	}
 }
 

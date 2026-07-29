@@ -34,32 +34,6 @@ import (
 	fusepkg "github.com/stuckj/mkvdup/internal/fuse"
 )
 
-// waitForFileContaining polls until path exists and contains want.
-//
-// Permission writes are coalesced, so a change is not on disk the instant the
-// chmod returns. Polling is the honest way to observe that from outside the
-// process: the alternative -- a flag forcing synchronous writes -- would test a
-// code path production never takes.
-func waitForFileContaining(t *testing.T, path, want string, timeout time.Duration) string {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	var last string
-	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(path); err == nil {
-			last = string(data)
-			if strings.Contains(last, want) {
-				return last
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if last == "" {
-		t.Fatalf("timed out after %s waiting for %s to exist", timeout, path)
-	}
-	t.Fatalf("timed out after %s waiting for %q in %s:\n%s", timeout, want, path, last)
-	return ""
-}
-
 // expectedPermissionsPath is where the daemon should put a mount's file.
 func expectedPermissionsPath(t *testing.T, mountPoint string) string {
 	t.Helper()

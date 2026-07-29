@@ -91,10 +91,14 @@ func TestCoalesce_CloseFlushes(t *testing.T) {
 
 // Deferring the write means the failing chmod itself returns success. The
 // failure must still reach the caller, on the next operation.
+// The failure is forced with a regular file where a directory is needed, which
+// fails with ENOTDIR for root as well. A read-only directory would not: root
+// bypasses that, so the test would silently skip in the root CI job.
 func TestCoalesce_FailureIsLatchedAndRetried(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "state")
-	if err := os.MkdirAll(sub, 0700); err != nil {
+	// A file, not a directory: creating the state directory under it cannot work.
+	if err := os.WriteFile(sub, []byte("blocker"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(sub, "permissions.yaml")
@@ -104,14 +108,7 @@ func TestCoalesce_FailureIsLatchedAndRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Make the write fail.
-	if err := os.Chmod(sub, 0500); err != nil {
-		t.Fatal(err)
-	}
 	if err := s.Flush(); err == nil {
-		if os.Geteuid() == 0 {
-			t.Skip("running as root: a read-only directory does not block writes")
-		}
 		t.Fatal("expected the flush to fail")
 	}
 
@@ -120,8 +117,11 @@ func TestCoalesce_FailureIsLatchedAndRetried(t *testing.T) {
 		t.Error("a failed flush was not reported to the next caller")
 	}
 
-	// Nothing was dropped: once writable again, both changes land.
-	if err := os.Chmod(sub, 0700); err != nil {
+	// Nothing was dropped: once the path is usable, both changes land.
+	if err := os.Remove(sub); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sub, 0700); err != nil {
 		t.Fatal(err)
 	}
 	flush(t, s)
@@ -152,14 +152,14 @@ func TestEnsureWritable(t *testing.T) {
 		t.Fatalf("writable directory reported as unwritable: %v", err)
 	}
 
-	if err := os.Chmod(sub, 0500); err != nil {
+	// Again a file where a directory must be, so this holds for root too.
+	blocker := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blocker, []byte("blocker"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(sub, 0700) })
-
-	bad := NewPermissionStore(filepath.Join(sub, "nested", "permissions.yaml"), DefaultPerms(), false)
-	if err := bad.EnsureWritable(); err == nil && os.Geteuid() != 0 {
-		t.Error("unwritable state directory was not detected at mount time")
+	bad := NewPermissionStore(filepath.Join(blocker, "permissions.yaml"), DefaultPerms(), false)
+	if err := bad.EnsureWritable(); err == nil {
+		t.Error("unusable state directory was not detected at mount time")
 	}
 }
 
