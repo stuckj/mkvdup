@@ -9,13 +9,13 @@
 
 buildGoModule rec {
   pname = "mkvdup";
-  version = "1.9.0";
+  version = "1.9.1";
 
   src = fetchFromGitHub {
     owner = "stuckj";
     repo = "mkvdup";
     rev = "v${version}";
-    hash = "sha256-lGsvE5xfQ4E2FIYT3keRVNaP+i19/vnUk104tEs4jtQ=";
+    hash = "sha256-BkzqzRZYlqRVwp4vqU/7hUMx6P5o73o40fLoZ6R9l6Q=";
   };
 
   vendorHash = "sha256-rp2M/Fe5P+ganzJ6/0c75PO9Kg38LL7+vwb6pwIOgSE=";
