@@ -44,6 +44,17 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
 
+          # Releases have to come from a branch. The commit to tag is resolved
+          # from `origin/<ref>`, which does not exist for a tag, and sync-nix
+          # pushes the Nix version bump back to that same ref. Before the
+          # commit-SHA input was removed this failed further down with a
+          # misleading "could not find a non-bookkeeping commit"; say so plainly
+          # and early instead.
+          if [[ "${{ github.ref_type }}" != "branch" ]]; then
+            echo "::error::Releases must be dispatched from a branch, not a ${{ github.ref_type }}. Re-run this workflow from the branch you want to release."
+            exit 1
+          fi
+
           # Validate version format (no leading 'v', basic version like 1.2.3 or 1.2.3-beta.1)
           if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+)*([.-][0-9A-Za-z]+)*$ ]]; then
             echo "::error::Invalid version '${VERSION}'. Expected format like '1.0' or '1.2.3' without 'v' prefix."
@@ -754,6 +765,9 @@ jobs:
           # pattern, so the two are equivalent — this is not a bug to "fix".
           extra=""
           if [[ "${REF_TYPE}" != "branch" ]]; then
+            # Unreachable in practice — prepare rejects a non-branch dispatch
+            # before any job runs. Kept because the cost of being wrong here is a
+            # bad push during a release, and the check is one comparison.
             reason="dispatched from a ${REF_TYPE}, not a branch — there is no branch to commit the bump to"
             sync=false
           elif ! git merge-base --is-ancestor "${COMMIT}" HEAD; then

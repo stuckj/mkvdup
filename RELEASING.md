@@ -44,6 +44,10 @@ Releases are created via the GitHub Actions workflow:
    leading `v` and derives the tag itself.
 4. Click "Run workflow"
 
+**Dispatch from a branch, not a tag.** The commit to tag is resolved from the branch history,
+and `sync-nix` pushes the Nix version bump back to that same ref, so a tag ref has nowhere to
+put it. The workflow rejects a non-branch dispatch up front.
+
 The commit to tag is not selectable. It is always the latest bookkeeping-free commit on the
 branch the workflow was dispatched from — **not** necessarily `main`. There used to be an
 optional commit-SHA input; it was removed in #212, having never been used, because it made
@@ -239,11 +243,11 @@ resolved: bookkeeping commits (`[skip ci]`, `[benchmark]` — benchmark baseline
 `vendorHash` refreshes on any branch) routinely land on top of it. That is fine, because those
 commits do not change the built code — the same reason `prepare` passes over them when choosing
 what to tag. So `sync-nix` syncs when the resolved commit is an ancestor of the head and everything
-between the two is bookkeeping, and stands down otherwise: when dispatched from a tag, when the
-branch was rewritten mid-release, or when a real commit landed while `build` was running. Both jobs
-read the pattern from a single `BOOKKEEPING_COMMIT_RE` at the top of the workflow — if they ever
-disagreed about which commits are bookkeeping, releases would silently skip the bump, which is
-exactly what #212 was.
+between the two is bookkeeping, and stands down otherwise: when the branch was rewritten
+mid-release, or when a real commit landed while `build` was running. Both jobs read the pattern
+from a single `BOOKKEEPING_COMMIT_RE` at the top of the workflow — if they ever disagreed about
+which commits are bookkeeping, releases would silently skip the bump, which is exactly what #212
+was.
 
 Standing down emits a **warning** and a step summary naming the version the tag will actually
 report. It is not a hard failure, because standing down is sometimes correct — but it must not be
