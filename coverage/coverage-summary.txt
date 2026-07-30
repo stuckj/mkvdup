@@ -213,7 +213,7 @@ github.com/stuckj/mkvdup/internal/fuse/config_watcher.go:243:		pollCheck				39.3
 github.com/stuckj/mkvdup/internal/fuse/config_watcher.go:296:		triggerAction				100.0%
 github.com/stuckj/mkvdup/internal/fuse/fs.go:51:			statMtime				100.0%
 github.com/stuckj/mkvdup/internal/fuse/fs.go:60:			DerivedMtime				100.0%
-github.com/stuckj/mkvdup/internal/fuse/fs.go:81:			RefreshDerivedMtime			100.0%
+github.com/stuckj/mkvdup/internal/fuse/fs.go:81:			RefreshDerivedMtime			93.8%
 github.com/stuckj/mkvdup/internal/fuse/fs.go:199:			getFilePerms				100.0%
 github.com/stuckj/mkvdup/internal/fuse/fs.go:207:			getDirPerms				100.0%
 github.com/stuckj/mkvdup/internal/fuse/fs.go:219:			fileTimes				100.0%
@@ -308,7 +308,7 @@ github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:33:		lockPath				100.
 github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:37:		acquireFileLock				70.6%
 github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:70:		writeFileAtomic				77.8%
 github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:121:		readPermissionsFile			77.8%
-github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:152:		writeMerged				82.6%
+github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:152:		writeMerged				87.0%
 github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:199:		snapshotLocked				93.8%
 github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go:226:		entryFor				85.7%
 github.com/stuckj/mkvdup/internal/fuse/permissions_path.go:31:		legacyPermissionsPaths			100.0%

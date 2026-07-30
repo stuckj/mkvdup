@@ -109,7 +109,7 @@
 				
 				<option value="file26">github.com/stuckj/mkvdup/internal/fuse/config_watcher.go (66.9%)</option>
 				
-				<option value="file27">github.com/stuckj/mkvdup/internal/fuse/fs.go (100.0%)</option>
+				<option value="file27">github.com/stuckj/mkvdup/internal/fuse/fs.go (98.2%)</option>
 				
 				<option value="file28">github.com/stuckj/mkvdup/internal/fuse/fs_dir.go (80.9%)</option>
 				
@@ -125,7 +125,7 @@
 				
 				<option value="file34">github.com/stuckj/mkvdup/internal/fuse/permissions_flush.go (93.3%)</option>
 				
-				<option value="file35">github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go (81.0%)</option>
+				<option value="file35">github.com/stuckj/mkvdup/internal/fuse/permissions_lock.go (82.0%)</option>
 				
 				<option value="file36">github.com/stuckj/mkvdup/internal/fuse/permissions_path.go (90.1%)</option>
 				
@@ -6441,7 +6441,7 @@ type RawEntry struct {
 //        bits 2-7: reserved
 
 // ToEntry converts a RawEntry to an Entry by parsing the byte arrays.
-func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1250959">{
+func (r *RawEntry) ToEntry() Entry <span class="cov10" title="1250994">{
         e := Entry{
                 MkvOffset:        int64(binary.LittleEndian.Uint64(r.MkvOffset[:])),
                 Length:           int64(binary.LittleEndian.Uint64(r.Length[:])),
@@ -6593,11 +6593,11 @@ func (sm *StreamRangeMap) TotalESSize() int64 <span class="cov2" title="14">{
 
 // --- Varint / Zigzag helpers ---
 
-func zigzagEncode(v int64) uint64 <span class="cov3" title="45">{
+func zigzagEncode(v int64) uint64 <span class="cov3" title="46">{
         return uint64((v &lt;&lt; 1) ^ (v &gt;&gt; 63))
 }</span>
 
-func zigzagDecode(v uint64) int64 <span class="cov8" title="179943">{
+func zigzagDecode(v uint64) int64 <span class="cov8" title="179945">{
         return int64(v&gt;&gt;1) ^ -int64(v&amp;1)
 }</span>
 
@@ -6637,7 +6637,7 @@ func findDefaults(ranges []source.PESPayloadRange) (defaultGap int64, defaultSiz
         <span class="cov2" title="28">var bestGap int64
         bestGapCount := 0
         for gap, count := range gapCounts </span><span class="cov3" title="38">{
-                if count &gt; bestGapCount </span><span class="cov2" title="29">{
+                if count &gt; bestGapCount </span><span class="cov2" title="30">{
                         bestGap = gap
                         bestGapCount = count
                 }</span>
@@ -6713,9 +6713,9 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
                 <span class="cov6" title="20542">prevEnd := prevOff + int64(ranges[i-1].Size)
                 gap := curOff - prevEnd
 
-                if gap == defaultGap &amp;&amp; ranges[i].Size == defaultSize </span><span class="cov6" title="20529">{
+                if gap == defaultGap &amp;&amp; ranges[i].Size == defaultSize </span><span class="cov6" title="20528">{
                         rleCount++
-                }</span> else<span class="cov2" title="13"> {
+                }</span> else<span class="cov2" title="14"> {
                         // Flush pending RLE
                         if rleCount &gt; 0 </span><span class="cov1" title="4">{
                                 out = append(out, 0x00)
@@ -6724,7 +6724,7 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
                                 rleCount = 0
                         }</span>
 
-                        <span class="cov2" title="13">predicted := prevEnd + defaultGap
+                        <span class="cov2" title="14">predicted := prevEnd + defaultGap
                         delta := curOff - predicted
                         encoded := zigzagEncode(delta) + 1
 
@@ -6738,7 +6738,7 @@ func encodeCompressedRanges(ranges []source.PESPayloadRange, defaultGap int64, d
         }
 
         // Flush final RLE
-        <span class="cov2" title="30">if rleCount &gt; 0 </span><span class="cov2" title="25">{
+        <span class="cov2" title="30">if rleCount &gt; 0 </span><span class="cov2" title="24">{
                 out = append(out, 0x00)
                 n := binary.PutUvarint(varintBuf[:], uint64(rleCount))
                 out = append(out, varintBuf[:n]...)
@@ -6801,29 +6801,29 @@ func buildStreamRangeMap(compressedData []byte, entryCount int, defaultGap int64
                         fileOff = prevEnd + defaultGap
                         entSize = defaultSize
                         rleRem--
-                }</span> else<span class="cov7" title="118011"> if pos &lt; len(compressedData) &amp;&amp; compressedData[pos] == 0x00 </span><span class="cov7" title="39278">{
+                }</span> else<span class="cov7" title="118011"> if pos &lt; len(compressedData) &amp;&amp; compressedData[pos] == 0x00 </span><span class="cov7" title="39277">{
                         // RLE token
                         pos++
                         count, n := binary.Uvarint(compressedData[pos:])
                         if n &lt;= 0 </span><span class="cov0" title="0">{
                                 return nil, fmt.Errorf("truncated RLE count at entry %d", i)
                         }</span>
-                        <span class="cov7" title="39278">pos += n
+                        <span class="cov7" title="39277">pos += n
                         fileOff = prevEnd + defaultGap
                         entSize = defaultSize
                         rleRem = int(count) - 1</span>
-                } else<span class="cov7" title="78733"> if pos &lt; len(compressedData) </span><span class="cov7" title="78733">{
+                } else<span class="cov7" title="78734"> if pos &lt; len(compressedData) </span><span class="cov7" title="78734">{
                         // Explicit entry
                         encoded, n := binary.Uvarint(compressedData[pos:])
                         if n &lt;= 0 </span><span class="cov0" title="0">{
                                 return nil, fmt.Errorf("truncated explicit delta at entry %d", i)
                         }</span>
-                        <span class="cov7" title="78733">pos += n
+                        <span class="cov7" title="78734">pos += n
                         szv, n := binary.Uvarint(compressedData[pos:])
                         if n &lt;= 0 </span><span class="cov0" title="0">{
                                 return nil, fmt.Errorf("truncated explicit size at entry %d", i)
                         }</span>
-                        <span class="cov7" title="78733">pos += n
+                        <span class="cov7" title="78734">pos += n
                         delta := zigzagDecode(encoded - 1)
                         fileOff = prevEnd + defaultGap + delta
                         entSize = int(szv)
@@ -6861,27 +6861,27 @@ func (sm *StreamRangeMap) advanceCursor(c *rangeMapCursor) error <span class="co
                 return fmt.Errorf("unexpected end of compressed data")
         }</span>
 
-        <span class="cov8" title="151250">if sm.compressedData[c.pos] == 0x00 </span><span class="cov7" title="50062">{
+        <span class="cov8" title="151250">if sm.compressedData[c.pos] == 0x00 </span><span class="cov7" title="50061">{
                 c.pos++
                 count, n := binary.Uvarint(sm.compressedData[c.pos:])
                 if n &lt;= 0 </span><span class="cov0" title="0">{
                         return fmt.Errorf("truncated RLE count")
                 }</span>
-                <span class="cov7" title="50062">c.pos += n
+                <span class="cov7" title="50061">c.pos += n
                 c.fileOff = prevEnd + sm.defaultGap
                 c.size = sm.defaultSize
                 c.rleRem = int(count) - 1</span>
-        } else<span class="cov7" title="101188"> {
+        } else<span class="cov7" title="101189"> {
                 encoded, n := binary.Uvarint(sm.compressedData[c.pos:])
                 if n &lt;= 0 </span><span class="cov0" title="0">{
                         return fmt.Errorf("truncated explicit delta")
                 }</span>
-                <span class="cov7" title="101188">c.pos += n
+                <span class="cov7" title="101189">c.pos += n
                 szv, n := binary.Uvarint(sm.compressedData[c.pos:])
                 if n &lt;= 0 </span><span class="cov0" title="0">{
                         return fmt.Errorf("truncated explicit size")
                 }</span>
-                <span class="cov7" title="101188">c.pos += n
+                <span class="cov7" title="101189">c.pos += n
                 delta := zigzagDecode(encoded - 1)
                 c.fileOff = prevEnd + sm.defaultGap + delta
                 c.size = int(szv)
@@ -7747,12 +7747,12 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12588
 
         // Check cache first (with lock)
         <span class="cov8" title="1258794">r.cacheMu.Lock()
-        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov6" title="7861">{
+        if r.lastEntryValid &amp;&amp; r.lastEntryIdx == idx </span><span class="cov6" title="7826">{
                 entry := r.lastEntry
                 r.cacheMu.Unlock()
                 return entry, true
         }</span>
-        <span class="cov8" title="1250933">r.cacheMu.Unlock()
+        <span class="cov8" title="1250968">r.cacheMu.Unlock()
 
         // Parse entry from mmap using RawEntry (no lock needed - mmap is read-only)
         offset := r.indexStart + int64(idx)*EntrySize
@@ -7763,7 +7763,7 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12588
 
         // Parse using RawEntry for portable unaligned access
         // Layout: MkvOffset(8) + Length(8) + Source(2) + SourceOffset(8) + ESFlags(1) + AudioSubStreamID(1) = 28
-        <span class="cov8" title="1250933">var raw RawEntry
+        <span class="cov8" title="1250968">var raw RawEntry
         copy(raw.MkvOffset[:], data[0:8])
         copy(raw.Length[:], data[8:16])
         copy(raw.Source[:], data[16:18])
@@ -7785,35 +7785,35 @@ func (r *Reader) getEntry(idx int) (Entry, bool) <span class="cov8" title="12588
 
 // getMkvOffset returns just the MkvOffset for entry at idx (for binary search).
 // This avoids full entry parsing when only the offset is needed.
-func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7475240">{
+func (r *Reader) getMkvOffset(idx int) (int64, bool) <span class="cov10" title="7475348">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7475236">offset := r.indexStart + int64(idx)*EntrySize
+        <span class="cov9" title="7475344">offset := r.indexStart + int64(idx)*EntrySize
         data := r.dedupMmap.Slice(offset, 8) // Only read MkvOffset field (first 8 bytes)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov9" title="7475236">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov9" title="7475344">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // getEntryLength returns just the Length for entry at idx (for binary search).
 // This avoids full entry parsing when only offset and length are needed.
-func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov4" title="566">{
+func (r *Reader) getEntryLength(idx int) (int64, bool) <span class="cov4" title="674">{
         if idx &lt; 0 || idx &gt;= r.entryCount </span><span class="cov1" title="4">{
                 return 0, false
         }</span>
 
         // Length is at offset 8 within each entry (after MkvOffset)
-        <span class="cov4" title="562">offset := r.indexStart + int64(idx)*EntrySize + 8
+        <span class="cov4" title="670">offset := r.indexStart + int64(idx)*EntrySize + 8
         data := r.dedupMmap.Slice(offset, 8)
         if len(data) &lt; 8 </span><span class="cov0" title="0">{
                 return 0, false
         }</span>
 
-        <span class="cov4" title="562">return int64(binary.LittleEndian.Uint64(data)), true</span>
+        <span class="cov4" title="670">return int64(binary.LittleEndian.Uint64(data)), true</span>
 }
 
 // OriginalSize returns the size of the original MKV file.
@@ -7968,24 +7968,24 @@ func (r *Reader) findStartEntry(offset int64) int <span class="cov6" title="7916
         // Fast path: check if offset is within cached entry
         r.cacheMu.Lock()
         if r.lastEntryValid &amp;&amp; r.lastEntryIdx &gt;= 0 &amp;&amp; r.lastEntryIdx &lt; r.entryCount </span><span class="cov6" title="7894">{
-                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov6" title="7824">{
+                if offset &gt;= r.lastEntry.MkvOffset &amp;&amp; offset &lt; r.lastEntry.MkvOffset+r.lastEntry.Length </span><span class="cov6" title="7806">{
                         idx := r.lastEntryIdx
                         r.cacheMu.Unlock()
                         return idx
                 }</span>
         }
-        <span class="cov3" title="92">r.cacheMu.Unlock()
+        <span class="cov3" title="110">r.cacheMu.Unlock()
 
         // Use block index to narrow binary search range
         var lo, hi int
-        if r.blockIndex != nil </span><span class="cov3" title="91">{
+        if r.blockIndex != nil </span><span class="cov3" title="109">{
                 blockNum := int(offset / blockSize)
                 if blockNum &gt;= len(r.blockIndex) </span><span class="cov0" title="0">{
                         blockNum = len(r.blockIndex) - 1
                 }</span>
-                <span class="cov3" title="91">lo = r.blockIndex[blockNum]
+                <span class="cov3" title="109">lo = r.blockIndex[blockNum]
 
-                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov3" title="82">{
+                if blockNum+1 &lt; len(r.blockIndex) </span><span class="cov3" title="100">{
                         hi = r.blockIndex[blockNum+1] + 1
                         if hi &gt; r.entryCount </span><span class="cov0" title="0">{
                                 hi = r.entryCount
@@ -7999,16 +7999,16 @@ func (r *Reader) findStartEntry(offset int64) int <span class="cov6" title="7916
         }</span>
 
         // Binary search within [lo, hi) for first entry whose range covers offset
-        <span class="cov3" title="92">return lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov4" title="500">{
+        <span class="cov3" title="110">return lo + sort.Search(hi-lo, func(i int) bool </span><span class="cov4" title="608">{
                 mkvOffset, ok := r.getMkvOffset(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov4" title="500">entryLen, ok := r.getEntryLength(lo + i)
+                <span class="cov4" title="608">entryLen, ok := r.getEntryLength(lo + i)
                 if !ok </span><span class="cov0" title="0">{
                         return true
                 }</span>
-                <span class="cov4" title="500">return mkvOffset+entryLen &gt; offset</span>
+                <span class="cov4" title="608">return mkvOffset+entryLen &gt; offset</span>
         })
 }
 
@@ -9373,17 +9373,17 @@ func (cw *ConfigWatcher) eventLoop() <span class="cov6" title="10">{
         }</span>
         <span class="cov6" title="10">defer debounceTimer.Stop()
 
-        for </span><span class="cov10" title="52">{
+        for </span><span class="cov10" title="49">{
                 select </span>{
-                case event, ok := &lt;-cw.watcher.Events:<span class="cov9" title="34">
+                case event, ok := &lt;-cw.watcher.Events:<span class="cov8" title="31">
                         if !ok </span><span class="cov0" title="0">{
                                 return
                         }</span>
-                        <span class="cov9" title="34">if event.Op&amp;(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 </span><span class="cov0" title="0">{
+                        <span class="cov8" title="31">if event.Op&amp;(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 </span><span class="cov0" title="0">{
                                 continue</span>
                         }
                         // Check if this event is for a tracked config file.
-                        <span class="cov9" title="34">cw.mu.Lock()
+                        <span class="cov8" title="31">cw.mu.Lock()
                         tracked := cw.configFiles[event.Name]
                         cw.mu.Unlock()
                         if !tracked </span><span class="cov5" title="6">{
@@ -9391,13 +9391,13 @@ func (cw *ConfigWatcher) eventLoop() <span class="cov6" title="10">{
                         }
                         // Reset debounce timer — drain channel if Stop reports
                         // the timer already fired to prevent a stale tick.
-                        <span class="cov8" title="28">if !debounceTimer.Stop() </span><span class="cov5" title="8">{
+                        <span class="cov8" title="25">if !debounceTimer.Stop() </span><span class="cov5" title="8">{
                                 select </span>{
                                 case &lt;-debounceTimer.C:<span class="cov0" title="0"></span>
                                 default:<span class="cov5" title="8"></span>
                                 }
                         }
-                        <span class="cov8" title="28">debounceTimer.Reset(configDebounceDelay)</span>
+                        <span class="cov8" title="25">debounceTimer.Reset(configDebounceDelay)</span>
 
                 case &lt;-debounceTimer.C:<span class="cov5" title="8">
                         // Guard against select choosing the timer case when stopCh
@@ -9559,8 +9559,8 @@ type MKVFile struct {
 
 // statMtime returns the mtime of the file at path, or fsStartTime if it cannot
 // be stat'd (a stable fallback so timestamps don't flap on transient errors).
-func statMtime(path string) time.Time <span class="cov10" title="73960">{
-        if info, err := os.Stat(path); err == nil </span><span class="cov9" title="73934">{
+func statMtime(path string) time.Time <span class="cov10" title="58336">{
+        if info, err := os.Stat(path); err == nil </span><span class="cov9" title="58310">{
                 return info.ModTime()
         }</span>
         <span class="cov3" title="26">return fsStartTime</span>
@@ -9589,7 +9589,7 @@ func (f *MKVFile) DerivedMtime() time.Time <span class="cov9" title="25140">{
 // RefreshDerivedMtime re-stats the dedup file and updates the cached derived
 // mtime. It returns true if the value changed. Used by the source watcher when
 // a dedup file's timestamp changes so the new mtime becomes visible.
-func (f *MKVFile) RefreshDerivedMtime() bool <span class="cov9" title="73907">{
+func (f *MKVFile) RefreshDerivedMtime() bool <span class="cov9" title="58283">{
         // Snapshot the path under the lock: this runs on the watcher goroutine and
         // DedupPath is rewritten by updateFrom during a reload, so reading it
         // unlocked would be a data race. The stat itself stays outside the lock.
@@ -9606,7 +9606,7 @@ func (f *MKVFile) RefreshDerivedMtime() bool <span class="cov9" title="73907">{
         // we just read belongs to the old file, so discard it rather than caching it
         // against the new path — updateFrom already cleared derivedSet, and the next
         // Getattr or refresh will derive correctly from the new path.
-        if f.DedupPath != path </span><span class="cov1" title="2">{
+        if f.DedupPath != path </span><span class="cov0" title="0">{
                 return false
         }</span>
 
@@ -9615,13 +9615,13 @@ func (f *MKVFile) RefreshDerivedMtime() bool <span class="cov9" title="73907">{
         // change". Without this, the first poll after mount or after a reload
         // (which clears the cache via updateFrom) would claim the mtime changed and
         // trigger a pointless invalidation plus a misleading log line.
-        <span class="cov9" title="73905">if !f.derivedSet </span><span class="cov2" title="5">{
+        <span class="cov9" title="58283">if !f.derivedSet </span><span class="cov2" title="4">{
                 f.derivedMtime = newMtime
                 f.derivedSet = true
                 return false
         }</span>
 
-        <span class="cov9" title="73900">if f.derivedMtime.Equal(newMtime) </span><span class="cov9" title="73894">{
+        <span class="cov9" title="58279">if f.derivedMtime.Equal(newMtime) </span><span class="cov9" title="58273">{
                 return false
         }</span>
         <span class="cov2" title="6">f.derivedMtime = newMtime
@@ -9743,17 +9743,17 @@ func fileTimes(store *PermissionStore, path string, f *MKVFile) (atime, mtime, c
 // direct child is added or removed); an explicit permissions-store override
 // takes precedence. Callers read dirMtime while holding the node's lock and
 // pass it in, since this helper must not acquire node locks itself.
-func dirTimes(store *PermissionStore, path string, dirMtime time.Time) (atime, mtime, ctime uint64) <span class="cov4" title="139">{
-        if dirMtime.IsZero() </span><span class="cov2" title="12">{
+func dirTimes(store *PermissionStore, path string, dirMtime time.Time) (atime, mtime, ctime uint64) <span class="cov5" title="139">{
+        if dirMtime.IsZero() </span><span class="cov3" title="12">{
                 dirMtime = fsStartTime
         }</span>
-        <span class="cov4" title="139">m := dirMtime.Unix()
+        <span class="cov5" title="139">m := dirMtime.Unix()
         if store != nil </span><span class="cov4" title="44">{
                 if override := store.GetDirMtimeOverride(path); override != nil </span><span class="cov2" title="4">{
                         m = *override
                 }</span>
         }
-        <span class="cov4" title="139">um := uint64(m)
+        <span class="cov5" title="139">um := uint64(m)
         return um, um, um</span>
 }
 
@@ -10312,11 +10312,11 @@ func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verb
                                 errMu.Lock()
                                 failed := first != nil
                                 errMu.Unlock()
-                                if failed </span><span class="cov7" title="22">{
+                                if failed </span><span class="cov8" title="27">{
                                         continue</span>
                                 }
 
-                                <span class="cov8" title="38">cfg := configs[idx]
+                                <span class="cov8" title="33">cfg := configs[idx]
                                 reader, err := readerFactory.NewReaderLazy(cfg.DedupFile, cfg.SourceDir)
                                 if err != nil </span><span class="cov4" title="4">{
                                         errMu.Lock()
@@ -10327,7 +10327,7 @@ func readConfigHeaders(configs []dedup.Config, readerFactory ReaderFactory, verb
                                         continue</span>
                                 }
 
-                                <span class="cov8" title="34">results[idx] = &amp;MKVFile{
+                                <span class="cov8" title="29">results[idx] = &amp;MKVFile{
                                         Name:          cfg.Name,
                                         DedupPath:     cfg.DedupFile,
                                         SourceDir:     cfg.SourceDir,
@@ -11568,7 +11568,7 @@ func logI64(p *int64) string <span class="cov0" title="0">{
 // emits an unquoted !!int node rather than a string.
 type octalMode uint32
 
-func (m octalMode) MarshalYAML() (any, error) <span class="cov10" title="3750">{
+func (m octalMode) MarshalYAML() (any, error) <span class="cov10" title="9920">{
         return &amp;yaml.Node{
                 Kind:  yaml.ScalarNode,
                 Tag:   "!!int",
@@ -11578,7 +11578,7 @@ func (m octalMode) MarshalYAML() (any, error) <span class="cov10" title="3750">{
 
 // MarshalYAML writes Mode in octal while leaving the in-memory type a plain
 // *uint32, so callers are unaffected.
-func (p Perms) MarshalYAML() (any, error) <span class="cov9" title="3363">{
+func (p Perms) MarshalYAML() (any, error) <span class="cov9" title="9269">{
         type entry struct {
                 UID   *uint32    `yaml:"uid,omitempty"`
                 GID   *uint32    `yaml:"gid,omitempty"`
@@ -11586,11 +11586,11 @@ func (p Perms) MarshalYAML() (any, error) <span class="cov9" title="3363">{
                 Mtime *int64     `yaml:"mtime,omitempty"`
         }
         var mode *octalMode
-        if p.Mode != nil </span><span class="cov9" title="3354">{
+        if p.Mode != nil </span><span class="cov9" title="9260">{
                 m := octalMode(*p.Mode)
                 mode = &amp;m
         }</span>
-        <span class="cov9" title="3363">return entry{UID: p.UID, GID: p.GID, Mode: mode, Mtime: p.Mtime}, nil</span>
+        <span class="cov9" title="9269">return entry{UID: p.UID, GID: p.GID, Mode: mode, Mtime: p.Mtime}, nil</span>
 }
 
 // Defaults holds the effective default permissions for files and directories.
@@ -11625,7 +11625,7 @@ type fileDefaults struct {
 // toFileDefaults renders the effective defaults for writing. All six fields are
 // known, so all six are emitted — the file then records exactly what the mount
 // used, including zeros.
-func toFileDefaults(d Defaults) fileDefaults <span class="cov6" title="196">{
+func toFileDefaults(d Defaults) fileDefaults <span class="cov6" title="328">{
         fileMode, dirMode := octalMode(d.FileMode), octalMode(d.DirMode)
         fileUID, fileGID := d.FileUID, d.FileGID
         dirUID, dirGID := d.DirUID, d.DirGID
@@ -11640,7 +11640,7 @@ func toFileDefaults(d Defaults) fileDefaults <span class="cov6" title="196">{
 }</span>
 
 // DefaultPerms returns the default permission values.
-func DefaultPerms() Defaults <span class="cov8" title="902">{
+func DefaultPerms() Defaults <span class="cov7" title="1035">{
         return Defaults{
                 FileUID:  0,
                 FileGID:  0,
@@ -11656,23 +11656,23 @@ func DefaultPerms() Defaults <span class="cov8" title="902">{
 //
 // A present field wins, including an explicit 0. Absent fields leave the flag
 // value alone.
-func applyLoadedDefaults(dst *Defaults, src fileDefaults) <span class="cov8" title="646">{
-        if src.FileMode != nil </span><span class="cov8" title="636">{
+func applyLoadedDefaults(dst *Defaults, src fileDefaults) <span class="cov7" title="646">{
+        if src.FileMode != nil </span><span class="cov7" title="636">{
                 dst.FileMode = uint32(*src.FileMode)
         }</span>
-        <span class="cov8" title="646">if src.FileUID != nil </span><span class="cov8" title="640">{
+        <span class="cov7" title="646">if src.FileUID != nil </span><span class="cov7" title="640">{
                 dst.FileUID = *src.FileUID
         }</span>
-        <span class="cov8" title="646">if src.FileGID != nil </span><span class="cov8" title="640">{
+        <span class="cov7" title="646">if src.FileGID != nil </span><span class="cov7" title="640">{
                 dst.FileGID = *src.FileGID
         }</span>
-        <span class="cov8" title="646">if src.DirMode != nil </span><span class="cov8" title="634">{
+        <span class="cov7" title="646">if src.DirMode != nil </span><span class="cov7" title="634">{
                 dst.DirMode = uint32(*src.DirMode)
         }</span>
-        <span class="cov8" title="646">if src.DirUID != nil </span><span class="cov8" title="632">{
+        <span class="cov7" title="646">if src.DirUID != nil </span><span class="cov7" title="632">{
                 dst.DirUID = *src.DirUID
         }</span>
-        <span class="cov8" title="646">if src.DirGID != nil </span><span class="cov8" title="632">{
+        <span class="cov7" title="646">if src.DirGID != nil </span><span class="cov7" title="632">{
                 dst.DirGID = *src.DirGID
         }</span>
 }
@@ -11720,7 +11720,7 @@ type PermissionStore struct {
 
 // SetMountIdentity records which mountpoint this store belongs to, so its file
 // can be stamped and a foreign file recognised. Call before Load.
-func (s *PermissionStore) SetMountIdentity(mountpoint string) <span class="cov4" title="16">{
+func (s *PermissionStore) SetMountIdentity(mountpoint string) <span class="cov3" title="16">{
         s.mu.Lock()
         defer s.mu.Unlock()
         s.mount = CanonicalMountpoint(mountpoint)
@@ -11742,7 +11742,7 @@ func (s *PermissionStore) sharedMode() bool <span class="cov3" title="14">{
 
 // NewPermissionStore creates a new permission store.
 // If path is empty, permissions will not be persisted.
-func NewPermissionStore(path string, defaults Defaults, verbose bool) *PermissionStore <span class="cov8" title="930">{
+func NewPermissionStore(path string, defaults Defaults, verbose bool) *PermissionStore <span class="cov7" title="1063">{
         return &amp;PermissionStore{
                 path:     path,
                 defaults: defaults,
@@ -11754,7 +11754,7 @@ func NewPermissionStore(path string, defaults Defaults, verbose bool) *Permissio
 
 // Load loads permissions from the file.
 // If the file doesn't exist, the store remains empty (using defaults).
-func (s *PermissionStore) Load() error <span class="cov8" title="649">{
+func (s *PermissionStore) Load() error <span class="cov7" title="649">{
         if s.path == "" </span><span class="cov0" title="0">{
                 return nil
         }</span>
@@ -11765,11 +11765,11 @@ func (s *PermissionStore) Load() error <span class="cov8" title="649">{
         // rather than at each call site means the ordering cannot be forgotten.
         // A flush failure is not fatal: log it and load anyway, since refusing to
         // reload would be worse than losing an unpersisted change.
-        <span class="cov8" title="649">if err := s.Flush(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="649">if err := s.Flush(); err != nil </span><span class="cov0" title="0">{
                 log.Printf("Warning: failed to flush pending permission changes before reloading %s: %v", s.path, err)
         }</span>
 
-        <span class="cov8" title="649">data, err := os.ReadFile(s.path)
+        <span class="cov7" title="649">data, err := os.ReadFile(s.path)
         if err != nil </span><span class="cov3" title="11">{
                 if os.IsNotExist(err) </span><span class="cov3" title="11">{
                         if s.verbose </span><span class="cov0" title="0">{
@@ -11780,12 +11780,12 @@ func (s *PermissionStore) Load() error <span class="cov8" title="649">{
                 <span class="cov0" title="0">return fmt.Errorf("read permissions file: %w", err)</span>
         }
 
-        <span class="cov8" title="638">var pf permissionsFile
+        <span class="cov7" title="638">var pf permissionsFile
         if err := yaml.Unmarshal(data, &amp;pf); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("parse permissions file: %w", err)
         }</span>
 
-        <span class="cov8" title="638">s.mu.Lock()
+        <span class="cov7" title="638">s.mu.Lock()
         defer s.mu.Unlock()
 
         // A stamp naming a different mount means this file is shared. Warn once and
@@ -11800,20 +11800,20 @@ func (s *PermissionStore) Load() error <span class="cov8" title="649">{
                         s.path, pf.Mount, s.mount)
         }</span>
 
-        <span class="cov8" title="638">applyLoadedDefaults(&amp;s.defaults, pf.Defaults)
+        <span class="cov7" title="638">applyLoadedDefaults(&amp;s.defaults, pf.Defaults)
 
-        if pf.Files != nil </span><span class="cov8" title="634">{
+        if pf.Files != nil </span><span class="cov7" title="634">{
                 s.files = pf.Files
         }</span>
-        <span class="cov8" title="638">if pf.Directories != nil </span><span class="cov2" title="4">{
+        <span class="cov7" title="638">if pf.Directories != nil </span><span class="cov2" title="4">{
                 s.dirs = pf.Directories
         }</span>
 
-        <span class="cov8" title="638">if s.verbose </span><span class="cov0" title="0">{
+        <span class="cov7" title="638">if s.verbose </span><span class="cov0" title="0">{
                 log.Printf("Loaded permissions: %d files, %d directories", len(s.files), len(s.dirs))
         }</span>
 
-        <span class="cov8" title="638">return nil</span>
+        <span class="cov7" title="638">return nil</span>
 }
 
 // Save writes the whole in-memory state to the file, under the file lock and
@@ -11866,7 +11866,7 @@ func (s *PermissionStore) Save() error <span class="cov3" title="8">{
 
 // GetFilePerms returns the effective permissions for a file.
 // Returns uid, gid, mode with defaults applied for any unset values.
-func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <span class="cov8" title="649">{
+func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <span class="cov7" title="649">{
         s.mu.RLock()
         defer s.mu.RUnlock()
 
@@ -11875,18 +11875,18 @@ func (s *PermissionStore) GetFilePerms(path string) (uid, gid, mode uint32) <spa
         mode = s.defaults.FileMode
 
         if p, ok := s.files[path]; ok </span><span class="cov7" title="599">{
-                if p.UID != nil </span><span class="cov7" title="256">{
+                if p.UID != nil </span><span class="cov6" title="256">{
                         uid = *p.UID
                 }</span>
-                <span class="cov7" title="599">if p.GID != nil </span><span class="cov4" title="21">{
+                <span class="cov7" title="599">if p.GID != nil </span><span class="cov3" title="21">{
                         gid = *p.GID
                 }</span>
-                <span class="cov7" title="599">if p.Mode != nil </span><span class="cov7" title="349">{
+                <span class="cov7" title="599">if p.Mode != nil </span><span class="cov6" title="349">{
                         mode = *p.Mode
                 }</span>
         }
 
-        <span class="cov8" title="649">return uid, gid, mode</span>
+        <span class="cov7" title="649">return uid, gid, mode</span>
 }
 
 // GetDirPerms returns the effective permissions for a directory.
@@ -11900,7 +11900,7 @@ func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) <span
         mode = s.defaults.DirMode
 
         if p, ok := s.dirs[path]; ok </span><span class="cov4" title="33">{
-                if p.UID != nil </span><span class="cov4" title="16">{
+                if p.UID != nil </span><span class="cov3" title="16">{
                         uid = *p.UID
                 }</span>
                 <span class="cov4" title="33">if p.GID != nil </span><span class="cov3" title="8">{
@@ -11919,37 +11919,37 @@ func (s *PermissionStore) GetDirPerms(path string) (uid, gid, mode uint32) <span
 func (s *PermissionStore) GetFileMtimeOverride(path string) *int64 <span class="cov5" title="63">{
         s.mu.RLock()
         defer s.mu.RUnlock()
-        if p, ok := s.files[path]; ok &amp;&amp; p.Mtime != nil </span><span class="cov4" title="16">{
+        if p, ok := s.files[path]; ok &amp;&amp; p.Mtime != nil </span><span class="cov3" title="16">{
                 m := *p.Mtime
                 return &amp;m
         }</span>
-        <span class="cov5" title="47">return nil</span>
+        <span class="cov4" title="47">return nil</span>
 }
 
 // GetDirMtimeOverride returns the explicit mtime override (Unix seconds) for a
 // directory, or nil if none is set.
-func (s *PermissionStore) GetDirMtimeOverride(path string) *int64 <span class="cov5" title="48">{
+func (s *PermissionStore) GetDirMtimeOverride(path string) *int64 <span class="cov4" title="48">{
         s.mu.RLock()
         defer s.mu.RUnlock()
         if p, ok := s.dirs[path]; ok &amp;&amp; p.Mtime != nil </span><span class="cov3" title="8">{
                 m := *p.Mtime
                 return &amp;m
         }</span>
-        <span class="cov5" title="40">return nil</span>
+        <span class="cov4" title="40">return nil</span>
 }
 
 // applyOwnership overlays non-nil uid/gid/mode onto an entry, copying the
 // values so the store owns their lifetime.
-func applyOwnership(p *Perms, uid, gid, mode *uint32) <span class="cov8" title="670">{
-        if uid != nil </span><span class="cov7" title="257">{
+func applyOwnership(p *Perms, uid, gid, mode *uint32) <span class="cov7" title="803">{
+        if uid != nil </span><span class="cov6" title="257">{
                 v := *uid
                 p.UID = &amp;v
         }</span>
-        <span class="cov8" title="670">if gid != nil </span><span class="cov4" title="17">{
+        <span class="cov7" title="803">if gid != nil </span><span class="cov3" title="17">{
                 v := *gid
                 p.GID = &amp;v
         }</span>
-        <span class="cov8" title="670">if mode != nil </span><span class="cov7" title="417">{
+        <span class="cov7" title="803">if mode != nil </span><span class="cov7" title="550">{
                 v := *mode
                 p.Mode = &amp;v
         }</span>
@@ -11958,17 +11958,17 @@ func applyOwnership(p *Perms, uid, gid, mode *uint32) <span class="cov8" title="
 // SetFilePerms sets permissions for a file.
 // Only non-nil values are updated; nil values leave existing values unchanged.
 // Persisted immediately, as a locked read-modify-write of the file.
-func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov8" title="653">{
+func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error <span class="cov7" title="786">{
         // If all values are nil, nothing to do
         if uid == nil &amp;&amp; gid == nil &amp;&amp; mode == nil </span><span class="cov3" title="8">{
                 return nil
         }</span>
 
-        <span class="cov8" title="645">if s.verbose </span><span class="cov0" title="0">{
+        <span class="cov7" title="778">if s.verbose </span><span class="cov0" title="0">{
                 log.Printf("SetFilePerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
         }</span>
 
-        <span class="cov8" title="645">s.mu.Lock()
+        <span class="cov7" title="778">s.mu.Lock()
         applyOwnership(entryFor(&amp;s.files, path), uid, gid, mode)
         s.markDirtyLocked(permKey{path: path})
         s.mu.Unlock()
@@ -12153,13 +12153,13 @@ var testCallerHook func(context.Context) (CallerInfo, bool)
 // GetCaller extracts caller credentials from the FUSE context.
 // Returns (caller, true) if credentials are available, (zero, false) otherwise.
 // Callers should deny access when ok is false to fail closed.
-func GetCaller(ctx context.Context) (CallerInfo, bool) <span class="cov5" title="55">{
+func GetCaller(ctx context.Context) (CallerInfo, bool) <span class="cov4" title="55">{
         if caller, ok := fuse.FromContext(ctx); ok </span><span class="cov2" title="3">{
                 return CallerInfo{Uid: caller.Uid, Gid: caller.Gid}, true
         }</span>
         // Check for test-injected caller (only available in tests)
-        <span class="cov5" title="52">if testCallerHook != nil </span><span class="cov5" title="52">{
-                if caller, ok := testCallerHook(ctx); ok </span><span class="cov5" title="48">{
+        <span class="cov4" title="52">if testCallerHook != nil </span><span class="cov4" title="52">{
+                if caller, ok := testCallerHook(ctx); ok </span><span class="cov4" title="48">{
                         return caller, true
                 }</span>
         }
@@ -12178,7 +12178,7 @@ func (c CallerInfo) IsRoot() bool <span class="cov5" title="90">{
 // Non-root owners can change GID to any group they are a member of
 // (primary or supplementary). No-op changes (newUID == fileUID or
 // newGID == fileGID) are always allowed.
-func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint32) syscall.Errno <span class="cov5" title="51">{
+func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint32) syscall.Errno <span class="cov4" title="51">{
         // Only root can change UID to a different user
         if newUID != nil &amp;&amp; *newUID != fileUID &amp;&amp; !caller.IsRoot() </span><span class="cov3" title="10">{
                 return syscall.EPERM
@@ -12188,12 +12188,12 @@ func CheckChown(caller CallerInfo, fileUID, fileGID uint32, newUID, newGID *uint
         // - No-op (nil or same as current) is always allowed
         // - Root can change to any GID
         // - Non-root owner can change to any group they belong to
-        <span class="cov5" title="41">if newGID != nil &amp;&amp; *newGID != fileGID </span><span class="cov4" title="29">{
+        <span class="cov4" title="41">if newGID != nil &amp;&amp; *newGID != fileGID </span><span class="cov4" title="29">{
                 if caller.IsRoot() </span><span class="cov3" title="11">{
                         return 0
                 }</span>
                 // Non-root: must be owner AND must be a member of target group
-                <span class="cov4" title="18">if caller.Uid != fileUID || !isGroupMember(caller.Uid, caller.Gid, *newGID) </span><span class="cov3" title="8">{
+                <span class="cov3" title="18">if caller.Uid != fileUID || !isGroupMember(caller.Uid, caller.Gid, *newGID) </span><span class="cov3" title="8">{
                         return syscall.EPERM
                 }</span>
         }
@@ -12241,7 +12241,7 @@ func defaultGroupMembership(uid, primaryGID, targetGID uint32) bool <span class=
 // Returns 0 if allowed, syscall.EPERM if denied.
 // Only root or file owner can chmod.
 func CheckChmod(caller CallerInfo, fileUID uint32) syscall.Errno <span class="cov4" title="30">{
-        if caller.IsRoot() || caller.Uid == fileUID </span><span class="cov4" title="20">{
+        if caller.IsRoot() || caller.Uid == fileUID </span><span class="cov3" title="20">{
                 return 0
         }</span>
         <span class="cov3" title="10">return syscall.EPERM</span>
@@ -12279,34 +12279,34 @@ type permKey struct {
 
 // markDirtyLocked records that path's in-memory entry differs from the file and
 // schedules a write. s.mu must be held.
-func (s *PermissionStore) markDirtyLocked(key permKey) <span class="cov9" title="704">{
+func (s *PermissionStore) markDirtyLocked(key permKey) <span class="cov9" title="837">{
         if s.path == "" </span><span class="cov8" title="298">{
                 return // not persisted; the in-memory maps are the whole store
         }</span>
-        <span class="cov8" title="406">if s.pending == nil </span><span class="cov7" title="190">{
+        <span class="cov8" title="539">if s.pending == nil </span><span class="cov8" title="323">{
                 s.pending = make(map[permKey]struct{})
         }</span>
-        <span class="cov8" title="406">s.pending[key] = struct{}{}
+        <span class="cov8" title="539">s.pending[key] = struct{}{}
         s.scheduleFlushLocked()</span>
 }
 
 // scheduleFlushLocked arms (or re-arms) the debounce timer. s.mu must be held.
-func (s *PermissionStore) scheduleFlushLocked() <span class="cov8" title="406">{
+func (s *PermissionStore) scheduleFlushLocked() <span class="cov8" title="539">{
         if s.closed </span><span class="cov0" title="0">{
                 return
         }</span>
-        <span class="cov8" title="406">now := time.Now()
-        if s.firstDirty.IsZero() </span><span class="cov7" title="192">{
+        <span class="cov8" title="539">now := time.Now()
+        if s.firstDirty.IsZero() </span><span class="cov8" title="325">{
                 s.firstDirty = now
         }</span>
 
-        <span class="cov8" title="406">delay := flushDebounce
+        <span class="cov8" title="539">delay := flushDebounce
         // Never push the write past flushMaxDelay from the first pending change.
         if cap := s.firstDirty.Add(flushMaxDelay); now.Add(delay).After(cap) </span><span class="cov0" title="0">{
                 delay = max(time.Until(cap), 0)
         }</span>
 
-        <span class="cov8" title="406">if s.flushTimer == nil </span><span class="cov7" title="190">{
+        <span class="cov8" title="539">if s.flushTimer == nil </span><span class="cov8" title="323">{
                 s.flushTimer = time.AfterFunc(delay, s.flushFromTimer)
                 return
         }</span>
@@ -12315,7 +12315,7 @@ func (s *PermissionStore) scheduleFlushLocked() <span class="cov8" title="406">{
 
 // flushFromTimer is the debounce timer's callback. Errors cannot be returned to
 // anyone here, so they are logged and latched for the next mutation to report.
-func (s *PermissionStore) flushFromTimer() <span class="cov7" title="186">{
+func (s *PermissionStore) flushFromTimer() <span class="cov8" title="308">{
         if err := s.Flush(); err != nil </span><span class="cov0" title="0">{
                 log.Printf("Warning: failed to save permissions to %s: %v", s.path, err)
         }</span>
@@ -12328,9 +12328,9 @@ func (s *PermissionStore) flushFromTimer() <span class="cov7" title="186">{
 // mode. A test that used one would be exercising a code path production never
 // takes, which is worse than no test at all. Tests call this; so do the forced
 // flush points -- unmount, shutdown, reload and stale-entry cleanup.
-func (s *PermissionStore) Flush() error <span class="cov10" title="1026">{
+func (s *PermissionStore) Flush() error <span class="cov10" title="1281">{
         s.mu.Lock()
-        if len(s.pending) == 0 </span><span class="cov9" title="834">{
+        if len(s.pending) == 0 </span><span class="cov9" title="957">{
                 err := s.flushErr
                 s.flushErr = nil
                 s.mu.Unlock()
@@ -12340,7 +12340,7 @@ func (s *PermissionStore) Flush() error <span class="cov10" title="1026">{
         // Take the pending set out wholesale. Mutations arriving during the write go
         // into the fresh map and are picked up by the next flush, so nothing is lost
         // to the gap between snapshotting and writing.
-        <span class="cov7" title="192">flushing := s.pending
+        <span class="cov8" title="324">flushing := s.pending
         s.pending = make(map[permKey]struct{})
         s.firstDirty = time.Time{}
 
@@ -12351,39 +12351,39 @@ func (s *PermissionStore) Flush() error <span class="cov10" title="1026">{
                 perms *Perms // nil means the entry was removed
         }
         snaps := make([]snapshot, 0, len(flushing))
-        for key := range flushing </span><span class="cov8" title="406">{
+        for key := range flushing </span><span class="cov8" title="538">{
                 src := s.files
-                if key.dir </span><span class="cov3" title="9">{
+                if key.dir </span><span class="cov3" title="8">{
                         src = s.dirs
                 }</span>
-                <span class="cov8" title="406">var entry *Perms
-                if p, ok := src[key.path]; ok &amp;&amp; p != nil </span><span class="cov8" title="404">{
+                <span class="cov8" title="538">var entry *Perms
+                if p, ok := src[key.path]; ok &amp;&amp; p != nil </span><span class="cov8" title="536">{
                         cp := *p
                         entry = &amp;cp
                 }</span>
-                <span class="cov8" title="406">snaps = append(snaps, snapshot{key: key, perms: entry})</span>
+                <span class="cov8" title="538">snaps = append(snaps, snapshot{key: key, perms: entry})</span>
         }
-        <span class="cov7" title="192">s.mu.Unlock()
+        <span class="cov8" title="324">s.mu.Unlock()
 
-        err := s.writeMerged(func(pf *permissionsFile) </span><span class="cov7" title="190">{
-                for _, sn := range snaps </span><span class="cov8" title="404">{
+        err := s.writeMerged(func(pf *permissionsFile) </span><span class="cov8" title="322">{
+                for _, sn := range snaps </span><span class="cov8" title="536">{
                         target := &amp;pf.Files
-                        if sn.key.dir </span><span class="cov3" title="9">{
+                        if sn.key.dir </span><span class="cov3" title="8">{
                                 target = &amp;pf.Directories
                         }</span>
-                        <span class="cov8" title="404">if sn.perms == nil </span><span class="cov1" title="2">{
+                        <span class="cov8" title="536">if sn.perms == nil </span><span class="cov1" title="2">{
                                 delete(*target, sn.key.path)
                                 continue</span>
                         }
-                        <span class="cov8" title="402">if *target == nil </span><span class="cov6" title="49">{
+                        <span class="cov8" title="534">if *target == nil </span><span class="cov5" title="48">{
                                 *target = make(map[string]*Perms)
                         }</span>
-                        <span class="cov8" title="402">cp := *sn.perms
+                        <span class="cov8" title="534">cp := *sn.perms
                         (*target)[sn.key.path] = &amp;cp</span>
                 }
         })
 
-        <span class="cov7" title="192">s.mu.Lock()
+        <span class="cov8" title="324">s.mu.Lock()
         defer s.mu.Unlock()
         if err != nil </span><span class="cov1" title="2">{
                 // Never drop a user's change because a write failed. Put the keys back
@@ -12396,7 +12396,7 @@ func (s *PermissionStore) Flush() error <span class="cov10" title="1026">{
                 return err</span>
         }
 
-        <span class="cov7" title="190">reported := s.flushErr
+        <span class="cov8" title="322">reported := s.flushErr
         s.flushErr = nil
         return reported</span>
 }
@@ -12408,7 +12408,7 @@ func (s *PermissionStore) Flush() error <span class="cov10" title="1026">{
 // The cost of deferring the write is that the *first* failing chmod returns
 // success; the next one reports it. For chmod -R that means the user sees EIO
 // on the second file, which in practice is as good as the first.
-func (s *PermissionStore) latchedError() error <span class="cov9" title="700">{
+func (s *PermissionStore) latchedError() error <span class="cov9" title="833">{
         s.mu.Lock()
         defer s.mu.Unlock()
         err := s.flushErr
@@ -12492,34 +12492,34 @@ const (
 // writeFileAtomic replaces that file by rename, which swaps the inode, and
 // flock is per-inode. A lock held on the data file would be silently dropped by
 // the very write it is meant to guard.
-func lockPath(path string) string <span class="cov7" title="206">{ return path + ".lock" }</span>
+func lockPath(path string) string <span class="cov7" title="338">{ return path + ".lock" }</span>
 
 // acquireFileLock takes an exclusive advisory lock on a sidecar file, waiting
 // up to lockTimeout. The returned file must be closed to release the lock.
-func acquireFileLock(path string) (*os.File, error) <span class="cov6" title="204">{
+func acquireFileLock(path string) (*os.File, error) <span class="cov7" title="336">{
         if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil </span><span class="cov2" title="4">{
                 return nil, fmt.Errorf("create permissions directory: %w", err)
         }</span>
-        <span class="cov6" title="200">f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+        <span class="cov7" title="332">f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("open lock file %s: %w", path, err)
         }</span>
 
-        <span class="cov6" title="200">deadline := time.Now().Add(lockTimeout)
-        for </span><span class="cov10" title="2952">{
+        <span class="cov7" title="332">deadline := time.Now().Add(lockTimeout)
+        for </span><span class="cov10" title="2365">{
                 err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-                if err == nil </span><span class="cov6" title="200">{
+                if err == nil </span><span class="cov7" title="332">{
                         return f, nil
                 }</span>
-                <span class="cov9" title="2752">if !errors.Is(err, unix.EWOULDBLOCK) </span><span class="cov0" title="0">{
+                <span class="cov9" title="2033">if !errors.Is(err, unix.EWOULDBLOCK) </span><span class="cov0" title="0">{
                         f.Close()
                         return nil, fmt.Errorf("lock %s: %w", path, err)
                 }</span>
-                <span class="cov9" title="2752">if time.Now().After(deadline) </span><span class="cov0" title="0">{
+                <span class="cov9" title="2033">if time.Now().After(deadline) </span><span class="cov0" title="0">{
                         f.Close()
                         return nil, fmt.Errorf("timed out after %s waiting for lock %s", lockTimeout, path)
                 }</span>
-                <span class="cov9" title="2752">time.Sleep(lockRetryInterval)</span>
+                <span class="cov9" title="2033">time.Sleep(lockRetryInterval)</span>
         }
 }
 
@@ -12529,70 +12529,70 @@ func acquireFileLock(path string) (*os.File, error) <span class="cov6" title="20
 //
 // This also makes a failed write non-destructive: the previous file is left
 // intact rather than truncated, which a plain os.WriteFile cannot promise.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error <span class="cov6" title="200">{
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error <span class="cov7" title="251">{
         dir := filepath.Dir(path)
         if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("create permissions directory: %w", err)
         }</span>
 
         // Same directory as the target: rename is only atomic within a filesystem.
-        <span class="cov6" title="200">tmp, err := os.CreateTemp(dir, ".permissions-*.tmp")
+        <span class="cov7" title="251">tmp, err := os.CreateTemp(dir, ".permissions-*.tmp")
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("create temp file: %w", err)
         }</span>
-        <span class="cov6" title="200">tmpName := tmp.Name()
+        <span class="cov7" title="251">tmpName := tmp.Name()
         committed := false
-        defer func() </span><span class="cov6" title="200">{
+        defer func() </span><span class="cov7" title="251">{
                 if !committed </span><span class="cov1" title="2">{
                         tmp.Close()
                         os.Remove(tmpName)
                 }</span>
         }()
 
-        <span class="cov6" title="200">if _, err := tmp.Write(data); err != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="251">if _, err := tmp.Write(data); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write temp file: %w", err)
         }</span>
         // Flush before the rename, or a crash could leave the new name pointing at
         // an empty file -- exactly the failure this function exists to prevent.
-        <span class="cov6" title="200">if err := tmp.Sync(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="251">if err := tmp.Sync(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("sync temp file: %w", err)
         }</span>
-        <span class="cov6" title="200">if err := tmp.Close(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="251">if err := tmp.Close(); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("close temp file: %w", err)
         }</span>
-        <span class="cov6" title="200">if err := os.Chmod(tmpName, perm); err != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="251">if err := os.Chmod(tmpName, perm); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("chmod temp file: %w", err)
         }</span>
-        <span class="cov6" title="200">if err := os.Rename(tmpName, path); err != nil </span><span class="cov1" title="2">{
+        <span class="cov7" title="251">if err := os.Rename(tmpName, path); err != nil </span><span class="cov1" title="2">{
                 return fmt.Errorf("rename temp file: %w", err)
         }</span>
-        <span class="cov6" title="198">committed = true
+        <span class="cov7" title="249">committed = true
 
         // Persist the directory entry too. Best-effort: the rename has already
         // succeeded and the data is durable, so a failure here costs ordering
         // guarantees on a crash, not correctness now.
-        if d, err := os.Open(dir); err == nil </span><span class="cov6" title="198">{
+        if d, err := os.Open(dir); err == nil </span><span class="cov7" title="249">{
                 _ = d.Sync()
                 d.Close()
         }</span>
-        <span class="cov6" title="198">return nil</span>
+        <span class="cov7" title="249">return nil</span>
 }
 
 // readPermissionsFile parses the permissions file at path. A missing file is
 // not an error: it yields an empty structure, which is what a first run sees.
-func readPermissionsFile(path string) (permissionsFile, error) <span class="cov6" title="194">{
+func readPermissionsFile(path string) (permissionsFile, error) <span class="cov7" title="326">{
         var pf permissionsFile
         data, err := os.ReadFile(path)
-        if err != nil </span><span class="cov5" title="45">{
-                if os.IsNotExist(err) </span><span class="cov5" title="45">{
+        if err != nil </span><span class="cov5" title="44">{
+                if os.IsNotExist(err) </span><span class="cov5" title="44">{
                         return pf, nil
                 }</span>
                 <span class="cov0" title="0">return pf, fmt.Errorf("read permissions file: %w", err)</span>
         }
-        <span class="cov6" title="149">if err := yaml.Unmarshal(data, &amp;pf); err != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="282">if err := yaml.Unmarshal(data, &amp;pf); err != nil </span><span class="cov0" title="0">{
                 return pf, fmt.Errorf("parse permissions file: %w", err)
         }</span>
-        <span class="cov6" title="149">return pf, nil</span>
+        <span class="cov7" title="282">return pf, nil</span>
 }
 
 // writeMerged performs a read-modify-write of the permissions file under an
@@ -12611,37 +12611,37 @@ func readPermissionsFile(path string) (permissionsFile, error) <span class="cov6
 //
 // Read paths (GetFilePerms and friends) never take this lock: they serve from
 // the in-memory cache, so FUSE getattr stays off the disk.
-func (s *PermissionStore) writeMerged(apply func(pf *permissionsFile)) error <span class="cov6" title="192">{
+func (s *PermissionStore) writeMerged(apply func(pf *permissionsFile)) error <span class="cov7" title="324">{
         if s.path == "" </span><span class="cov0" title="0">{
                 return nil // not persisted; the in-memory maps are the whole store
         }</span>
 
-        <span class="cov6" title="192">lock, err := acquireFileLock(lockPath(s.path))
+        <span class="cov7" title="324">lock, err := acquireFileLock(lockPath(s.path))
         if err != nil </span><span class="cov1" title="2">{
                 return err
         }</span>
-        <span class="cov6" title="190">defer lock.Close()
+        <span class="cov7" title="322">defer lock.Close()
 
         pf, err := readPermissionsFile(s.path)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov6" title="190">s.mu.RLock()
+        <span class="cov7" title="322">s.mu.RLock()
         shared, mount := s.shared, s.mount
-        if !shared </span><span class="cov6" title="188">{
+        if !shared </span><span class="cov7" title="320">{
                 // Defaults come from this mount's --default-* flags, which the file does
                 // not own. In shared mode another mount's defaults are in there, so they
                 // are left exactly as read.
                 pf.Defaults = toFileDefaults(s.defaults)
         }</span>
-        <span class="cov6" title="190">s.mu.RUnlock()
+        <span class="cov7" title="322">s.mu.RUnlock()
 
         if mount != "" &amp;&amp; !shared </span><span class="cov3" title="10">{
                 pf.Mount = mount
         }</span>
 
-        <span class="cov6" title="190">apply(&amp;pf)
+        <span class="cov7" title="322">apply(&amp;pf)
 
         data, err := yaml.Marshal(&amp;pf)
         if err != nil </span><span class="cov0" title="0">{
@@ -12650,11 +12650,11 @@ func (s *PermissionStore) writeMerged(apply func(pf *permissionsFile)) error <sp
 
         // Skip a no-op write. chmod -R re-applying an identical mode is common, and
         // every skipped write is a lock hold and two fsyncs avoided.
-        <span class="cov6" title="190">if existing, err := os.ReadFile(s.path); err == nil &amp;&amp; string(existing) == string(data) </span><span class="cov0" title="0">{
+        <span class="cov7" title="322">if existing, err := os.ReadFile(s.path); err == nil &amp;&amp; string(existing) == string(data) </span><span class="cov6" title="81">{
                 return nil
         }</span>
 
-        <span class="cov6" title="190">return writeFileAtomic(s.path, data, 0644)</span>
+        <span class="cov7" title="241">return writeFileAtomic(s.path, data, 0644)</span>
 }
 
 // snapshotLocked builds a deep copy of the in-memory state. s.mu must be held.
@@ -12685,14 +12685,14 @@ func (s *PermissionStore) snapshotLocked() permissionsFile <span class="cov3" ti
 }
 
 // entryFor returns the entry for path in m, creating it if absent.
-func entryFor(m *map[string]*Perms, path string) *Perms <span class="cov8" title="692">{
+func entryFor(m *map[string]*Perms, path string) *Perms <span class="cov8" title="825">{
         if *m == nil </span><span class="cov0" title="0">{
                 *m = make(map[string]*Perms)
         }</span>
-        <span class="cov8" title="692">if p, ok := (*m)[path]; ok &amp;&amp; p != nil </span><span class="cov7" title="216">{
+        <span class="cov8" title="825">if p, ok := (*m)[path]; ok &amp;&amp; p != nil </span><span class="cov7" title="216">{
                 return p
         }</span>
-        <span class="cov7" title="476">p := &amp;Perms{}
+        <span class="cov8" title="609">p := &amp;Perms{}
         (*m)[path] = p
         return p</span>
 }
@@ -17106,15 +17106,15 @@ func (m *File) Len() int <span class="cov1" title="2">{
 
 // Slice returns a sub-slice of the mapped data without copying.
 // Returns nil if the range is out of bounds.
-func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="8948440">{
+func (m *File) Slice(offset int64, size int) []byte <span class="cov10" title="8948691">{
         if offset &lt; 0 || offset &gt;= m.size </span><span class="cov1" title="3">{
                 return nil
         }</span>
-        <span class="cov9" title="8948437">end := offset + int64(size)
+        <span class="cov9" title="8948688">end := offset + int64(size)
         if end &gt; m.size </span><span class="cov1" title="1">{
                 end = m.size
         }</span>
-        <span class="cov9" title="8948437">return m.data[offset:end]</span>
+        <span class="cov9" title="8948688">return m.data[offset:end]</span>
 }
 
 // Advise provides hints to the kernel about expected access patterns.
