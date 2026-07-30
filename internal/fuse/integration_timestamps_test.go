@@ -115,14 +115,9 @@ func TestFUSE_TouchPersistsMtime(t *testing.T) {
 		t.Errorf("mtime after touch = %d, want %d", got, want.Unix())
 	}
 
-	// Persisted to the permissions file as an mtime override.
-	data, err := os.ReadFile(permsPath)
-	if err != nil {
-		t.Fatalf("read permissions file: %v", err)
-	}
-	if !strings.Contains(string(data), "mtime:") {
-		t.Errorf("permissions file missing mtime override:\n%s", data)
-	}
+	// Persisted to the permissions file as an mtime override. The write is
+	// coalesced and lands shortly after the touch returns, so poll for it.
+	waitForFileContaining(t, permsPath, "mtime:", 10*time.Second)
 }
 
 // TestFUSE_DedupTouchRefreshesMtime verifies that when the dedup file's mtime

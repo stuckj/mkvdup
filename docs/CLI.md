@@ -250,14 +250,20 @@ Config files support `includes` (glob patterns referencing other configs, includ
 
 Error notification on source integrity issues is configured via `on_error_command` in a YAML config file rather than CLI flags. See [Error Notification](FUSE.md#error-notification) for details.
 
-**Permissions file search order:**
-1. `--permissions-file PATH` (if specified)
-2. `~/.config/mkvdup/permissions.yaml` (if exists)
-3. `/etc/mkvdup/permissions.yaml` (if exists)
+**Permissions file location:**
 
-New permissions are written to:
-- `~/.config/mkvdup/permissions.yaml` (for non-root users)
-- `/etc/mkvdup/permissions.yaml` (when running as root, unless `~/.config/mkvdup/permissions.yaml` exists)
+Each mount has its own file, named after its mountpoint:
+
+1. `--permissions-file PATH` (if specified)
+2. `<state dir>/permissions.d/<escaped mountpoint>.yaml`
+
+where `<state dir>` is `/var/lib/mkvdup` for root and `$XDG_STATE_HOME/mkvdup`
+(default `~/.local/state/mkvdup`) otherwise. The mountpoint is escaped the way
+systemd escapes paths, so `/mnt/videos` becomes `mnt-videos.yaml`.
+
+Override keys are paths *relative to the mount root*, so they are only unique
+within one mount. A per-mount file is what stops two mounts sharing a key space —
+see [Permissions File Location](FUSE.md#permissions-file-location).
 
 The permissions file also stores per-file/-directory **mtime overrides** set via
 `touch`/`utimes`. By default a virtual file's mtime is derived from its `.mkvdup` dedup

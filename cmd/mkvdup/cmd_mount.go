@@ -105,8 +105,25 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 		DirGID:   opts.DefaultGID,
 		DirMode:  opts.DefaultDirMode,
 	}
-	permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile)
+	// Resolved before fs.Mount so the mountpoint is still an ordinary
+	// directory: the per-mount filename is derived from its canonical path, and
+	// resolving symlinks through a live FUSE mount would ask this filesystem
+	// about itself.
+	permPath := mkvfuse.ResolvePermissionsPath(opts.PermissionsFile, mountpoint)
 	permStore := mkvfuse.NewPermissionStore(permPath, defaults, verbose)
+	// Stamps this mount's identity into the file, and lets the store notice if
+	// an explicit --permissions-file points it at another mount's file.
+	permStore.SetMountIdentity(mountpoint)
+	// Writes are debounced, so a failure to persist surfaces on a later
+	// operation rather than the one that caused it. Check up front that the
+	// state directory is usable, so the common misconfiguration fails loudly
+	// here instead of quietly in the log much later.
+	if err := permStore.EnsureWritable(); err != nil {
+		if daemon.IsChild() {
+			daemon.NotifyError(err)
+		}
+		return err
+	}
 	if err := permStore.Load(); err != nil {
 		if daemon.IsChild() {
 			daemon.NotifyError(fmt.Errorf("load permissions: %w", err))
@@ -306,6 +323,11 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 				if !daemon.IsChild() {
 					fmt.Println("\nUnmounting...")
 				}
+				// Permission writes are debounced, so a change made moments
+				// before shutdown may not have reached disk yet.
+				if err := permStore.Flush(); err != nil {
+					log.Printf("Warning: failed to save pending permission changes: %v", err)
+				}
 				server.Unmount()
 				return
 			}
@@ -314,6 +336,12 @@ func mountFuse(mountpoint string, configPaths []string, opts MountOptions) error
 
 	// Serve until unmounted
 	server.Wait()
+
+	// Stop the debounce timer and write out anything still pending. Covers exits
+	// that do not come through the signal handler, such as an external umount.
+	if err := permStore.Close(); err != nil {
+		log.Printf("Warning: failed to save pending permission changes: %v", err)
+	}
 
 	// Stop watchers
 	if configWatcher != nil {

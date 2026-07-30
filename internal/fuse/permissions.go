@@ -7,10 +7,10 @@ import (
 	"log"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"gopkg.in/yaml.v3"
@@ -59,7 +59,44 @@ func logI64(p *int64) string {
 	return strconv.FormatInt(*p, 10)
 }
 
-// Defaults holds default permissions for files and directories.
+// octalMode is a permission mode that marshals as familiar octal (0644) rather
+// than the decimal (420) previous versions wrote — which docs/FUSE.md has always
+// claimed was octal.
+//
+// Decoding is unaffected: YAML reads both an unquoted 0644 (leading zero means
+// octal) and a bare 420, so files written by older versions still load. Note a
+// *quoted* "0644" does not decode into an integer at all, which is why this
+// emits an unquoted !!int node rather than a string.
+type octalMode uint32
+
+func (m octalMode) MarshalYAML() (any, error) {
+	return &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!int",
+		Value: "0" + strconv.FormatUint(uint64(m), 8),
+	}, nil
+}
+
+// MarshalYAML writes Mode in octal while leaving the in-memory type a plain
+// *uint32, so callers are unaffected.
+func (p Perms) MarshalYAML() (any, error) {
+	type entry struct {
+		UID   *uint32    `yaml:"uid,omitempty"`
+		GID   *uint32    `yaml:"gid,omitempty"`
+		Mode  *octalMode `yaml:"mode,omitempty"`
+		Mtime *int64     `yaml:"mtime,omitempty"`
+	}
+	var mode *octalMode
+	if p.Mode != nil {
+		m := octalMode(*p.Mode)
+		mode = &m
+	}
+	return entry{UID: p.UID, GID: p.GID, Mode: mode, Mtime: p.Mtime}, nil
+}
+
+// Defaults holds the effective default permissions for files and directories.
+// Every field is always populated, so plain uint32 is right here — the
+// "unspecified" case only exists in the file, see fileDefaults.
 type Defaults struct {
 	FileUID  uint32 `yaml:"file_uid"`
 	FileGID  uint32 `yaml:"file_gid"`
@@ -67,6 +104,40 @@ type Defaults struct {
 	DirUID   uint32 `yaml:"dir_uid"`
 	DirGID   uint32 `yaml:"dir_gid"`
 	DirMode  uint32 `yaml:"dir_mode"`
+}
+
+// fileDefaults is the on-disk form of Defaults, where a field may legitimately
+// be absent.
+//
+// The pointers exist to distinguish "not specified" from a literal 0. With
+// plain uint32 they were the same value, so a uid or gid of 0 — root, and the
+// default for every fstab mount, since mount.fuse.mkvdup runs as root — could
+// not be written to the file at all: it was read back as "unspecified" and
+// silently discarded.
+type fileDefaults struct {
+	FileUID  *uint32    `yaml:"file_uid,omitempty"`
+	FileGID  *uint32    `yaml:"file_gid,omitempty"`
+	FileMode *octalMode `yaml:"file_mode,omitempty"`
+	DirUID   *uint32    `yaml:"dir_uid,omitempty"`
+	DirGID   *uint32    `yaml:"dir_gid,omitempty"`
+	DirMode  *octalMode `yaml:"dir_mode,omitempty"`
+}
+
+// toFileDefaults renders the effective defaults for writing. All six fields are
+// known, so all six are emitted — the file then records exactly what the mount
+// used, including zeros.
+func toFileDefaults(d Defaults) fileDefaults {
+	fileMode, dirMode := octalMode(d.FileMode), octalMode(d.DirMode)
+	fileUID, fileGID := d.FileUID, d.FileGID
+	dirUID, dirGID := d.DirUID, d.DirGID
+	return fileDefaults{
+		FileUID:  &fileUID,
+		FileGID:  &fileGID,
+		FileMode: &fileMode,
+		DirUID:   &dirUID,
+		DirGID:   &dirGID,
+		DirMode:  &dirMode,
+	}
 }
 
 // DefaultPerms returns the default permission values.
@@ -81,9 +152,39 @@ func DefaultPerms() Defaults {
 	}
 }
 
+// applyLoadedDefaults overlays defaults read from a permissions file onto the
+// in-memory defaults, which start from the --default-* flags.
+//
+// A present field wins, including an explicit 0. Absent fields leave the flag
+// value alone.
+func applyLoadedDefaults(dst *Defaults, src fileDefaults) {
+	if src.FileMode != nil {
+		dst.FileMode = uint32(*src.FileMode)
+	}
+	if src.FileUID != nil {
+		dst.FileUID = *src.FileUID
+	}
+	if src.FileGID != nil {
+		dst.FileGID = *src.FileGID
+	}
+	if src.DirMode != nil {
+		dst.DirMode = uint32(*src.DirMode)
+	}
+	if src.DirUID != nil {
+		dst.DirUID = *src.DirUID
+	}
+	if src.DirGID != nil {
+		dst.DirGID = *src.DirGID
+	}
+}
+
 // permissionsFile is the structure of the permissions YAML file.
 type permissionsFile struct {
-	Defaults    Defaults          `yaml:"defaults"`
+	// Mount records which mountpoint owns this file. Keys are virtual paths
+	// relative to a mount root and mean nothing without it, so the stamp is what
+	// lets a daemon notice it is looking at another mount's file.
+	Mount       string            `yaml:"mount,omitempty"`
+	Defaults    fileDefaults      `yaml:"defaults"`
 	Files       map[string]*Perms `yaml:"files,omitempty"`
 	Directories map[string]*Perms `yaml:"directories,omitempty"`
 }
@@ -96,6 +197,48 @@ type PermissionStore struct {
 	dirs     map[string]*Perms
 	mu       sync.RWMutex
 	verbose  bool
+
+	// mount is this store's canonical mountpoint, used to stamp the file and to
+	// detect that another mount owns it. Empty means "unknown" (tests,
+	// programmatic use), which disables both stamping and the check.
+	mount string
+
+	// shared is set when the file carries a different mount's stamp, i.e. two
+	// mounts were deliberately pointed at one permissions_file=. The store then
+	// degrades safely rather than treating the file as its own: see sharedMode.
+	shared bool
+
+	// pending holds the entries whose in-memory value has not reached the file
+	// yet. Writes are debounced (see permissions_flush.go) because each one
+	// costs a lock, a parse and two fsyncs, which a recursive chmod would
+	// otherwise pay per file.
+	pending    map[permKey]struct{}
+	flushTimer *time.Timer
+	firstDirty time.Time
+	flushErr   error
+	closed     bool
+}
+
+// SetMountIdentity records which mountpoint this store belongs to, so its file
+// can be stamped and a foreign file recognised. Call before Load.
+func (s *PermissionStore) SetMountIdentity(mountpoint string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mount = CanonicalMountpoint(mountpoint)
+}
+
+// sharedMode reports whether this store is looking at a file stamped by a
+// different mount.
+//
+// Isolation cannot reach this case: an explicit --permissions-file may
+// deliberately point two mounts at one file. Rather than silently corrupting
+// it, the store stops doing the two things that assume sole ownership --
+// deleting entries it cannot account for, and persisting its own defaults over
+// the file's. Key collisions remain possible and are the operator's choice.
+func (s *PermissionStore) sharedMode() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.shared
 }
 
 // NewPermissionStore creates a new permission store.
@@ -117,6 +260,16 @@ func (s *PermissionStore) Load() error {
 		return nil
 	}
 
+	// Load replaces the in-memory maps with the file's contents, so anything
+	// still sitting in the debounce window would simply vanish -- a chmod
+	// moments before a SIGHUP reload would be silently discarded. Flushing here
+	// rather than at each call site means the ordering cannot be forgotten.
+	// A flush failure is not fatal: log it and load anyway, since refusing to
+	// reload would be worse than losing an unpersisted change.
+	if err := s.Flush(); err != nil {
+		log.Printf("Warning: failed to flush pending permission changes before reloading %s: %v", s.path, err)
+	}
+
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -136,29 +289,19 @@ func (s *PermissionStore) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Override defaults if specified in file
-	if pf.Defaults.FileMode != 0 || pf.Defaults.FileUID != 0 || pf.Defaults.FileGID != 0 ||
-		pf.Defaults.DirMode != 0 || pf.Defaults.DirUID != 0 || pf.Defaults.DirGID != 0 {
-		// Only override non-zero values from file
-		if pf.Defaults.FileMode != 0 {
-			s.defaults.FileMode = pf.Defaults.FileMode
-		}
-		if pf.Defaults.FileUID != 0 {
-			s.defaults.FileUID = pf.Defaults.FileUID
-		}
-		if pf.Defaults.FileGID != 0 {
-			s.defaults.FileGID = pf.Defaults.FileGID
-		}
-		if pf.Defaults.DirMode != 0 {
-			s.defaults.DirMode = pf.Defaults.DirMode
-		}
-		if pf.Defaults.DirUID != 0 {
-			s.defaults.DirUID = pf.Defaults.DirUID
-		}
-		if pf.Defaults.DirGID != 0 {
-			s.defaults.DirGID = pf.Defaults.DirGID
-		}
+	// A stamp naming a different mount means this file is shared. Warn once and
+	// degrade: the keys in it belong to someone else's virtual tree, so we must
+	// not prune them or overwrite their defaults.
+	wasShared := s.shared
+	s.shared = pf.Mount != "" && s.mount != "" && pf.Mount != s.mount
+	if s.shared && !wasShared {
+		log.Printf("Warning: permissions file %s is stamped for mount %q but this mount is %q; "+
+			"treating it as shared (stale-entry cleanup disabled, defaults not persisted). "+
+			"Give each mount its own permissions file to avoid key collisions.",
+			s.path, pf.Mount, s.mount)
 	}
+
+	applyLoadedDefaults(&s.defaults, pf.Defaults)
 
 	if pf.Files != nil {
 		s.files = pf.Files
@@ -174,42 +317,36 @@ func (s *PermissionStore) Load() error {
 	return nil
 }
 
-// Save saves permissions to the file.
+// Save writes the whole in-memory state to the file, under the file lock and
+// via an atomic rename.
+//
+// Unlike the mutators, this deliberately does *not* merge with what is on disk:
+// it is a "publish my state" operation, used after seeding and after stale-entry
+// cleanup, where the in-memory state is the intended result. Individual
+// permission changes go through withFileLock instead, which applies a delta to
+// the current file contents and so cannot clobber a concurrent writer.
 func (s *PermissionStore) Save() error {
 	if s.path == "" {
 		return nil
 	}
 
+	lock, err := acquireFileLock(lockPath(s.path))
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	s.mu.RLock()
-	// Deep copy the maps to avoid data races during marshalling.
-	// We copy both the map and the Perms values to ensure complete isolation.
-	pf := permissionsFile{
-		Defaults: s.defaults,
-	}
-	if s.files != nil {
-		pf.Files = make(map[string]*Perms, len(s.files))
-		for k, v := range s.files {
-			if v != nil {
-				permsCopy := *v // copy the Perms struct
-				pf.Files[k] = &permsCopy
-			}
-		}
-	}
-	if s.dirs != nil {
-		pf.Directories = make(map[string]*Perms, len(s.dirs))
-		for k, v := range s.dirs {
-			if v != nil {
-				permsCopy := *v // copy the Perms struct
-				pf.Directories[k] = &permsCopy
-			}
-		}
-	}
+	// Deep copy so marshalling cannot race with a concurrent mutation.
+	pf := s.snapshotLocked()
 	s.mu.RUnlock()
 
-	// Create parent directory if needed
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create permissions directory: %w", err)
+	// In shared mode the stamp belongs to the mount that created the file;
+	// republishing without it would hide the sharing from the next Load.
+	if s.sharedMode() {
+		if onDisk, err := readPermissionsFile(s.path); err == nil {
+			pf.Mount = onDisk.Mount
+		}
 	}
 
 	data, err := yaml.Marshal(&pf)
@@ -217,8 +354,8 @@ func (s *PermissionStore) Save() error {
 		return fmt.Errorf("marshal permissions: %w", err)
 	}
 
-	if err := os.WriteFile(s.path, data, 0644); err != nil {
-		return fmt.Errorf("write permissions file: %w", err)
+	if err := writeFileAtomic(s.path, data, 0644); err != nil {
+		return err
 	}
 
 	if s.verbose {
@@ -302,25 +439,9 @@ func (s *PermissionStore) GetDirMtimeOverride(path string) *int64 {
 	return nil
 }
 
-// SetFilePerms sets permissions for a file.
-// Only non-nil values are updated; nil values leave existing values unchanged.
-// Automatically saves to disk.
-func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error {
-	s.mu.Lock()
-
-	// If all values are nil, nothing to do
-	if uid == nil && gid == nil && mode == nil {
-		s.mu.Unlock()
-		return nil
-	}
-
-	p, ok := s.files[path]
-	if !ok {
-		p = &Perms{}
-		s.files[path] = p
-	}
-
-	// Only update non-nil values; copy values so the store owns their lifetime.
+// applyOwnership overlays non-nil uid/gid/mode onto an entry, copying the
+// values so the store owns their lifetime.
+func applyOwnership(p *Perms, uid, gid, mode *uint32) {
 	if uid != nil {
 		v := *uid
 		p.UID = &v
@@ -333,151 +454,135 @@ func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint
 		v := *mode
 		p.Mode = &v
 	}
+}
 
-	s.mu.Unlock()
+// SetFilePerms sets permissions for a file.
+// Only non-nil values are updated; nil values leave existing values unchanged.
+// Persisted immediately, as a locked read-modify-write of the file.
+func (s *PermissionStore) SetFilePerms(path string, uid, gid *uint32, mode *uint32) error {
+	// If all values are nil, nothing to do
+	if uid == nil && gid == nil && mode == nil {
+		return nil
+	}
 
 	if s.verbose {
 		log.Printf("SetFilePerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
-	return s.Save()
+	s.mu.Lock()
+	applyOwnership(entryFor(&s.files, path), uid, gid, mode)
+	s.markDirtyLocked(permKey{path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // RemoveFilePerms removes all permission overrides for a file.
 // The file will use default permissions. Automatically saves to disk.
 func (s *PermissionStore) RemoveFilePerms(path string) error {
-	s.mu.Lock()
-	delete(s.files, path)
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("RemoveFilePerms: %s", path)
 	}
 
-	return s.Save()
+	s.mu.Lock()
+	delete(s.files, path)
+	s.markDirtyLocked(permKey{path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // SetDirPerms sets permissions for a directory.
 // Only non-nil values are updated; nil values leave existing values unchanged.
-// Automatically saves to disk.
+// Persisted immediately, as a locked read-modify-write of the file.
 func (s *PermissionStore) SetDirPerms(path string, uid, gid *uint32, mode *uint32) error {
-	s.mu.Lock()
-
 	// If all values are nil, nothing to do
 	if uid == nil && gid == nil && mode == nil {
-		s.mu.Unlock()
 		return nil
 	}
-
-	p, ok := s.dirs[path]
-	if !ok {
-		p = &Perms{}
-		s.dirs[path] = p
-	}
-
-	// Only update non-nil values; copy values so the store owns their lifetime.
-	if uid != nil {
-		v := *uid
-		p.UID = &v
-	}
-	if gid != nil {
-		v := *gid
-		p.GID = &v
-	}
-	if mode != nil {
-		v := *mode
-		p.Mode = &v
-	}
-
-	s.mu.Unlock()
 
 	if s.verbose {
 		log.Printf("SetDirPerms: %s uid=%s gid=%s mode=%s", path, logU32(uid), logU32(gid), logMode(mode))
 	}
 
-	return s.Save()
+	s.mu.Lock()
+	applyOwnership(entryFor(&s.dirs, path), uid, gid, mode)
+	s.markDirtyLocked(permKey{dir: true, path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // RemoveDirPerms removes all permission overrides for a directory.
 // The directory will use default permissions. Automatically saves to disk.
 func (s *PermissionStore) RemoveDirPerms(path string) error {
-	s.mu.Lock()
-	delete(s.dirs, path)
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("RemoveDirPerms: %s", path)
 	}
 
-	return s.Save()
+	s.mu.Lock()
+	delete(s.dirs, path)
+	s.markDirtyLocked(permKey{dir: true, path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // SetFileMtime sets (or, when mtime is nil, clears) the modification-time
 // override for a file. Existing uid/gid/mode overrides are preserved.
 // Automatically saves to disk.
 func (s *PermissionStore) SetFileMtime(path string, mtime *int64) error {
-	s.mu.Lock()
-	p, ok := s.files[path]
-	if !ok {
-		if mtime == nil {
-			s.mu.Unlock()
-			return nil // nothing to clear
-		}
-		p = &Perms{}
-		s.files[path] = p
-	}
-	if mtime != nil {
-		v := *mtime
-		p.Mtime = &v
-	} else {
-		p.Mtime = nil
-		// Drop the entry entirely if nothing is overridden anymore, so we don't
-		// persist a useless "path: {}" stanza in the permissions file.
-		if p.isEmpty() {
-			delete(s.files, path)
-		}
-	}
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("SetFileMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
-	return s.Save()
+	s.mu.Lock()
+	applyMtime(&s.files, path, mtime)
+	s.markDirtyLocked(permKey{path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
 }
 
 // SetDirMtime sets (or, when mtime is nil, clears) the modification-time
 // override for a directory. Existing uid/gid/mode overrides are preserved.
-// Automatically saves to disk.
+// Persisted immediately, as a locked read-modify-write of the file.
 func (s *PermissionStore) SetDirMtime(path string, mtime *int64) error {
-	s.mu.Lock()
-	p, ok := s.dirs[path]
-	if !ok {
-		if mtime == nil {
-			s.mu.Unlock()
-			return nil // nothing to clear
-		}
-		p = &Perms{}
-		s.dirs[path] = p
-	}
-	if mtime != nil {
-		v := *mtime
-		p.Mtime = &v
-	} else {
-		p.Mtime = nil
-		// Drop the entry entirely if nothing is overridden anymore, so we don't
-		// persist a useless "path: {}" stanza in the permissions file.
-		if p.isEmpty() {
-			delete(s.dirs, path)
-		}
-	}
-	s.mu.Unlock()
-
 	if s.verbose {
 		log.Printf("SetDirMtime: %s mtime=%s", path, logI64(mtime))
 	}
 
-	return s.Save()
+	s.mu.Lock()
+	applyMtime(&s.dirs, path, mtime)
+	s.markDirtyLocked(permKey{dir: true, path: path})
+	s.mu.Unlock()
+
+	return s.latchedError()
+}
+
+// applyMtime sets or clears the mtime override for path, leaving any
+// uid/gid/mode overrides alone.
+func applyMtime(m *map[string]*Perms, path string, mtime *int64) {
+	if mtime == nil {
+		// Nothing to clear if there is no entry.
+		if *m == nil {
+			return
+		}
+		p, ok := (*m)[path]
+		if !ok || p == nil {
+			return
+		}
+		p.Mtime = nil
+		// Drop the entry entirely if nothing is overridden anymore, so we don't
+		// persist a useless "path: {}" stanza in the permissions file.
+		if p.isEmpty() {
+			delete(*m, path)
+		}
+		return
+	}
+
+	v := *mtime
+	entryFor(m, path).Mtime = &v
 }
 
 // CleanupStale removes entries for paths that don't exist in the mounted filesystem.
@@ -487,12 +592,23 @@ func (s *PermissionStore) CleanupStale(validFiles, validDirs map[string]bool) in
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// In shared mode the file holds another mount's entries, whose paths are
+	// meaningless against this mount's tree. Pruning "unknown" keys there is
+	// exactly the deletion bug this change exists to fix, so do nothing.
+	if s.shared {
+		if s.verbose {
+			log.Printf("Skipping stale-entry cleanup: %s is shared with mount %q", s.path, s.mount)
+		}
+		return 0
+	}
+
 	removed := 0
 
 	// Clean up stale file entries
 	for path := range s.files {
 		if !validFiles[path] {
 			delete(s.files, path)
+			s.markDirtyLocked(permKey{path: path})
 			removed++
 			if s.verbose {
 				log.Printf("Removed stale file permission entry: %s", path)
@@ -504,6 +620,7 @@ func (s *PermissionStore) CleanupStale(validFiles, validDirs map[string]bool) in
 	for path := range s.dirs {
 		if !validDirs[path] {
 			delete(s.dirs, path)
+			s.markDirtyLocked(permKey{dir: true, path: path})
 			removed++
 			if s.verbose {
 				log.Printf("Removed stale directory permission entry: %s", path)
@@ -521,54 +638,8 @@ func (s *PermissionStore) Defaults() Defaults {
 	return s.defaults
 }
 
-// ResolvePermissionsPath determines which permissions file to use.
-// Priority:
-//  1. explicitPath (from --permissions-file flag)
-//  2. ~/.config/mkvdup/permissions.yaml (if exists) - for both root and non-root
-//  3. /etc/mkvdup/permissions.yaml (if exists AND running as root)
-//  4. Default based on euid: root uses /etc/, non-root uses ~/.config/
-//
-// Non-root users always get a user-writable path (unless explicitly overridden)
-// to avoid EACCES errors when saving permission changes.
-func ResolvePermissionsPath(explicitPath string) string {
-	if explicitPath != "" {
-		return explicitPath
-	}
-
-	home, err := os.UserHomeDir()
-	userPath := ""
-	if err == nil {
-		userPath = filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
-	}
-
-	// Check user config - takes priority for both root and non-root
-	if userPath != "" {
-		if _, err := os.Stat(userPath); err == nil {
-			return userPath
-		}
-	}
-
-	systemPath := "/etc/mkvdup/permissions.yaml"
-
-	// For root: check system config, then default to system path
-	if os.Geteuid() == 0 {
-		if _, err := os.Stat(systemPath); err == nil {
-			return systemPath
-		}
-		return systemPath
-	}
-
-	// For non-root: always use user path to ensure writability.
-	// Do NOT use system path even if it exists, as non-root users
-	// typically cannot write to /etc/ and chmod/chown operations
-	// would fail with EACCES.
-	if userPath != "" {
-		return userPath
-	}
-
-	// Fallback if no home directory (unusual for non-root)
-	return systemPath
-}
+// ResolvePermissionsPath now lives in permissions_path.go, alongside the
+// mountpoint-identity helpers it depends on.
 
 // CallerInfo represents the calling process's credentials.
 type CallerInfo struct {

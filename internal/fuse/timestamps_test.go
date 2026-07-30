@@ -185,6 +185,8 @@ func TestPermissionStore_Mtime_LoadSave(t *testing.T) {
 		t.Fatalf("SetDirMtime: %v", err)
 	}
 
+	flush(t, store)
+
 	store2 := NewPermissionStore(path, DefaultPerms(), false)
 	if err := store2.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
@@ -706,6 +708,7 @@ func TestPermissionStore_ClearMtime_RemovesEmptyEntry(t *testing.T) {
 	if err := store.SetFileMtime("v.mkv", nil); err != nil {
 		t.Fatalf("clear SetFileMtime: %v", err)
 	}
+	flush(t, store)
 
 	data, err := os.ReadFile(path)
 	if err != nil {

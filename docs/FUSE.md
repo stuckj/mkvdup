@@ -293,26 +293,63 @@ directory holding it.
 
 ### Permissions File Location
 
-**For root users - search order (first match wins):**
-1. `--permissions-file PATH` command-line option
-2. `~/.config/mkvdup/permissions.yaml` (if exists)
-3. `/etc/mkvdup/permissions.yaml` (if exists, or as default)
+**Every mount has its own permissions file.** Override keys are paths *relative to the
+mount root* (`Movies/Action/Video1.mkv`), so they are only unique within a single mount:
+two mounts can produce the same key for completely different files. One file per
+mountpoint keeps those key spaces apart.
 
-**For non-root users - search order (first match wins):**
-1. `--permissions-file PATH` command-line option
-2. `~/.config/mkvdup/permissions.yaml` (existing or default)
+1. `--permissions-file PATH` (or the `permissions_file=` fstab option), used verbatim
+2. `<state dir>/permissions.d/<escaped mountpoint>.yaml`
 
-Non-root users always use a user-writable path (`~/.config/...`) unless explicitly overridden with `--permissions-file`. This ensures that `chmod`/`chown` operations can save changes without `EACCES` errors.
+| | State directory |
+|---|---|
+| root | `/var/lib/mkvdup` |
+| non-root | `$XDG_STATE_HOME/mkvdup` (default `~/.local/state/mkvdup`) |
 
-**Default write location (when no file exists):**
-- Running as root: `/etc/mkvdup/permissions.yaml`
-- Running as non-root: `~/.config/mkvdup/permissions.yaml`
+Non-root always gets a user-writable path unless explicitly overridden, so `chmod`/`chown`
+can save without `EACCES`.
+
+This file is auto-managed daemon *state*, not configuration, which is why it lives under
+`/var/lib` rather than `/etc`. Config files (`/etc/mkvdup.conf`, `/etc/mkvdup.d/`) are
+unaffected and stay where they are.
+
+**Filenames** use systemd's path escaping, so the file backing a mount can be found by eye:
+
+| Mountpoint | File |
+|---|---|
+| `/mnt/videos` | `mnt-videos.yaml` |
+| `/srv/media/tv` | `srv-media-tv.yaml` |
+| `/mnt/my-videos` | `mnt-my\x2dvideos.yaml` |
+
+A literal `-` escapes to `\x2d` — without that, `/a-b` and `/a/b` would collide.
+
+**Migration.** The first time a mount runs without a file of its own, it is seeded from the
+shared file earlier versions used (`/etc/mkvdup/permissions.yaml`, then
+`~/.config/mkvdup/permissions.yaml`), copying only the entries that resolve within *this*
+mount. The old file is never modified — other mounts still need to seed from it, and it
+remains as a fallback. Delete it once every mount has started at least once.
+
+**Sharing one file between mounts** (two mounts given the same `--permissions-file`) is
+supported but discouraged. The file records which mount created it:
+
+```yaml
+mount: /mnt/videos
+```
+
+A daemon that opens a file stamped for a different mount logs a warning and stops doing the
+two things that assume sole ownership: it will not delete entries it cannot account for, and
+it will not persist its own `defaults` over the file's. Key collisions remain possible in
+that configuration — that is the trade-off of sharing.
 
 ### Permissions File Format
 
 ```yaml
-# ~/.config/mkvdup/permissions.yaml or /etc/mkvdup/permissions.yaml
+# /var/lib/mkvdup/permissions.d/mnt-videos.yaml
 # Auto-managed by mkvdup daemon (also human-editable)
+
+# The mountpoint this file belongs to. Written automatically; used to detect a
+# file being shared between mounts (see above).
+mount: /mnt/videos
 
 defaults:
   file_uid: 1000
@@ -343,8 +380,12 @@ directories:
 **Field semantics:**
 - `uid`, `gid`, `mode`: Only specified fields are overridden; `null` or omitted fields inherit from defaults
 - `mtime`: Optional modification-time override in Unix seconds (set via `touch`/`utimes`). Omitted → the timestamp is derived from the dedup file (files) or from mount time and entry add/remove events (directories). Only `mtime` is tracked; `atime` is reported equal to `mtime`.
-- Paths are relative to the mount root (no leading slash)
-- Mode values are stored in octal
+- Paths are relative to the mount root (no leading slash) — which is why each mount needs its own file
+- Mode values are stored in octal (`0640`). Files written by earlier versions stored them in decimal (`416`); both are read, and the file is rewritten in octal on the next change
+- `defaults`: a field that is present wins, **including an explicit `0`**. Omit a field to
+  fall back to the corresponding `--default-*` value. (Earlier versions could not tell `0`
+  from "not specified", so `file_uid: 0` — root, and the default for fstab mounts — could not
+  be expressed at all.)
 
 ### CLI Options for Defaults
 
@@ -369,9 +410,20 @@ mkvdup mount --permissions-file /var/lib/mkvdup/permissions.yaml /mnt/videos con
 **Note:** The fstab mount helper (`mount.fuse.mkvdup`) automatically enables `allow_other` so that root can access the filesystem for `chown`/`chmod` operations via `sudo`.
 
 **On chmod/chown/touch:**
-1. Permission and mtime changes are saved immediately to the permissions file
-2. The permissions file's parent directory (e.g., `~/.config/mkvdup/`) is created if it doesn't exist
-3. Changes persist across daemon restarts
+1. The change takes effect immediately — a subsequent `stat` reflects it at once
+2. It is written to the permissions file shortly after: writes are **coalesced**, flushing
+   about 250 ms after the last change (and at least every 2 s during a continuous stream).
+   A recursive `chmod` over thousands of files therefore costs a handful of writes rather
+   than one per file
+3. Pending changes are always flushed before the daemon unmounts, on `SIGTERM`/`SIGINT`, and
+   before a `SIGHUP` reload, so an orderly shutdown never loses one
+4. The state directory is created at mount time, and mount fails if it is not writable
+5. Changes persist across daemon restarts
+
+**Durability trade-off:** because writes are coalesced, a `SIGKILL` or power loss can lose up
+to one flush window (~250 ms) of changes. If a write fails — a full or read-only filesystem —
+the change is kept and retried, and the error is reported on the *next* `chmod`/`chown`/`touch`
+rather than the one that triggered it.
 
 **On mount:**
 1. Permissions file is loaded (or created with defaults)

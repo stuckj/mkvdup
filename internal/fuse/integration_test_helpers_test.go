@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/stuckj/mkvdup/internal/dedup"
@@ -323,4 +325,45 @@ func createTestDedupFile(t *testing.T, paths testdata.Paths, tmpDir string) (str
 	}
 
 	return dedupPath, configPath
+}
+
+// waitForFileContaining polls until path exists and contains want, returning
+// its contents.
+//
+// Permission and timestamp changes are written by a coalescing writer that
+// flushes shortly after the last change, so the file is not updated the instant
+// a chmod or touch returns. Polling is how an out-of-process observer sees that
+// correctly; the alternative -- a flag forcing synchronous writes -- would make
+// these tests exercise a code path production never takes.
+func waitForFileContaining(t *testing.T, path, want string, timeout time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last string
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(path); err == nil {
+			last = string(data)
+			if strings.Contains(last, want) {
+				return last
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if last == "" {
+		t.Fatalf("timed out after %s waiting for %s to exist", timeout, path)
+	}
+	t.Fatalf("timed out after %s waiting for %q in %s:\n%s", timeout, want, path, last)
+	return ""
+}
+
+// waitForFile polls until path exists.
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("timed out after %s waiting for %s to be created", timeout, path)
 }

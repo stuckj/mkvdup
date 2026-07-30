@@ -254,12 +254,17 @@ Error Notification (configured in YAML config, not CLI):
 By default, mkvdup daemonizes after the mount is ready and returns.
 Use --foreground to keep it attached to the terminal.
 
-Permission files are searched in order:
-  1. --permissions-file (if specified)
-  2. ~/.config/mkvdup/permissions.yaml (if exists)
-  3. /etc/mkvdup/permissions.yaml (if exists)
-New permissions are written to ~/.config/mkvdup/permissions.yaml (user) or
-/etc/mkvdup/permissions.yaml (root).
+Each mount gets its own permissions file, named after its mountpoint:
+  --permissions-file PATH, if given, otherwise
+  /var/lib/mkvdup/permissions.d/<mountpoint>.yaml          (root)
+  ~/.local/state/mkvdup/permissions.d/<mountpoint>.yaml    (non-root)
+e.g. /mnt/videos -> mnt-videos.yaml. Override keys are paths relative to
+the mount root, so per-mount files keep two mounts from colliding.
+
+On first use the file is seeded from the shared permissions file used by
+earlier versions (/etc/mkvdup/permissions.yaml or
+~/.config/mkvdup/permissions.yaml), taking only the entries belonging to
+this mount. The old file is left untouched.
 
 Examples:
     mkvdup mount /mnt/videos movie.mkvdup.yaml

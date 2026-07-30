@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -104,6 +105,9 @@ func TestPermissionStore_LoadSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetDirPerms failed: %v", err)
 	}
+
+	// Writes are debounced; force them out before reading the file back.
+	flush(t, store)
 
 	// Create a new store and load
 	store2 := NewPermissionStore(path, defaults, false)
@@ -235,6 +239,8 @@ func TestPermissionStore_SetFilePerms(t *testing.T) {
 	if gotUID != uid {
 		t.Errorf("GetFilePerms uid = %d, want %d", gotUID, uid)
 	}
+
+	flush(t, store)
 
 	// Verify file was saved
 	if _, err := os.Stat(path); err != nil {
@@ -410,23 +416,83 @@ func TestPermissionStore_PartialUpdate(t *testing.T) {
 }
 
 func TestResolvePermissionsPath_Explicit(t *testing.T) {
-	path := ResolvePermissionsPath("/custom/path/permissions.yaml")
+	// An explicit path wins over everything, mountpoint included.
+	path := ResolvePermissionsPath("/custom/path/permissions.yaml", "/mnt/videos")
 	if path != "/custom/path/permissions.yaml" {
 		t.Errorf("ResolvePermissionsPath with explicit path = %q, want /custom/path/permissions.yaml", path)
 	}
 }
 
-func TestResolvePermissionsPath_Default(t *testing.T) {
-	// When no file exists and no explicit path, should return based on euid
-	path := ResolvePermissionsPath("")
+func TestResolvePermissionsPath_PerMount(t *testing.T) {
+	// Each mountpoint gets its own file, so two mounts never share a key space.
+	a := ResolvePermissionsPath("", "/mnt/videos")
+	b := ResolvePermissionsPath("", "/mnt/movies")
 
-	// Path should be either /etc/mkvdup/permissions.yaml (root) or ~/.config/mkvdup/permissions.yaml (non-root)
-	if path != "/etc/mkvdup/permissions.yaml" {
-		home, _ := os.UserHomeDir()
-		expected := filepath.Join(home, ".config", "mkvdup", "permissions.yaml")
-		if path != expected {
-			t.Errorf("ResolvePermissionsPath() = %q, want %q or /etc/mkvdup/permissions.yaml", path, expected)
+	if a == b {
+		t.Fatalf("distinct mountpoints resolved to the same file: %q", a)
+	}
+	wantDir := filepath.Join(StateDir(), permissionsDirName)
+	if got := filepath.Dir(a); got != wantDir {
+		t.Errorf("parent dir = %q, want %q", got, wantDir)
+	}
+	if got, want := filepath.Base(a), "mnt-videos.yaml"; got != want {
+		t.Errorf("filename = %q, want %q", got, want)
+	}
+}
+
+func TestResolvePermissionsPath_NoMountpoint(t *testing.T) {
+	// Callers with no mountpoint (tests, programmatic use) get a single file
+	// under the state dir rather than a per-mount one.
+	path := ResolvePermissionsPath("", "")
+	if want := filepath.Join(StateDir(), "permissions.yaml"); path != want {
+		t.Errorf("ResolvePermissionsPath(\"\", \"\") = %q, want %q", path, want)
+	}
+}
+
+func TestStateDir_MatchesPrivilege(t *testing.T) {
+	got := StateDir()
+	if os.Geteuid() == 0 {
+		if want := "/var/lib/mkvdup"; got != want {
+			t.Errorf("StateDir() as root = %q, want %q", got, want)
 		}
+		return
+	}
+	// Non-root must land somewhere user-writable, never /var/lib, or saving a
+	// chmod would fail with EACCES.
+	if strings.HasPrefix(got, "/var/lib") {
+		t.Errorf("StateDir() as non-root = %q, want a user-writable path", got)
+	}
+}
+
+func TestEscapeMountpoint(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/mnt/videos", "mnt-videos"},
+		{"/mnt/videos/", "mnt-videos"},
+		{"/", "-"},
+		{"/srv/media/tv", "srv-media-tv"},
+		// A literal '-' must escape, or /a-b and /a/b would collide.
+		{"/mnt/my-videos", `mnt-my\x2dvideos`},
+		{"/mnt/a b", `mnt-a\x20b`},
+		// A dot mid-name is harmless; only a leading one would hide the file.
+		{"/mnt/.hidden", "mnt-.hidden"},
+		{"/.config/videos", `\x2econfig-videos`},
+		{"/mnt/v1.0", "mnt-v1.0"},
+		{"/mnt/vidéos", `mnt-vid\xc3\xa9os`},
+	}
+	for _, tc := range tests {
+		if got := EscapeMountpoint(tc.path); got != tc.want {
+			t.Errorf("EscapeMountpoint(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestEscapeMountpoint_Injective(t *testing.T) {
+	// The whole point of escaping '-': these must not collide.
+	if a, b := EscapeMountpoint("/a-b"), EscapeMountpoint("/a/b"); a == b {
+		t.Errorf("/a-b and /a/b both escaped to %q", a)
 	}
 }
 
@@ -441,6 +507,8 @@ func TestPermissionStore_SaveCreatesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetFilePerms failed: %v", err)
 	}
+
+	flush(t, store)
 
 	// Verify nested directory was created
 	if _, err := os.Stat(filepath.Dir(nestedPath)); err != nil {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	fuselib "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -95,10 +96,9 @@ func TestFUSE_ChmodFile(t *testing.T) {
 		t.Errorf("Expected mode %o, got %o", newMode, info.Mode().Perm())
 	}
 
-	// Verify permissions file was created
-	if _, err := os.Stat(permPath); os.IsNotExist(err) {
-		t.Error("Permissions file was not created")
-	}
+	// Verify permissions file was created. Writes are coalesced, so this is not
+	// instantaneous — poll rather than reading once.
+	waitForFile(t, permPath, 10*time.Second)
 }
 
 func TestFUSE_ChmodDirectory(t *testing.T) {

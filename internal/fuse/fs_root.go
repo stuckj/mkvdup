@@ -289,6 +289,8 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 
 	// Reload permissions and clean up stale entries
 	if r.permStore != nil {
+		// Load flushes any debounced changes before replacing the in-memory
+		// maps, so a chmod made moments before this reload is not discarded.
 		if err := r.permStore.Load(); err != nil {
 			logFn("warning: failed to reload permissions: %v", err)
 		} else {
@@ -296,7 +298,7 @@ func (r *MKVFSRoot) Reload(configs []dedup.Config, logFn func(string, ...interfa
 			removed := r.permStore.CleanupStale(validFiles, validDirs)
 			if removed > 0 {
 				logFn("cleaned up %d stale permission entries", removed)
-				if err := r.permStore.Save(); err != nil {
+				if err := r.permStore.Flush(); err != nil {
 					logFn("warning: failed to save permissions after cleanup: %v", err)
 				}
 			}
