@@ -6,10 +6,6 @@ on:
       version:
         description: 'Version to build (without v prefix, e.g. 1.0.0)'
         required: true
-      commit:
-        description: 'Commit SHA to tag (optional - defaults to latest non-benchmark commit on triggering branch)'
-        required: false
-        default: ''
 
 # NOTE: intentionally has no `concurrency` block. The other workflows cancel
 # superseded PR runs, but a release must never be cancelled part-way: it
@@ -19,6 +15,14 @@ on:
 permissions:
   contents: write
   pages: write
+
+# Commit subjects marked as bookkeeping: automated commits that do not change
+# the built code. `prepare` skips them when choosing what to tag, and `sync-nix`
+# treats them as safe to commit the Nix version bump on top of. Both jobs must
+# use the *same* pattern or they disagree about which commit is being released —
+# which is exactly how #212 happened. Defined once here for that reason.
+env:
+  BOOKKEEPING_COMMIT_RE: '\[(skip ci|ci skip|no ci|skip actions|actions skip|benchmark)\]'
 
 jobs:
   prepare:
@@ -33,12 +37,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          fetch-depth: 50  # Fetch enough history to find non-benchmark commits
+          fetch-depth: 50  # Fetch enough history to find non-bookkeeping commits
 
       - name: Resolve commit and create tag
         id: resolve
         run: |
           VERSION="${{ github.event.inputs.version }}"
+
+          # Releases have to come from a branch. The commit to tag is resolved
+          # from `origin/<ref>`, which does not exist for a tag, and sync-nix
+          # pushes the Nix version bump back to that same ref. Before the
+          # commit-SHA input was removed this failed further down with a
+          # misleading "could not find a non-bookkeeping commit"; say so plainly
+          # and early instead.
+          if [[ "${{ github.ref_type }}" != "branch" ]]; then
+            echo "::error::Releases must be dispatched from a branch, not a ${{ github.ref_type }}. Re-run this workflow from the branch you want to release."
+            exit 1
+          fi
 
           # Validate version format (no leading 'v', basic version like 1.2.3 or 1.2.3-beta.1)
           if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+)*([.-][0-9A-Za-z]+)*$ ]]; then
@@ -68,21 +83,18 @@ jobs:
             exit 1
           fi
 
-          # Determine which commit to tag
-          if [[ -n "${{ github.event.inputs.commit }}" ]]; then
-            COMMIT="${{ github.event.inputs.commit }}"
-            echo "Using specified commit: ${COMMIT}"
-          else
-            # Find the latest commit on the triggering branch that isn't a benchmark commit
-            BRANCH="${{ github.ref_name }}"
-            echo "Finding latest non-benchmark commit on ${BRANCH}..."
-            COMMIT=$(git log "origin/${BRANCH}" --oneline -50 | grep -v -iE '\[(skip ci|ci skip|no ci|skip actions|actions skip|benchmark)\]' | head -1 | awk '{print $1}')
-            if [[ -z "${COMMIT}" ]]; then
-              echo "::error::Could not find a non-benchmark commit in recent history"
-              exit 1
-            fi
-            echo "Found non-benchmark commit: ${COMMIT}"
+          # Determine which commit to tag: the latest bookkeeping-free commit on
+          # the triggering branch. Everything newer than it is therefore
+          # bookkeeping by construction, which is what lets sync-nix commit the
+          # version bump on top of the branch head.
+          BRANCH="${{ github.ref_name }}"
+          echo "Finding latest non-bookkeeping commit on ${BRANCH}..."
+          COMMIT=$(git log "origin/${BRANCH}" --oneline -50 | grep -v -iE "${BOOKKEEPING_COMMIT_RE}" | head -1 | awk '{print $1}')
+          if [[ -z "${COMMIT}" ]]; then
+            echo "::error::Could not find a non-bookkeeping commit in recent history"
+            exit 1
           fi
+          echo "Found non-bookkeeping commit: ${COMMIT}"
 
           # Resolve to full SHA
           FULL_SHA=$(git rev-parse "${COMMIT}")
@@ -739,16 +751,62 @@ jobs:
           # Falls back to tagging exactly what prepare resolved.
           target="${COMMIT}"
           sync=true
+          reason=""
 
+          # The bump is committed on top of the branch head, and the tag is then
+          # created at the result — so the head has to be something we are
+          # willing to release. prepare picked the newest non-bookkeeping commit,
+          # meaning anything after it *should* be bookkeeping only. The branch
+          # can still move while `build` runs, though, so re-check here rather
+          # than assume.
+          #
+          # Note prepare greps `git log --oneline` ("<sha> <subject>") while this
+          # greps `--format=%s` (subject alone). A hex sha cannot match the
+          # pattern, so the two are equivalent — this is not a bug to "fix".
+          extra=""
           if [[ "${REF_TYPE}" != "branch" ]]; then
-            echo "::notice::dispatched from a ${REF_TYPE}, not a branch; leaving the Nix files alone"
+            # Unreachable in practice — prepare rejects a non-branch dispatch
+            # before any job runs. Kept because the cost of being wrong here is a
+            # bad push during a release, and the check is one comparison.
+            reason="dispatched from a ${REF_TYPE}, not a branch — there is no branch to commit the bump to"
             sync=false
-          elif [[ "$(git rev-parse HEAD)" != "${COMMIT}" ]]; then
-            # A `commit` input pointing somewhere other than the branch head. A
-            # bump committed here would land on the head, so tagging it would
-            # release code that was neither requested nor built.
-            echo "::notice::${COMMIT} is not the head of ${BRANCH}; leaving the Nix files alone"
+          elif ! git merge-base --is-ancestor "${COMMIT}" HEAD; then
+            # Force-push while the release was running. Without this the range
+            # check below would silently compare against unrelated history.
+            reason="${COMMIT} is not an ancestor of ${BRANCH} — the branch was rewritten mid-release"
             sync=false
+          else
+            # `|| true` because grep exits 1 when it finds nothing, which is the
+            # success case here: an empty range (HEAD is the released commit) or
+            # bookkeeping-only commits on top of it.
+            extra=$(git log --format=%s "${COMMIT}..HEAD" | grep -v -iE "${BOOKKEEPING_COMMIT_RE}" || true)
+            if [[ -n "${extra}" ]]; then
+              reason="${BRANCH} moved past ${COMMIT} during the release, with commits that are not bookkeeping"
+              sync=false
+            fi
+          fi
+
+          if [[ "${sync}" != true ]]; then
+            # Deliberately a warning, not a notice: a notice on an otherwise
+            # green release is invisible, which is how v1.9.0 shipped reporting
+            # 1.8.2 (#212). Not a hard failure — standing down is the correct
+            # outcome here, it just must not be silent.
+            echo "::warning::Nix version bump skipped — ${TAG} will report the version already in flake.nix, not ${VERSION}. Reason: ${reason}"
+            {
+              echo "### ⚠️ Nix version bump skipped"
+              echo
+              echo "\`${TAG}\` will report the version currently in \`flake.nix\`, **not \`${VERSION}\`**."
+              echo
+              echo "Reason: ${reason}"
+              if [[ -n "${extra}" ]]; then
+                echo
+                echo "Commits that are not bookkeeping:"
+                echo
+                echo '```'
+                echo "${extra}"
+                echo '```'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [[ "${sync}" == true ]]; then
@@ -771,9 +829,15 @@ jobs:
                 echo "::error::${BRANCH} moved during the release; re-run once it has settled"
                 exit 1
               fi
-              target="$(git rev-parse HEAD)"
-              echo "Nix files synced onto ${target}"
             fi
+
+            # Tag the head, not prepare's commit. They differ whenever
+            # bookkeeping commits sit on top, and it is the head that carries the
+            # current Nix files — including the case where no bump was needed
+            # because a vendorHash refresh had already landed there.
+            target="$(git rev-parse HEAD)"
+            echo "Nix files current for ${TAG} at ${target}"
+            echo "Nix version set to \`${VERSION}\`, tagging \`${target}\`." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           echo "commit=${target}" >> "$GITHUB_OUTPUT"

@@ -36,15 +36,30 @@ completely unexecuted behind green checks (#201).
   `.claude/worktrees/<name>` *inside* the repo, so do not create one with it directly: run
   `git worktree add ../mkvdup-<topic> -b <branch>` yourself, then enter it by passing that path
   to `EnterWorktree`.
-- **`gh pr edit` is broken against this repo.** It fails on the deprecated projects-classic
-  GraphQL field and **silently discards the edit** while appearing to succeed. Use the REST API
-  instead:
-  `gh api -X PATCH repos/stuckj/mkvdup/pulls/<n> --input body.json`. Same for labels:
+- **Never write a bracketed skip-ci marker in a commit message — not even when describing one.**
+  GitHub scans the *entire* message, body included, for `[skip ci]`, `[ci skip]`, `[no ci]`,
+  `[skip actions]` and `[actions skip]`. A commit whose body merely *explains* the markers
+  disables CI on itself. The affected runs are never created, so nothing reports as "skipped" and
+  the PR still looks green from whatever is not skip-ci gated — here CodeQL and the
+  `pull_request_target` project job. This bites disproportionately often because release tooling
+  is exactly what needs to talk about the markers. When writing about them use the regex form
+  `\[(skip ci|...)\]` — safe, since the bracket is followed by `(` — or prose like "skip-ci
+  marker". It survives merge too: GitHub seeds the squash message from the commit messages, so a
+  marker in *any* commit on the branch can follow the squash onto `main`. **After pushing, confirm
+  the expected workflows actually appear** in
+  `gh api "repos/stuckj/mkvdup/actions/runs?branch=<branch>"` — a green PR is not evidence they
+  ran.
+- **`gh pr edit` and `gh issue view` are broken against this repo.** Both fail on the deprecated
+  projects-classic GraphQL field, and `gh pr edit` **silently discards the edit** while appearing
+  to succeed. Use the REST API instead:
+  `gh api -X PATCH repos/stuckj/mkvdup/pulls/<n> --input body.json`,
+  `gh api repos/stuckj/mkvdup/issues/<n>`. Same for labels:
   `gh api -X POST repos/stuckj/mkvdup/issues/<n>/labels`.
 - **Only the repo owner can request a Copilot review.** A bot account's request returns success
   but creates no timeline event and no review.
-- **Releases are `workflow_dispatch`**, take a version *without* the `v` prefix, and default to
-  the branch they were dispatched from — not `main`. See [RELEASING.md](RELEASING.md).
+- **Releases are `workflow_dispatch`**, take a version *without* the `v` prefix, and must be
+  dispatched from a **branch** — the commit to tag is resolved from that branch's history, and it
+  is not necessarily `main`. There is no commit-SHA input. See [RELEASING.md](RELEASING.md).
 
 ## Verifying claims about this codebase
 
