@@ -9,16 +9,16 @@
 
 buildGoModule rec {
   pname = "mkvdup";
-  version = "1.8.2";
+  version = "1.9.0";
 
   src = fetchFromGitHub {
     owner = "stuckj";
     repo = "mkvdup";
     rev = "v${version}";
-    hash = "sha256-KNvkU6Z45vBNeXhpfTpElCtaXTIQUzics8hmQmcBp6o=";
+    hash = "sha256-lGsvE5xfQ4E2FIYT3keRVNaP+i19/vnUk104tEs4jtQ=";
   };
 
-  vendorHash = "sha256-aCPVeVKyXtVf/NICq3PUsfU1yw6HuQfHGtAFywY6c1U=";
+  vendorHash = "sha256-rp2M/Fe5P+ganzJ6/0c75PO9Kg38LL7+vwb6pwIOgSE=";
 
   subPackages = [ "cmd/mkvdup" ];
 
