@@ -42,9 +42,14 @@ Releases are created via the GitHub Actions workflow:
 2. Click "Run workflow"
 3. Enter the version number (without `v` prefix, e.g., `1.0.0`). The workflow rejects a
    leading `v` and derives the tag itself.
-4. Optionally specify a commit SHA. The default is the latest non-benchmark commit on the
-   branch the workflow was dispatched from — **not** necessarily `main`.
-5. Click "Run workflow"
+4. Click "Run workflow"
+
+The commit to tag is not selectable. It is always the latest bookkeeping-free commit on the
+branch the workflow was dispatched from — **not** necessarily `main`. There used to be an
+optional commit-SHA input; it was removed in #212, having never been used, because it made
+the Nix version bump unsatisfiable. The bump has to be committed somewhere the tag can reach,
+and a commit on top of an arbitrary older SHA is not a fast-forward of the branch, so it
+cannot be pushed there.
 
 The workflow will:
 
@@ -227,12 +232,26 @@ and the thing that invalidates the hash. Refreshing on the branch is what keeps
 
 `sync-nix` writes to the released ref rather than to `main`, which is what lets a canary tag report
 its own version. It runs after `build` — so nothing is pushed until every build has passed — and
-before `release`, so the tag can be created at the commit it produces. It stands down without
-touching anything when the release was dispatched from a tag, or when a `commit` input points
-somewhere other than the branch head; in both cases a bump would land on a commit that was never
-requested or built. Unlike `nix-canary-hash.yml` it does *not* rebase and retry a rejected push,
-because rebasing would move the bump onto commits that were never built. It fails instead, and the
-release should be re-run.
+before `release`, so the tag can be created at the commit it produces.
+
+The bump is committed on top of the **branch head**, which is not always the commit `prepare`
+resolved: bookkeeping commits (`[skip ci]`, `[benchmark]` — benchmark baselines on `main`,
+`vendorHash` refreshes on any branch) routinely land on top of it. That is fine, because those
+commits do not change the built code — the same reason `prepare` passes over them when choosing
+what to tag. So `sync-nix` syncs when the resolved commit is an ancestor of the head and everything
+between the two is bookkeeping, and stands down otherwise: when dispatched from a tag, when the
+branch was rewritten mid-release, or when a real commit landed while `build` was running. Both jobs
+read the pattern from a single `BOOKKEEPING_COMMIT_RE` at the top of the workflow — if they ever
+disagreed about which commits are bookkeeping, releases would silently skip the bump, which is
+exactly what #212 was.
+
+Standing down emits a **warning** and a step summary naming the version the tag will actually
+report. It is not a hard failure, because standing down is sometimes correct — but it must not be
+quiet. `v1.9.0` shipped reporting `1.8.2` behind a green release whose only trace was a `::notice::`.
+
+Unlike `nix-canary-hash.yml` it does *not* rebase and retry a rejected push, because rebasing would
+move the bump onto commits that were never built. It fails instead, and the release should be
+re-run.
 
 Merging such a branch into `main` carries the refreshed hash along with the `go.sum` that produced
 it, so `main` normally needs nothing of its own — the hash is a function of `go.mod`/`go.sum`, not
