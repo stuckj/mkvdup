@@ -108,6 +108,24 @@ The recorded `src.hash` covers an immutable tag, so it should never need refresh
 nix run nixpkgs#nix-prefetch-github -- stuckj mkvdup --rev v<version>
 ```
 
+## Things CI enforces
+
+- **`__structuredAttrs = true;` is mandatory for new packages.** `nixpkgs-vet` fails with
+  [NPV-166](https://github.com/NixOS/nixpkgs-vet/wiki/NPV-166) without it. This is not something
+  `nix-build` catches — the package builds fine either way — so it only surfaces once the PR is
+  open, unless you run the vet locally.
+- **No merge commits.** The commit lint rejects a `Merge branch …` subject for not matching the
+  `type: subject` convention, and separately reports that merging is discouraged. If the branch
+  needs updating, rebase onto the base branch rather than using GitHub's "Update branch" button.
+- **`nixfmt` formatting**, checked in CI.
+
+Running the vet locally needs a base checkout to compare against, not a revision:
+
+```bash
+git worktree add --detach /tmp/vet-base HEAD~1
+nix shell nixpkgs#nixpkgs-vet -c nixpkgs-vet --base /tmp/vet-base .
+```
+
 ## Things a reviewer may raise
 
 - **`meta.platforms` is Linux and Darwin**, matching what upstream builds and tests. It has to be

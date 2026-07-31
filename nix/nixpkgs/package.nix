@@ -1,5 +1,3 @@
-# nixpkgs package definition for mkvdup
-# Submit this to NixOS/nixpkgs as: pkgs/by-name/mk/mkvdup/package.nix
 {
   lib,
   buildGoModule,
@@ -19,6 +17,8 @@ buildGoModule rec {
   };
 
   vendorHash = "sha256-rp2M/Fe5P+ganzJ6/0c75PO9Kg38LL7+vwb6pwIOgSE=";
+
+  __structuredAttrs = true;
 
   subPackages = [ "cmd/mkvdup" ];
 
