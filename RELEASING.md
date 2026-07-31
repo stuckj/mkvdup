@@ -205,17 +205,15 @@ Both halves are meant to stay current on their own. What to watch for:
 
 ### Stable (nixpkgs)
 
-- `nix/nixpkgs/package.nix` in this repo is the **reference copy** of what was submitted upstream.
-  It is not built by anything here — it exists so the upstream derivation is reviewable alongside
-  the code, and so a re-submission or a manual bump has a starting point.
+- **The derivation lives upstream, and only upstream**, at `pkgs/by-name/mk/mkvdup/package.nix` in
+  [nixpkgs](https://github.com/NixOS/nixpkgs). This repo deliberately keeps no copy of it — see
+  [nix/nixpkgs/README.md](nix/nixpkgs/README.md) for why, and for the notes worth keeping.
 - After a release, the [`r-ryantm`](https://github.com/r-ryantm) bot usually opens a version-bump
   PR against nixpkgs within a few days. **Approve it** — that is the normal update path. As a
   listed maintainer you are auto-requested for review.
-- If the bot misses a release, or a release changes the build (new files in `postInstall`, a new
-  `subPackages` entry, a license change), open the nixpkgs PR by hand and mirror the same edit
-  back into `nix/nixpkgs/package.nix` so the two do not drift.
 - Changes that alter how mkvdup is *built* — not just its version — always need a hand-written
-  nixpkgs PR. The bot only bumps `version`, `hash`, and `vendorHash`.
+  nixpkgs PR. The bot only bumps `version`, `hash`, and `vendorHash`. Edit the file in a nixpkgs
+  checkout; there is nothing here to keep in sync.
 
 ### Canary (in-repo flake)
 

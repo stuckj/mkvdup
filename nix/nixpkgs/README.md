@@ -1,88 +1,63 @@
-# nixpkgs submission
+# mkvdup in nixpkgs
 
-`package.nix` in this directory is the **reference copy** of the mkvdup derivation as it is meant
-to exist in [nixpkgs](https://github.com/NixOS/nixpkgs) at `pkgs/by-name/mk/mkvdup/package.nix`.
+The mkvdup derivation lives in [nixpkgs](https://github.com/NixOS/nixpkgs) at
+`pkgs/by-name/mk/mkvdup/package.nix`. **That is the only copy.** This directory holds notes, not
+code.
 
-Nothing in this repo builds it — `flake.nix` and `default.nix` build from the working tree instead,
-against whatever ref you point them at. This file exists so the upstream derivation is reviewable
-alongside the code, and so a re-submission or a manual version bump has a correct starting point.
+Submitted as [NixOS/nixpkgs#547640](https://github.com/NixOS/nixpkgs/pull/547640). Until that
+merges, the branch behind it is the working copy; edit it in a nixpkgs checkout, not here.
 
-It pins an immutable release tag, so it is never affected by dependency drift on `main`.
+Do not reintroduce a copy of `package.nix` in this repo. There was one, and it was deleted: nothing
+built it, no workflow or script bumped it, and it silently fell three releases behind `main` while
+looking authoritative. `r-ryantm` bumps the upstream file and would never have touched a copy here,
+so the two could only ever drift apart. If you need to see the derivation, read it in nixpkgs.
 
-## Who submits, and why it isn't automated
+## Maintenance
+
+- `r-ryantm` opens version-bump PRs after each release; you are auto-requested as the listed
+  maintainer. Approving those is the normal update path.
+- Changes to *how* mkvdup is built — new files in `postInstall`, a new `subPackages` entry, a
+  licence change — need a hand-written nixpkgs PR. The bot only bumps `version`, `hash` and
+  `vendorHash`.
+- Hydra builds binaries once merged, so users get `nix profile install nixpkgs#mkvdup` with no
+  local compile. See [RELEASING.md](../../RELEASING.md) for the user-facing install docs.
+
+## Attribution rules for any nixpkgs PR
 
 nixpkgs' [Automation/AI policy](https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md#automationai-policy)
-requires a **responsible person in the loop** who reviews a contribution and is accountable for it
-*before* it is submitted, and who can answer reviewer questions directly. The PR must therefore be
-opened from the maintainer's own GitHub account — the same handle recorded in
-`maintainers/maintainer-list.nix` — not from a bot or assistant account.
+requires a **responsible person in the loop** who reviews the contribution, understands it, and can
+answer reviewer questions — so the PR must come from the maintainer's own account, the same handle
+in `maintainers/maintainer-list.nix`, never a bot or assistant account.
 
-Two disclosure rules apply on top of that:
+Two disclosures are required, and they are separate:
 
-- Commits produced with LLM assistance **must** carry an `Assisted-by:` trailer naming the tool and
-  the primary model. A `Co-authored-by:` trailer does **not** satisfy the policy. (Note that this
-  differs from this repo's own commit convention.)
-- The PR description must disclose such assistance **separately** from the commit trailer.
+- Commits produced with LLM assistance carry an `Assisted-by:` trailer naming the tool and primary
+  model. A `Co-authored-by:` trailer does **not** satisfy the policy — note this differs from this
+  repo's own commit convention.
+- The PR description discloses the assistance in its own right, not just via the trailer.
 
-## Submitting
+## What CI enforces
 
-```bash
-# 1. Fork NixOS/nixpkgs to your own account, then clone your fork
-git clone --filter=blob:none https://github.com/<you>/nixpkgs.git
-cd nixpkgs
-git checkout -b mkvdup-init
+Learned the hard way on #547640 — each of these failed there first:
 
-# 2. Apply the prepared commit, or copy the file in by hand
-git am /path/to/mkvdup-nixpkgs-init.patch
-#   equivalently:
-#     mkdir -p pkgs/by-name/mk/mkvdup
-#     cp <mkvdup>/nix/nixpkgs/package.nix pkgs/by-name/mk/mkvdup/package.nix
-#     # then add your maintainer entry to maintainers/maintainer-list.nix
+- **`__structuredAttrs = true;` is mandatory for new packages.** `nixpkgs-vet` fails with
+  [NPV-166](https://github.com/NixOS/nixpkgs-vet/wiki/NPV-166) without it. `nix-build` will not
+  catch this: the package builds identically either way, so it only surfaces once the PR is open
+  unless you run the vet yourself.
+- **No merge commits.** The commit lint rejects a `Merge branch …` subject for not matching the
+  `type: subject` convention, and separately reports that merging is discouraged. If the branch
+  falls behind, rebase onto the base branch — do not use GitHub's "Update branch" button.
+- **`nixfmt` formatting.**
+- The commit subject must be `mkvdup: <version>` (or `mkvdup: init at <version>` for a new
+  package), and nothing needs adding to `all-packages.nix` — the `pkgs/by-name/<shard>/<name>/`
+  layout is auto-discovered.
 
-# 3. Verify (see below), then push and open the PR
-git push -u origin mkvdup-init
-```
+## Verifying a nixpkgs change locally
 
-Nothing needs to be added to `all-packages.nix` — the `pkgs/by-name/<shard>/<name>/` layout is
-auto-discovered, and `mk` is the correct shard for `mkvdup`.
-
-The commit message must be `mkvdup: init at <version>`, nixpkgs' convention for a new package,
-and must carry the `Assisted-by:` trailer described above. Note this differs from this repo's own
-convention — a `Co-authored-by:` trailer does **not** satisfy the nixpkgs policy.
-
-### PR description
-
-The policy requires the disclosure to appear in the pull request **separately** from the commit
-trailer, so the description needs its own note. Something like:
-
-```markdown
-mkvdup deduplicates MKV files against their source media (DVD ISOs, Blu-ray backups), storing an
-MKV as an index into the source plus whatever bytes are unique to it, and exposing the
-reconstructed files through FUSE.
-
-- Upstream: https://github.com/stuckj/mkvdup
-- Pure Go, no cgo. Builds and tests run in `checkPhase` on Linux and Darwin.
-- Runtime dependency on fuse3 for `fusermount3`; a `mount.fuse.mkvdup` helper is installed so the
-  filesystem can be mounted from fstab.
-
-I am the upstream author and am adding myself to `maintainers/maintainer-list.nix` in this PR.
-
-Built and tested locally with `nix-build -A mkvdup` and `nixpkgs-review`.
-
-Assistance disclosure, per the Automation/AI policy: the derivation was drafted with Claude Code
-(model Claude Opus 5). I have reviewed it, understand it, and verified it builds and behaves
-correctly; the same disclosure appears as an `Assisted-by:` trailer on the commit.
-```
-
-Adjust the last paragraph to match what actually happened before posting — the policy is about
-accurate disclosure, not a fixed wording, and you are the one accountable for the claim.
-
-## Verifying before opening the PR
+From a nixpkgs checkout with the change applied:
 
 ```bash
-# Builds the package, runs the Go test suite in checkPhase
-nix-build -A mkvdup
-./result/bin/mkvdup --version                      # expect the packaged version
+nix-build -A mkvdup && ./result/bin/mkvdup --version
 
 # Expected contents of ./result
 #   bin/mkvdup
@@ -92,45 +67,36 @@ nix-build -A mkvdup
 #   share/zsh/site-functions/_mkvdup
 #   share/fish/vendor_completions.d/mkvdup.fish
 
-# Formatting is enforced by CI
 nix run nixpkgs#nixfmt-rfc-style -- pkgs/by-name/mk/mkvdup/package.nix
-
-# Structural check for by-name additions
-./ci/nixpkgs-vet.sh master
-
-# Full review build (optional but the most thorough)
-nix run nixpkgs#nixpkgs-review -- rev HEAD
+nix run nixpkgs#nixpkgs-review -- pr <number>      # must be run from inside a nixpkgs checkout
 ```
 
-The recorded `src.hash` covers an immutable tag, so it should never need refreshing. To confirm:
+`nixpkgs-vet` takes a **base checkout path**, not a revision, which its help does not make obvious:
+
+```bash
+git worktree add --detach /tmp/vet-base HEAD~1
+nix shell nixpkgs#nixpkgs-vet -c nixpkgs-vet --base /tmp/vet-base .
+```
+
+To confirm the `src.hash` for a tag:
 
 ```bash
 nix run nixpkgs#nix-prefetch-github -- stuckj mkvdup --rev v<version>
 ```
 
-## Things a reviewer may raise
+## Decisions a reviewer may question
 
-- **`meta.platforms` is Linux and Darwin**, matching what upstream builds and tests. It has to be
-  set explicitly: left unset it defaults to `go.meta.platforms`, which also contains
-  `i686-freebsd`, `x86_64-freebsd`, `aarch64-freebsd`, `wasm32-wasi` and `wasm64-wasi` — none of
-  which make sense for a FUSE filesystem that ships a bash `mount.fuse.*` helper.
+- **`meta.platforms` is Linux and Darwin**, set explicitly. Left unset it defaults to
+  `go.meta.platforms`, which also contains `i686-freebsd`, `x86_64-freebsd`, `aarch64-freebsd`,
+  `wasm32-wasi` and `wasm64-wasi` — none of which make sense for a FUSE filesystem shipping a bash
+  `mount.fuse.*` helper.
 
   In practice this resolves to the Linux doubles plus `aarch64-darwin` only: nixpkgs has dropped
   `x86_64-darwin`, so `lib.platforms.darwin` no longer includes it. Intel macOS users get mkvdup
-  from Homebrew or the release tarballs instead — nothing to do about it here.
+  from Homebrew or the release tarballs instead.
 
-  The Go test suite runs in `checkPhase` and is only exercised on Linux in this repo's CI, so a
+  The Go test suite runs in `checkPhase` but is only exercised on Linux in this repo's CI, so a
   Darwin failure in ofborg is possible. Narrow `platforms` if that happens, rather than dropping
   the tests.
 - **The maintainer entry includes an email address.** That field is optional in nixpkgs; drop the
-  `email` line if you'd rather not have it in a heavily-scraped repository.
-
-## After it merges
-
-- Hydra builds binaries, so users get `nix profile install nixpkgs#mkvdup` with no local compile.
-- The [`r-ryantm`](https://github.com/r-ryantm) bot opens version-bump PRs automatically after
-  each release, and you are auto-requested for review as the listed maintainer. Approving those is
-  the normal update path — see the Nix Maintenance section of [RELEASING.md](../../RELEASING.md).
-- Changes to *how* mkvdup is built (new files in `postInstall`, new `subPackages`, a license
-  change) still need a hand-written PR. Mirror any such edit back into this file so the two copies
-  don't drift.
+  `email` line if you would rather not have it in a heavily-scraped repository.
