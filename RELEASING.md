@@ -119,6 +119,12 @@ sudo apt update
 sudo apt install mkvdup-canary
 ```
 
+Current canary only. For every canary ever published:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history-canary/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-canary-history.list
+```
+
 #### YUM/DNF (RHEL/Fedora) - Canary
 
 ```bash
@@ -166,7 +172,17 @@ sudo apt update
 sudo apt install mkvdup
 ```
 
+The Pages repository carries the current release only. Every version ever
+published is in the archive repository, which is signed with the same key:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-history.list
+sudo apt update && sudo apt install mkvdup=1.8.0
+```
+
 ### YUM/DNF (RHEL/Fedora)
+
+Indexes every version published; there is no separate archive repository.
 
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'
@@ -180,6 +196,32 @@ EOF
 
 sudo dnf install mkvdup
 ```
+
+### How the repositories are built
+
+Package files are stored **once**, as assets on the per-version GitHub release.
+The repositories hold only indexes, which `scripts/rebuild-package-repos.sh`
+derives from those releases — so the release must exist before its packages can
+be indexed, and a package whose release is deleted drops out of the index.
+
+| Repository | Index lives in | Covers |
+|------------|----------------|--------|
+| `apt-history`, `apt-history-canary` | a release asset | every version |
+| `gh-pages apt/` | Pages | current version only |
+| `gh-pages yum/`, `yum-canary/` | Pages | every version |
+
+APT needs two repositories and YUM one because of a format difference, not a
+preference: RPM-MD takes an absolute per-package `xml:base`, so its index can
+sit on Pages and point at the releases. APT resolves `Filename` against the
+`sources.list` root and has no absolute form, so a Pages-hosted index can only
+offer packages that are themselves on Pages. The archive repository is a flat
+APT repo living beside the packages, reaching them with `../<tag>/<asset>`.
+
+`publish-repo` runs the script on every release. To rebuild by hand — after
+deleting a release, or if the indexes drift — dispatch **Rebuild Package
+Repositories**. It is idempotent. Run it with `dry_run: true` first: that builds
+everything, publishes nothing, and uploads the generated metadata as an artifact.
+A real run needs `confirm: REBUILD` because it force-pushes `gh-pages`.
 
 ### Nix
 
