@@ -262,7 +262,7 @@ jobs:
           path: "*.tar.gz"
 
   release:
-    needs: [prepare, build, sync-nix]
+    needs: [prepare, build, build-arch, sync-nix]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -285,7 +285,14 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           target_commitish: ${{ needs.sync-nix.outputs.commit }}
-          files: packages/*
+          # Listed by extension rather than as packages/*: build-arch also publishes
+          # the generated PKGBUILD and .SRCINFO as artifacts, for update-aur, and
+          # those are not release assets.
+          files: |
+            packages/*.deb
+            packages/*.rpm
+            packages/*.tar.gz
+            packages/*.pkg.tar.zst
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
         env:
@@ -720,20 +727,32 @@ jobs:
 
   # Builds the pacman packages and the PKGBUILD the AUR receives.
   #
-  # Both come from the tarballs already attached to the release: makepkg fetches
-  # them over the network and checks them against sha256sums taken from the build
-  # artifacts, so a wrong download URL, or a release asset that does not match what
-  # was built, fails here instead of after reaching the AUR. That is what the
-  # dependency on release buys, and why this cannot run alongside it.
+  # Ordering: alongside sync-nix and before release, for the same reason every other
+  # build runs there. An Arch failure after the tag existed would leave the version
+  # tagged, released, and live on Homebrew while APT, YUM and pacman still served the
+  # previous one -- and unrepeatable, because prepare refuses a version whose tag is
+  # already on the remote.
+  #
+  # The PKGBUILD points at release download URLs that consequently do not exist yet.
+  # makepkg reuses a source file already present in the build directory instead of
+  # fetching it, and still checks it against sha256sums, so the tarballs are seeded
+  # from the build artifacts below. update-aur re-checks those URLs for real once the
+  # release is up.
   build-arch:
-    needs: [prepare, build, release]
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     # Arch ships rolling tags only, so unlike go-version and nfpm above there is no
     # versioned image to pin.
     container: archlinux:base-devel
     steps:
+      # The keyring is refreshed on its own first. A base image older than the
+      # current signing keys cannot verify the packages in the upgrade that would
+      # deliver its own replacement, and fails the whole transaction on an unknown
+      # trust signature.
       - name: Install packaging tools
-        run: pacman -Syu --needed --noconfirm git github-cli
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git
 
       - name: Checkout code
         uses: actions/checkout@v7
@@ -767,6 +786,10 @@ jobs:
             PKGNAME="mkvdup-bin"
             PKGDESC="Storage deduplication tool for MKV files and their source media"
           fi
+          {
+            echo "PKGNAME=${PKGNAME}"
+            echo "PKGVER=${PKGVER}"
+          } >> "$GITHUB_ENV"
 
           SHA_X86_64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" | awk '{print $1}')
           SHA_AARCH64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" | awk '{print $1}')
@@ -789,7 +812,15 @@ jobs:
           cat pkgbuild/PKGBUILD
 
       - name: Build packages
+        env:
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
         run: |
+          # Seeded under the names the PKGBUILD's `::` renames give them, which is
+          # what makes makepkg treat the sources as already downloaded. It still
+          # verifies them against sha256sums, so a mismatch here is still caught.
+          cp "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" "pkgbuild/${PKGNAME}-${PKGVER}-x86_64.tar.gz"
+          cp "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" "pkgbuild/${PKGNAME}-${PKGVER}-aarch64.tar.gz"
+
           # makepkg refuses to run as root, which is what the container gives us.
           useradd --create-home builder
           chown -R builder:builder pkgbuild
@@ -812,16 +843,6 @@ jobs:
           sudo -u builder bash -c 'makepkg --printsrcinfo > .SRCINFO'
           ls -la ./*.pkg.tar.zst .SRCINFO
 
-      # Attached here rather than by the release job, which has to run first for the
-      # sources above to be fetchable. Keeps the release page carrying every package
-      # format, as it does for deb and rpm.
-      - name: Attach packages to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          gh release upload "$TAG" pkgbuild/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
-
       - name: Upload Arch package artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -841,7 +862,7 @@ jobs:
   # is the Arch analogue of update-homebrew: a recipe pushed to an external repo,
   # rather than packages served from gh-pages.
   update-aur:
-    needs: [prepare, build-arch]
+    needs: [prepare, build-arch, release]
     runs-on: ubuntu-latest
     steps:
       - name: Download PKGBUILD artifact
@@ -849,6 +870,33 @@ jobs:
         with:
           name: aur-pkgbuild
           path: pkgbuild/
+
+      # build-arch builds against seeded copies of the tarballs, so this is the
+      # first and only point at which the URLs an AUR user will actually download
+      # from are exercised. Deliberately here rather than earlier: a broken URL
+      # should stop the AUR push, not a release that is otherwise complete.
+      - name: Verify the release assets the PKGBUILD points at
+        run: |
+          # A PKGBUILD is a bash script of plain assignments plus package(), so the
+          # URLs and sums can be read back out of the generated file rather than
+          # reconstructed here and left to drift from it.
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+
+          verify() {
+            local entry=$1 want=$2 url got
+            url=${entry#*::}
+            curl -fsSL -o asset.tar.gz "$url"
+            got=$(sha256sum asset.tar.gz | awk '{print $1}')
+            if [[ "$got" != "$want" ]]; then
+              echo "::error::${url} hashes to ${got}, but the PKGBUILD claims ${want}"
+              exit 1
+            fi
+            echo "OK ${url}"
+          }
+
+          verify "${source_x86_64[0]}" "${sha256sums_x86_64[0]}"
+          verify "${source_aarch64[0]}" "${sha256sums_aarch64[0]}"
 
       - name: Push to the AUR
         env:
@@ -874,6 +922,8 @@ jobs:
           ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
 
+          # A package name the AUR has never seen clones as an empty repository;
+          # pushing to it is what creates it.
           git clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
           cp pkgbuild/PKGBUILD pkgbuild/.SRCINFO aur/
 
@@ -882,7 +932,9 @@ jobs:
           git config user.email "stuckj@users.noreply.github.com"
           git add PKGBUILD .SRCINFO
           git diff --staged --quiet || git commit -m "Update to ${VERSION}"
-          git push
+          # Explicit refspec: an empty clone has no upstream branch to infer one
+          # from, and the AUR only accepts master.
+          git push origin HEAD:refs/heads/master
 
   # Writes the release version, and a refreshed vendorHash, into the Nix files on
   # the ref being released, so the tag created below actually contains them.
@@ -893,10 +945,10 @@ jobs:
   # inherited whatever version its branch happened to carry, and main was left
   # claiming a version whose code was not on it.
   #
-  # Ordering: after build, so nothing is pushed until every build has passed, and
-  # before release, so the tag can be created at the resulting commit.
+  # Ordering: after every build, so nothing is pushed until all of them have passed,
+  # and before release, so the tag can be created at the resulting commit.
   sync-nix:
-    needs: [prepare, build]
+    needs: [prepare, build, build-arch]
     runs-on: ubuntu-latest
     outputs:
       commit: ${{ steps.sync.outputs.commit }}
@@ -1021,7 +1073,8 @@ jobs:
     #
     # The pacman repository is published from here rather than from a job of its
     # own so that gh-pages has exactly one writer -- two jobs pushing to it would
-    # race.
+    # race. build-arch has already run by this point, well before release; the
+    # dependency is only for its artifacts.
     needs: [prepare, build, build-arch, release]
     runs-on: ubuntu-latest
     steps:
@@ -1229,6 +1282,11 @@ jobs:
               rm -f "${dir}/${DB_NAME}.${ext}" "${dir}/${DB_NAME}.${ext}.sig"
               cp "${dir}/${DB_NAME}.${ext}.tar.gz" "${dir}/${DB_NAME}.${ext}"
               cp "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.sig"
+
+              # repo-add rotates the previous database to .old. Nothing fetches it,
+              # and keeping it would serve an unsigned stale database next to a
+              # signed current one.
+              rm -f "${dir}/${DB_NAME}.${ext}.tar.gz.old"
             done
           done
 

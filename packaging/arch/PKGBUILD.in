@@ -1,8 +1,11 @@
 # Maintainer: stuckj <stuckj@users.noreply.github.com>
 #
-# Template. The release workflow substitutes the @PLACEHOLDER@ values and publishes
-# the result to the AUR and to the pacman repository on gh-pages. Edit this file,
-# never the generated copy.
+# Template. The release workflow substitutes the at-delimited placeholders below and
+# publishes the result to the AUR and to the pacman repository on gh-pages. Edit this
+# file, never the generated copy.
+#
+# Nothing outside the substituted set may use that delimiter: the workflow rejects a
+# generated PKGBUILD that still matches it, including in a comment.
 
 pkgname=@PKGNAME@
 _binname=@BINNAME@

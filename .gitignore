@@ -40,6 +40,8 @@ Thumbs.db
 /src/
 *.pkg.tar.zst
 *.pkg.tar.zst.sig
+# Release tarballs makepkg downloads next to the PKGBUILD
+/mkvdup*-bin-*.tar.gz
 
 # Test artifacts
 /testdata/generated/

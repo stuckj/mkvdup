@@ -41,12 +41,10 @@ signed with the same GPG key as APT and YUM and needs nothing extra.
 
 1. Create an account at [aur.archlinux.org](https://aur.archlinux.org) and add an SSH public
    key to it under My Account.
-2. Reserve both package names by pushing an initial commit to
-   `ssh://aur@aur.archlinux.org/mkvdup-bin.git` and
-   `ssh://aur@aur.archlinux.org/mkvdup-canary-bin.git`. An AUR repository is created by its
-   first push; the workflow clones an existing one and will fail against a name that has never
-   been pushed to. Generate the first PKGBUILD with the local build below.
-3. Add the matching private key as the `AUR_SSH_PRIVATE_KEY` secret.
+2. Add the matching private key as the `AUR_SSH_PRIVATE_KEY` secret.
+3. Check that `mkvdup-bin` and `mkvdup-canary-bin` are unclaimed. A name nobody owns clones as
+   an empty repository and is created by the first push, which the workflow does on its own —
+   but a name someone else owns will refuse the push.
 
 Without the secret the `update-aur` job logs a warning and succeeds without publishing, so
 releases still work — they just do not reach the AUR.
@@ -75,17 +73,11 @@ cannot be pushed there.
 The workflow will:
 
 1. Resolve the version and commit, and verify the tag does not already exist on the remote
-2. Build packages for amd64 and arm64
+2. Build packages for amd64 and arm64 — deb, rpm and tarballs in `build`, pacman packages in
+   `build-arch`
 3. Create the GitHub release **and the tag together**, pointing at the resolved commit
-4. Build the Arch packages from the released tarballs and attach them to the release
-5. Update the APT, YUM and pacman repositories on GitHub Pages, and the Homebrew, AUR and Nix
+4. Update the APT, YUM and pacman repositories on GitHub Pages, and the Homebrew, AUR and Nix
    files
-
-**Why Arch comes after the release:** `build-arch` is the one packaging job that consumes the
-published release rather than the build artifacts. Its PKGBUILD points at the release download
-URLs, and makepkg fetches them and checks them against sha256sums taken from the artifacts — so
-a wrong URL, or a release asset that does not match what was built, fails in CI instead of
-after reaching the AUR. `publish-repo` waits on it so that gh-pages keeps a single writer.
 
 **Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
 user-visible — tag, release, packages, formula and Nix bumps — is created until every build
@@ -362,6 +354,15 @@ Three things about the naming are load-bearing:
 The mount helper installs to `/usr/bin/mount.fuse.mkvdup` rather than the `/usr/sbin` the deb
 and rpm use: Arch symlinks `/usr/sbin` to `/usr/bin` and packages may not write there.
 
+`build-arch` runs *before* the release, alongside every other build, so that an Arch failure
+cannot leave a version tagged and live on Homebrew while the repositories still serve the
+previous one. Its PKGBUILD therefore points at release URLs that do not exist yet: the build
+seeds the tarballs from the build artifacts under the filenames the PKGBUILD's `::` renames
+give them, which makes makepkg reuse them instead of downloading, while still checking them
+against `sha256sums`. `update-aur` runs after the release and downloads those URLs for real,
+comparing them against the sums in the PKGBUILD, so a wrong URL is caught before it reaches
+the AUR — and failing there leaves everything except the AUR published.
+
 Signatures are the same GPG key as APT and YUM, but pacman rejects ASCII-armoured `.sig` files,
 so the packages and the database are signed with detached *binary* signatures.
 
@@ -379,11 +380,17 @@ sed -e 's|@PKGNAME@|mkvdup-bin|g' -e 's|@BINNAME@|mkvdup|g' \
     packaging/arch/PKGBUILD.in > PKGBUILD
 
 makepkg --nodeps
+makepkg --printsrcinfo > .SRCINFO
 namcap PKGBUILD ./*.pkg.tar.zst
 ```
 
-`SKIP` disables makepkg's checksum verification, which is what makes this usable before the
-real checksums exist. The release workflow always substitutes real ones.
+`SKIP` disables makepkg's checksum verification, which is what makes this usable against a
+release whose checksums you have not looked up. It is for local inspection only — the workflow
+always substitutes real sums, and a PKGBUILD carrying `SKIP` must never be pushed to the AUR,
+where it would install an unverified download.
+
+`.SRCINFO` is not needed to build, only to publish: the AUR rejects any push whose tree lacks
+one matching the PKGBUILD. The workflow generates it the same way.
 
 ## Troubleshooting
 
@@ -411,8 +418,10 @@ real checksums exist. The release workflow always substitutes real ones.
   the release is unaffected. See [Prerequisites](#4-set-up-aur-publishing-optional).
 - `Permission denied (publickey)` means the private key in the secret does not match a public
   key on the AUR account.
-- A clone failure on a name that has never been pushed to is expected — AUR repositories are
-  created by their first push, which has to be done by hand once per package name.
+- A rejected push on a package name that clones empty means someone else owns the name.
+- A failure in "Verify the release assets the PKGBUILD points at" means the URLs in the
+  PKGBUILD do not resolve to the tarballs that were built. The release itself is complete and
+  correct at that point; only the AUR is behind.
 - A database sync reporting an invalid or corrupted database usually means the `.db` file on
   gh-pages is a symlink rather than a copy; the workflow replaces the symlinks `repo-add`
   leaves behind for exactly this reason.
