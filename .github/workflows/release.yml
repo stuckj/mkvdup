@@ -735,10 +735,9 @@ jobs:
   #
   # Ordering: with the other builds, ahead of both sync-nix and release, so neither
   # the Nix bump nor the tag is pushed unless this has passed. An Arch failure after
-  # the tag existed would leave the version
-  # tagged, released, and live on Homebrew while APT, YUM and pacman still served the
-  # previous one -- and unrepeatable, because prepare refuses a version whose tag is
-  # already on the remote.
+  # the tag existed would leave the version tagged, released and live on Homebrew
+  # while APT, YUM and pacman still served the previous one -- and unrepeatable,
+  # because prepare refuses a version whose tag is already on the remote.
   #
   # The PKGBUILD points at release download URLs that consequently do not exist yet.
   # makepkg reuses a source file already present in the build directory instead of
@@ -1111,8 +1110,8 @@ jobs:
           echo "commit=${target}" >> "$GITHUB_OUTPUT"
 
   publish-repo:
-    # Also gated on release: publishing APT/YUM packages for a version that has
-    # no tag and no GitHub release would leave users able to install something
+    # Also gated on release: publishing APT/YUM/pacman packages for a version that
+    # has no tag and no GitHub release would leave users able to install something
     # that does not officially exist.
     #
     # The pacman repository is published from here rather than from a job of its
@@ -1355,19 +1354,42 @@ jobs:
             # pointed at -- so nothing would collect it later. Publish only what
             # the database references. %FILENAME% holds the bare basename, which
             # is what new_pkgs carries.
-            referenced=$(tar -xOzf "${dir}/${DB_NAME}.db.tar.gz" --wildcards '*/desc' \
-              | awk '/^%FILENAME%$/ {getline; print}')
+            #
+            # Read in two steps rather than one pipeline: the default shell is
+            # `bash -e` without pipefail, so a tar failure would be swallowed and
+            # leave this empty -- indistinguishable from "the database accepted
+            # nothing", which deletes every package just copied in.
+            db_desc=$(tar -xOzf "${dir}/${DB_NAME}.db.tar.gz" --wildcards '*/desc')
+            referenced=$(awk '/^%FILENAME%$/ {getline; print}' <<<"$db_desc")
+            if [[ -z "$referenced" ]]; then
+              echo "::error::${DB_NAME} database in ${dir} lists no package files"
+              exit 1
+            fi
+
             for pkg in "${new_pkgs[@]}"; do
               if ! grep -qxF "$pkg" <<<"$referenced"; then
-                echo "Database did not take ${pkg}; removing it"
+                # A warning rather than a notice, for the reason sync-nix gives
+                # below: standing down is the right outcome, but on an otherwise
+                # green release a notice is invisible, and this is the one path
+                # where a release deliberately does not reach a channel.
+                echo "::warning::${pkg} is older than what ${DB_NAME} already serves; the pacman channel keeps its current version. Every other channel has this release."
+                {
+                  echo "### ⚠️ pacman repository not updated (${target})"
+                  echo
+                  echo "\`${pkg}\` is older than the version already in \`${DB_NAME}\`, so it was not published."
+                  echo
+                  echo "Every other channel carries this release."
+                } >> "$GITHUB_STEP_SUMMARY"
                 rm -f "${dir}/${pkg}" "${dir}/${pkg}.sig"
               fi
             done
 
             # And the converse, which is the invariant actually being published:
             # a signed database naming a file that is not there gives clients a
-            # 404 they cannot tell from an attack. Cheap to assert here, where
-            # the only cost is re-running this job.
+            # 404 they cannot tell from an attack. Failing here is not
+            # self-healing -- a re-run checks out the same gh-pages state and
+            # stops again, with the APT and YUM updates for this release behind
+            # it -- but publishing a database that lies is worse.
             while read -r want; do
               if [[ ! -f "${dir}/${want}" ]]; then
                 echo "::error::${DB_NAME} database references ${want}, which is not in ${dir}"

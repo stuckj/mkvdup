@@ -4,7 +4,8 @@ This document describes how to create a new release of mkvdup.
 
 ## Prerequisites
 
-Before your first release, you need to set up GPG signing:
+Before your first release, set up GPG signing and — if you want the Arch packages to reach the
+AUR — an AUR account:
 
 ### 1. Generate a GPG Key (if you don't have one)
 
