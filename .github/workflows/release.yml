@@ -1324,9 +1324,11 @@ jobs:
 
             # Run in a container because --include-sigs needs pacman 6.1; Ubuntu's
             # own pacman-package-manager package is 6.0.2, whose repo-add would
-            # reject the flag. It records the .sig files written above into the
-            # database, sparing clients a second request per package, and is what
-            # requires them to be binary -- it refuses an armoured signature.
+            # reject the flag. (--remove and --prevent-downgrade are older than
+            # both.) It records the .sig files written above into the database,
+            # which is what requires them to be binary -- repo-add refuses an
+            # armoured one. It does not save clients a request: pacman fetches
+            # the detached .sig regardless of what the database carries.
             #
             # --remove deletes the file the entry being replaced pointed at. The
             # database holds one entry per package name, so a superseded
@@ -1361,6 +1363,17 @@ jobs:
                 rm -f "${dir}/${pkg}" "${dir}/${pkg}.sig"
               fi
             done
+
+            # And the converse, which is the invariant actually being published:
+            # a signed database naming a file that is not there gives clients a
+            # 404 they cannot tell from an attack. Cheap to assert here, where
+            # the only cost is re-running this job.
+            while read -r want; do
+              if [[ ! -f "${dir}/${want}" ]]; then
+                echo "::error::${DB_NAME} database references ${want}, which is not in ${dir}"
+                exit 1
+              fi
+            done <<<"$referenced"
 
             for ext in db files; do
               echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
