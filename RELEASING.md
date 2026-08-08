@@ -368,8 +368,9 @@ against `sha256sums`. `update-aur` runs after the release and downloads those UR
 comparing them against the sums in the PKGBUILD, so a wrong URL is caught before it reaches
 the AUR — and failing there leaves everything except the AUR published.
 
-Signatures are the same GPG key as APT and YUM, but pacman rejects ASCII-armoured `.sig` files,
-so the packages and the database are signed with detached *binary* signatures.
+Signatures are the same GPG key as APT and YUM, but detached *binary* rather than ASCII-armoured:
+`repo-add --include-sigs` refuses to record an armoured package signature in the database. pacman
+hands signatures to gpgme and would accept either.
 
 ### Local Testing (Arch)
 

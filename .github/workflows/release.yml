@@ -9,9 +9,11 @@ on:
 
 # NOTE: intentionally has no `concurrency` block. The other workflows cancel
 # superseded PR runs, but a release must never be cancelled part-way: it
-# publishes a tag, a GitHub release, APT/YUM packages, a Homebrew formula and a
-# Nix bump. Interrupting it between those leaves exactly the inconsistent state
-# the job ordering here exists to prevent.
+# publishes a tag, a GitHub release, APT/YUM/pacman packages, a Homebrew formula,
+# a PKGBUILD on the AUR and a Nix bump. Interrupting it between those leaves
+# exactly the inconsistent state the job ordering here exists to prevent -- and
+# the AUR is somebody else's server, so that one cannot be undone by rewriting
+# anything here.
 permissions:
   contents: write
   pages: write
@@ -229,7 +231,11 @@ jobs:
           # Mount helper for fstab/systemd integration. Kept under its own name --
           # it derives the binary to exec from the name it is installed under, and
           # the Arch package renames it at install time the way nfpm.yaml does.
-          cp scripts/mount.fuse.mkvdup staging/
+          # Linux only, like the deb and rpm steps above: it drives util-linux's
+          # mount helper protocol, which macOS has no equivalent of.
+          if [[ "$GOOS" == "linux" ]]; then
+            cp scripts/mount.fuse.mkvdup staging/
+          fi
 
           # Create tarball
           tar -czvf "${TARBALL_NAME}" -C staging .
@@ -805,7 +811,10 @@ jobs:
               -e "s|@SHA256_AARCH64@|${SHA_AARCH64}|g" \
               packaging/arch/PKGBUILD.in > pkgbuild/PKGBUILD
 
-          if grep -n '@[A-Z0-9_]*@' pkgbuild/PKGBUILD; then
+          # Case-insensitive on purpose: the rule the template documents is that no
+          # at-delimited word survives, so a @commit@ someone adds without a
+          # matching substitution above has to trip this too.
+          if grep -n '@[A-Za-z0-9_]*@' pkgbuild/PKGBUILD; then
             echo "::error::PKGBUILD still contains unsubstituted placeholders"
             exit 1
           fi
@@ -1299,7 +1308,9 @@ jobs:
             done
 
             # Detached *binary* signatures, unlike the armoured ones the APT and
-            # YUM metadata above use -- pacman rejects an armoured .sig.
+            # YUM metadata above use. pacman itself hands a signature to gpgme and
+            # would take either; it is repo-add, below, that refuses to record an
+            # armoured one in the database.
             for pkg in "${new_pkgs[@]}"; do
               echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
                 --detach-sign --no-armor -o "${dir}/${pkg}.sig" "${dir}/${pkg}"
@@ -1321,14 +1332,19 @@ jobs:
             # Superseded packages are deleted rather than kept the way the APT pool
             # keeps its own. The database holds one entry per package name, so an
             # older .pkg.tar.zst is not installable through pacman at all -- it is
-            # only reachable from the release page, which still has it. Matching on
-            # the package name keeps this from touching a second package if one is
-            # ever added to the same repository.
+            # only reachable from the release page, which still has it.
+            #
+            # The glob narrows the candidates; the name comparison is what decides.
+            # A prefix match alone would take mkvdup-bin-anything with mkvdup-bin,
+            # deleting a second package in the same repository that repo-add had
+            # just recorded -- a database entry pointing at a 404.
             for pkg in "${new_pkgs[@]}"; do
               name=${pkg%-*-*-*.pkg.tar.zst}
               for old in "${dir}/${name}-"*.pkg.tar.zst; do
-                [[ "$(basename "$old")" == "$pkg" ]] && continue
-                echo "Removing superseded $(basename "$old")"
+                oldbase=$(basename "$old")
+                [[ "$oldbase" == "$pkg" ]] && continue
+                [[ "${oldbase%-*-*-*.pkg.tar.zst}" == "$name" ]] || continue
+                echo "Removing superseded ${oldbase}"
                 rm -f "$old" "${old}.sig"
               done
             done
