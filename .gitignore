@@ -33,15 +33,12 @@ Thumbs.db
 /bin/
 /result
 
-# Local makepkg runs (see RELEASING.md, Local Testing (Arch))
-/PKGBUILD
-/.SRCINFO
-/pkg/
-/src/
+# Local makepkg runs. The recipe in RELEASING.md builds in a scratch directory --
+# makepkg's own working dirs are deliberately not listed here, because src/ and pkg/
+# are ordinary Go source directory names and ignoring them repo-wide would silently
+# drop real files from `git add -A`.
 *.pkg.tar.zst
 *.pkg.tar.zst.sig
-# Release tarballs makepkg downloads next to the PKGBUILD
-/mkvdup*-bin-*.tar.gz
 
 # Test artifacts
 /testdata/generated/

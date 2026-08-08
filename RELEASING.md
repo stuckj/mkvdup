@@ -368,21 +368,28 @@ so the packages and the database are signed with detached *binary* signatures.
 
 ### Local Testing (Arch)
 
-Needs an Arch system or an `archlinux:base-devel` container. Generate a PKGBUILD from the
-template the way the workflow does, against an existing release:
+Needs an Arch system or an `archlinux:base-devel` container, plus `namcap` (`pacman -S
+namcap`). Generate a PKGBUILD from the template the way the workflow does and build it in a
+scratch directory:
 
 ```bash
-TAG=v1.9.1
+VERSION=1.9.2
+work=$(mktemp -d)
 sed -e 's|@PKGNAME@|mkvdup-bin|g' -e 's|@BINNAME@|mkvdup|g' \
-    -e 's|@PKGVER@|1.9.1|g' -e "s|@TAG@|${TAG}|g" \
+    -e "s|@PKGVER@|${VERSION}|g" -e "s|@TAG@|v${VERSION}|g" \
     -e 's|@PKGDESC@|Storage deduplication tool for MKV files and their source media|g' \
     -e 's|@SHA256_X86_64@|SKIP|g' -e 's|@SHA256_AARCH64@|SKIP|g' \
-    packaging/arch/PKGBUILD.in > PKGBUILD
+    packaging/arch/PKGBUILD.in > "$work/PKGBUILD"
 
+cd "$work"
 makepkg --nodeps
 makepkg --printsrcinfo > .SRCINFO
 namcap PKGBUILD ./*.pkg.tar.zst
 ```
+
+**Pick a version at or after the first release cut from this branch.** The package installs
+`mount.fuse.mkvdup`, which the release tarball only started carrying when Arch support landed;
+against an older tag `package()` fails on the missing file.
 
 `SKIP` disables makepkg's checksum verification, which is what makes this usable against a
 release whose checksums you have not looked up. It is for local inspection only — the workflow

@@ -104,6 +104,9 @@ sudo dnf install mkvdup-canary
 
 ### Arch Linux (pacman or AUR)
 
+Available from the first release cut after Arch support landed; earlier tags have neither the
+AUR packages nor the pacman repository.
+
 From the AUR, if you use an AUR helper:
 
 ```bash

@@ -829,15 +829,18 @@ jobs:
           for target in x86_64 aarch64; do
             # CARCH is both what makepkg validates the arch=() array against and
             # what it records in .PKGINFO. Appending to a copy of the host config
-            # overrides the runner's own x86_64 for the aarch64 pass.
+            # overrides the runner's own x86_64 for the aarch64 pass. Nothing is
+            # compiled, so CHOST is left alone.
             cp /etc/makepkg.conf "makepkg-${target}.conf"
-            printf '\nCARCH=%s\nCHOST=%s-pc-linux-gnu\n' "${target}" "${target}" \
-              >> "makepkg-${target}.conf"
+            printf '\nCARCH=%s\n' "${target}" >> "makepkg-${target}.conf"
             chown builder:builder "makepkg-${target}.conf"
 
             # --nodeps: fuse3 is a runtime dependency of the package being built,
             # and nothing in package() needs it present to assemble one.
-            sudo -u builder makepkg --config "makepkg-${target}.conf" --nodeps --noconfirm
+            # --cleanbuild: the two passes share a directory, so the second would
+            # otherwise extract over the first pass's leftovers.
+            sudo -u builder makepkg --config "makepkg-${target}.conf" \
+              --nodeps --noconfirm --cleanbuild
           done
 
           sudo -u builder bash -c 'makepkg --printsrcinfo > .SRCINFO'
@@ -871,11 +874,25 @@ jobs:
           name: aur-pkgbuild
           path: pkgbuild/
 
+      # First, so that nothing below can turn a release red for a channel that is
+      # not configured.
+      - name: Check for AUR credentials
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::AUR_SSH_PRIVATE_KEY secret not configured. Skipping AUR publish."
+            echo "AUR_ENABLED=false" >> "$GITHUB_ENV"
+          else
+            echo "AUR_ENABLED=true" >> "$GITHUB_ENV"
+          fi
+
       # build-arch builds against seeded copies of the tarballs, so this is the
       # first and only point at which the URLs an AUR user will actually download
       # from are exercised. Deliberately here rather than earlier: a broken URL
       # should stop the AUR push, not a release that is otherwise complete.
       - name: Verify the release assets the PKGBUILD points at
+        if: env.AUR_ENABLED == 'true'
         run: |
           # A PKGBUILD is a bash script of plain assignments plus package(), so the
           # URLs and sums can be read back out of the generated file rather than
@@ -886,7 +903,7 @@ jobs:
           verify() {
             local entry=$1 want=$2 url got
             url=${entry#*::}
-            curl -fsSL -o asset.tar.gz "$url"
+            curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o asset.tar.gz "$url"
             got=$(sha256sum asset.tar.gz | awk '{print $1}')
             if [[ "$got" != "$want" ]]; then
               echo "::error::${url} hashes to ${got}, but the PKGBUILD claims ${want}"
@@ -899,16 +916,12 @@ jobs:
           verify "${source_aarch64[0]}" "${sha256sums_aarch64[0]}"
 
       - name: Push to the AUR
+        if: env.AUR_ENABLED == 'true'
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
-            echo "::warning::AUR_SSH_PRIVATE_KEY secret not configured. Skipping AUR publish."
-            exit 0
-          fi
-
           if [[ "$IS_CANARY" == "true" ]]; then
             PKGNAME="mkvdup-canary-bin"
           else
@@ -1241,6 +1254,21 @@ jobs:
             DB_NAME="mkvdup"
           fi
 
+          # Everything this job produces is published by a single push at the end,
+          # so a failure here would hold back APT and YUM as well. Pulling up front
+          # with retries keeps the one step that can fail for reasons unrelated to
+          # the release -- an anonymous Docker Hub pull -- from doing that.
+          pulled=false
+          for attempt in 1 2 3; do
+            if docker pull archlinux:base; then pulled=true; break; fi
+            echo "pull attempt ${attempt} failed"
+            sleep 30
+          done
+          if [[ "$pulled" != true ]]; then
+            echo "::error::could not pull archlinux:base; re-run this job"
+            exit 1
+          fi
+
           for target in x86_64 aarch64; do
             dir="${ARCH_DIR}/${target}"
             mkdir -p "$dir"
@@ -1260,15 +1288,17 @@ jobs:
             done
 
             # repo-add ships with pacman and has no equivalent packaged for the
-            # runner. It reads the .sig files written above and records them in the
-            # database, so signing has to come first.
+            # runner. --include-sigs records the .sig files written above into the
+            # database, sparing clients a second request per package; without it
+            # repo-add ignores them entirely. It is also why they must be binary:
+            # repo-add refuses an armoured signature outright.
             #
             # Only the new packages are passed. repo-add replaces the entry for a
             # package name it already knows, so handing it the whole directory
             # would let glob order -- not version order -- decide which of the
             # accumulated releases ends up current.
             docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
-              repo-add "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
+              repo-add --include-sigs "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
 
             for ext in db files; do
               echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
@@ -1283,10 +1313,10 @@ jobs:
               cp "${dir}/${DB_NAME}.${ext}.tar.gz" "${dir}/${DB_NAME}.${ext}"
               cp "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.sig"
 
-              # repo-add rotates the previous database to .old. Nothing fetches it,
-              # and keeping it would serve an unsigned stale database next to a
-              # signed current one.
-              rm -f "${dir}/${DB_NAME}.${ext}.tar.gz.old"
+              # repo-add rotates the previous database to .old, and its signature
+              # to .old.sig. Nothing fetches either, and keeping them would serve a
+              # stale database next to the current one.
+              rm -f "${dir}/${DB_NAME}.${ext}.tar.gz.old"*
             done
           done
 
