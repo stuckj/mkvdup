@@ -102,6 +102,70 @@ sudo dnf install mkvdup-canary
 
 </details>
 
+### Arch Linux (pacman or AUR)
+
+Available from the first release cut after Arch support landed; earlier tags have neither the
+AUR packages nor the pacman repository.
+
+From the AUR, if you use an AUR helper:
+
+```bash
+yay -S mkvdup-bin
+```
+
+Or add the binary repository, which serves the same package and updates through
+`pacman -Syu` without a rebuild:
+
+```bash
+# Trust the signing key
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+# Add the repository
+sudo tee -a /etc/pacman.conf << 'EOF'
+
+[mkvdup]
+SigLevel = Required
+Server = https://stuckj.github.io/mkvdup/arch/$arch
+EOF
+
+# Install
+sudo pacman -Syu mkvdup-bin
+```
+
+Both routes install the same `mkvdup-bin` package, so you can add the repository later
+without uninstalling the AUR build — pacman takes over the upgrade from there.
+
+<details>
+<summary><strong>Canary (pre-release)</strong></summary>
+
+Installs as `mkvdup-canary-bin`, providing the `mkvdup-canary` command alongside stable.
+
+```bash
+yay -S mkvdup-canary-bin
+```
+
+Or via the canary repository:
+
+```bash
+# Trust the signing key (same as stable)
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+# Add the canary repository
+sudo tee -a /etc/pacman.conf << 'EOF'
+
+[mkvdup-canary]
+SigLevel = Required
+Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+EOF
+
+# Install
+sudo pacman -Syu mkvdup-canary-bin
+```
+
+</details>
+
 ### NixOS / Nix
 
 Once mkvdup lands in [nixpkgs](https://github.com/NixOS/nixpkgs) (submission pending) that becomes

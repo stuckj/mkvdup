@@ -9,9 +9,11 @@ on:
 
 # NOTE: intentionally has no `concurrency` block. The other workflows cancel
 # superseded PR runs, but a release must never be cancelled part-way: it
-# publishes a tag, a GitHub release, APT/YUM packages, a Homebrew formula and a
-# Nix bump. Interrupting it between those leaves exactly the inconsistent state
-# the job ordering here exists to prevent.
+# publishes a tag, a GitHub release, APT/YUM/pacman packages, a Homebrew formula,
+# a PKGBUILD on the AUR and a Nix bump. Interrupting it between those leaves
+# exactly the inconsistent state the job ordering here exists to prevent -- and
+# the AUR is somebody else's server, so that one cannot be undone by rewriting
+# anything here.
 permissions:
   contents: write
   pages: write
@@ -193,7 +195,8 @@ jobs:
         run: |
           nfpm package --packager rpm --target .
 
-      - name: Create Homebrew tarball
+      # Consumed by the Homebrew formulae and by the Arch PKGBUILD.
+      - name: Create release tarball
         env:
           PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -224,6 +227,15 @@ jobs:
           cp scripts/mkvdup-completion.bash staging/
           cp scripts/mkvdup-completion.zsh staging/
           cp scripts/mkvdup.fish staging/
+
+          # Mount helper for fstab/systemd integration. Kept under its own name --
+          # it derives the binary to exec from the name it is installed under, and
+          # the Arch package renames it at install time the way nfpm.yaml does.
+          # Linux only, like the deb and rpm steps above: it drives util-linux's
+          # mount helper protocol, which macOS has no equivalent of.
+          if [[ "$GOOS" == "linux" ]]; then
+            cp scripts/mount.fuse.mkvdup staging/
+          fi
 
           # Create tarball
           tar -czvf "${TARBALL_NAME}" -C staging .
@@ -256,7 +268,7 @@ jobs:
           path: "*.tar.gz"
 
   release:
-    needs: [prepare, build, sync-nix]
+    needs: [prepare, build, build-arch, sync-nix]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -279,7 +291,14 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           target_commitish: ${{ needs.sync-nix.outputs.commit }}
-          files: packages/*
+          # Listed by extension rather than as packages/*: build-arch also publishes
+          # the generated PKGBUILD and .SRCINFO as artifacts, for update-aur, and
+          # those are not release assets.
+          files: |
+            packages/*.deb
+            packages/*.rpm
+            packages/*.tar.gz
+            packages/*.pkg.tar.zst
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
         env:
@@ -712,6 +731,254 @@ jobs:
           git diff --staged --quiet || git commit -m "Update formula for ${{ needs.prepare.outputs.tag }}"
           git push
 
+  # Builds the pacman packages and the PKGBUILD the AUR receives.
+  #
+  # Ordering: with the other builds, ahead of both sync-nix and release, so neither
+  # the Nix bump nor the tag is pushed unless this has passed. An Arch failure after
+  # the tag existed would leave the version tagged, released and live on Homebrew
+  # while APT, YUM and pacman still served the previous one -- and unrepeatable,
+  # because prepare refuses a version whose tag is already on the remote.
+  #
+  # The PKGBUILD points at release download URLs that consequently do not exist yet.
+  # makepkg reuses a source file already present in the build directory instead of
+  # fetching it, and still checks it against sha256sums, so the tarballs are seeded
+  # from the build artifacts below. update-aur re-checks those URLs for real once the
+  # release is up.
+  build-arch:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    # Arch ships rolling tags only, so unlike go-version and nfpm above there is no
+    # versioned image to pin.
+    container: archlinux:base-devel
+    steps:
+      # The keyring is refreshed on its own first. A base image older than the
+      # current signing keys cannot verify the packages in the upgrade that would
+      # deliver its own replacement, and fails the whole transaction on an unknown
+      # trust signature.
+      - name: Install packaging tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Download tarball artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: tarball-linux-*
+          path: tarballs/
+          merge-multiple: true
+
+      - name: Generate PKGBUILD
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+        run: |
+          # A pacman pkgver cannot contain a hyphen -- that is the pkgver/pkgrel
+          # separator -- so 1.2.0-canary.1 becomes 1.2.0_canary.1. Canaries ship as
+          # their own package here exactly as they do for deb and rpm, so this
+          # version never has to sort against a stable one.
+          PKGVER="${VERSION//-/_}"
+
+          if [[ "$IS_CANARY" == "true" ]]; then
+            PKGNAME="mkvdup-canary-bin"
+            PKGDESC="Storage deduplication tool for MKV files (canary/pre-release)"
+          else
+            PKGNAME="mkvdup-bin"
+            PKGDESC="Storage deduplication tool for MKV files and their source media"
+          fi
+          {
+            echo "PKGNAME=${PKGNAME}"
+            echo "PKGVER=${PKGVER}"
+          } >> "$GITHUB_ENV"
+
+          SHA_X86_64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" | awk '{print $1}')
+          SHA_AARCH64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" | awk '{print $1}')
+
+          mkdir -p pkgbuild
+          sed -e "s|@PKGNAME@|${PKGNAME}|g" \
+              -e "s|@BINNAME@|${PACKAGE_NAME}|g" \
+              -e "s|@PKGVER@|${PKGVER}|g" \
+              -e "s|@PKGDESC@|${PKGDESC}|g" \
+              -e "s|@TAG@|${TAG}|g" \
+              -e "s|@SHA256_X86_64@|${SHA_X86_64}|g" \
+              -e "s|@SHA256_AARCH64@|${SHA_AARCH64}|g" \
+              packaging/arch/PKGBUILD.in > pkgbuild/PKGBUILD
+
+          # Both cases, not just upper: the rule the template documents is that no
+          # at-delimited word survives, so a @commit@ someone adds without a
+          # matching substitution above has to trip this too.
+          if grep -n '@[A-Za-z0-9_]*@' pkgbuild/PKGBUILD; then
+            echo "::error::PKGBUILD still contains unsubstituted placeholders"
+            exit 1
+          fi
+
+          cat pkgbuild/PKGBUILD
+
+      - name: Build packages
+        env:
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+        run: |
+          # Seeded under the names the PKGBUILD's `::` renames give them, which is
+          # what makes makepkg treat the sources as already downloaded. It still
+          # verifies them against sha256sums, so a mismatch here is still caught.
+          cp "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" "pkgbuild/${PKGNAME}-${PKGVER}-x86_64.tar.gz"
+          cp "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" "pkgbuild/${PKGNAME}-${PKGVER}-aarch64.tar.gz"
+
+          # makepkg refuses to run as root, which is what the container gives us.
+          useradd --create-home builder
+          chown -R builder:builder pkgbuild
+
+          cd pkgbuild
+          for target in x86_64 aarch64; do
+            # CARCH is both what makepkg validates the arch=() array against and
+            # what it records in .PKGINFO. Appending to a copy of the host config
+            # overrides the runner's own x86_64 for the aarch64 pass. Nothing is
+            # compiled, so CHOST is left alone.
+            # PACKAGER is commented out in the stock config, and makepkg writes
+            # "Unknown Packager" into .PKGINFO when it is unset -- which is what
+            # pacman -Si would then show, unlike the maintainer nfpm.yaml gives
+            # the deb and rpm.
+            cp /etc/makepkg.conf "makepkg-${target}.conf"
+            printf '\nCARCH=%s\nPACKAGER=%s\n' \
+              "${target}" "stuckj <stuckj@users.noreply.github.com>" \
+              >> "makepkg-${target}.conf"
+            chown builder:builder "makepkg-${target}.conf"
+
+            # --nodeps: fuse3 is a runtime dependency of the package being built,
+            # and nothing in package() needs it present to assemble one.
+            # --cleanbuild: the two passes share a directory, so the second would
+            # otherwise extract over the first pass's leftovers.
+            sudo -u builder makepkg --config "makepkg-${target}.conf" \
+              --nodeps --noconfirm --cleanbuild
+          done
+
+          sudo -u builder bash -c 'makepkg --printsrcinfo > .SRCINFO'
+          ls -la ./*.pkg.tar.zst .SRCINFO
+
+      - name: Upload Arch package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: arch-packages
+          path: pkgbuild/*.pkg.tar.zst
+
+      - name: Upload PKGBUILD artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aur-pkgbuild
+          path: |
+            pkgbuild/PKGBUILD
+            pkgbuild/.SRCINFO
+          include-hidden-files: true
+
+  # Publishes the same PKGBUILD to the AUR as mkvdup-bin / mkvdup-canary-bin. This
+  # is the Arch analogue of update-homebrew: a recipe pushed to an external repo,
+  # rather than packages served from gh-pages.
+  update-aur:
+    needs: [prepare, build-arch, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PKGBUILD artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: aur-pkgbuild
+          path: pkgbuild/
+
+      # First, so that nothing below can turn a release red for a channel that is
+      # not configured.
+      - name: Check for AUR credentials
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::AUR_SSH_PRIVATE_KEY secret not configured. Skipping AUR publish."
+            echo "AUR_ENABLED=false" >> "$GITHUB_ENV"
+          else
+            echo "AUR_ENABLED=true" >> "$GITHUB_ENV"
+          fi
+
+      # build-arch builds against seeded copies of the tarballs, so this is the
+      # first and only point at which the URLs an AUR user will actually download
+      # from are exercised. Deliberately here rather than earlier: a broken URL
+      # should stop the AUR push, not a release that is otherwise complete.
+      - name: Verify the release assets the PKGBUILD points at
+        if: env.AUR_ENABLED == 'true'
+        run: |
+          # A PKGBUILD is a bash script of plain assignments plus package(), so the
+          # URLs and sums can be read back out of the generated file rather than
+          # reconstructed here and left to drift from it.
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+
+          verify() {
+            local entry=$1 want=$2 url got
+            url=${entry#*::}
+            curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o asset.tar.gz "$url"
+            got=$(sha256sum asset.tar.gz | awk '{print $1}')
+            if [[ "$got" != "$want" ]]; then
+              echo "::error::${url} hashes to ${got}, but the PKGBUILD claims ${want}"
+              exit 1
+            fi
+            echo "OK ${url}"
+          }
+
+          verify "${source_x86_64[0]}" "${sha256sums_x86_64[0]}"
+          verify "${source_aarch64[0]}" "${sha256sums_aarch64[0]}"
+
+      - name: Push to the AUR
+        if: env.AUR_ENABLED == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          # Published at https://aur.archlinux.org/ under "The following SSH
+          # fingerprints are used for the AUR".
+          AUR_ED25519_FINGERPRINT: 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+        run: |
+          # Read back out of the generated PKGBUILD, like the sums above: the AUR
+          # repository name has to equal the pkgbase being pushed, and aurweb
+          # rejects the push if they disagree.
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+          PKGNAME=$pkgname
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+
+          # Scanned, then checked against the fingerprint aur.archlinux.org
+          # publishes over HTTPS. A bare keyscan trusts whatever answers, and
+          # exits 0 having written nothing when nothing does -- which surfaces
+          # much later as "Host key verification failed" from the clone.
+          ssh-keyscan -t ed25519 aur.archlinux.org > aur-hostkey
+          scanned=$(ssh-keygen -lf aur-hostkey | awk '{print $2}')
+          if [[ "$scanned" != "$AUR_ED25519_FINGERPRINT" ]]; then
+            echo "::error::aur.archlinux.org presented ${scanned}, expected ${AUR_ED25519_FINGERPRINT}"
+            exit 1
+          fi
+          cat aur-hostkey >> ~/.ssh/known_hosts
+
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+
+          # A package name the AUR has never seen clones as an empty repository;
+          # pushing to it is what creates it.
+          git clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
+          cp pkgbuild/PKGBUILD pkgbuild/.SRCINFO aur/
+
+          cd aur
+          git config user.name "stuckj"
+          git config user.email "stuckj@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git diff --staged --quiet || git commit -m "Update to ${VERSION}"
+          # Explicit refspec: an empty clone has no upstream branch to infer one
+          # from, and the AUR only accepts master.
+          git push origin HEAD:refs/heads/master
+
   # Writes the release version, and a refreshed vendorHash, into the Nix files on
   # the ref being released, so the tag created below actually contains them.
   #
@@ -721,10 +988,10 @@ jobs:
   # inherited whatever version its branch happened to carry, and main was left
   # claiming a version whose code was not on it.
   #
-  # Ordering: after build, so nothing is pushed until every build has passed, and
-  # before release, so the tag can be created at the resulting commit.
+  # Ordering: after every build, so nothing is pushed until all of them have passed,
+  # and before release, so the tag can be created at the resulting commit.
   sync-nix:
-    needs: [prepare, build]
+    needs: [prepare, build, build-arch]
     runs-on: ubuntu-latest
     outputs:
       commit: ${{ steps.sync.outputs.commit }}
@@ -843,10 +1110,17 @@ jobs:
           echo "commit=${target}" >> "$GITHUB_OUTPUT"
 
   publish-repo:
-    # Also gated on release: publishing APT/YUM packages for a version that has
-    # no tag and no GitHub release would leave users able to install something
+    # Also gated on release: publishing APT/YUM/pacman packages for a version that
+    # has no tag and no GitHub release would leave users able to install something
     # that does not officially exist.
-    needs: [prepare, build, release]
+    #
+    # The pacman repository is published from here rather than from a job of its
+    # own so that this workflow has exactly one gh-pages writer -- two of its jobs
+    # pushing there would race. (benchmark.yml and coverage.yml write to the branch
+    # too, so a release still races with those; coverage.yml rebases before
+    # pushing, this job does not.) build-arch has already run by this point, well
+    # before release; the dependency is only for its artifacts.
+    needs: [prepare, build, build-arch, release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
@@ -897,6 +1171,12 @@ jobs:
           pattern: rpm-package-*
           path: packages/
           merge-multiple: true
+
+      - name: Download all Arch packages
+        uses: actions/download-artifact@v8
+        with:
+          name: arch-packages
+          path: packages/
 
       - name: Setup APT repository structure
         env:
@@ -988,12 +1268,164 @@ jobs:
           # Sign the repository metadata
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o repodata/repomd.xml.asc repodata/repomd.xml
 
+      - name: Setup pacman repository structure
+        env:
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd gh-pages
+
+          # The database file pacman fetches is named after the [section] the user
+          # adds to pacman.conf, so DB_NAME is part of the documented install
+          # instructions and cannot be changed independently of them.
+          if [[ "$IS_CANARY" == "true" ]]; then
+            ARCH_DIR="arch-canary"
+            DB_NAME="mkvdup-canary"
+          else
+            ARCH_DIR="arch"
+            DB_NAME="mkvdup"
+          fi
+
+          # Everything this job produces is published by a single push at the end,
+          # so a failure here would hold back APT and YUM as well. Pulling up front
+          # with retries keeps the one step that can fail for reasons unrelated to
+          # the release -- an anonymous Docker Hub pull -- from doing that.
+          pulled=false
+          for attempt in 1 2 3; do
+            if docker pull archlinux:base; then pulled=true; break; fi
+            echo "pull attempt ${attempt} failed"
+            sleep 30
+          done
+          if [[ "$pulled" != true ]]; then
+            echo "::error::could not pull archlinux:base; re-run this job"
+            exit 1
+          fi
+
+          for target in x86_64 aarch64; do
+            dir="${ARCH_DIR}/${target}"
+            mkdir -p "$dir"
+
+            new_pkgs=()
+            for src in ../packages/*-"${target}".pkg.tar.zst; do
+              pkg=$(basename "$src")
+              cp "$src" "${dir}/${pkg}"
+              new_pkgs+=("$pkg")
+            done
+
+            # Detached *binary* signatures, unlike the armoured ones the APT and
+            # YUM metadata above use. pacman itself hands a signature to gpgme and
+            # would take either; it is repo-add, below, that refuses to record an
+            # armoured one in the database.
+            for pkg in "${new_pkgs[@]}"; do
+              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+                --detach-sign --no-armor -o "${dir}/${pkg}.sig" "${dir}/${pkg}"
+            done
+
+            # Run in a container because --include-sigs needs pacman 6.1; Ubuntu's
+            # own pacman-package-manager package is 6.0.2, whose repo-add would
+            # reject the flag. (--remove and --prevent-downgrade are older than
+            # both.) It records the .sig files written above into the database,
+            # which is what requires them to be binary -- repo-add refuses an
+            # armoured one. It does not save clients a request: pacman fetches
+            # the detached .sig regardless of what the database carries.
+            #
+            # --remove deletes the file the entry being replaced pointed at. The
+            # database holds one entry per package name, so a superseded
+            # .pkg.tar.zst is not installable through pacman at all; letting
+            # repo-add drive the deletion from %FILENAME% is what keeps it from
+            # ever removing a file the database still references. The release page
+            # keeps every version regardless.
+            #
+            # --prevent-downgrade makes releasing an older version from a
+            # maintenance branch a no-op here rather than a silent regression of
+            # the channel -- and it returns before --remove computes anything, so
+            # the newer package is not deleted either.
+            #
+            # Only the new packages are passed. repo-add replaces the entry for a
+            # package name it already knows, so handing it the whole directory
+            # would let glob order -- not version order -- decide which of the
+            # accumulated releases ends up current.
+            docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
+              repo-add --include-sigs --remove --prevent-downgrade \
+              "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
+
+            # A package repo-add declined has already been copied in by this
+            # point, and --remove only ever deletes the file an entry it replaced
+            # pointed at -- so nothing would collect it later. Publish only what
+            # the database references. %FILENAME% holds the bare basename, which
+            # is what new_pkgs carries.
+            #
+            # Read in two steps rather than one pipeline: the default shell is
+            # `bash -e` without pipefail, so a tar failure would be swallowed and
+            # leave this empty -- indistinguishable from "the database accepted
+            # nothing", which deletes every package just copied in.
+            db_desc=$(tar -xOzf "${dir}/${DB_NAME}.db.tar.gz" --wildcards '*/desc')
+            referenced=$(awk '/^%FILENAME%$/ {getline; print}' <<<"$db_desc")
+            if [[ -z "$referenced" ]]; then
+              echo "::error::${DB_NAME} database in ${dir} lists no package files"
+              exit 1
+            fi
+
+            for pkg in "${new_pkgs[@]}"; do
+              if ! grep -qxF "$pkg" <<<"$referenced"; then
+                # A warning rather than a notice, for the reason sync-nix gives
+                # below: standing down is the right outcome, but on an otherwise
+                # green release a notice is invisible, and this is the one path
+                # where a release deliberately does not reach a channel.
+                echo "::warning::${pkg} is older than what ${DB_NAME} already serves; the pacman channel keeps its current version. Every other channel has this release."
+                {
+                  echo "### ⚠️ pacman repository not updated (${target})"
+                  echo
+                  echo "\`${pkg}\` is older than the version already in \`${DB_NAME}\`, so it was not published."
+                  echo
+                  echo "Every other channel carries this release."
+                } >> "$GITHUB_STEP_SUMMARY"
+                rm -f "${dir}/${pkg}" "${dir}/${pkg}.sig"
+              fi
+            done
+
+            # And the converse, which is the invariant actually being published:
+            # a signed database naming a file that is not there gives clients a
+            # 404 they cannot tell from an attack. Failing here is not
+            # self-healing -- a re-run checks out the same gh-pages state and
+            # stops again, with the APT and YUM updates for this release behind
+            # it -- but publishing a database that lies is worse.
+            while read -r want; do
+              if [[ ! -f "${dir}/${want}" ]]; then
+                echo "::error::${DB_NAME} database references ${want}, which is not in ${dir}"
+                exit 1
+              fi
+            done <<<"$referenced"
+
+            for ext in db files; do
+              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+                --detach-sign --no-armor \
+                -o "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.tar.gz"
+
+              # repo-add leaves ${DB_NAME}.db and .files as symlinks to the
+              # tarballs. Git stores a symlink as its target path and Pages serves
+              # that verbatim, so pacman would download the string
+              # "mkvdup.db.tar.gz" and fail to parse it as a database.
+              rm -f "${dir}/${DB_NAME}.${ext}" "${dir}/${DB_NAME}.${ext}.sig"
+              cp "${dir}/${DB_NAME}.${ext}.tar.gz" "${dir}/${DB_NAME}.${ext}"
+              cp "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.sig"
+
+              # repo-add rotates the previous database to .old, and its signature
+              # to .old.sig. Nothing fetches either, and keeping them would serve a
+              # stale database next to the current one.
+              rm -f "${dir}/${DB_NAME}.${ext}.tar.gz.old"*
+            done
+          done
+
       - name: Export GPG public key
         run: |
           cd gh-pages
           gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
+          # pacman-key --lsign-key needs the key id, and the install instructions
+          # read it from here so they do not have to hardcode it.
+          echo "${{ env.GPG_KEY_ID }}" > gpg-key-id.txt
           # Copy to all repo directories that exist
-          for dir in apt yum yum-canary; do
+          for dir in apt yum yum-canary arch arch-canary; do
             if [[ -d "$dir" ]]; then cp gpg-key.asc "$dir/"; fi
           done
 
@@ -1048,6 +1480,27 @@ jobs:
           # Install
           sudo dnf install mkvdup</pre>
 
+            <h2>Arch Linux (pacman)</h2>
+            <pre>
+          # Trust the signing key
+          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+          sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+          # Add the repository
+          sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
+
+          [mkvdup]
+          SigLevel = Required
+          Server = https://stuckj.github.io/mkvdup/arch/$arch
+          REPO
+
+          # Install
+          sudo pacman -Syu mkvdup-bin</pre>
+
+            <p>Also on the AUR as
+            <a href="https://aur.archlinux.org/packages/mkvdup-bin"><code>mkvdup-bin</code></a>,
+            if you would rather not add a repository: <code>yay -S mkvdup-bin</code>.</p>
+
             <h2>Canary Channel (Pre-release)</h2>
             <p>The canary channel provides early access to new features. It installs as
             <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
@@ -1083,6 +1536,23 @@ jobs:
 
           # Install
           sudo dnf install mkvdup-canary</pre>
+
+            <h3>Arch Linux (pacman) - Canary</h3>
+            <pre>
+          # Trust the signing key (same key as stable)
+          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+          sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+          # Add the canary repository
+          sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
+
+          [mkvdup-canary]
+          SigLevel = Required
+          Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+          REPO
+
+          # Install
+          sudo pacman -Syu mkvdup-canary-bin</pre>
 
             <h2>Links</h2>
             <ul>

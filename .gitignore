@@ -33,6 +33,12 @@ Thumbs.db
 /bin/
 /result
 
+# A makepkg run started in the checkout rather than the scratch directory
+# RELEASING.md uses. Its working dirs are deliberately not listed: src/ and pkg/ are
+# ordinary Go source directory names, and ignoring those repo-wide would silently
+# drop real files from `git add -A`.
+*.pkg.tar.zst
+
 # Test artifacts
 /testdata/generated/
 
