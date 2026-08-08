@@ -841,8 +841,14 @@ jobs:
             # what it records in .PKGINFO. Appending to a copy of the host config
             # overrides the runner's own x86_64 for the aarch64 pass. Nothing is
             # compiled, so CHOST is left alone.
+            # PACKAGER is commented out in the stock config, and makepkg writes
+            # "Unknown Packager" into .PKGINFO when it is unset -- which is what
+            # pacman -Si would then show, unlike the maintainer nfpm.yaml gives
+            # the deb and rpm.
             cp /etc/makepkg.conf "makepkg-${target}.conf"
-            printf '\nCARCH=%s\n' "${target}" >> "makepkg-${target}.conf"
+            printf '\nCARCH=%s\nPACKAGER=%s\n' \
+              "${target}" "stuckj <stuckj@users.noreply.github.com>" \
+              >> "makepkg-${target}.conf"
             chown builder:builder "makepkg-${target}.conf"
 
             # --nodeps: fuse3 is a runtime dependency of the package being built,
@@ -1341,6 +1347,20 @@ jobs:
             docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
               repo-add --include-sigs --remove --prevent-downgrade \
               "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
+
+            # A package repo-add declined has already been copied in by this
+            # point, and --remove only ever deletes the file an entry it replaced
+            # pointed at -- so nothing would collect it later. Publish only what
+            # the database references. %FILENAME% holds the bare basename, which
+            # is what new_pkgs carries.
+            referenced=$(tar -xOzf "${dir}/${DB_NAME}.db.tar.gz" --wildcards '*/desc' \
+              | awk '/^%FILENAME%$/ {getline; print}')
+            for pkg in "${new_pkgs[@]}"; do
+              if ! grep -qxF "$pkg" <<<"$referenced"; then
+                echo "Database did not take ${pkg}; removing it"
+                rm -f "${dir}/${pkg}" "${dir}/${pkg}.sig"
+              fi
+            done
 
             for ext in db files; do
               echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \

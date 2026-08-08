@@ -34,10 +34,14 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 2. Set Source to "Deploy from a branch"
 3. Select `gh-pages` branch (will be created on first release)
 
-### 4. Set Up AUR Publishing (optional)
+### 4. Set Up AUR Publishing
 
 Only the AUR half of the Arch release needs this. The pacman repository on GitHub Pages is
 signed with the same GPG key as APT and YUM and needs nothing extra.
+
+Do it **before** the first Arch release. A release without it still succeeds, but the README
+and the published landing page both tell users to run `yay -S mkvdup-bin` unconditionally, and
+that finds nothing until the first push to the AUR has happened.
 
 1. Create an account at [aur.archlinux.org](https://aur.archlinux.org) and add an SSH public
    key to it under My Account.
@@ -447,16 +451,21 @@ and helpers then show — regenerate it whenever the PKGBUILD changes. The workf
 ### AUR Publish Skipped or Failing
 
 - A "AUR_SSH_PRIVATE_KEY secret not configured" warning means the secret is unset; the rest of
-  the release is unaffected. See [Prerequisites](#4-set-up-aur-publishing-optional).
+  the release is unaffected. See [Prerequisites](#4-set-up-aur-publishing).
 - `Permission denied (publickey)` means the private key in the secret does not match a public
   key on the AUR account.
 - A rejected push on a package name that clones empty means someone else owns the name.
 - A failure in "Verify the release assets the PKGBUILD points at" means the URLs in the
   PKGBUILD do not resolve to the tarballs that were built. The release itself is complete and
   correct at that point; only the AUR is behind.
-- A database sync reporting an invalid or corrupted database usually means the `.db` file on
+
+### pacman Reporting a Corrupted Database
+
+- `pacman -Sy` calling the database invalid or corrupted usually means the `.db` file on
   gh-pages is a symlink rather than a copy; the workflow replaces the symlinks `repo-add`
   leaves behind for exactly this reason.
+- A signature error after `pacman-key --add` means the key was never locally signed;
+  `SigLevel = Required` implies `TrustedOnly`, so `pacman-key --lsign-key` is not optional.
 
 ## Local Testing
 
