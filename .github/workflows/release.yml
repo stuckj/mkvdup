@@ -811,7 +811,7 @@ jobs:
               -e "s|@SHA256_AARCH64@|${SHA_AARCH64}|g" \
               packaging/arch/PKGBUILD.in > pkgbuild/PKGBUILD
 
-          # Case-insensitive on purpose: the rule the template documents is that no
+          # Both cases, not just upper: the rule the template documents is that no
           # at-delimited word survives, so a @commit@ someone adds without a
           # matching substitution above has to trip this too.
           if grep -n '@[A-Za-z0-9_]*@' pkgbuild/PKGBUILD; then
@@ -929,17 +929,17 @@ jobs:
         if: env.AUR_ENABLED == 'true'
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
           VERSION: ${{ needs.prepare.outputs.version }}
           # Published at https://aur.archlinux.org/ under "The following SSH
           # fingerprints are used for the AUR".
           AUR_ED25519_FINGERPRINT: 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
         run: |
-          if [[ "$IS_CANARY" == "true" ]]; then
-            PKGNAME="mkvdup-canary-bin"
-          else
-            PKGNAME="mkvdup-bin"
-          fi
+          # Read back out of the generated PKGBUILD, like the sums above: the AUR
+          # repository name has to equal the pkgbase being pushed, and aurweb
+          # rejects the push if they disagree.
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+          PKGNAME=$pkgname
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -1316,38 +1316,31 @@ jobs:
                 --detach-sign --no-armor -o "${dir}/${pkg}.sig" "${dir}/${pkg}"
             done
 
-            # repo-add ships with pacman and has no equivalent packaged for the
-            # runner. --include-sigs records the .sig files written above into the
-            # database, sparing clients a second request per package; without it
-            # repo-add ignores them entirely. It is also why they must be binary:
-            # repo-add refuses an armoured signature outright.
+            # Run in a container because --include-sigs needs pacman 6.1; Ubuntu's
+            # own pacman-package-manager package is 6.0.2, whose repo-add would
+            # reject the flag. It records the .sig files written above into the
+            # database, sparing clients a second request per package, and is what
+            # requires them to be binary -- it refuses an armoured signature.
+            #
+            # --remove deletes the file the entry being replaced pointed at. The
+            # database holds one entry per package name, so a superseded
+            # .pkg.tar.zst is not installable through pacman at all; letting
+            # repo-add drive the deletion from %FILENAME% is what keeps it from
+            # ever removing a file the database still references. The release page
+            # keeps every version regardless.
+            #
+            # --prevent-downgrade makes releasing an older version from a
+            # maintenance branch a no-op here rather than a silent regression of
+            # the channel -- and it returns before --remove computes anything, so
+            # the newer package is not deleted either.
             #
             # Only the new packages are passed. repo-add replaces the entry for a
             # package name it already knows, so handing it the whole directory
             # would let glob order -- not version order -- decide which of the
             # accumulated releases ends up current.
             docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
-              repo-add --include-sigs "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
-
-            # Superseded packages are deleted rather than kept the way the APT pool
-            # keeps its own. The database holds one entry per package name, so an
-            # older .pkg.tar.zst is not installable through pacman at all -- it is
-            # only reachable from the release page, which still has it.
-            #
-            # The glob narrows the candidates; the name comparison is what decides.
-            # A prefix match alone would take mkvdup-bin-anything with mkvdup-bin,
-            # deleting a second package in the same repository that repo-add had
-            # just recorded -- a database entry pointing at a 404.
-            for pkg in "${new_pkgs[@]}"; do
-              name=${pkg%-*-*-*.pkg.tar.zst}
-              for old in "${dir}/${name}-"*.pkg.tar.zst; do
-                oldbase=$(basename "$old")
-                [[ "$oldbase" == "$pkg" ]] && continue
-                [[ "${oldbase%-*-*-*.pkg.tar.zst}" == "$name" ]] || continue
-                echo "Removing superseded ${oldbase}"
-                rm -f "$old" "${old}.sig"
-              done
-            done
+              repo-add --include-sigs --remove --prevent-downgrade \
+              "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
 
             for ext in db files; do
               echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \

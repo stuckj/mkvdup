@@ -372,14 +372,24 @@ Signatures are the same GPG key as APT and YUM, but detached *binary* rather tha
 `repo-add --include-sigs` refuses to record an armoured package signature in the database. pacman
 hands signatures to gpgme and would accept either.
 
+Unlike the APT pool and the YUM package directory, which keep every version they have ever
+published, the pacman repository keeps only the current one — its database holds a single entry
+per package name, so an older file is not installable through pacman anyway. `repo-add --remove`
+deletes the superseded file, driven by the entry it is replacing. `--prevent-downgrade` goes with
+it: releasing an older version from a maintenance branch leaves the pacman channel untouched
+rather than regressing it, which also means such a release reaches every channel except this one.
+The release page still carries every version.
+
 ### Local Testing (Arch)
 
 Needs an Arch system or an `archlinux:base-devel` container, plus `namcap` (`pacman -S
 namcap`). **makepkg refuses to run as root**, which is what that container gives you — create
-an unprivileged user first, as the workflow does:
+an unprivileged user first, as the workflow does, and give it access to the checkout:
 
 ```bash
-useradd --create-home builder && su - builder
+useradd --create-home builder
+chgrp -R builder . && chmod -R g+rX .
+su builder   # keeps the working directory, unlike `su -`
 ```
 
 Generate a PKGBUILD from the template the way the workflow does and build it in a scratch
@@ -409,8 +419,10 @@ release whose checksums you have not looked up. It is for local inspection only 
 always substitutes real sums, and a PKGBUILD carrying `SKIP` must never be pushed to the AUR,
 where it would install an unverified download.
 
-`.SRCINFO` is not needed to build, only to publish: the AUR rejects any push whose tree lacks
-one matching the PKGBUILD. The workflow generates it the same way.
+`.SRCINFO` is not needed to build, only to publish: the AUR rejects a push whose tree lacks one,
+or whose `.SRCINFO` names a `pkgbase` other than the repository being pushed to. It does not
+check the `.SRCINFO` against the PKGBUILD, so a stale one is accepted and is what the AUR page
+and helpers then show — regenerate it whenever the PKGBUILD changes. The workflow does.
 
 ## Troubleshooting
 
