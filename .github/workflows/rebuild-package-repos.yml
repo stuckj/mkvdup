@@ -1,0 +1,69 @@
+name: Rebuild Package Repositories
+
+# Regenerates the APT and YUM repositories from the release assets. The release
+# workflow runs the same script, so this exists for the initial migration and
+# for repairing drift. It is idempotent: the repositories are derived from the
+# releases, so re-running produces the same result.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build everything, publish nothing, upload the result as an artifact'
+        type: boolean
+        default: true
+      confirm:
+        description: 'For a real run, type REBUILD (ignored when dry_run is set)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        if: ${{ !inputs.dry_run }}
+        run: |
+          [[ "${{ inputs.confirm }}" == "REBUILD" ]] || {
+            echo "::error::A real run force-pushes gh-pages. Type REBUILD to confirm."; exit 1; }
+
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c gnupg
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
+
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
+
+      - name: Rebuild
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"
+
+      # Only the indexes, so the artifact stays small enough to download and
+      # verify a client against before anything goes live.
+      - name: Upload generated metadata
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-metadata
+          path: |
+            ${{ runner.temp }}/repobuild/apt/**
+            ${{ runner.temp }}/repobuild/pages/**
+            ${{ runner.temp }}/repobuild/assetmap.txt
+          retention-days: 7

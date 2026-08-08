@@ -845,27 +845,13 @@ jobs:
   publish-repo:
     # Also gated on release: publishing APT/YUM packages for a version that has
     # no tag and no GitHub release would leave users able to install something
-    # that does not officially exist.
+    # that does not officially exist. It is also a hard requirement now — the
+    # repositories are derived from the release assets, so the release must
+    # exist before its packages can be indexed.
     needs: [prepare, build, release]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout gh-pages branch
-        id: checkout-gh-pages
-        uses: actions/checkout@v7
-        with:
-          ref: gh-pages
-          path: gh-pages
-          fetch-depth: 0
-        continue-on-error: true
-
-      - name: Initialize gh-pages if needed
-        if: steps.checkout-gh-pages.outcome == 'failure'
-        run: |
-          mkdir -p gh-pages
-          cd gh-pages
-          git init
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git checkout -b gh-pages
+      - uses: actions/checkout@v7
 
       - name: Install tools
         run: |
@@ -875,8 +861,7 @@ jobs:
       - name: Import GPG key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
-          echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
 
           # Configure GPG for non-interactive use
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
@@ -884,222 +869,8 @@ jobs:
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
           gpgconf --kill gpg-agent
 
-      - name: Download all deb packages
-        uses: actions/download-artifact@v8
-        with:
-          pattern: deb-package-*
-          path: packages/
-          merge-multiple: true
-
-      - name: Download all rpm packages
-        uses: actions/download-artifact@v8
-        with:
-          pattern: rpm-package-*
-          path: packages/
-          merge-multiple: true
-
-      - name: Setup APT repository structure
+      - name: Rebuild package repositories
         env:
-          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
-        run: |
-          cd gh-pages
-
-          # Set paths based on release channel
-          if [[ "$IS_CANARY" == "true" ]]; then
-            POOL="pool/canary"
-            DIST="dists/canary"
-            SUITE="canary"
-            LABEL="mkvdup-canary"
-            DESC="mkvdup canary packages"
-          else
-            POOL="pool/main"
-            DIST="dists/stable"
-            SUITE="stable"
-            LABEL="mkvdup"
-            DESC="mkvdup packages"
-          fi
-
-          # Create directory structure
-          mkdir -p "apt/${POOL}"
-          mkdir -p "apt/${DIST}/main/binary-amd64"
-          mkdir -p "apt/${DIST}/main/binary-arm64"
-
-          # Copy deb packages to pool
-          cp ../packages/*.deb "apt/${POOL}/"
-
-          # Generate Packages files for each architecture
-          cd apt
-          dpkg-scanpackages --arch amd64 "${POOL}/" > "${DIST}/main/binary-amd64/Packages"
-          gzip -k -f "${DIST}/main/binary-amd64/Packages"
-          dpkg-scanpackages --arch arm64 "${POOL}/" > "${DIST}/main/binary-arm64/Packages"
-          gzip -k -f "${DIST}/main/binary-arm64/Packages"
-
-          # Create Release file
-          cd "${DIST}"
-          cat > Release << EOF
-          Origin: ${LABEL}
-          Label: ${LABEL}
-          Suite: ${SUITE}
-          Codename: ${SUITE}
-          Architectures: amd64 arm64
-          Components: main
-          Description: ${DESC}
-          Date: $(date -Ru)
-          EOF
-
-          # Add checksums to Release file
-          echo "SHA256:" >> Release
-          for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz \
-                   main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
-            if [[ -f "$f" ]]; then
-              SIZE=$(stat -c%s "$f")
-              SHA=$(sha256sum "$f" | awk '{print $1}')
-              echo " $SHA $SIZE $f" >> Release
-            fi
-          done
-
-          # Sign the Release file
-          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o Release.gpg Release
-          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --clearsign -o InRelease Release
-
-      - name: Setup YUM repository structure
-        env:
-          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
-        run: |
-          cd gh-pages
-
-          # Set YUM directory based on release channel
-          if [[ "$IS_CANARY" == "true" ]]; then
-            YUM_DIR="yum-canary"
-          else
-            YUM_DIR="yum"
-          fi
-
-          # Create directory structure
-          mkdir -p "${YUM_DIR}/packages"
-
-          # Copy rpm packages
-          cp ../packages/*.rpm "${YUM_DIR}/packages/"
-
-          # Generate repository metadata
-          cd "${YUM_DIR}"
-          createrepo_c .
-
-          # Sign the repository metadata
-          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o repodata/repomd.xml.asc repodata/repomd.xml
-
-      - name: Export GPG public key
-        run: |
-          cd gh-pages
-          gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
-          # Copy to all repo directories that exist
-          for dir in apt yum yum-canary; do
-            if [[ -d "$dir" ]]; then cp gpg-key.asc "$dir/"; fi
-          done
-
-      - name: Create index page
-        run: |
-          cat > gh-pages/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>mkvdup - Package Repository</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
-              pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
-              code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-              h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
-              h2 { margin-top: 30px; }
-            </style>
-          </head>
-          <body>
-            <h1>mkvdup</h1>
-            <p>MKV deduplication tool using FUSE. Store MKV files as small dedup files that reference original DVD/Blu-ray sources.</p>
-
-            <h2>macOS / Linux (Homebrew)</h2>
-            <pre>
-          brew tap stuckj/mkvdup
-          brew install mkvdup</pre>
-
-            <h2>Debian/Ubuntu (APT)</h2>
-            <pre>
-          # Add the GPG key
-          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
-
-          # Add the repository
-          echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt stable main" | sudo tee /etc/apt/sources.list.d/mkvdup.list
-
-          # Install
-          sudo apt update
-          sudo apt install mkvdup</pre>
-
-            <h2>RHEL/CentOS/Fedora (YUM/DNF)</h2>
-            <pre>
-          # Add the repository
-          sudo tee /etc/yum.repos.d/mkvdup.repo &lt;&lt; 'REPO'
-          [mkvdup]
-          name=mkvdup
-          baseurl=https://stuckj.github.io/mkvdup/yum
-          enabled=1
-          gpgcheck=1
-          gpgkey=https://stuckj.github.io/mkvdup/yum/gpg-key.asc
-          REPO
-
-          # Install
-          sudo dnf install mkvdup</pre>
-
-            <h2>Canary Channel (Pre-release)</h2>
-            <p>The canary channel provides early access to new features. It installs as
-            <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
-
-            <h3>macOS / Linux (Homebrew) - Canary</h3>
-            <pre>
-          brew tap stuckj/mkvdup
-          brew install mkvdup-canary</pre>
-
-            <h3>Debian/Ubuntu (APT) - Canary</h3>
-            <pre>
-          # Add the GPG key (same key as stable)
-          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
-
-          # Add the canary repository
-          echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt canary main" | sudo tee /etc/apt/sources.list.d/mkvdup-canary.list
-
-          # Install
-          sudo apt update
-          sudo apt install mkvdup-canary</pre>
-
-            <h3>RHEL/CentOS/Fedora (YUM/DNF) - Canary</h3>
-            <pre>
-          # Add the canary repository
-          sudo tee /etc/yum.repos.d/mkvdup-canary.repo &lt;&lt; 'REPO'
-          [mkvdup-canary]
-          name=mkvdup-canary
-          baseurl=https://stuckj.github.io/mkvdup/yum-canary
-          enabled=1
-          gpgcheck=1
-          gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
-          REPO
-
-          # Install
-          sudo dnf install mkvdup-canary</pre>
-
-            <h2>Links</h2>
-            <ul>
-              <li><a href="https://github.com/stuckj/mkvdup">GitHub Repository</a></li>
-              <li><a href="https://github.com/stuckj/mkvdup/releases">Release Downloads</a></li>
-            </ul>
-          </body>
-          </html>
-          EOF
-
-      - name: Commit and push to gh-pages
-        run: |
-          cd gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --staged --quiet || git commit -m "Update packages for ${{ needs.prepare.outputs.tag }}"
-          git push origin gh-pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"
