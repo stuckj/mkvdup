@@ -1,0 +1,48 @@
+# Maintainer: stuckj <stuckj@users.noreply.github.com>
+#
+# Template. The release workflow substitutes the @PLACEHOLDER@ values and publishes
+# the result to the AUR and to the pacman repository on gh-pages. Edit this file,
+# never the generated copy.
+
+pkgname=@PKGNAME@
+_binname=@BINNAME@
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc="@PKGDESC@"
+arch=('x86_64' 'aarch64')
+url='https://github.com/stuckj/mkvdup'
+license=('MIT')
+depends=('fuse3')
+provides=("${_binname}=${pkgver}")
+conflicts=("${_binname}")
+# Upstream builds with -ldflags="-s -w", so there is nothing left to strip and no
+# debug info to split out.
+options=('!strip' '!debug')
+source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${url}/releases/download/@TAG@/${_binname}_linux_amd64.tar.gz")
+source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::${url}/releases/download/@TAG@/${_binname}_linux_arm64.tar.gz")
+sha256sums_x86_64=('@SHA256_X86_64@')
+sha256sums_aarch64=('@SHA256_AARCH64@')
+
+package() {
+  install -Dm755 "${srcdir}/${_binname}" "${pkgdir}/usr/bin/${_binname}"
+
+  # The helper execs the binary its own filename ends in, so installing it as
+  # mount.fuse.mkvdup-canary is what makes a canary mount run the canary binary.
+  # It lands in /usr/bin rather than the /usr/sbin the deb and rpm use, because
+  # Arch symlinks /usr/sbin to /usr/bin and forbids packages from writing there.
+  install -Dm755 "${srcdir}/mount.fuse.mkvdup" "${pkgdir}/usr/bin/mount.fuse.${_binname}"
+
+  install -Dm644 "${srcdir}/${_binname}.1" "${pkgdir}/usr/share/man/man1/${_binname}.1"
+
+  install -Dm644 "${srcdir}/mkvdup-completion.bash" \
+    "${pkgdir}/usr/share/bash-completion/completions/${_binname}"
+  install -Dm644 "${srcdir}/mkvdup-completion.zsh" \
+    "${pkgdir}/usr/share/zsh/site-functions/_${_binname}"
+  install -Dm644 "${srcdir}/mkvdup.fish" \
+    "${pkgdir}/usr/share/fish/vendor_completions.d/${_binname}.fish"
+
+  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 -t "${pkgdir}/usr/share/doc/${_binname}" \
+    "${srcdir}/README.md" "${srcdir}/DESIGN.md" "${srcdir}/LICENSE"
+  install -Dm644 -t "${pkgdir}/usr/share/doc/${_binname}/docs" "${srcdir}"/docs/*.md
+}

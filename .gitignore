@@ -33,6 +33,14 @@ Thumbs.db
 /bin/
 /result
 
+# Local makepkg runs (see RELEASING.md, Local Testing (Arch))
+/PKGBUILD
+/.SRCINFO
+/pkg/
+/src/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+
 # Test artifacts
 /testdata/generated/
 

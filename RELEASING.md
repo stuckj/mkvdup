@@ -34,6 +34,23 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 2. Set Source to "Deploy from a branch"
 3. Select `gh-pages` branch (will be created on first release)
 
+### 4. Set Up AUR Publishing (optional)
+
+Only the AUR half of the Arch release needs this. The pacman repository on GitHub Pages is
+signed with the same GPG key as APT and YUM and needs nothing extra.
+
+1. Create an account at [aur.archlinux.org](https://aur.archlinux.org) and add an SSH public
+   key to it under My Account.
+2. Reserve both package names by pushing an initial commit to
+   `ssh://aur@aur.archlinux.org/mkvdup-bin.git` and
+   `ssh://aur@aur.archlinux.org/mkvdup-canary-bin.git`. An AUR repository is created by its
+   first push; the workflow clones an existing one and will fail against a name that has never
+   been pushed to. Generate the first PKGBUILD with the local build below.
+3. Add the matching private key as the `AUR_SSH_PRIVATE_KEY` secret.
+
+Without the secret the `update-aur` job logs a warning and succeeds without publishing, so
+releases still work — they just do not reach the AUR.
+
 ## Creating a Release
 
 Releases are created via the GitHub Actions workflow:
@@ -60,7 +77,15 @@ The workflow will:
 1. Resolve the version and commit, and verify the tag does not already exist on the remote
 2. Build packages for amd64 and arm64
 3. Create the GitHub release **and the tag together**, pointing at the resolved commit
-4. Update the APT and YUM repositories on GitHub Pages, and the Homebrew and Nix files
+4. Build the Arch packages from the released tarballs and attach them to the release
+5. Update the APT, YUM and pacman repositories on GitHub Pages, and the Homebrew, AUR and Nix
+   files
+
+**Why Arch comes after the release:** `build-arch` is the one packaging job that consumes the
+published release rather than the build artifacts. Its PKGBUILD points at the release download
+URLs, and makepkg fetches them and checks them against sha256sums taken from the artifacts — so
+a wrong URL, or a release asset that does not match what was built, fails in CI instead of
+after reaching the AUR. `publish-repo` waits on it so that gh-pages keeps a single writer.
 
 **Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
 user-visible — tag, release, packages, formula and Nix bumps — is created until every build
@@ -106,7 +131,8 @@ The workflow automatically detects the `-canary.` suffix and:
 - Builds the binary as `mkvdup-canary`
 - Packages as `mkvdup-canary` (installs to `/usr/bin/mkvdup-canary`)
 - Creates a pre-release on GitHub
-- Publishes to the canary APT/YUM repositories (separate from stable)
+- Publishes to the canary APT/YUM/pacman repositories (separate from stable)
+- Publishes `mkvdup-canary-bin` to the AUR (separate package from `mkvdup-bin`)
 
 ### Canary Package Repositories
 
@@ -134,6 +160,24 @@ EOF
 sudo dnf install mkvdup-canary
 ```
 
+#### Arch Linux - Canary
+
+```bash
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+sudo tee -a /etc/pacman.conf << 'EOF'
+
+[mkvdup-canary]
+SigLevel = Required
+Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+EOF
+
+sudo pacman -Syu mkvdup-canary-bin
+```
+
+Or from the AUR: `yay -S mkvdup-canary-bin`.
+
 ### Local Testing (Canary)
 
 ```bash
@@ -152,6 +196,8 @@ Each release produces:
 | mkvdup_VERSION_arm64.deb | ARM64 | Debian/Ubuntu |
 | mkvdup-VERSION.x86_64.rpm | x86_64 | RHEL/Fedora |
 | mkvdup-VERSION.aarch64.rpm | ARM64 | RHEL/Fedora |
+| mkvdup-bin-VERSION-1-x86_64.pkg.tar.zst | x86_64 | Arch Linux |
+| mkvdup-bin-VERSION-1-aarch64.pkg.tar.zst | ARM64 | Arch Linux |
 
 ## Package Repositories
 
@@ -180,6 +226,24 @@ EOF
 
 sudo dnf install mkvdup
 ```
+
+### Arch Linux
+
+```bash
+curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+sudo tee -a /etc/pacman.conf << 'EOF'
+
+[mkvdup]
+SigLevel = Required
+Server = https://stuckj.github.io/mkvdup/arch/$arch
+EOF
+
+sudo pacman -Syu mkvdup-bin
+```
+
+Or from the AUR: `yay -S mkvdup-bin`.
 
 ### Nix
 
@@ -273,6 +337,54 @@ nix flake check
 If the script reports a build failure that isn't a hash mismatch, the canary is genuinely broken
 and needs a code fix — it deliberately refuses to rewrite the hash in that case.
 
+## Arch Maintenance
+
+Arch is served two ways, mirroring how the other platforms are split: the AUR is the analogue
+of the Homebrew tap (a recipe in an external repo) and the pacman repository on gh-pages is the
+analogue of the APT and YUM repositories (signed packages we host). Both are generated from one
+template, [`packaging/arch/PKGBUILD.in`](packaging/arch/PKGBUILD.in), and both are fully
+automated. Edit the template, never a published copy.
+
+Three things about the naming are load-bearing:
+
+- **The package is `mkvdup-bin` in both places, not `mkvdup` in the repository.** Identical
+  names mean pacman treats the hosted package as an upgrade of an already-installed AUR build,
+  so a user who starts on the AUR and later adds the repository is upgraded in place. Two names
+  would instead present as a conflict to be resolved by hand.
+- **`pkgver` replaces `-` with `_`.** A pacman `pkgver` cannot contain a hyphen — that is the
+  `pkgver`/`pkgrel` separator — so `1.2.0-canary.1` is packaged as `1.2.0_canary.1`. Canaries
+  are their own package, as they are for deb and rpm, so that version never has to sort against
+  a stable one.
+- **The pacman database file is named after the `[section]` users add to `pacman.conf`**
+  (`mkvdup.db` under `arch/`, `mkvdup-canary.db` under `arch-canary/`). Renaming either breaks
+  every configured client, so it has to change in lockstep with the documented instructions.
+
+The mount helper installs to `/usr/bin/mount.fuse.mkvdup` rather than the `/usr/sbin` the deb
+and rpm use: Arch symlinks `/usr/sbin` to `/usr/bin` and packages may not write there.
+
+Signatures are the same GPG key as APT and YUM, but pacman rejects ASCII-armoured `.sig` files,
+so the packages and the database are signed with detached *binary* signatures.
+
+### Local Testing (Arch)
+
+Needs an Arch system or an `archlinux:base-devel` container. Generate a PKGBUILD from the
+template the way the workflow does, against an existing release:
+
+```bash
+TAG=v1.9.1
+sed -e 's|@PKGNAME@|mkvdup-bin|g' -e 's|@BINNAME@|mkvdup|g' \
+    -e 's|@PKGVER@|1.9.1|g' -e "s|@TAG@|${TAG}|g" \
+    -e 's|@PKGDESC@|Storage deduplication tool for MKV files and their source media|g' \
+    -e 's|@SHA256_X86_64@|SKIP|g' -e 's|@SHA256_AARCH64@|SKIP|g' \
+    packaging/arch/PKGBUILD.in > PKGBUILD
+
+makepkg --nodeps
+namcap PKGBUILD ./*.pkg.tar.zst
+```
+
+`SKIP` disables makepkg's checksum verification, which is what makes this usable before the
+real checksums exist. The release workflow always substitutes real ones.
+
 ## Troubleshooting
 
 ### Build Failures
@@ -292,6 +404,18 @@ and needs a code fix — it deliberately refuses to rewrite the hash in that cas
 - Ensure GitHub Pages is enabled
 - Check that `gh-pages` branch exists
 - Verify the workflow has `pages: write` permission
+
+### AUR Publish Skipped or Failing
+
+- A "AUR_SSH_PRIVATE_KEY secret not configured" warning means the secret is unset; the rest of
+  the release is unaffected. See [Prerequisites](#4-set-up-aur-publishing-optional).
+- `Permission denied (publickey)` means the private key in the secret does not match a public
+  key on the AUR account.
+- A clone failure on a name that has never been pushed to is expected — AUR repositories are
+  created by their first push, which has to be done by hand once per package name.
+- A database sync reporting an invalid or corrupted database usually means the `.db` file on
+  gh-pages is a symlink rather than a copy; the workflow replaces the symlinks `repo-add`
+  leaves behind for exactly this reason.
 
 ## Local Testing
 

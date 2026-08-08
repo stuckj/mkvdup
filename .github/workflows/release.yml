@@ -193,7 +193,8 @@ jobs:
         run: |
           nfpm package --packager rpm --target .
 
-      - name: Create Homebrew tarball
+      # Consumed by the Homebrew formulae and by the Arch PKGBUILD.
+      - name: Create release tarball
         env:
           PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -224,6 +225,11 @@ jobs:
           cp scripts/mkvdup-completion.bash staging/
           cp scripts/mkvdup-completion.zsh staging/
           cp scripts/mkvdup.fish staging/
+
+          # Mount helper for fstab/systemd integration. Kept under its own name --
+          # it derives the binary to exec from the name it is installed under, and
+          # the Arch package renames it at install time the way nfpm.yaml does.
+          cp scripts/mount.fuse.mkvdup staging/
 
           # Create tarball
           tar -czvf "${TARBALL_NAME}" -C staging .
@@ -712,6 +718,172 @@ jobs:
           git diff --staged --quiet || git commit -m "Update formula for ${{ needs.prepare.outputs.tag }}"
           git push
 
+  # Builds the pacman packages and the PKGBUILD the AUR receives.
+  #
+  # Both come from the tarballs already attached to the release: makepkg fetches
+  # them over the network and checks them against sha256sums taken from the build
+  # artifacts, so a wrong download URL, or a release asset that does not match what
+  # was built, fails here instead of after reaching the AUR. That is what the
+  # dependency on release buys, and why this cannot run alongside it.
+  build-arch:
+    needs: [prepare, build, release]
+    runs-on: ubuntu-latest
+    # Arch ships rolling tags only, so unlike go-version and nfpm above there is no
+    # versioned image to pin.
+    container: archlinux:base-devel
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --needed --noconfirm git github-cli
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Download tarball artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: tarball-linux-*
+          path: tarballs/
+          merge-multiple: true
+
+      - name: Generate PKGBUILD
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
+          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+        run: |
+          # A pacman pkgver cannot contain a hyphen -- that is the pkgver/pkgrel
+          # separator -- so 1.2.0-canary.1 becomes 1.2.0_canary.1. Canaries ship as
+          # their own package here exactly as they do for deb and rpm, so this
+          # version never has to sort against a stable one.
+          PKGVER="${VERSION//-/_}"
+
+          if [[ "$IS_CANARY" == "true" ]]; then
+            PKGNAME="mkvdup-canary-bin"
+            PKGDESC="Storage deduplication tool for MKV files (canary/pre-release)"
+          else
+            PKGNAME="mkvdup-bin"
+            PKGDESC="Storage deduplication tool for MKV files and their source media"
+          fi
+
+          SHA_X86_64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" | awk '{print $1}')
+          SHA_AARCH64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" | awk '{print $1}')
+
+          mkdir -p pkgbuild
+          sed -e "s|@PKGNAME@|${PKGNAME}|g" \
+              -e "s|@BINNAME@|${PACKAGE_NAME}|g" \
+              -e "s|@PKGVER@|${PKGVER}|g" \
+              -e "s|@PKGDESC@|${PKGDESC}|g" \
+              -e "s|@TAG@|${TAG}|g" \
+              -e "s|@SHA256_X86_64@|${SHA_X86_64}|g" \
+              -e "s|@SHA256_AARCH64@|${SHA_AARCH64}|g" \
+              packaging/arch/PKGBUILD.in > pkgbuild/PKGBUILD
+
+          if grep -n '@[A-Z0-9_]*@' pkgbuild/PKGBUILD; then
+            echo "::error::PKGBUILD still contains unsubstituted placeholders"
+            exit 1
+          fi
+
+          cat pkgbuild/PKGBUILD
+
+      - name: Build packages
+        run: |
+          # makepkg refuses to run as root, which is what the container gives us.
+          useradd --create-home builder
+          chown -R builder:builder pkgbuild
+
+          cd pkgbuild
+          for target in x86_64 aarch64; do
+            # CARCH is both what makepkg validates the arch=() array against and
+            # what it records in .PKGINFO. Appending to a copy of the host config
+            # overrides the runner's own x86_64 for the aarch64 pass.
+            cp /etc/makepkg.conf "makepkg-${target}.conf"
+            printf '\nCARCH=%s\nCHOST=%s-pc-linux-gnu\n' "${target}" "${target}" \
+              >> "makepkg-${target}.conf"
+            chown builder:builder "makepkg-${target}.conf"
+
+            # --nodeps: fuse3 is a runtime dependency of the package being built,
+            # and nothing in package() needs it present to assemble one.
+            sudo -u builder makepkg --config "makepkg-${target}.conf" --nodeps --noconfirm
+          done
+
+          sudo -u builder bash -c 'makepkg --printsrcinfo > .SRCINFO'
+          ls -la ./*.pkg.tar.zst .SRCINFO
+
+      # Attached here rather than by the release job, which has to run first for the
+      # sources above to be fetchable. Keeps the release page carrying every package
+      # format, as it does for deb and rpm.
+      - name: Attach packages to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release upload "$TAG" pkgbuild/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload Arch package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: arch-packages
+          path: pkgbuild/*.pkg.tar.zst
+
+      - name: Upload PKGBUILD artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aur-pkgbuild
+          path: |
+            pkgbuild/PKGBUILD
+            pkgbuild/.SRCINFO
+          include-hidden-files: true
+
+  # Publishes the same PKGBUILD to the AUR as mkvdup-bin / mkvdup-canary-bin. This
+  # is the Arch analogue of update-homebrew: a recipe pushed to an external repo,
+  # rather than packages served from gh-pages.
+  update-aur:
+    needs: [prepare, build-arch]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PKGBUILD artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: aur-pkgbuild
+          path: pkgbuild/
+
+      - name: Push to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::AUR_SSH_PRIVATE_KEY secret not configured. Skipping AUR publish."
+            exit 0
+          fi
+
+          if [[ "$IS_CANARY" == "true" ]]; then
+            PKGNAME="mkvdup-canary-bin"
+          else
+            PKGNAME="mkvdup-bin"
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+
+          git clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
+          cp pkgbuild/PKGBUILD pkgbuild/.SRCINFO aur/
+
+          cd aur
+          git config user.name "stuckj"
+          git config user.email "stuckj@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git diff --staged --quiet || git commit -m "Update to ${VERSION}"
+          git push
+
   # Writes the release version, and a refreshed vendorHash, into the Nix files on
   # the ref being released, so the tag created below actually contains them.
   #
@@ -846,7 +1018,11 @@ jobs:
     # Also gated on release: publishing APT/YUM packages for a version that has
     # no tag and no GitHub release would leave users able to install something
     # that does not officially exist.
-    needs: [prepare, build, release]
+    #
+    # The pacman repository is published from here rather than from a job of its
+    # own so that gh-pages has exactly one writer -- two jobs pushing to it would
+    # race.
+    needs: [prepare, build, build-arch, release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
@@ -897,6 +1073,12 @@ jobs:
           pattern: rpm-package-*
           path: packages/
           merge-multiple: true
+
+      - name: Download all Arch packages
+        uses: actions/download-artifact@v8
+        with:
+          name: arch-packages
+          path: packages/
 
       - name: Setup APT repository structure
         env:
@@ -988,12 +1170,77 @@ jobs:
           # Sign the repository metadata
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o repodata/repomd.xml.asc repodata/repomd.xml
 
+      - name: Setup pacman repository structure
+        env:
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd gh-pages
+
+          # The database file pacman fetches is named after the [section] the user
+          # adds to pacman.conf, so DB_NAME is part of the documented install
+          # instructions and cannot be changed independently of them.
+          if [[ "$IS_CANARY" == "true" ]]; then
+            ARCH_DIR="arch-canary"
+            DB_NAME="mkvdup-canary"
+          else
+            ARCH_DIR="arch"
+            DB_NAME="mkvdup"
+          fi
+
+          for target in x86_64 aarch64; do
+            dir="${ARCH_DIR}/${target}"
+            mkdir -p "$dir"
+
+            new_pkgs=()
+            for src in ../packages/*-"${target}".pkg.tar.zst; do
+              pkg=$(basename "$src")
+              cp "$src" "${dir}/${pkg}"
+              new_pkgs+=("$pkg")
+            done
+
+            # Detached *binary* signatures, unlike the armoured ones the APT and
+            # YUM metadata above use -- pacman rejects an armoured .sig.
+            for pkg in "${new_pkgs[@]}"; do
+              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+                --detach-sign --no-armor -o "${dir}/${pkg}.sig" "${dir}/${pkg}"
+            done
+
+            # repo-add ships with pacman and has no equivalent packaged for the
+            # runner. It reads the .sig files written above and records them in the
+            # database, so signing has to come first.
+            #
+            # Only the new packages are passed. repo-add replaces the entry for a
+            # package name it already knows, so handing it the whole directory
+            # would let glob order -- not version order -- decide which of the
+            # accumulated releases ends up current.
+            docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
+              repo-add "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
+
+            for ext in db files; do
+              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+                --detach-sign --no-armor \
+                -o "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.tar.gz"
+
+              # repo-add leaves ${DB_NAME}.db and .files as symlinks to the
+              # tarballs. Git stores a symlink as its target path and Pages serves
+              # that verbatim, so pacman would download the string
+              # "mkvdup.db.tar.gz" and fail to parse it as a database.
+              rm -f "${dir}/${DB_NAME}.${ext}" "${dir}/${DB_NAME}.${ext}.sig"
+              cp "${dir}/${DB_NAME}.${ext}.tar.gz" "${dir}/${DB_NAME}.${ext}"
+              cp "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.sig"
+            done
+          done
+
       - name: Export GPG public key
         run: |
           cd gh-pages
           gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
+          # pacman-key --lsign-key needs the key id, and the install instructions
+          # read it from here so they do not have to hardcode it.
+          echo "${{ env.GPG_KEY_ID }}" > gpg-key-id.txt
           # Copy to all repo directories that exist
-          for dir in apt yum yum-canary; do
+          for dir in apt yum yum-canary arch arch-canary; do
             if [[ -d "$dir" ]]; then cp gpg-key.asc "$dir/"; fi
           done
 
@@ -1048,6 +1295,27 @@ jobs:
           # Install
           sudo dnf install mkvdup</pre>
 
+            <h2>Arch Linux (pacman)</h2>
+            <pre>
+          # Trust the signing key
+          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+          sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+          # Add the repository
+          sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
+
+          [mkvdup]
+          SigLevel = Required
+          Server = https://stuckj.github.io/mkvdup/arch/$arch
+          REPO
+
+          # Install
+          sudo pacman -Syu mkvdup-bin</pre>
+
+            <p>Also on the AUR as
+            <a href="https://aur.archlinux.org/packages/mkvdup-bin"><code>mkvdup-bin</code></a>,
+            if you would rather not add a repository: <code>yay -S mkvdup-bin</code>.</p>
+
             <h2>Canary Channel (Pre-release)</h2>
             <p>The canary channel provides early access to new features. It installs as
             <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
@@ -1083,6 +1351,23 @@ jobs:
 
           # Install
           sudo dnf install mkvdup-canary</pre>
+
+            <h3>Arch Linux (pacman) - Canary</h3>
+            <pre>
+          # Trust the signing key (same key as stable)
+          curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
+          sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+
+          # Add the canary repository
+          sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
+
+          [mkvdup-canary]
+          SigLevel = Required
+          Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+          REPO
+
+          # Install
+          sudo pacman -Syu mkvdup-canary-bin</pre>
 
             <h2>Links</h2>
             <ul>
