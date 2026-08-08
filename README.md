@@ -117,16 +117,16 @@ Or add the binary repository, which serves the same package and updates through
 `pacman -Syu` without a rebuild:
 
 ```bash
-# Trust the signing key
+# Trust the signing key (the same key the APT and YUM repositories use)
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
-sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
 # Add the repository
 sudo tee -a /etc/pacman.conf << 'EOF'
 
 [mkvdup]
 SigLevel = Required
-Server = https://stuckj.github.io/mkvdup/arch/$arch
+Server = https://github.com/stuckj/mkvdup/releases/download/pacman-$arch
 EOF
 
 # Install
@@ -150,14 +150,14 @@ Or via the canary repository:
 ```bash
 # Trust the signing key (same as stable)
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
-sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
 # Add the canary repository
 sudo tee -a /etc/pacman.conf << 'EOF'
 
 [mkvdup-canary]
 SigLevel = Required
-Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+Server = https://github.com/stuckj/mkvdup/releases/download/pacman-canary-$arch
 EOF
 
 # Install

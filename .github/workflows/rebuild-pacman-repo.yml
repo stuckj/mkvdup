@@ -1,0 +1,54 @@
+name: Rebuild pacman Repositories
+
+# The release workflow runs the same script on every release. This exists for the
+# cases a release does not cover: bootstrapping the repositories, repairing drift,
+# and inspecting what would be published before it is.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build everything and publish nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2.
+    container: archlinux:base
+    steps:
+      - name: Install tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git github-cli
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --keyid-format LONG --with-colons | awk -F: '/^sec/{print $5; exit}')
+          echo "GPG_KEY_ID=$KEY_ID" >> "$GITHUB_ENV"
+
+      - name: Rebuild
+        env:
+          GPG_KEY_ID: ${{ env.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: ./scripts/publish-pacman-repo.sh "$GITHUB_WORKSPACE/.pacmanbuild"
+
+      # Only reachable on a dry run: a real run has already published, and the
+      # built tree is the same bytes as the assets.
+      - name: Upload the built repositories
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v7
+        with:
+          name: pacman-repositories
+          path: .pacmanbuild/pacman-*

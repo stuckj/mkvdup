@@ -37,8 +37,8 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 
 ### 4. Set Up AUR Publishing
 
-Only the AUR half of the Arch release needs this. The pacman repository on GitHub Pages is
-signed with the same GPG key as APT and YUM and needs nothing extra.
+Only the AUR half of the Arch release needs this. The pacman repository is signed with the same
+GPG key as APT and YUM and needs nothing extra.
 
 Do it **before** the first Arch release. A release without it still succeeds, but the README
 and the published landing page both tell users to run `yay -S mkvdup-bin` unconditionally, and
@@ -81,8 +81,8 @@ The workflow will:
 2. Build packages for amd64 and arm64 — deb, rpm and tarballs in `build`, pacman packages in
    `build-arch`
 3. Create the GitHub release **and the tag together**, pointing at the resolved commit
-4. Update the APT, YUM and pacman repositories on GitHub Pages, and the Homebrew, AUR and Nix
-   files
+4. Update the APT and YUM repositories on GitHub Pages, the pacman repositories in their own
+   releases, and the Homebrew, AUR and Nix files
 
 **Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
 user-visible — tag, release, packages, formula and Nix bumps — is created until every build
@@ -161,13 +161,13 @@ sudo dnf install mkvdup-canary
 
 ```bash
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
-sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
 sudo tee -a /etc/pacman.conf << 'EOF'
 
 [mkvdup-canary]
 SigLevel = Required
-Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+Server = https://github.com/stuckj/mkvdup/releases/download/pacman-canary-$arch
 EOF
 
 sudo pacman -Syu mkvdup-canary-bin
@@ -228,13 +228,13 @@ sudo dnf install mkvdup
 
 ```bash
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
-sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
 sudo tee -a /etc/pacman.conf << 'EOF'
 
 [mkvdup]
 SigLevel = Required
-Server = https://stuckj.github.io/mkvdup/arch/$arch
+Server = https://github.com/stuckj/mkvdup/releases/download/pacman-$arch
 EOF
 
 sudo pacman -Syu mkvdup-bin
@@ -337,10 +337,37 @@ and needs a code fix — it deliberately refuses to rewrite the hash in that cas
 ## Arch Maintenance
 
 Arch is served two ways, mirroring how the other platforms are split: the AUR is the analogue
-of the Homebrew tap (a recipe in an external repo) and the pacman repository on gh-pages is the
-analogue of the APT and YUM repositories (signed packages we host). Both are generated from one
-template, [`packaging/arch/PKGBUILD.in`](packaging/arch/PKGBUILD.in), and both are fully
-automated. Edit the template, never a published copy.
+of the Homebrew tap (a recipe in an external repo) and the pacman repository is the analogue of
+the APT and YUM repositories (signed packages we host). Both are generated from one template,
+[`packaging/arch/PKGBUILD.in`](packaging/arch/PKGBUILD.in), and both are fully automated. Edit
+the template, never a published copy.
+
+### Where the pacman repository lives
+
+Not on GitHub Pages — in four releases of its own, one per channel and architecture:
+
+| Release | `Server` line users add |
+|---------|-------------------------|
+| `pacman-x86_64`, `pacman-aarch64` | `.../releases/download/pacman-$arch` |
+| `pacman-canary-x86_64`, `pacman-canary-aarch64` | `.../releases/download/pacman-canary-$arch` |
+
+That shape is forced, not chosen. libalpm validates `%FILENAME%` and rejects any value
+containing a `/` (`_alpm_validate_filename` in `be_sync.c`), so a database entry cannot point at
+a package anywhere but beside the database itself. APT's `Filename` has no such restriction,
+which is why `rebuild-package-repos.sh` can keep an index on Pages and reach packages in a
+sibling release with `../<tag>/<asset>` and pacman cannot. A GitHub release is one flat
+namespace, so it can be the directory a pacman repository requires; Pages would have to hold the
+packages too, which is the thing that filled it up.
+
+One consequence worth knowing: pacman derives the URL of a package's detached signature from
+the URL it *ended up* at after redirects, but only when that URL's last path segment contains
+`.db` or `.pkg`. GitHub redirects release assets to an opaque blob path with the filename only
+in the query string, so the test fails and pacman falls back to the original URL — which is what
+makes `<asset>.sig` resolve. A CDN path that ended in the asset name would silently fetch the
+package again instead of its signature.
+
+Because the whole channel is release assets, a release also never has to wait on the Pages build,
+and nothing about Arch counts against the Pages size limit.
 
 The template's header is copied verbatim into what the AUR publishes, so it is written for
 someone reading it there. Nothing in the template may use an at-delimited word outside the
@@ -358,8 +385,9 @@ Three things about the naming are load-bearing:
   are their own package, as they are for deb and rpm, so that version never has to sort against
   a stable one.
 - **The pacman database file is named after the `[section]` users add to `pacman.conf`**
-  (`mkvdup.db` under `arch/`, `mkvdup-canary.db` under `arch-canary/`). Renaming either breaks
-  every configured client, so it has to change in lockstep with the documented instructions.
+  (`mkvdup.db` in the `pacman-*` releases, `mkvdup-canary.db` in the `pacman-canary-*` ones).
+  Renaming either — or renaming a release — breaks every configured client, so both have to
+  change in lockstep with the documented instructions.
 
 The mount helper installs to `/usr/bin/mount.fuse.mkvdup` rather than the `/usr/sbin` the deb
 and rpm use: Arch symlinks `/usr/sbin` to `/usr/bin` and packages may not write there.
@@ -377,13 +405,19 @@ Signatures are the same GPG key as APT and YUM, but detached *binary* rather tha
 `repo-add --include-sigs` refuses to record an armoured package signature in the database. pacman
 hands signatures to gpgme and would accept either.
 
-Unlike the APT pool and the YUM package directory, which keep every version they have ever
-published, the pacman repository keeps only the current one — its database holds a single entry
-per package name, so an older file is not installable through pacman anyway. `repo-add --remove`
-deletes the superseded file, driven by the entry it is replacing. `--prevent-downgrade` goes with
-it: releasing an older version from a maintenance branch leaves the pacman channel untouched
-rather than regressing it, which also means such a release reaches every channel except this one.
-The release page still carries every version.
+The pacman repository keeps only the current version — its database holds a single entry per
+package name, so an older file is not installable through pacman anyway, and keeping it would be
+the dead weight the APT pool accumulated. Every version stays on its own `v*` release regardless;
+the `pacman-*` releases hold a second copy of the current one and nothing else.
+
+[`scripts/publish-pacman-repo.sh`](scripts/publish-pacman-repo.sh) rebuilds all four from the
+release assets, the way `rebuild-package-repos.sh` does for APT and YUM. It reads the releases
+rather than any branch, so it is idempotent, it repairs drift, and a package whose release was
+deleted drops out. It selects the highest version present with `vercmp` rather than trusting the
+release that triggered it, which is what keeps a backport release from regressing the channel —
+the same protection `repo-add --prevent-downgrade` gives, but from the data rather than a flag.
+Run it by hand with **Actions → Rebuild pacman Repositories**; `DRY_RUN=1` builds everything and
+publishes nothing.
 
 ### Local Testing (Arch)
 
@@ -462,9 +496,11 @@ and helpers then show — regenerate it whenever the PKGBUILD changes. The workf
 
 ### pacman Reporting a Corrupted Database
 
-- `pacman -Sy` calling the database invalid or corrupted usually means the `.db` file on
-  gh-pages is a symlink rather than a copy; the workflow replaces the symlinks `repo-add`
-  leaves behind for exactly this reason.
+- `pacman -Sy` calling the database invalid or corrupted usually means the `.db` asset is not a
+  plain file. `repo-add` leaves `.db` and `.files` as symlinks to the tarballs, which is why
+  `publish-pacman-repo.sh` replaces them with copies before uploading.
+- A 404 on the database means the `pacman-*` release does not exist yet. It is created by the
+  first run of the publish script, which needs at least one `v*` release carrying Arch packages.
 - A signature error after `pacman-key --add` means the key was never locally signed;
   `SigLevel = Required` implies `TrustedOnly`, so `pacman-key --lsign-key` is not optional.
 

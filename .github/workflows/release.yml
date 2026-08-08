@@ -979,6 +979,48 @@ jobs:
           # from, and the AUR only accepts master.
           git push origin HEAD:refs/heads/master
 
+  # Rebuilds the pacman repositories from the release assets.
+  #
+  # Unlike APT and YUM, this touches nothing on gh-pages. A pacman database can
+  # only name a package by bare filename -- libalpm rejects a %FILENAME% with a
+  # '/' in it -- so the packages have to sit in the same flat directory as the
+  # database that lists them. A GitHub release is exactly that, which is why each
+  # channel and architecture gets a release of its own to be the repository.
+  #
+  # Gated on release for the same reason publish-repo is: the packages this reads
+  # are the ones the release job just attached.
+  publish-pacman:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2. Same
+    # rolling-tag caveat as build-arch above.
+    container: archlinux:base
+    steps:
+      - name: Install tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git github-cli
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --keyid-format LONG --with-colons | awk -F: '/^sec/{print $5; exit}')
+          echo "GPG_KEY_ID=$KEY_ID" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          GPG_KEY_ID: ${{ env.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/publish-pacman-repo.sh
+
   # Writes the release version, and a refreshed vendorHash, into the Nix files on
   # the ref being released, so the tag created below actually contains them.
   #
@@ -1110,17 +1152,10 @@ jobs:
           echo "commit=${target}" >> "$GITHUB_OUTPUT"
 
   publish-repo:
-    # Also gated on release: publishing APT/YUM/pacman packages for a version that
-    # has no tag and no GitHub release would leave users able to install something
+    # Also gated on release: publishing APT/YUM packages for a version that has
+    # no tag and no GitHub release would leave users able to install something
     # that does not officially exist.
-    #
-    # The pacman repository is published from here rather than from a job of its
-    # own so that this workflow has exactly one gh-pages writer -- two of its jobs
-    # pushing there would race. (benchmark.yml and coverage.yml write to the branch
-    # too, so a release still races with those; coverage.yml rebases before
-    # pushing, this job does not.) build-arch has already run by this point, well
-    # before release; the dependency is only for its artifacts.
-    needs: [prepare, build, build-arch, release]
+    needs: [prepare, build, release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
@@ -1171,12 +1206,6 @@ jobs:
           pattern: rpm-package-*
           path: packages/
           merge-multiple: true
-
-      - name: Download all Arch packages
-        uses: actions/download-artifact@v8
-        with:
-          name: arch-packages
-          path: packages/
 
       - name: Setup APT repository structure
         env:
@@ -1268,164 +1297,14 @@ jobs:
           # Sign the repository metadata
           echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --armor --passphrase-fd 0 --detach-sign -o repodata/repomd.xml.asc repodata/repomd.xml
 
-      - name: Setup pacman repository structure
-        env:
-          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          cd gh-pages
-
-          # The database file pacman fetches is named after the [section] the user
-          # adds to pacman.conf, so DB_NAME is part of the documented install
-          # instructions and cannot be changed independently of them.
-          if [[ "$IS_CANARY" == "true" ]]; then
-            ARCH_DIR="arch-canary"
-            DB_NAME="mkvdup-canary"
-          else
-            ARCH_DIR="arch"
-            DB_NAME="mkvdup"
-          fi
-
-          # Everything this job produces is published by a single push at the end,
-          # so a failure here would hold back APT and YUM as well. Pulling up front
-          # with retries keeps the one step that can fail for reasons unrelated to
-          # the release -- an anonymous Docker Hub pull -- from doing that.
-          pulled=false
-          for attempt in 1 2 3; do
-            if docker pull archlinux:base; then pulled=true; break; fi
-            echo "pull attempt ${attempt} failed"
-            sleep 30
-          done
-          if [[ "$pulled" != true ]]; then
-            echo "::error::could not pull archlinux:base; re-run this job"
-            exit 1
-          fi
-
-          for target in x86_64 aarch64; do
-            dir="${ARCH_DIR}/${target}"
-            mkdir -p "$dir"
-
-            new_pkgs=()
-            for src in ../packages/*-"${target}".pkg.tar.zst; do
-              pkg=$(basename "$src")
-              cp "$src" "${dir}/${pkg}"
-              new_pkgs+=("$pkg")
-            done
-
-            # Detached *binary* signatures, unlike the armoured ones the APT and
-            # YUM metadata above use. pacman itself hands a signature to gpgme and
-            # would take either; it is repo-add, below, that refuses to record an
-            # armoured one in the database.
-            for pkg in "${new_pkgs[@]}"; do
-              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
-                --detach-sign --no-armor -o "${dir}/${pkg}.sig" "${dir}/${pkg}"
-            done
-
-            # Run in a container because --include-sigs needs pacman 6.1; Ubuntu's
-            # own pacman-package-manager package is 6.0.2, whose repo-add would
-            # reject the flag. (--remove and --prevent-downgrade are older than
-            # both.) It records the .sig files written above into the database,
-            # which is what requires them to be binary -- repo-add refuses an
-            # armoured one. It does not save clients a request: pacman fetches
-            # the detached .sig regardless of what the database carries.
-            #
-            # --remove deletes the file the entry being replaced pointed at. The
-            # database holds one entry per package name, so a superseded
-            # .pkg.tar.zst is not installable through pacman at all; letting
-            # repo-add drive the deletion from %FILENAME% is what keeps it from
-            # ever removing a file the database still references. The release page
-            # keeps every version regardless.
-            #
-            # --prevent-downgrade makes releasing an older version from a
-            # maintenance branch a no-op here rather than a silent regression of
-            # the channel -- and it returns before --remove computes anything, so
-            # the newer package is not deleted either.
-            #
-            # Only the new packages are passed. repo-add replaces the entry for a
-            # package name it already knows, so handing it the whole directory
-            # would let glob order -- not version order -- decide which of the
-            # accumulated releases ends up current.
-            docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
-              repo-add --include-sigs --remove --prevent-downgrade \
-              "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
-
-            # A package repo-add declined has already been copied in by this
-            # point, and --remove only ever deletes the file an entry it replaced
-            # pointed at -- so nothing would collect it later. Publish only what
-            # the database references. %FILENAME% holds the bare basename, which
-            # is what new_pkgs carries.
-            #
-            # Read in two steps rather than one pipeline: the default shell is
-            # `bash -e` without pipefail, so a tar failure would be swallowed and
-            # leave this empty -- indistinguishable from "the database accepted
-            # nothing", which deletes every package just copied in.
-            db_desc=$(tar -xOzf "${dir}/${DB_NAME}.db.tar.gz" --wildcards '*/desc')
-            referenced=$(awk '/^%FILENAME%$/ {getline; print}' <<<"$db_desc")
-            if [[ -z "$referenced" ]]; then
-              echo "::error::${DB_NAME} database in ${dir} lists no package files"
-              exit 1
-            fi
-
-            for pkg in "${new_pkgs[@]}"; do
-              if ! grep -qxF "$pkg" <<<"$referenced"; then
-                # A warning rather than a notice, for the reason sync-nix gives
-                # below: standing down is the right outcome, but on an otherwise
-                # green release a notice is invisible, and this is the one path
-                # where a release deliberately does not reach a channel.
-                echo "::warning::${pkg} is older than what ${DB_NAME} already serves; the pacman channel keeps its current version. Every other channel has this release."
-                {
-                  echo "### ⚠️ pacman repository not updated (${target})"
-                  echo
-                  echo "\`${pkg}\` is older than the version already in \`${DB_NAME}\`, so it was not published."
-                  echo
-                  echo "Every other channel carries this release."
-                } >> "$GITHUB_STEP_SUMMARY"
-                rm -f "${dir}/${pkg}" "${dir}/${pkg}.sig"
-              fi
-            done
-
-            # And the converse, which is the invariant actually being published:
-            # a signed database naming a file that is not there gives clients a
-            # 404 they cannot tell from an attack. Failing here is not
-            # self-healing -- a re-run checks out the same gh-pages state and
-            # stops again, with the APT and YUM updates for this release behind
-            # it -- but publishing a database that lies is worse.
-            while read -r want; do
-              if [[ ! -f "${dir}/${want}" ]]; then
-                echo "::error::${DB_NAME} database references ${want}, which is not in ${dir}"
-                exit 1
-              fi
-            done <<<"$referenced"
-
-            for ext in db files; do
-              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
-                --detach-sign --no-armor \
-                -o "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.tar.gz"
-
-              # repo-add leaves ${DB_NAME}.db and .files as symlinks to the
-              # tarballs. Git stores a symlink as its target path and Pages serves
-              # that verbatim, so pacman would download the string
-              # "mkvdup.db.tar.gz" and fail to parse it as a database.
-              rm -f "${dir}/${DB_NAME}.${ext}" "${dir}/${DB_NAME}.${ext}.sig"
-              cp "${dir}/${DB_NAME}.${ext}.tar.gz" "${dir}/${DB_NAME}.${ext}"
-              cp "${dir}/${DB_NAME}.${ext}.tar.gz.sig" "${dir}/${DB_NAME}.${ext}.sig"
-
-              # repo-add rotates the previous database to .old, and its signature
-              # to .old.sig. Nothing fetches either, and keeping them would serve a
-              # stale database next to the current one.
-              rm -f "${dir}/${DB_NAME}.${ext}.tar.gz.old"*
-            done
-          done
-
       - name: Export GPG public key
         run: |
           cd gh-pages
           gpg --armor --export ${{ env.GPG_KEY_ID }} > gpg-key.asc
-          # pacman-key --lsign-key needs the key id, and the install instructions
-          # read it from here so they do not have to hardcode it.
-          echo "${{ env.GPG_KEY_ID }}" > gpg-key-id.txt
-          # Copy to all repo directories that exist
-          for dir in apt yum yum-canary arch arch-canary; do
+          # Copy to all repo directories that exist. The pacman channel is served
+          # from release assets and has no directory here, but it does import this
+          # key -- it is the same key for every channel.
+          for dir in apt yum yum-canary; do
             if [[ -d "$dir" ]]; then cp gpg-key.asc "$dir/"; fi
           done
 
@@ -1482,16 +1361,16 @@ jobs:
 
             <h2>Arch Linux (pacman)</h2>
             <pre>
-          # Trust the signing key
+          # Trust the signing key (the same key the APT and YUM repositories use)
           curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
-          sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+          sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
           # Add the repository
           sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
 
           [mkvdup]
           SigLevel = Required
-          Server = https://stuckj.github.io/mkvdup/arch/$arch
+          Server = https://github.com/stuckj/mkvdup/releases/download/pacman-$arch
           REPO
 
           # Install
@@ -1541,14 +1420,14 @@ jobs:
             <pre>
           # Trust the signing key (same key as stable)
           curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
-          sudo pacman-key --lsign-key "$(curl -fsSL https://stuckj.github.io/mkvdup/gpg-key-id.txt)"
+          sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
           # Add the canary repository
           sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
 
           [mkvdup-canary]
           SigLevel = Required
-          Server = https://stuckj.github.io/mkvdup/arch-canary/$arch
+          Server = https://github.com/stuckj/mkvdup/releases/download/pacman-canary-$arch
           REPO
 
           # Install
