@@ -337,6 +337,11 @@ analogue of the APT and YUM repositories (signed packages we host). Both are gen
 template, [`packaging/arch/PKGBUILD.in`](packaging/arch/PKGBUILD.in), and both are fully
 automated. Edit the template, never a published copy.
 
+The template's header is copied verbatim into what the AUR publishes, so it is written for
+someone reading it there. Nothing in the template may use an at-delimited word outside the
+substituted set — including in a comment — because the workflow rejects a generated PKGBUILD
+that still matches one.
+
 Three things about the naming are load-bearing:
 
 - **The package is `mkvdup-bin` in both places, not `mkvdup` in the repository.** Identical
@@ -369,8 +374,15 @@ so the packages and the database are signed with detached *binary* signatures.
 ### Local Testing (Arch)
 
 Needs an Arch system or an `archlinux:base-devel` container, plus `namcap` (`pacman -S
-namcap`). Generate a PKGBUILD from the template the way the workflow does and build it in a
-scratch directory:
+namcap`). **makepkg refuses to run as root**, which is what that container gives you — create
+an unprivileged user first, as the workflow does:
+
+```bash
+useradd --create-home builder && su - builder
+```
+
+Generate a PKGBUILD from the template the way the workflow does and build it in a scratch
+directory:
 
 ```bash
 VERSION=1.9.2

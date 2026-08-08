@@ -727,8 +727,9 @@ jobs:
 
   # Builds the pacman packages and the PKGBUILD the AUR receives.
   #
-  # Ordering: alongside sync-nix and before release, for the same reason every other
-  # build runs there. An Arch failure after the tag existed would leave the version
+  # Ordering: with the other builds, ahead of both sync-nix and release, so neither
+  # the Nix bump nor the tag is pushed unless this has passed. An Arch failure after
+  # the tag existed would leave the version
   # tagged, released, and live on Homebrew while APT, YUM and pacman still served the
   # previous one -- and unrepeatable, because prepare refuses a version whose tag is
   # already on the remote.
@@ -921,6 +922,9 @@ jobs:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          # Published at https://aur.archlinux.org/ under "The following SSH
+          # fingerprints are used for the AUR".
+          AUR_ED25519_FINGERPRINT: 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
         run: |
           if [[ "$IS_CANARY" == "true" ]]; then
             PKGNAME="mkvdup-canary-bin"
@@ -932,7 +936,19 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+
+          # Scanned, then checked against the fingerprint aur.archlinux.org
+          # publishes over HTTPS. A bare keyscan trusts whatever answers, and
+          # exits 0 having written nothing when nothing does -- which surfaces
+          # much later as "Host key verification failed" from the clone.
+          ssh-keyscan -t ed25519 aur.archlinux.org > aur-hostkey
+          scanned=$(ssh-keygen -lf aur-hostkey | awk '{print $2}')
+          if [[ "$scanned" != "$AUR_ED25519_FINGERPRINT" ]]; then
+            echo "::error::aur.archlinux.org presented ${scanned}, expected ${AUR_ED25519_FINGERPRINT}"
+            exit 1
+          fi
+          cat aur-hostkey >> ~/.ssh/known_hosts
+
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
 
           # A package name the AUR has never seen clones as an empty repository;
@@ -1085,9 +1101,11 @@ jobs:
     # that does not officially exist.
     #
     # The pacman repository is published from here rather than from a job of its
-    # own so that gh-pages has exactly one writer -- two jobs pushing to it would
-    # race. build-arch has already run by this point, well before release; the
-    # dependency is only for its artifacts.
+    # own so that this workflow has exactly one gh-pages writer -- two of its jobs
+    # pushing there would race. (benchmark.yml and coverage.yml write to the branch
+    # too, so a release still races with those; coverage.yml rebases before
+    # pushing, this job does not.) build-arch has already run by this point, well
+    # before release; the dependency is only for its artifacts.
     needs: [prepare, build, build-arch, release]
     runs-on: ubuntu-latest
     steps:
@@ -1299,6 +1317,21 @@ jobs:
             # accumulated releases ends up current.
             docker run --rm -v "${PWD}/${dir}:/repo" -w /repo archlinux:base \
               repo-add --include-sigs "${DB_NAME}.db.tar.gz" "${new_pkgs[@]}"
+
+            # Superseded packages are deleted rather than kept the way the APT pool
+            # keeps its own. The database holds one entry per package name, so an
+            # older .pkg.tar.zst is not installable through pacman at all -- it is
+            # only reachable from the release page, which still has it. Matching on
+            # the package name keeps this from touching a second package if one is
+            # ever added to the same repository.
+            for pkg in "${new_pkgs[@]}"; do
+              name=${pkg%-*-*-*.pkg.tar.zst}
+              for old in "${dir}/${name}-"*.pkg.tar.zst; do
+                [[ "$(basename "$old")" == "$pkg" ]] && continue
+                echo "Removing superseded $(basename "$old")"
+                rm -f "$old" "${old}.sig"
+              done
+            done
 
             for ext in db files; do
               echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
