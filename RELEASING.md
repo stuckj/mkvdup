@@ -229,6 +229,13 @@ assets is still not atomic — release assets cannot be swapped as a set — so 
 client that fetches `InRelease` and `Packages.gz` across that window may need to
 re-run `apt update`.
 
+GitHub cancels a run that is still *pending* in a concurrency group when a newer
+one joins it, even though the group sets `cancel-in-progress: false`. Release
+three versions in quick succession and the middle `publish-repo` may show as
+cancelled. That is harmless — each rebuild indexes every release, so the last
+one to run covers the ones before it — but the release will look failed. Re-run
+the rebuild by hand if you want the job green.
+
 ### Migrating an existing client
 
 The first rebuild removes `yum/packages/` and trims the Pages APT pool to the

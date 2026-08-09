@@ -21,6 +21,7 @@ import shutil
 import sys
 import time
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import quoteattr
 
 NS = "http://linux.duke.edu/metadata/repo"
 
@@ -58,7 +59,10 @@ def main(src, dst, mapfile, base):
             if not tag:
                 missing.append(href)
                 return m.group(0)
-            return f'<location xml:base="{base}/{tag}/" href="{stored}"/>'
+            # quoteattr supplies the quotes; a tag or asset name containing & or
+            # " would otherwise produce XML that fails the whole repository.
+            b = quoteattr(f"{base}/{tag}/")
+            return f"<location xml:base={b} href={quoteattr(stored)}/>"
 
         raw, n = re.subn(r'<location href="([^"]+)"\s*/>', point_at_release, raw)
         if missing:
@@ -69,12 +73,19 @@ def main(src, dst, mapfile, base):
         body = raw.encode()
         gz = gzip.compress(body)
         open(os.path.join(dst, name), "wb").write(gz)
-        data.find(f"{{{NS}}}checksum").text = hashlib.sha256(gz).hexdigest()
+        # Set type= alongside the digest. Inheriting whatever createrepo_c wrote
+        # would mislabel the value if a future default emitted sha512, and every
+        # dnf client would reject the repository as a checksum mismatch.
+        ck = data.find(f"{{{NS}}}checksum")
+        ck.text = hashlib.sha256(gz).hexdigest()
+        ck.set("type", "sha256")
         for tagname, val in (("open-checksum", hashlib.sha256(body).hexdigest()),
                              ("size", len(gz)), ("open-size", len(body))):
             el = data.find(f"{{{NS}}}{tagname}")
             if el is not None:
                 el.text = str(val)
+                if tagname == "open-checksum":
+                    el.set("type", "sha256")
         loc.set("href", f"repodata/{name}")
         print(f"    primary: {n} locations now carry xml:base")
 
