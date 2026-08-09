@@ -57,6 +57,9 @@ echo "== source archive checksum"
 # Taken from the archive GitHub actually serves, because that is the one an AUR
 # user's makepkg will verify. Generating our own tarball here and hashing that
 # would produce a checksum nobody else can reproduce.
+# Substituted into the PKGBUILD verbatim, so the checksum below is provably taken
+# from the URL the published package points at. Deriving it in both places let
+# them disagree on a fork or after a rename, and the seeding hid that from CI.
 SRC_URL="https://github.com/${REPO}/archive/${TAG}.tar.gz"
 curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o "$WORK/src.tar.gz" "$SRC_URL"
 SHA256_SRC=$(sha256sum "$WORK/src.tar.gz" | awk '{print $1}')
@@ -68,6 +71,7 @@ sed -e "s|@PKGNAME@|${PKGNAME}|g" \
     -e "s|@PKGVER@|${PKGVER}|g" \
     -e "s|@PKGDESC@|${PKGDESC}|g" \
     -e "s|@TAG@|${TAG}|g" \
+    -e "s|@SRC_URL@|${SRC_URL}|g" \
     -e "s|@VERSION@|${VERSION}|g" \
     -e "s|@SHA256_SRC@|${SHA256_SRC}|g" \
     "$TEMPLATE" > "$WORK/PKGBUILD"

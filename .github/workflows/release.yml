@@ -282,9 +282,9 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           target_commitish: ${{ needs.sync-nix.outputs.commit }}
-          # Listed by extension rather than as packages/*: build-arch also publishes
-          # the generated PKGBUILD and .SRCINFO as artifacts, for update-aur, and
-          # those are not release assets.
+          # Listed by extension rather than as packages/*: it makes the set
+          # explicit, and pairs with fail_on_unmatched_files below so a format
+          # that failed to build stops the release instead of quietly missing.
           files: |
             packages/*.deb
             packages/*.rpm
@@ -760,7 +760,7 @@ jobs:
       - name: Install packaging tools
         run: |
           pacman -Sy --needed --noconfirm archlinux-keyring
-          pacman -Su --needed --noconfirm git go github-cli
+          pacman -Su --needed --noconfirm git go github-cli namcap
 
       - name: Checkout code
         uses: actions/checkout@v7
@@ -773,6 +773,14 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
           IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
         run: ./scripts/build-arch-package.sh "$GITHUB_WORKSPACE/.archbuild"
+
+      # Advisory. makepkg runs with --nodeps because fuse3 is not in the
+      # container, so nothing else ever checks depends=() against what the binary
+      # actually links; namcap does. Not fatal -- it also reports style opinions
+      # that should not block a release.
+      - name: Lint the package
+        continue-on-error: true
+        run: namcap .archbuild/PKGBUILD .archbuild/*.pkg.tar.zst
 
       # Attached here rather than by the release job, which has to run first for
       # the source archive to exist. Keeps the release page carrying every package
@@ -799,6 +807,14 @@ jobs:
   update-aur:
     needs: [prepare, build-arch]
     runs-on: ubuntu-latest
+    # Two releases dispatched close together -- a backport alongside a normal one
+    # is the case the downgrade guard below exists for -- would otherwise clone
+    # the same commit and race, and the loser's push is rejected non-fast-forward
+    # with no retry. Queued rather than cancelled, like the pacman group.
+    concurrency:
+      group: aur-push
+      cancel-in-progress: false
+      queue: max
     # For vercmp, which is what lets this refuse a downgrade the way the pacman
     # channel does. Comparing pacman versions any other way gets it wrong.
     container: archlinux:base

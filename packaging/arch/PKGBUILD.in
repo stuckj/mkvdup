@@ -19,7 +19,7 @@ makedepends=('go')
 # mkvdup is pure Go today so -flto reaches only the final link and does nothing,
 # but that stops being true the moment a cgo dependency arrives.
 options=('!debug' '!lto')
-source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/@TAG@.tar.gz")
+source=("${pkgname}-${pkgver}.tar.gz::@SRC_URL@")
 sha256sums=('@SHA256_SRC@')
 
 # The archive unpacks to the repository name and the tag without its leading v,

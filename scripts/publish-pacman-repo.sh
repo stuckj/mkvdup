@@ -135,7 +135,7 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
 
   if [ -z "$best" ]; then
     if [ "$released" = 1 ]; then
-      stand_down "$tag" "No $pkgname package for $arch is attached to any release, including this one, so the pacman channel has nothing to serve."
+      stand_down "$tag" "No $pkgname package for $arch is attached to any release, including this one, so the pacman channel keeps whatever it last published."
     else
       echo "  $tag: no $pkgname package on any release yet, skipping"
     fi

@@ -83,7 +83,10 @@ The workflow will:
 4. Build the Arch package in `build-arch`, which compiles from the tag's source archive and so
    has to run after the tag exists
 5. Update the APT and YUM repositories on GitHub Pages, the pacman repository in its own
-   release, and the Homebrew, AUR and Nix files
+   release, and the Homebrew and AUR files
+
+The Nix version bump is not in that order: `sync-nix` runs *before* the release, so the tag it
+creates already contains it. That ordering is what #212 established.
 
 **Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
 user-visible — tag, release, packages, formula and Nix bumps — is created until every build
