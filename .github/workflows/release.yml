@@ -9,9 +9,8 @@ on:
 
 # NOTE: intentionally has no *workflow-level* `concurrency` block. (publish-pacman
 # and update-aur have job-level ones, for narrower reasons they document
-# themselves.) The other
-# workflows cancel superseded PR runs, but a release must never be cancelled
-# part-way: it publishes a tag, a GitHub release, APT/YUM/pacman packages, a
+# themselves.) The other workflows cancel superseded PR runs, but a release must
+# never be cancelled part-way: it publishes a tag, a GitHub release, APT/YUM/pacman packages, a
 # Homebrew formula, a PKGBUILD on the AUR and a Nix bump. Interrupting it between those leaves
 # exactly the inconsistent state the job ordering here exists to prevent -- and
 # the AUR is somebody else's server, so that one cannot be undone by rewriting
