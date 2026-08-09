@@ -360,8 +360,8 @@ ever becomes possible.
 That shape is forced, not chosen. libalpm validates `%FILENAME%` and rejects any value
 containing a `/` (`_alpm_validate_filename` in `be_sync.c`), so a database entry cannot point at
 a package anywhere but beside the database itself. APT's `Filename` has no such restriction,
-which is why `rebuild-package-repos.sh` can keep an index on Pages and reach packages in a
-sibling release with `../<tag>/<asset>` and pacman cannot. A GitHub release is one flat
+which is why an APT index hosted on Pages can reach packages in a sibling release with a
+relative `../<tag>/<asset>` and a pacman database cannot. A GitHub release is one flat
 namespace, so it can be the directory a pacman repository requires; Pages would have to hold the
 packages too, which is the thing that filled it up.
 
@@ -427,7 +427,7 @@ the dead weight the APT pool accumulated. Every version stays on its own `v*` re
 the `pacman-*` releases hold a second copy of the current one and nothing else.
 
 [`scripts/publish-pacman-repo.sh`](scripts/publish-pacman-repo.sh) rebuilds all four from the
-release assets, the way `rebuild-package-repos.sh` does for APT and YUM. It reads the releases
+release assets. It reads the releases
 rather than any branch, so it is idempotent, it repairs drift, and a package whose release was
 deleted drops out. It selects the highest version present with `vercmp` rather than trusting the
 release that triggered it, which is what keeps a backport release from regressing the channel —
