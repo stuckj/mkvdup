@@ -17,8 +17,9 @@ conflicts=("${_binname}")
 # Upstream builds with -ldflags="-s -w", so there is nothing left to strip and no
 # debug info to split out.
 options=('!strip' '!debug')
-source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${url}/releases/download/@TAG@/${_binname}_linux_amd64.tar.gz")
-source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::${url}/releases/download/@TAG@/${_binname}_linux_arm64.tar.gz")
+_dl="${url}/releases/download/@TAG@"
+source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${_dl}/${_binname}_linux_amd64.tar.gz")
+source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::${_dl}/${_binname}_linux_arm64.tar.gz")
 sha256sums_x86_64=('@SHA256_X86_64@')
 sha256sums_aarch64=('@SHA256_AARCH64@')
 
