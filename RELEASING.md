@@ -439,8 +439,8 @@ publishes nothing.
 
 ### Local Testing (Arch)
 
-Needs an Arch system or an `archlinux:base-devel` container, plus `namcap` (`pacman -S
-namcap`). **makepkg refuses to run as root**, which is what that container gives you — create
+Needs an Arch system or an `archlinux:base-devel` container, plus `go` and `namcap`
+(`pacman -S go namcap`) — `base-devel` supplies makepkg but no Go toolchain. **makepkg refuses to run as root**, which is what that container gives you — create
 an unprivileged user first, as the workflow does, and give it access to the checkout:
 
 ```bash

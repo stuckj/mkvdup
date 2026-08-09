@@ -15,7 +15,7 @@ makedepends=('go')
 # Arch's stock OPTIONS include debug, which splits a -debug package out of every
 # build. Nothing here publishes one, so it would only ever be an unused asset.
 #
-# !lto for the reason every official Arch Go package exporting CGO_CFLAGS does:
+# !lto for the reason several official Arch Go packages exporting CGO_CFLAGS do:
 # mkvdup is pure Go today so -flto reaches only the final link and does nothing,
 # but that stops being true the moment a cgo dependency arrives.
 options=('!debug' '!lto')

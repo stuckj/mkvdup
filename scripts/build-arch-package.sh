@@ -15,8 +15,9 @@
 # rather than preventing one. Re-running the job is the recovery; nothing else
 # has to be undone.
 #
-# Requires: makepkg and go, i.e. archlinux:base-devel. makepkg refuses to run as
-# root, so this creates an unprivileged user when it is running as one.
+# Requires makepkg and go. archlinux:base-devel supplies makepkg but not go --
+# its depends array has no Go toolchain -- so install it as well. makepkg refuses
+# to run as root, so this creates an unprivileged user when it is running as one.
 set -euo pipefail
 
 VERSION="${VERSION:?VERSION must be set}"      # 1.9.2 or 1.9.2-canary.1
@@ -45,7 +46,7 @@ fi
 # never an existing directory this script did not create.
 WORK=$(readlink -m -- "$WORK")
 case "$WORK" in
-  /|/*/..|"$HOME"|"$PWD") echo "::error::refusing to use $WORK as a work directory"; exit 1 ;;
+  /|"$HOME"|"$PWD") echo "::error::refusing to use $WORK as a work directory"; exit 1 ;;
 esac
 if [ -e "$WORK" ] && [ ! -e "$WORK/.archbuild-scratch" ]; then
   echo "::error::$WORK already exists and was not created by this script; refusing to delete it"
@@ -98,7 +99,7 @@ run_makepkg() {
   if [ "$(id -u)" -eq 0 ]; then
     id builder >/dev/null 2>&1 || useradd --create-home builder
     chown -R builder:builder "$WORK"
-    sudo -u builder --preserve-env=GOFLAGS,GOPATH,GOCACHE bash -c "cd '$WORK' && $*"
+    sudo -u builder bash -c "cd '$WORK' && $*"
   else
     ( cd "$WORK" && eval "$*" )
   fi

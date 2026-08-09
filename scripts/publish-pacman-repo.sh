@@ -73,7 +73,7 @@ gpg_sign() {  # detached *binary* signature: repo-add --include-sigs refuses an 
 # are meaningless against a relative one.
 WORK=$(readlink -m -- "$WORK")
 case "$WORK" in
-  /|/*/..|"$HOME"|"$PWD") echo "::error::refusing to use $WORK as a work directory"; exit 1 ;;
+  /|"$HOME"|"$PWD") echo "::error::refusing to use $WORK as a work directory"; exit 1 ;;
 esac
 if [ -e "$WORK" ] && [ ! -e "$WORK/.pacmanbuild-scratch" ]; then
   echo "::error::$WORK already exists and was not created by this script; refusing to delete it"
@@ -221,7 +221,9 @@ pre-release so it never shows as latest.
     Server = https://github.com/${REPO}/releases/download/${family}-\$arch" >/dev/null
 
   # Upload first, then remove what is no longer part of the repository, so the
-  # window where the database and its packages disagree never opens.
+  # database never names a package that has already been deleted. It does not
+  # close every window: --clobber replaces an asset by deleting and re-uploading
+  # it, so a client syncing during that instant can still see a missing file.
   gh release upload "$tag" --repo "$REPO" --clobber "$dir"/* >/dev/null
   keep=$(cd "$dir" && ls)
   gh release view "$tag" --repo "$REPO" --json assets -q '.assets[].name' | while read -r have; do

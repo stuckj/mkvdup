@@ -922,6 +922,9 @@ jobs:
           # or a backport release cut from a maintenance branch would advertise
           # an older version than users already have -- on somebody else's
           # server, where it cannot be taken back by rewriting anything here.
+          # pkgver only. pkgrel is fixed at 1 here, so it cannot distinguish two
+          # releases of the same version -- it would matter only if someone hand-
+          # published a -2 on the AUR.
           published=$(sed -n 's/^\tpkgver = //p' aur/.SRCINFO 2>/dev/null | head -1)
           if [ -n "$published" ] && [ "$(vercmp "$AUR_PKGVER" "$published")" -lt 0 ]; then
             echo "::warning::${AUR_PKGVER} is older than the ${published} already on the AUR, so ${PKGNAME} keeps its current version."
