@@ -221,7 +221,25 @@ APT repo living beside the packages, reaching them with `../<tag>/<asset>`.
 deleting a release, or if the indexes drift — dispatch **Rebuild Package
 Repositories**. It is idempotent. Run it with `dry_run: true` first: that builds
 everything, publishes nothing, and uploads the generated metadata as an artifact.
-A real run needs `confirm: REBUILD` because it force-pushes `gh-pages`.
+A real run needs `confirm: REBUILD`.
+
+Both writers share a `package-repositories` concurrency group, so a manual
+rebuild and a release queue rather than interleave. Replacing the `apt-history`
+assets is still not atomic — release assets cannot be swapped as a set — so a
+client that fetches `InRelease` and `Packages.gz` across that window may need to
+re-run `apt update`.
+
+### Migrating an existing client
+
+The first rebuild removes `yum/packages/` and trims the Pages APT pool to the
+current release. Clients hold cached metadata pointing at the old layout — dnf
+keeps it for 48 hours by default — so until it expires an install can 404. To
+refresh immediately:
+
+```bash
+sudo apt update                       # Debian/Ubuntu
+sudo dnf clean metadata && sudo dnf makecache   # RHEL/Fedora
+```
 
 ### Nix
 

@@ -850,6 +850,14 @@ jobs:
     # exist before its packages can be indexed.
     needs: [prepare, build, release]
     runs-on: ubuntu-latest
+    # Shared with rebuild-package-repos.yml. Two runs replacing the same
+    # apt-history assets at once can leave a signed InRelease from one beside a
+    # Packages.gz from the other, failing apt update until the next good run.
+    # Queued, never cancelled — see the note on this workflow having no
+    # top-level concurrency.
+    concurrency:
+      group: package-repositories
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
 

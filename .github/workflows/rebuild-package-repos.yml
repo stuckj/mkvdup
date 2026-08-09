@@ -19,7 +19,15 @@ on:
 
 permissions:
   contents: write
-  pages: write
+
+# Shared with release.yml's publish-repo job. Two runs replacing the same
+# apt-history assets at once can leave a signed InRelease from one beside a
+# Packages.gz from the other, which fails apt update for everyone until the next
+# successful run. Queue instead of cancelling: a half-finished publish is worse
+# than a delayed one.
+concurrency:
+  group: package-repositories
+  cancel-in-progress: false
 
 jobs:
   rebuild:
@@ -27,9 +35,11 @@ jobs:
     steps:
       - name: Check confirmation
         if: ${{ !inputs.dry_run }}
+        env:
+          CONFIRM: ${{ inputs.confirm }}
         run: |
-          [[ "${{ inputs.confirm }}" == "REBUILD" ]] || {
-            echo "::error::A real run force-pushes gh-pages. Type REBUILD to confirm."; exit 1; }
+          [[ "$CONFIRM" == "REBUILD" ]] || {
+            echo "::error::A real run rewrites the live repositories. Type REBUILD to confirm."; exit 1; }
 
       - uses: actions/checkout@v7
 
@@ -55,10 +65,10 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"
 
-      # Only the indexes, so the artifact stays small enough to download and
-      # verify a client against before anything goes live.
+      # always(): a failed dry run is exactly when the partial output is worth
+      # reading. Excludes the staged packages, which are ~1 GB of release assets.
       - name: Upload generated metadata
-        if: ${{ inputs.dry_run }}
+        if: ${{ always() && inputs.dry_run }}
         uses: actions/upload-artifact@v4
         with:
           name: repo-metadata
@@ -66,4 +76,5 @@ jobs:
             ${{ runner.temp }}/repobuild/apt/**
             ${{ runner.temp }}/repobuild/pages/**
             ${{ runner.temp }}/repobuild/assetmap.txt
+          if-no-files-found: warn
           retention-days: 7
