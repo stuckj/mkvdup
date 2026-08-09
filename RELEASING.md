@@ -85,8 +85,11 @@ The workflow will:
 5. Update the APT and YUM repositories on GitHub Pages, the pacman repository in its own
    release, and the Homebrew and AUR files
 
-The Nix version bump is not in that order: `sync-nix` runs *before* the release, so the tag it
-creates already contains it. That ordering is what #212 established.
+Two things that list does not convey. The Nix version bump is not in that order at all:
+`sync-nix` runs *before* the release, so the tag it creates already contains it, which is the
+ordering #212 established. And steps 4 and 5 are not serial — `publish-repo` and
+`update-homebrew` need only the release, so they run alongside `build-arch`; only the pacman
+repository and the AUR wait for it.
 
 **Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
 user-visible — tag, release, packages, formula and Nix bumps — is created until every build
