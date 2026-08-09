@@ -299,6 +299,13 @@ jobs:
             packages/*.rpm
             packages/*.tar.gz
             packages/*.pkg.tar.zst
+          # Without this the action defaults to shrugging at a glob that matches
+          # nothing, so an artifact that failed to land would publish a release
+          # missing a whole package format -- and publish-pacman would then only
+          # warn about it. build-arch runs before release precisely so an Arch
+          # failure cannot half-publish a version; this closes the same gap on
+          # the delivery side.
+          fail_on_unmatched_files: true
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
         env:
@@ -839,7 +846,13 @@ jobs:
             # CARCH is both what makepkg validates the arch=() array against and
             # what it records in .PKGINFO. Appending to a copy of the host config
             # overrides the runner's own x86_64 for the aarch64 pass. Nothing is
-            # compiled, so CHOST is left alone.
+            # compiled, so CHOST is left alone, and the /etc/makepkg.conf.d
+            # drop-ins the copy does not pull in only set compiler flags.
+            #
+            # Do not export CARCH or PACKAGER into this step instead:
+            # load_makepkg_config restores both from the environment *after*
+            # sourcing the config, so an exported value would silently win over
+            # the per-architecture one written here.
             # PACKAGER is commented out in the stock config, and makepkg writes
             # "Unknown Packager" into .PKGINFO when it is unset -- which is what
             # pacman -Si would then show, unlike the maintainer nfpm.yaml gives
@@ -869,6 +882,7 @@ jobs:
         with:
           name: arch-packages
           path: pkgbuild/*.pkg.tar.zst
+          if-no-files-found: error
 
       - name: Upload PKGBUILD artifact
         uses: actions/upload-artifact@v7
@@ -900,6 +914,12 @@ jobs:
         run: |
           if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
             echo "::warning::AUR_SSH_PRIVATE_KEY secret not configured. Skipping AUR publish."
+            { echo "### ⚠️ AUR not updated"
+              echo
+              echo "\`AUR_SSH_PRIVATE_KEY\` is not configured, so this release did not reach the AUR."
+              echo
+              echo "Every other channel carries it."
+            } >> "$GITHUB_STEP_SUMMARY"
             echo "AUR_ENABLED=false" >> "$GITHUB_ENV"
           else
             echo "AUR_ENABLED=true" >> "$GITHUB_ENV"
@@ -999,11 +1019,17 @@ jobs:
     # same four releases, and its last step deletes every asset not in its own
     # build. A rebuild dispatched mid-release would enumerate before this job
     # attached the new packages and then delete them, leaving a signed database
-    # naming a file that 404s. Queued, never cancelled -- a release must not be
-    # interrupted part-way.
+    # naming a file that 404s.
+    #
+    # queue: max is load-bearing, not decoration. cancel-in-progress only spares
+    # the job that is already running: by default a *pending* one is cancelled to
+    # make room for the newcomer, which would silently drop a release's publish
+    # while it waited behind a rebuild -- the part-way cancellation the top of
+    # this file exists to prevent.
     concurrency:
       group: pacman-repositories
       cancel-in-progress: false
+      queue: max
     # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2. Same
     # rolling-tag caveat as build-arch above.
     container: archlinux:base

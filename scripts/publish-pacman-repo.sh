@@ -121,9 +121,16 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
   fi
 
   # ${best%-*} drops the pkgrel: best is <pkgver>-<pkgrel>, the released version
-  # is just <pkgver>.
+  # is just <pkgver>. Which side is higher decides which of two different things
+  # happened, so compare rather than merely testing for inequality -- reporting a
+  # missing upload as "you released something older" would send the maintainer
+  # looking in the wrong place entirely.
   if [ "$released" = 1 ] && [ "${best%-*}" != "$RELEASED_PKGVER" ]; then
-    stand_down "$tag" "${RELEASED_PKGVER} is not newer than the ${best} this channel already serves, so the pacman channel keeps its current version."
+    if [ "$(vercmp "$RELEASED_PKGVER" "${best%-*}")" -lt 0 ]; then
+      stand_down "$tag" "${RELEASED_PKGVER} is older than the ${best} this channel already serves, so the pacman channel keeps its current version."
+    else
+      stand_down "$tag" "${RELEASED_PKGVER} is newer than the ${best} this channel serves, but no ${pkgname} asset for it was found on any release -- so this release did not reach the pacman channel."
+    fi
   fi
 
   mkdir -p "$dir"

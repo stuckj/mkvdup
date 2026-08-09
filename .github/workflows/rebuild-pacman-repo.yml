@@ -21,6 +21,7 @@ jobs:
     concurrency:
       group: pacman-repositories
       cancel-in-progress: false
+      queue: max
     # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2.
     container: archlinux:base
     steps:

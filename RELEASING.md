@@ -363,8 +363,9 @@ One consequence worth knowing: pacman derives the URL of a package's detached si
 the URL it *ended up* at after redirects, but only when that URL's last path segment contains
 `.db` or `.pkg`. GitHub redirects release assets to an opaque blob path with the filename only
 in the query string, so the test fails and pacman falls back to the original URL — which is what
-makes `<asset>.sig` resolve. A CDN path that ended in the asset name would silently fetch the
-package again instead of its signature.
+makes `<asset>.sig` resolve. Were the CDN path ever to end in the asset name instead, pacman
+would append `.sig` to the whole signed URL, query string included, and the request would be
+rejected as a bad signature rather than resolving to anything.
 
 Because the whole channel is release assets, a release also never has to wait on the Pages build,
 and nothing about Arch counts against the Pages size limit.
