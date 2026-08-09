@@ -881,4 +881,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DRY_RUN: '0'   # the script defaults to a dry run; publishing is opt-in
         run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"

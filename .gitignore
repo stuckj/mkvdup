@@ -44,3 +44,7 @@ Thumbs.db
 
 # Scratch tree from scripts/rebuild-package-repos.sh when run outside CI
 /.repobuild/
+
+# Python bytecode
+__pycache__/
+*.pyc

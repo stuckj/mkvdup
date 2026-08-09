@@ -236,6 +236,12 @@ cancelled. That is harmless — each rebuild indexes every release, so the last
 one to run covers the ones before it — but the release will look failed. Re-run
 the rebuild by hand if you want the job green.
 
+The rebuild reclaims space on the *published site*, which is what the 1 GB Pages
+limit measures. It does not shrink the repository: the old package blobs stay in
+`gh-pages` history, because the script commits on top of the branch rather than
+replacing its history. That is deliberate — force-pushing an orphan would drop
+commits from the benchmark and coverage workflows.
+
 ### Migrating an existing client
 
 The first rebuild removes `yum/packages/` and trims the Pages APT pool to the

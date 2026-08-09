@@ -72,6 +72,11 @@ def main(src, dst, mapfile, base):
 
         body = raw.encode()
         gz = gzip.compress(body)
+        # createrepo_c prefixes the filename with the digest of the file it
+        # wrote (--unique-md-filenames), so that changed metadata gets a changed
+        # URL. Keeping its name for our rewritten bytes would break that: a cache
+        # holding the old URL would serve content repomd.xml no longer describes.
+        name = f"{hashlib.sha256(gz).hexdigest()}-primary.xml.gz"
         open(os.path.join(dst, name), "wb").write(gz)
         # Set type= alongside the digest. Inheriting whatever createrepo_c wrote
         # would mislabel the value if a future default emitted sha512, and every

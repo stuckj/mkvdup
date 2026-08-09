@@ -11,8 +11,11 @@
 # re-run still records a commit. Git stores the unchanged package blobs once, so
 # a repeat rebuild costs kilobytes; only a real release adds package weight.
 #
-# Everything is built before anything is published, so a failure part-way
-# through leaves the live repositories untouched rather than half-updated.
+# Everything is built before anything is published, so a failure while building
+# leaves the live repositories untouched. Publishing itself is several separate
+# mutations — two uploads per channel, then the gh-pages push — and dying between
+# them can still leave one repository ahead of another. Re-running fixes it,
+# because the result depends only on the releases.
 #
 # Produces:
 #   release apt-history[-canary]  flat APT repo, full history.
@@ -38,9 +41,11 @@ BASE="https://github.com/${REPO}/releases/download"
 export PAGES_URL="${PAGES_URL:-https://stuckj.github.io/mkvdup}"
 KEY="${GPG_KEY_ID:?GPG_KEY_ID must be set}"
 export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-# DRY_RUN=1 builds everything and publishes nothing, so a run can be inspected
-# before it replaces the live repositories.
-DRY_RUN="${DRY_RUN:-0}"
+# Publishing requires DRY_RUN=0 explicitly. Defaulting the other way would mean
+# a maintainer inspecting the script locally — or typing the obvious DRY_RUN=true
+# — rewrites the live repositories.
+DRY_RUN="${DRY_RUN:-1}"
+[ "$DRY_RUN" = 0 ] || DRY_RUN=1
 # Paths on gh-pages this script owns. Everything else on the branch is left
 # alone, so benchmarks, coverage, and anything added later survive.
 OWNED=(apt yum yum-canary index.html gpg-key.asc)
@@ -60,11 +65,16 @@ sign() {  # sign <detached-out> <clear-out> <file>
 # so resolve it to an absolute path and refuse anything that is not clearly a
 # scratch directory.
 WORK="${1:-$PWD/.repobuild}"
-case "$WORK" in
-  "" | / | "$HOME" | "$HOME"/) die "refusing to use '$WORK' as a work directory" ;;
-esac
 mkdir -p "$WORK"
 WORK="$(cd "$WORK" && pwd)"
+# Check the resolved path, not the argument: `rebuild-package-repos.sh .` run
+# from the checkout resolves to the repo root, and the wipe below would delete
+# the working tree.
+case "$WORK" in
+  / | "$HOME") die "refusing to use '$WORK' as a work directory" ;;
+esac
+[ -e "$WORK/.git" ] && die "refusing to wipe '$WORK': it looks like a repository checkout"
+case "$SCRIPTS/" in "$WORK"/*) die "refusing to wipe '$WORK': it contains this script" ;; esac
 rm -rf "${WORK:?}"/*
 mkdir -p "$WORK"/{pkgs,apt/stable,apt/canary,pages}
 cd "$WORK"
@@ -75,10 +85,17 @@ say "enumerate release assets"
 # download URLs 404 for everyone else, so indexing one publishes a broken entry.
 gh api "repos/$REPO/releases" --paginate \
   -q '.[] | select(.draft == false) | select(.tag_name | startswith("v"))
-      | .tag_name as $t | .assets[] | "\($t)/\(.name)\t\(.size)"' \
+      | .tag_name as $t | .assets[] | select(.state == "uploaded")
+      | "\($t)/\(.name)\t\(.size)"' \
   | awk -F'\t' '$1 ~ /\.(deb|rpm)$/' | sort -u > assetsizes.txt
 cut -f1 assetsizes.txt > assetmap.txt
 [ -s assetmap.txt ] || die "no package assets found — refusing to publish an empty repository"
+# One asset name must map to one release. The APT index resolves a name to the
+# first matching tag and the YUM rewrite to the last, so a duplicate across two
+# tags could point a package at a release holding different bytes — a permanent
+# hash mismatch for every client.
+dupes=$(cut -d/ -f2- assetmap.txt | sort | uniq -d)
+[ -z "$dupes" ] || die "asset name(s) present under more than one release: $(echo "$dupes" | tr '\n' ' ')"
 echo "  $(wc -l < assetmap.txt) package assets across $(cut -d/ -f1 assetmap.txt | sort -u | wc -l) releases"
 
 say "download packages"
@@ -123,13 +140,19 @@ while IFS=/ read -r tag name; do
     *)            die "unclassified asset $name" ;;
   esac
 done < assetmap.txt
-for d in stage/*; do
-  n=$(find "$d" -type f | wc -l)
-  # An empty channel would otherwise yield an empty, signed index that replaces
-  # a good one — deleting a channel's releases must not silently empty it.
-  [ "$n" -gt 0 ] || die "channel $(basename "$d") has no packages"
-  echo "  $(basename "$d"): $n"
-done
+have() { [ "$(find "stage/$1" -type f | wc -l)" -gt 0 ]; }
+for d in stage/*; do echo "  $(basename "$d"): $(find "$d" -type f | wc -l)"; done
+# An empty channel must not be published as an empty signed index. Stable is the
+# product, so its absence is fatal; canary is optional, and retiring it must not
+# take the stable channel down with it — that would make every subsequent stable
+# release fail here.
+have deb-stable || die "no stable .deb packages — refusing to rebuild"
+have rpm-stable || die "no stable .rpm packages — refusing to rebuild"
+DO_CANARY=1
+if have deb-canary && have rpm-canary; then :; else
+  DO_CANARY=0
+  echo "::warning::no canary packages found — leaving the canary repositories untouched"
+fi
 
 say "build flat APT history repos (metadata only)"
 build_apt_history() {  # build_apt_history <channel> <stagedir> <label>
@@ -144,7 +167,9 @@ build_apt_history() {  # build_apt_history <channel> <stagedir> <label>
   while IFS= read -r line; do
     if [[ $line == Filename:\ * ]]; then
       n="${line#Filename: }"
-      tag=$(grep -m1 -F "/$n" "$WORK/assetmap.txt" | cut -d/ -f1)
+      # `|| true`: without it pipefail aborts the whole script on grep's no-match
+      # exit, so the diagnostic below would never be reached.
+      tag=$(grep -m1 -F "/$n" "$WORK/assetmap.txt" | cut -d/ -f1 || true)
       [ -n "$tag" ] || die "no release holds $n"
       printf 'Filename: ../%s/%s\n' "$tag" "$n" >> "$out/Packages"
     else
@@ -169,7 +194,9 @@ build_apt_history() {  # build_apt_history <channel> <stagedir> <label>
   echo "  $ch: $entries entries, index $(stat -c%s "$out/Packages.gz")B"
 }
 build_apt_history stable stage/deb-stable mkvdup
-build_apt_history canary stage/deb-canary mkvdup-canary
+if [ "$DO_CANARY" = 1 ]; then
+  build_apt_history canary stage/deb-canary mkvdup-canary
+fi
 gpg --armor --export "$KEY" > apt/gpg-key.asc
 
 say "build gh-pages APT (current version only)"
@@ -191,6 +218,7 @@ mkdir -p pages/apt/pool/{main,canary}
 # the canary suite, and an apt pin on o=/l= would break if both said mkvdup.
 for spec in "stable:deb-stable:mkvdup:main:mkvdup" "canary:deb-canary:mkvdup-canary:canary:mkvdup-canary"; do
   IFS=: read -r ch dir prefix pool label <<<"$spec"
+  [ "$ch" = canary ] && [ "$DO_CANARY" = 0 ] && continue
   v=$(newest "stage/$dir" "$prefix")
   cp "stage/$dir/${prefix}_${v//\~/.}"_*.deb "pages/apt/pool/$pool/" 2>/dev/null \
     || cp "stage/$dir/${prefix}_${v}"_*.deb "pages/apt/pool/$pool/"
@@ -198,6 +226,11 @@ for spec in "stable:deb-stable:mkvdup:main:mkvdup" "canary:deb-canary:mkvdup-can
   ( cd pages/apt
     for a in amd64 arm64; do
       dpkg-scanpackages --arch "$a" "pool/$pool/" 2>/dev/null > "dists/$ch/main/binary-$a/Packages"
+      # dpkg-scanpackages exits 0 and writes nothing when no package matches the
+      # architecture. Signing that would advertise an empty index, and the arch
+      # would report "Unable to locate package" with the run still green.
+      grep -q '^Package:' "dists/$ch/main/binary-$a/Packages" \
+        || die "$ch/$a index is empty — no $a package for the current version"
       gzip -nkf "dists/$ch/main/binary-$a/Packages"
     done
     cd "dists/$ch"
@@ -217,6 +250,7 @@ done
 say "build gh-pages YUM repodata (full history, packages via xml:base)"
 for spec in "yum:rpm-stable" "yum-canary:rpm-canary"; do
   IFS=: read -r out dir <<<"$spec"
+  [ "$out" = yum-canary ] && [ "$DO_CANARY" = 0 ] && continue
   # --no-database: only primary.xml carries package locations, so the sqlite
   # copies cannot be redirected to the releases. Shipping them would advertise
   # packages/ paths that no longer exist to any client that prefers sqlite.
@@ -228,7 +262,10 @@ for spec in "yum:rpm-stable" "yum-canary:rpm-canary"; do
 done
 
 gpg --armor --export "$KEY" > pages/gpg-key.asc
-for d in apt yum yum-canary; do cp pages/gpg-key.asc "pages/$d/"; done
+# yum-canary is absent when the canary channel was skipped.
+for d in apt yum yum-canary; do
+  [ -d "pages/$d" ] && cp pages/gpg-key.asc "pages/$d/"
+done
 bash "$SCRIPTS/repo-index.sh" > pages/index.html
 echo "  generated tree: $(du -sh pages | cut -f1), $(find pages -type f | wc -l) files"
 
@@ -243,6 +280,7 @@ fi
 say "publish APT history releases"
 for ch in stable canary; do
   tag=apt-history; [ "$ch" = canary ] && tag=apt-history-canary
+  [ "$ch" = canary ] && [ "$DO_CANARY" = 0 ] && continue
   gh release view "$tag" --repo "$REPO" >/dev/null 2>&1 || \
     gh release create "$tag" --repo "$REPO" --prerelease --title "APT repository ($ch, full history)" \
       --notes "Flat APT repository metadata for the ${ch} channel. Packages resolve into the
@@ -251,9 +289,10 @@ marked pre-release so it never shows as latest.
 
     deb [signed-by=/usr/share/keyrings/mkvdup.gpg] ${BASE}/${tag}/ ./" >/dev/null
   # --clobber deletes each asset before re-uploading, so the set cannot be
-  # swapped atomically: during this window a client can see a 404 or a
-  # mismatched pair and needs to re-run apt update. Upload the indexes first and
-  # the signatures last, so the signed Release is never the thing that is stale.
+  # swapped atomically: during this window a client can see a 404 or an
+  # index that disagrees with the signature, and has to re-run apt update.
+  # Either order leaves such a window; indexes first only makes it shorter,
+  # because the signature files are small and land quickly after them.
   gh release upload "$tag" --repo "$REPO" --clobber \
     "apt/$ch"/{Packages,Packages.gz} apt/gpg-key.asc >/dev/null \
     || die "could not upload indexes to $tag"
@@ -276,13 +315,17 @@ URL="${PAGES_REMOTE:-https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git}"
 # push itself — the one failure that is expected and retryable — is tested.
 stage_ghp() {
   rm -rf ghp
-  if git ls-remote --exit-code --heads "$URL" gh-pages >/dev/null; then
-    git clone --depth 1 --branch gh-pages --quiet "$URL" ghp
-  else
-    echo "  gh-pages does not exist yet — creating it"
-    mkdir -p ghp
-    git -C ghp init -q -b gh-pages
-  fi
+  local rc=0
+  git ls-remote --exit-code --heads "$URL" gh-pages >/dev/null || rc=$?
+  # --exit-code reports 2 for "no such ref"; anything else is a real failure
+  # (network, auth, rate limit) and must not be reported as a missing branch.
+  case "$rc" in
+    0) git clone --depth 1 --branch gh-pages --quiet "$URL" ghp ;;
+    2) echo "  gh-pages does not exist yet — creating it"
+       mkdir -p ghp
+       git -C ghp init -q -b gh-pages ;;
+    *) die "cannot reach the repository to check for gh-pages (git ls-remote exit $rc)" ;;
+  esac
   local p
   for p in "${OWNED[@]}"; do rm -rf "ghp/${p:?}"; done
   cp -r pages/. ghp/
