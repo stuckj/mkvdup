@@ -385,6 +385,12 @@ Three things about the naming are load-bearing:
   `pkgver`/`pkgrel` separator — so `1.2.0-canary.1` is packaged as `1.2.0_canary.1`. Canaries
   are their own package, as they are for deb and rpm, so that version never has to sort against
   a stable one.
+
+  **Only `-canary.` gets that separation, so use no other pre-release suffix.** The version
+  regex would accept `1.9.2-beta.1`, and it would build as stable `mkvdup-bin` `1.9.2_beta.1`.
+  pacman has no equivalent of Debian's `~`, so `vercmp` sorts that *above* `1.9.2` — APT would
+  decline the beta as an upgrade while pacman pushed it to every stable user on their next
+  `pacman -Syu`. Cut pre-releases as canaries.
 - **The pacman database file is named after the `[section]` users add to `pacman.conf`**
   (`mkvdup.db` in the `pacman-*` releases, `mkvdup-canary.db` in the `pacman-canary-*` ones).
   Renaming either — or renaming a release — breaks every configured client, so both have to

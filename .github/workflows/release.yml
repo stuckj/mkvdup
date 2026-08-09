@@ -7,8 +7,10 @@ on:
         description: 'Version to build (without v prefix, e.g. 1.0.0)'
         required: true
 
-# NOTE: intentionally has no `concurrency` block. The other workflows cancel
-# superseded PR runs, but a release must never be cancelled part-way: it
+# NOTE: intentionally has no *workflow-level* `concurrency` block. (publish-pacman
+# has a job-level one, for a narrower reason it documents itself.) The other
+# workflows cancel superseded PR runs, but a release must never be cancelled
+# part-way: it
 # publishes a tag, a GitHub release, APT/YUM/pacman packages, a Homebrew formula,
 # a PKGBUILD on the AUR and a Nix bump. Interrupting it between those leaves
 # exactly the inconsistent state the job ordering here exists to prevent -- and

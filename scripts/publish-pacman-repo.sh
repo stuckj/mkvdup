@@ -57,7 +57,7 @@ stand_down() {  # stand_down <tag> <message>
       echo
       echo "$2"
       echo
-      echo "Every other channel carries this release."
+      echo "Every other channel that reported success carries this release."
     } >> "$GITHUB_STEP_SUMMARY"
   fi
 }
