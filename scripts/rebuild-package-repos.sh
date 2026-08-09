@@ -118,13 +118,22 @@ enumerate() {
 }
 enumerate
 # The releases API is eventually consistent, and this job runs moments after the
-# release was created. A listing that does not yet show it — or still reports an
-# asset as not uploaded — would otherwise abort a release whose tag, GitHub
-# release, Homebrew formula and Nix bump have already shipped.
+# release was created. Wait for the release to be listed *completely*: assets are
+# uploaded one at a time, so the last one is the likeliest to lag a replica, and
+# a listing missing just that one would sail past a "is the tag there?" check and
+# then fail the completeness check further down — aborting a release whose tag,
+# GitHub release, Homebrew formula and Nix bump have already shipped.
+tag_complete() {  # tag_complete <tag>
+  local pat
+  for pat in '_amd64\.deb$' '_arm64\.deb$' '\.x86_64\.rpm$' '\.aarch64\.rpm$'; do
+    grep -q "^${1}/.*${pat}" assetmap.txt || return 1
+  done
+  return 0
+}
 if [ -n "${EXPECT_TAG:-}" ]; then
   for attempt in 1 2 3 4 5; do
-    grep -q "^${EXPECT_TAG}/" assetmap.txt && break
-    echo "  ${EXPECT_TAG} not listed yet (attempt $attempt) — re-reading in ${ENUM_RETRY_DELAY:-10}s"
+    tag_complete "$EXPECT_TAG" && break
+    echo "  ${EXPECT_TAG} not fully listed yet (attempt $attempt) — re-reading in ${ENUM_RETRY_DELAY:-10}s"
     sleep "${ENUM_RETRY_DELAY:-10}"
     enumerate
   done
@@ -304,21 +313,27 @@ PY
 }
 # Deleting a release legitimately drops its packages from the index, but a
 # partial read of the releases API looks identical and would quietly republish
-# every repository without versions that still exist — including re-pinning the
-# Pages suite to an older "current" release. Every other suspicious input here
-# fails loudly; this is the one that would not.
+# without versions that still exist — including re-pinning the Pages suite to an
+# older "current" release. Every other suspicious input here fails loudly; this
+# is the one that would not.
+#
+# It compares the APT index only. A whole release vanishing takes its rpms with
+# its debs, so that case is covered; individual rpm assets disappearing while
+# their debs remain would shrink the YUM index unnoticed.
 check_no_shrink() {  # check_no_shrink <channel> <release-tag>
-  local ch="$1" tag="$2" prev=0 now rc=0
+  local ch="$1" tag="$2" prev=0 now http
   now=$(grep -c '^Package:' "apt/$ch/Packages")
-  # Distinguish "no index published yet" from "could not read it". Treating a
-  # transport failure as zero would silently disable this guard on exactly the
-  # runs where something is already going wrong.
-  curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 120 \
-       -o prev-Packages "$BASE/$tag/Packages" 2>/dev/null || rc=$?
-  case "$rc" in
-    0)  prev=$(grep -c '^Package:' prev-Packages || true) ;;
-    22) prev=0 ;;   # 404 under -f: nothing published yet, so nothing to shrink
-    *)  die "cannot read the published $ch index to compare against (curl exit $rc)" ;;
+  # Read the status, not curl's exit code: `curl -f` returns 22 for every HTTP
+  # error alike, so keying on it would treat a 503 as "nothing published yet"
+  # and disable this guard during exactly the GitHub incident that also makes
+  # the releases listing come back partial.
+  http=$(curl -sSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 120 \
+              -o prev-Packages -w '%{http_code}' "$BASE/$tag/Packages" 2>/dev/null || true)
+  [ -n "$http" ] || http=000
+  case "$http" in
+    200) prev=$(grep -c '^Package:' prev-Packages || true) ;;
+    404) prev=0 ;;   # nothing published yet, so nothing to shrink
+    *)   die "cannot read the published $ch index to compare against (HTTP $http)" ;;
   esac
   rm -f prev-Packages
   if [ "$prev" -gt "$now" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
