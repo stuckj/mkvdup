@@ -232,9 +232,15 @@ re-run `apt update`.
 GitHub cancels a run that is still *pending* in a concurrency group when a newer
 one joins it, even though the group sets `cancel-in-progress: false`. Release
 three versions in quick succession and the middle `publish-repo` may show as
-cancelled. That is harmless — each rebuild indexes every release, so the last
-one to run covers the ones before it — but the release will look failed. Re-run
-the rebuild by hand if you want the job green.
+cancelled. A run cancelled while pending is harmless — each rebuild indexes every
+release, so the last one to run covers the ones before it.
+
+**A run that fails after it logs `publish APT history releases` is not
+harmless.** The indexes and their signatures upload separately, so an
+interruption between them leaves `apt-history` with a new `Packages` and an old
+`InRelease`. Clients then get `Hash Sum mismatch`, which fails their whole
+`apt update`, not just this source, and nothing repairs it on its own. Dispatch
+**Rebuild Package Repositories** by hand as soon as you see it.
 
 The rebuild reclaims space on the *published site*, which is what the 1 GB Pages
 limit measures. It does not shrink the repository: the old package blobs stay in

@@ -69,7 +69,7 @@ jobs:
       # reading. Excludes the staged packages, which are ~1 GB of release assets.
       - name: Upload generated metadata
         if: ${{ always() && inputs.dry_run }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: repo-metadata
           path: |

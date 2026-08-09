@@ -46,9 +46,16 @@ export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 # — rewrites the live repositories.
 DRY_RUN="${DRY_RUN:-1}"
 [ "$DRY_RUN" = 0 ] || DRY_RUN=1
-# Paths on gh-pages this script owns. Everything else on the branch is left
-# alone, so benchmarks, coverage, and anything added later survive.
-OWNED=(apt yum yum-canary index.html gpg-key.asc)
+# Paths on gh-pages this script replaces. Everything else on the branch is left
+# alone, so benchmarks, coverage, and anything added later survive. The canary
+# paths are only listed when the canary channel was actually rebuilt — removing
+# them while producing no replacement would delete the live canary repositories.
+owned_paths() {
+  printf '%s\n' apt/dists/stable apt/pool/main apt/gpg-key.asc yum index.html gpg-key.asc
+  if [ "${DO_CANARY:-0}" = 1 ]; then
+    printf '%s\n' apt/dists/canary apt/pool/canary yum-canary
+  fi
+}
 
 say() { printf '\n== %s\n' "$1"; }
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -67,15 +74,21 @@ sign() {  # sign <detached-out> <clear-out> <file>
 WORK="${1:-$PWD/.repobuild}"
 mkdir -p "$WORK"
 WORK="$(cd "$WORK" && pwd)"
-# Check the resolved path, not the argument: `rebuild-package-repos.sh .` run
-# from the checkout resolves to the repo root, and the wipe below would delete
-# the working tree.
+# The wipe below is destructive and runs before the dry-run gate, so validate the
+# resolved path, not the argument: `rebuild-package-repos.sh docs` from a
+# checkout resolves to a real directory of tracked files.
+MARKER=.repobuild-marker
 case "$WORK" in
   / | "$HOME") die "refusing to use '$WORK' as a work directory" ;;
 esac
-[ -e "$WORK/.git" ] && die "refusing to wipe '$WORK': it looks like a repository checkout"
-case "$SCRIPTS/" in "$WORK"/*) die "refusing to wipe '$WORK': it contains this script" ;; esac
-rm -rf "${WORK:?}"/*
+if git -C "$WORK" rev-parse --show-toplevel >/dev/null 2>&1; then
+  die "refusing to use '$WORK': it is inside a git working tree"
+fi
+if [ -n "$(ls -A "$WORK" 2>/dev/null)" ] && [ ! -e "$WORK/$MARKER" ]; then
+  die "refusing to wipe non-empty '$WORK': this script did not create it"
+fi
+rm -rf "${WORK:?}"/* "${WORK:?}"/.[!.]* 2>/dev/null || true
+touch "$WORK/$MARKER"
 mkdir -p "$WORK"/{pkgs,apt/stable,apt/canary,pages}
 cd "$WORK"
 
@@ -140,18 +153,47 @@ while IFS=/ read -r tag name; do
     *)            die "unclassified asset $name" ;;
   esac
 done < assetmap.txt
-have() { [ "$(find "stage/$1" -type f | wc -l)" -gt 0 ]; }
 for d in stage/*; do echo "  $(basename "$d"): $(find "$d" -type f | wc -l)"; done
-# An empty channel must not be published as an empty signed index. Stable is the
-# product, so its absence is fatal; canary is optional, and retiring it must not
-# take the stable channel down with it — that would make every subsequent stable
-# release fail here.
-have deb-stable || die "no stable .deb packages — refusing to rebuild"
-have rpm-stable || die "no stable .rpm packages — refusing to rebuild"
+
+newest() {  # newest <stagedir> <prefix> -> highest Debian version, or non-zero
+  local best="" v f
+  for f in "$1"/"$2"_*.deb; do
+    [ -f "$f" ] || return 1
+    # set -e does not apply inside a command substitution, so check explicitly.
+    v=$(dpkg-deb -f "$f" Version 2>/dev/null) || return 1
+    [ -n "$v" ] || return 1
+    if [ -z "$best" ] || dpkg --compare-versions "$v" gt "$best"; then best="$v"; fi
+  done
+  [ -n "$best" ] || return 1
+  printf '%s' "$best"
+}
+
+# Whether a channel can be published, decided before anything is built. Every
+# check is explicit rather than relying on errexit, because this is called from a
+# condition — where bash disables errexit for the whole function body.
+channel_ready() {  # channel_ready <debdir> <rpmdir> <prefix>
+  local v vd a
+  [ "$(find "$1" -name '*.deb' | wc -l)" -gt 0 ] || return 1
+  [ "$(find "$2" -name '*.rpm' | wc -l)" -gt 0 ] || return 1
+  v=$(newest "$1" "$3") || return 1
+  vd="${v//\~/.}"
+  # Both architectures must exist for the version about to be advertised,
+  # otherwise the missing one gets a signed but empty index.
+  for a in amd64 arm64; do
+    [ -f "$1/${3}_${vd}_${a}.deb" ] || [ -f "$1/${3}_${v}_${a}.deb" ] || return 1
+  done
+  return 0
+}
+
+channel_ready stage/deb-stable stage/rpm-stable mkvdup \
+  || die "the stable channel is incomplete — refusing to rebuild"
+# Canary is optional. Retiring it, or one malformed canary release, must not stop
+# a stable release from reaching users, so the channel is checked up front and
+# skipped as a whole rather than failing the run part-way through.
 DO_CANARY=1
-if have deb-canary && have rpm-canary; then :; else
+if ! channel_ready stage/deb-canary stage/rpm-canary mkvdup-canary; then
   DO_CANARY=0
-  echo "::warning::no canary packages found — leaving the canary repositories untouched"
+  echo "::warning::canary channel incomplete — its repositories are left exactly as they are"
 fi
 
 say "build flat APT history repos (metadata only)"
@@ -198,28 +240,18 @@ if [ "$DO_CANARY" = 1 ]; then
   build_apt_history canary stage/deb-canary mkvdup-canary
 fi
 gpg --armor --export "$KEY" > apt/gpg-key.asc
+# gpg exits 0 and writes nothing if the key id does not resolve, which would
+# replace the key every documented install curls with an empty file.
+[ -s apt/gpg-key.asc ] || die "exported public key is empty — is GPG_KEY_ID ($KEY) right?"
 
 say "build gh-pages APT (current version only)"
-newest() {  # newest <stagedir> <prefix> -> highest Debian version present
-  local best="" v f
-  for f in "$1"/"$2"_*.deb; do
-    [ -f "$f" ] || die "no debs matched $1/$2_*.deb"
-    # set -e does not apply inside a command substitution, so a failure here
-    # would otherwise just skip the file and quietly elect an older version.
-    v=$(dpkg-deb -f "$f" Version) || die "cannot read Version from $f"
-    [ -n "$v" ] || die "empty Version in $f"
-    if [ -z "$best" ] || dpkg --compare-versions "$v" gt "$best"; then best="$v"; fi
-  done
-  [ -n "$best" ] || die "could not determine newest version in $1"
-  printf '%s' "$best"
-}
 mkdir -p pages/apt/pool/{main,canary}
 # label is per channel: the replaced job set Origin/Label to mkvdup-canary for
 # the canary suite, and an apt pin on o=/l= would break if both said mkvdup.
 for spec in "stable:deb-stable:mkvdup:main:mkvdup" "canary:deb-canary:mkvdup-canary:canary:mkvdup-canary"; do
   IFS=: read -r ch dir prefix pool label <<<"$spec"
   [ "$ch" = canary ] && [ "$DO_CANARY" = 0 ] && continue
-  v=$(newest "stage/$dir" "$prefix")
+  v=$(newest "stage/$dir" "$prefix") || die "cannot determine the newest $ch version"
   cp "stage/$dir/${prefix}_${v//\~/.}"_*.deb "pages/apt/pool/$pool/" 2>/dev/null \
     || cp "stage/$dir/${prefix}_${v}"_*.deb "pages/apt/pool/$pool/"
   mkdir -p "pages/apt/dists/$ch/main"/binary-{amd64,arm64}
@@ -261,11 +293,28 @@ for spec in "yum:rpm-stable" "yum-canary:rpm-canary"; do
   echo "  $out: $(find "stage/$dir" -name '*.rpm' | wc -l) packages indexed, 0 hosted"
 done
 
-gpg --armor --export "$KEY" > pages/gpg-key.asc
+cp apt/gpg-key.asc pages/gpg-key.asc
 # yum-canary is absent when the canary channel was skipped.
 for d in apt yum yum-canary; do
   [ -d "pages/$d" ] && cp pages/gpg-key.asc "pages/$d/"
 done
+
+# The release being published must actually appear in what was built. The
+# replaced job fed the freshly built packages straight in, so this was
+# structurally guaranteed; now the index comes from the releases API, and a view
+# that does not yet list the new release would publish silently without it.
+if [ -n "${EXPECT_VERSION:-}" ]; then
+  # A canary is dispatched as 1.9.2-canary.1 but packaged as 1.9.2~canary.1,
+  # since Debian needs the tilde to sort it below the final release.
+  case "$EXPECT_VERSION" in
+    *-canary.*) want="${EXPECT_VERSION/-canary./\~canary.}"; idx=apt/canary/Packages ;;
+    *)          want="$EXPECT_VERSION";                      idx=apt/stable/Packages ;;
+  esac
+  [ -f "$idx" ] || die "expected ${want} in ${idx}, but that channel was not rebuilt"
+  grep -qx "Version: ${want}" "$idx" \
+    || die "version ${want} is not in ${idx} — the releases API may not list the new release yet"
+  echo "  confirmed ${want} is indexed"
+fi
 bash "$SCRIPTS/repo-index.sh" > pages/index.html
 echo "  generated tree: $(du -sh pages | cut -f1), $(find pages -type f | wc -l) files"
 
@@ -327,7 +376,7 @@ stage_ghp() {
     *) die "cannot reach the repository to check for gh-pages (git ls-remote exit $rc)" ;;
   esac
   local p
-  for p in "${OWNED[@]}"; do rm -rf "ghp/${p:?}"; done
+  while read -r p; do rm -rf "ghp/${p:?}"; done < <(owned_paths)
   cp -r pages/. ghp/
   git -C ghp config user.name "github-actions[bot]"
   git -C ghp config user.email "41898282+github-actions[bot]@users.noreply.github.com"
