@@ -10,9 +10,8 @@ on:
 # NOTE: intentionally has no *workflow-level* `concurrency` block. (publish-pacman
 # has a job-level one, for a narrower reason it documents itself.) The other
 # workflows cancel superseded PR runs, but a release must never be cancelled
-# part-way: it
-# publishes a tag, a GitHub release, APT/YUM/pacman packages, a Homebrew formula,
-# a PKGBUILD on the AUR and a Nix bump. Interrupting it between those leaves
+# part-way: it publishes a tag, a GitHub release, APT/YUM/pacman packages, a
+# Homebrew formula, a PKGBUILD on the AUR and a Nix bump. Interrupting it between those leaves
 # exactly the inconsistent state the job ordering here exists to prevent -- and
 # the AUR is somebody else's server, so that one cannot be undone by rewriting
 # anything here.
@@ -270,7 +269,7 @@ jobs:
           path: "*.tar.gz"
 
   release:
-    needs: [prepare, build, build-arch, sync-nix]
+    needs: [prepare, build, sync-nix]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -300,7 +299,6 @@ jobs:
             packages/*.deb
             packages/*.rpm
             packages/*.tar.gz
-            packages/*.pkg.tar.zst
           # Without this the action defaults to shrugging at a glob that matches
           # nothing, so an artifact that failed to land would publish a release
           # missing a whole package format -- and publish-pacman would then only
@@ -740,24 +738,27 @@ jobs:
           git diff --staged --quiet || git commit -m "Update formula for ${{ needs.prepare.outputs.tag }}"
           git push
 
-  # Builds the pacman packages and the PKGBUILD the AUR receives.
+  # Generates the PKGBUILD for this release and builds it.
   #
-  # Ordering: with the other builds, ahead of both sync-nix and release, so neither
-  # the Nix bump nor the tag is pushed unless this has passed. An Arch failure after
-  # the tag existed would leave the version tagged, released and live on Homebrew
-  # while APT, YUM and pacman still served the previous one -- and unrepeatable,
-  # because prepare refuses a version whose tag is already on the remote.
+  # The package builds from source, as every Go package in Arch's own
+  # repositories does. A prebuilt one would have to be named mkvdup-bin under the
+  # AUR submission rules, and could never be promoted out of the AUR, because
+  # Arch builds what it ships.
   #
-  # The PKGBUILD points at release download URLs that consequently do not exist yet.
-  # makepkg reuses a source file already present in the build directory instead of
-  # fetching it, and still checks it against sha256sums, so the tarballs are seeded
-  # from the build artifacts below. update-aur re-checks those URLs for real once the
-  # release is up.
+  # That is what puts this after release rather than before it: source=() points
+  # at the tag's archive, so the tag has to exist before the checksum can be taken
+  # or makepkg can fetch it. The cost is that an Arch failure lands on a published
+  # release instead of preventing one -- re-running this job is the recovery, and
+  # nothing else has to be undone.
+  #
+  # x86_64 only. Arch itself is x86_64-only and publishes no aarch64 container, so
+  # there is nothing to build an aarch64 package in; the PKGBUILD still declares
+  # aarch64 for Arch Linux ARM users, who build it natively themselves.
   build-arch:
-    needs: [prepare, build]
+    needs: [prepare, release]
     runs-on: ubuntu-latest
-    # Arch ships rolling tags only, so unlike go-version and nfpm above there is no
-    # versioned image to pin.
+    # Arch ships rolling tags only, so unlike go-version and nfpm above there is
+    # no versioned image to pin.
     container: archlinux:base-devel
     steps:
       # The keyring is refreshed on its own first. A base image older than the
@@ -767,139 +768,44 @@ jobs:
       - name: Install packaging tools
         run: |
           pacman -Sy --needed --noconfirm archlinux-keyring
-          pacman -Su --needed --noconfirm git
+          pacman -Su --needed --noconfirm git go github-cli
 
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.commit }}
 
-      - name: Download tarball artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: tarball-linux-*
-          path: tarballs/
-          merge-multiple: true
-
-      - name: Generate PKGBUILD
+      - name: Build
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           TAG: ${{ needs.prepare.outputs.tag }}
           IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
-          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
-        run: |
-          # A pacman pkgver cannot contain a hyphen -- that is the pkgver/pkgrel
-          # separator -- so 1.2.0-canary.1 becomes 1.2.0_canary.1. Canaries ship as
-          # their own package here exactly as they do for deb and rpm, so this
-          # version never has to sort against a stable one.
-          PKGVER="${VERSION//-/_}"
+        run: ./scripts/build-arch-package.sh "$GITHUB_WORKSPACE/.archbuild"
 
-          if [[ "$IS_CANARY" == "true" ]]; then
-            PKGNAME="mkvdup-canary-bin"
-            PKGDESC="Storage deduplication tool for MKV files (canary/pre-release)"
-          else
-            PKGNAME="mkvdup-bin"
-            PKGDESC="Storage deduplication tool for MKV files and their source media"
-          fi
-          {
-            echo "PKGNAME=${PKGNAME}"
-            echo "PKGVER=${PKGVER}"
-          } >> "$GITHUB_ENV"
-
-          SHA_X86_64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" | awk '{print $1}')
-          SHA_AARCH64=$(sha256sum "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" | awk '{print $1}')
-
-          mkdir -p pkgbuild
-          sed -e "s|@PKGNAME@|${PKGNAME}|g" \
-              -e "s|@BINNAME@|${PACKAGE_NAME}|g" \
-              -e "s|@PKGVER@|${PKGVER}|g" \
-              -e "s|@PKGDESC@|${PKGDESC}|g" \
-              -e "s|@TAG@|${TAG}|g" \
-              -e "s|@SHA256_X86_64@|${SHA_X86_64}|g" \
-              -e "s|@SHA256_AARCH64@|${SHA_AARCH64}|g" \
-              packaging/arch/PKGBUILD.in > pkgbuild/PKGBUILD
-
-          # Both cases, not just upper: the rule the template documents is that no
-          # at-delimited word survives, so a @commit@ someone adds without a
-          # matching substitution above has to trip this too.
-          if grep -n '@[A-Za-z0-9_]*@' pkgbuild/PKGBUILD; then
-            echo "::error::PKGBUILD still contains unsubstituted placeholders"
-            exit 1
-          fi
-
-          cat pkgbuild/PKGBUILD
-
-      - name: Build packages
+      # Attached here rather than by the release job, which has to run first for
+      # the source archive to exist. Keeps the release page carrying every package
+      # format, as it does for deb and rpm.
+      - name: Attach the package to the release
         env:
-          PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
-        run: |
-          # Seeded under the names the PKGBUILD's `::` renames give them, which is
-          # what makes makepkg treat the sources as already downloaded. It still
-          # verifies them against sha256sums, so a mismatch here is still caught.
-          cp "tarballs/${PACKAGE_NAME}_linux_amd64.tar.gz" "pkgbuild/${PKGNAME}-${PKGVER}-x86_64.tar.gz"
-          cp "tarballs/${PACKAGE_NAME}_linux_arm64.tar.gz" "pkgbuild/${PKGNAME}-${PKGVER}-aarch64.tar.gz"
-
-          # makepkg refuses to run as root, which is what the container gives us.
-          useradd --create-home builder
-          chown -R builder:builder pkgbuild
-
-          cd pkgbuild
-          for target in x86_64 aarch64; do
-            # CARCH is both what makepkg validates the arch=() array against and
-            # what it records in .PKGINFO. Appending to a copy of the host config
-            # overrides the runner's own x86_64 for the aarch64 pass. Nothing is
-            # compiled, so CHOST is left alone, and the /etc/makepkg.conf.d
-            # drop-ins the copy does not pull in only set compiler flags.
-            #
-            # Do not export CARCH or PACKAGER into this step instead:
-            # load_makepkg_config restores both from the environment *after*
-            # sourcing the config, so an exported value would silently win over
-            # the per-architecture one written here.
-            # PACKAGER is commented out in the stock config, and makepkg writes
-            # "Unknown Packager" into .PKGINFO when it is unset -- which is what
-            # pacman -Si would then show, unlike the maintainer nfpm.yaml gives
-            # the deb and rpm.
-            # Both values are quoted in the file: makepkg source_safe()s the
-            # config and exits if it does not parse, and PACKAGER contains
-            # spaces and angle brackets, which bash would read as a redirection.
-            cp /etc/makepkg.conf "makepkg-${target}.conf"
-            printf '\nCARCH=%q\nPACKAGER=%q\n' \
-              "${target}" "stuckj <stuckj@users.noreply.github.com>" \
-              >> "makepkg-${target}.conf"
-            chown builder:builder "makepkg-${target}.conf"
-
-            # --nodeps: fuse3 is a runtime dependency of the package being built,
-            # and nothing in package() needs it present to assemble one.
-            # --cleanbuild: the two passes share a directory, so the second would
-            # otherwise extract over the first pass's leftovers.
-            sudo -u builder makepkg --config "makepkg-${target}.conf" \
-              --nodeps --noconfirm --cleanbuild
-          done
-
-          sudo -u builder bash -c 'makepkg --printsrcinfo > .SRCINFO'
-          ls -la ./*.pkg.tar.zst .SRCINFO
-
-      - name: Upload Arch package artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: arch-packages
-          path: pkgbuild/*.pkg.tar.zst
-          if-no-files-found: error
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" .archbuild/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Upload PKGBUILD artifact
         uses: actions/upload-artifact@v7
         with:
           name: aur-pkgbuild
           path: |
-            pkgbuild/PKGBUILD
-            pkgbuild/.SRCINFO
+            .archbuild/PKGBUILD
+            .archbuild/.SRCINFO
           include-hidden-files: true
+          if-no-files-found: error
 
   # Publishes the same PKGBUILD to the AUR as mkvdup-bin / mkvdup-canary-bin. This
   # is the Arch analogue of update-homebrew: a recipe pushed to an external repo,
   # rather than packages served from gh-pages.
   update-aur:
-    needs: [prepare, build-arch, release]
+    needs: [prepare, build-arch]
     runs-on: ubuntu-latest
     steps:
       - name: Download PKGBUILD artifact
@@ -927,33 +833,28 @@ jobs:
             echo "AUR_ENABLED=true" >> "$GITHUB_ENV"
           fi
 
-      # build-arch builds against seeded copies of the tarballs, so this is the
-      # first and only point at which the URLs an AUR user will actually download
-      # from are exercised. Deliberately here rather than earlier: a broken URL
-      # should stop the AUR push, not a release that is otherwise complete.
-      - name: Verify the release assets the PKGBUILD points at
+      # build-arch already downloaded this archive to take its checksum, so the
+      # URL has been exercised once. Checked again here because the next step
+      # publishes to somebody else's server: an AUR PKGBUILD whose source does
+      # not resolve is a broken package for every user who tries to build it, and
+      # failing here leaves everything except the AUR published.
+      - name: Verify the source archive the PKGBUILD points at
         if: env.AUR_ENABLED == 'true'
         run: |
-          # A PKGBUILD is a bash script of plain assignments plus package(), so the
-          # URLs and sums can be read back out of the generated file rather than
-          # reconstructed here and left to drift from it.
+          # A PKGBUILD is a bash script of plain assignments plus its functions,
+          # so the URL and sum can be read back out of the generated file rather
+          # than reconstructed here and left to drift from it.
           # shellcheck disable=SC1091
           source pkgbuild/PKGBUILD
 
-          verify() {
-            local entry=$1 want=$2 url got
-            url=${entry#*::}
-            curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o asset.tar.gz "$url"
-            got=$(sha256sum asset.tar.gz | awk '{print $1}')
-            if [[ "$got" != "$want" ]]; then
-              echo "::error::${url} hashes to ${got}, but the PKGBUILD claims ${want}"
-              exit 1
-            fi
-            echo "OK ${url}"
-          }
-
-          verify "${source_x86_64[0]}" "${sha256sums_x86_64[0]}"
-          verify "${source_aarch64[0]}" "${sha256sums_aarch64[0]}"
+          url=${source[0]#*::}
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o src.tar.gz "$url"
+          got=$(sha256sum src.tar.gz | awk '{print $1}')
+          if [[ "$got" != "${sha256sums[0]}" ]]; then
+            echo "::error::${url} hashes to ${got}, but the PKGBUILD claims ${sha256sums[0]}"
+            exit 1
+          fi
+          echo "OK ${url}"
 
       - name: Push to the AUR
         if: env.AUR_ENABLED == 'true'
@@ -1015,7 +916,7 @@ jobs:
   # Gated on release for the same reason publish-repo is: the packages this reads
   # are the ones the release job just attached.
   publish-pacman:
-    needs: [prepare, release]
+    needs: [prepare, build-arch]
     runs-on: ubuntu-latest
     # Shared with rebuild-pacman-repo.yml: both run the same script against the
     # same four releases, and its last step deletes every asset not in its own
@@ -1077,7 +978,7 @@ jobs:
   # Ordering: after every build, so nothing is pushed until all of them have passed,
   # and before release, so the tag can be created at the resulting commit.
   sync-nix:
-    needs: [prepare, build, build-arch]
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     outputs:
       commit: ${{ steps.sync.outputs.commit }}

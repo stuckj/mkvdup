@@ -5,24 +5,25 @@
 # and rejects anything containing a '/', so a package cannot be addressed in a
 # sibling location the way APT's Filename can. Database and packages therefore
 # live together, and a GitHub release is exactly one flat namespace -- so each
-# channel/architecture gets a release of its own to be that directory:
+# channel gets a release of its own to be that directory:
 #
 #   pacman-x86_64          Server = .../releases/download/pacman-$arch
-#   pacman-aarch64
 #   pacman-canary-x86_64   Server = .../releases/download/pacman-canary-$arch
-#   pacman-canary-aarch64
+#
+# x86_64 only: Arch is an x86_64 distribution and publishes no aarch64 container
+# to build one in. The PKGBUILD still declares aarch64 for Arch Linux ARM users,
+# who build it from the AUR themselves.
 #
 # Only the current version is served. A pacman database holds one entry per
 # package name, so an older .pkg.tar.zst in the repository is not installable
-# through pacman at all -- it would be the same dead weight the APT pool
-# accumulated. Every version stays on its own v* release regardless.
+# through pacman at all. Every version stays on its own v* release regardless.
 #
-# Like rebuild-package-repos.sh, this reads the releases rather than any branch,
-# so it is idempotent and it repairs drift. It picks the highest version present
-# rather than trusting a caller, which is what keeps a re-released older version
-# from regressing a channel. Deleting a release therefore falls back to the next
-# version still published -- but a channel whose packages are *all* gone keeps
-# serving what it last published, because there is nothing left to rebuild from.
+# This reads the releases rather than any branch, so it is idempotent and it
+# repairs drift. It picks the highest version present rather than trusting a
+# caller, which is what keeps a re-released older version from regressing a
+# channel. Deleting a release therefore falls back to the next version still
+# published -- but a channel whose packages are *all* gone keeps serving what it
+# last published, because there is nothing left to rebuild from.
 #
 # Requires: gh (authenticated), repo-add and vercmp from pacman >= 6.1, and gpg
 # with the signing key imported. Run it inside archlinux:base -- Ubuntu ships
@@ -66,7 +67,19 @@ gpg_sign() {  # detached *binary* signature: repo-add --include-sigs refuses an 
     --pinentry-mode loopback --local-user "$KEY" --detach-sign --no-armor -o "$1.sig" "$1"
 }
 
-rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK"
+# $WORK is caller-supplied and about to be deleted, so refuse anything that is
+# not a private scratch directory: a stray "." or a repository root would take
+# real work with it. Resolved to an absolute path first, because the checks below
+# are meaningless against a relative one.
+WORK=$(readlink -m -- "$WORK")
+case "$WORK" in
+  /|/*/..|"$HOME"|"$PWD") echo "::error::refusing to use $WORK as a work directory"; exit 1 ;;
+esac
+if [ -e "$WORK" ] && [ ! -e "$WORK/.pacmanbuild-scratch" ]; then
+  echo "::error::$WORK already exists and was not created by this script; refusing to delete it"
+  exit 1
+fi
+rm -rf -- "$WORK"; mkdir -p "$WORK"; touch "$WORK/.pacmanbuild-scratch"; cd "$WORK"
 
 say "enumerate Arch packages across the v* releases"
 # apt-history*/pacman-* are output of this script and its sibling, never sources.
@@ -88,9 +101,13 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
   local pkgname=$1 arch=$2 tag=$3 db=$4
   local dir="$WORK/$tag" best="" best_line="" ver line name
 
-  # Every asset for this package name and architecture, newest wins. Matching on
-  # the full "<pkgname>-" prefix keeps mkvdup-bin from also claiming
-  # mkvdup-canary-bin, whose name merely contains it.
+  # Every asset for this package name and architecture, newest wins.
+  #
+  # The glob alone is not enough: "mkvdup-*-x86_64.pkg.tar.zst" also matches
+  # mkvdup-canary's files, because one package name prefixes the other. What
+  # separates them is that the remainder has to be exactly <pkgver>-<pkgrel>, and
+  # a pkgver cannot contain a hyphen -- so anything with a second one belongs to a
+  # longer package name.
   while IFS= read -r line; do
     name=${line#*/}
     case "$name" in
@@ -99,6 +116,11 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
     esac
     ver=${name#"$pkgname"-}
     ver=${ver%"-$arch.pkg.tar.zst"}
+    case "$ver" in
+      *-*-*) continue ;;   # two hyphens or more: a longer package name
+      *-*)   ;;            # exactly one: <pkgver>-<pkgrel>
+      *)     continue ;;   # none: not a package filename at all
+    esac
     if [ -z "$best" ] || [ "$(vercmp "$ver" "$best")" -gt 0 ]; then
       best=$ver; best_line=$line
     fi
@@ -165,10 +187,8 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
 }
 
 say "build repositories"
-build_channel mkvdup-bin        x86_64  pacman-x86_64         mkvdup
-build_channel mkvdup-bin        aarch64 pacman-aarch64        mkvdup
-build_channel mkvdup-canary-bin x86_64  pacman-canary-x86_64  mkvdup-canary
-build_channel mkvdup-canary-bin aarch64 pacman-canary-aarch64 mkvdup-canary
+build_channel mkvdup        x86_64 pacman-x86_64        mkvdup
+build_channel mkvdup-canary x86_64 pacman-canary-x86_64 mkvdup-canary
 
 say "publish"
 for dir in "$WORK"/pacman-*; do

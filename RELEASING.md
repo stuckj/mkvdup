@@ -41,13 +41,13 @@ Only the AUR half of the Arch release needs this. The pacman repository is signe
 GPG key as APT and YUM and needs nothing extra.
 
 Do it **before** the first Arch release. A release without it still succeeds, but the README
-and the published landing page both tell users to run `yay -S mkvdup-bin` unconditionally, and
+and the published landing page both tell users to run `yay -S mkvdup` unconditionally, and
 that finds nothing until the first push to the AUR has happened.
 
 1. Create an account at [aur.archlinux.org](https://aur.archlinux.org) and add an SSH public
    key to it under My Account.
 2. Add the matching private key as the `AUR_SSH_PRIVATE_KEY` secret.
-3. Check that `mkvdup-bin` and `mkvdup-canary-bin` are unclaimed. A name nobody owns clones as
+3. Check that `mkvdup` and `mkvdup-canary` are unclaimed on the AUR. A name nobody owns clones as
    an empty repository and is created by the first push, which the workflow does on its own —
    but a name someone else owns will refuse the push.
 
@@ -78,11 +78,12 @@ cannot be pushed there.
 The workflow will:
 
 1. Resolve the version and commit, and verify the tag does not already exist on the remote
-2. Build packages for amd64 and arm64 — deb, rpm and tarballs in `build`, pacman packages in
-   `build-arch`
+2. Build packages for amd64 and arm64 — deb, rpm and tarballs in `build`
 3. Create the GitHub release **and the tag together**, pointing at the resolved commit
-4. Update the APT and YUM repositories on GitHub Pages, the pacman repositories in their own
-   releases, and the Homebrew, AUR and Nix files
+4. Build the Arch package in `build-arch`, which compiles from the tag's source archive and so
+   has to run after the tag exists
+5. Update the APT and YUM repositories on GitHub Pages, the pacman repository in its own
+   release, and the Homebrew, AUR and Nix files
 
 **Tag timing:** the tag is deliberately created by the release step, not up front. Nothing
 user-visible — tag, release, packages, formula and Nix bumps — is created until every build
@@ -129,7 +130,7 @@ The workflow automatically detects the `-canary.` suffix and:
 - Packages as `mkvdup-canary` (installs to `/usr/bin/mkvdup-canary`)
 - Creates a pre-release on GitHub
 - Publishes to the canary APT/YUM/pacman repositories (separate from stable)
-- Publishes `mkvdup-canary-bin` to the AUR (separate package from `mkvdup-bin`)
+- Publishes `mkvdup-canary` to the AUR (separate package from `mkvdup`)
 
 ### Canary Package Repositories
 
@@ -170,10 +171,10 @@ SigLevel = Required
 Server = https://github.com/stuckj/mkvdup/releases/download/pacman-canary-$arch
 EOF
 
-sudo pacman -Syu mkvdup-canary-bin
+sudo pacman -Syu mkvdup-canary
 ```
 
-Or from the AUR: `yay -S mkvdup-canary-bin`.
+Or from the AUR: `yay -S mkvdup-canary`.
 
 ### Local Testing (Canary)
 
@@ -193,8 +194,7 @@ Each release produces:
 | mkvdup_VERSION_arm64.deb | ARM64 | Debian/Ubuntu |
 | mkvdup-VERSION.x86_64.rpm | x86_64 | RHEL/Fedora |
 | mkvdup-VERSION.aarch64.rpm | ARM64 | RHEL/Fedora |
-| mkvdup-bin-VERSION-1-x86_64.pkg.tar.zst | x86_64 | Arch Linux |
-| mkvdup-bin-VERSION-1-aarch64.pkg.tar.zst | ARM64 | Arch Linux |
+| mkvdup-VERSION-1-x86_64.pkg.tar.zst | x86_64 | Arch Linux |
 
 ## Package Repositories
 
@@ -237,10 +237,10 @@ SigLevel = Required
 Server = https://github.com/stuckj/mkvdup/releases/download/pacman-$arch
 EOF
 
-sudo pacman -Syu mkvdup-bin
+sudo pacman -Syu mkvdup
 ```
 
-Or from the AUR: `yay -S mkvdup-bin`.
+Or from the AUR: `yay -S mkvdup`.
 
 ### Nix
 
@@ -348,8 +348,14 @@ Not on GitHub Pages — in four releases of its own, one per channel and archite
 
 | Release | `Server` line users add |
 |---------|-------------------------|
-| `pacman-x86_64`, `pacman-aarch64` | `.../releases/download/pacman-$arch` |
-| `pacman-canary-x86_64`, `pacman-canary-aarch64` | `.../releases/download/pacman-canary-$arch` |
+| `pacman-x86_64` | `.../releases/download/pacman-$arch` |
+| `pacman-canary-x86_64` | `.../releases/download/pacman-canary-$arch` |
+
+**x86_64 only.** Arch is an x86_64 distribution and publishes no aarch64 container, so there is
+nothing to build an aarch64 package in. The PKGBUILD still declares `aarch64`, so Arch Linux ARM
+users install from the AUR and build it natively — which is how ALARM users install everything.
+The `$arch` in the `Server` line is left in place so the layout does not have to change if that
+ever becomes possible.
 
 That shape is forced, not chosen. libalpm validates `%FILENAME%` and rejects any value
 containing a `/` (`_alpm_validate_filename` in `be_sync.c`), so a database entry cannot point at
@@ -377,17 +383,20 @@ that still matches one.
 
 Three things about the naming are load-bearing:
 
-- **The package is `mkvdup-bin` in both places, not `mkvdup` in the repository.** Identical
-  names mean pacman treats the hosted package as an upgrade of an already-installed AUR build,
-  so a user who starts on the AUR and later adds the repository is upgraded in place. Two names
-  would instead present as a conflict to be resolved by hand.
+- **The AUR package builds from source, and is called `mkvdup` rather than `mkvdup-bin`.**
+  That is what makes it eligible to be adopted into Arch's own repositories: Arch builds what
+  it ships, so a prebuilt package has nothing for a Package Maintainer to promote. The AUR
+  submission guidelines *require* the `-bin` suffix for prebuilt deliverables when the sources
+  are available, so shipping a binary there would also have forced the name that closes that
+  door. Using the same name in the hosted repository means pacman treats it as an upgrade of an
+  already-installed AUR build rather than a conflict to resolve by hand.
 - **`pkgver` replaces `-` with `_`.** A pacman `pkgver` cannot contain a hyphen — that is the
   `pkgver`/`pkgrel` separator — so `1.2.0-canary.1` is packaged as `1.2.0_canary.1`. Canaries
   are their own package, as they are for deb and rpm, so that version never has to sort against
   a stable one.
 
   **Only `-canary.` gets that separation, so use no other pre-release suffix.** The version
-  regex would accept `1.9.2-beta.1`, and it would build as stable `mkvdup-bin` `1.9.2_beta.1`.
+  regex would accept `1.9.2-beta.1`, and it would build as stable `mkvdup` `1.9.2_beta.1`.
   pacman has no equivalent of Debian's `~`, so `vercmp` sorts that *above* `1.9.2` — APT would
   decline the beta as an upgrade while pacman pushed it to every stable user on their next
   `pacman -Syu`. Cut pre-releases as canaries.
@@ -444,7 +453,7 @@ directory:
 ```bash
 VERSION=1.9.2
 work=$(mktemp -d)
-sed -e 's|@PKGNAME@|mkvdup-bin|g' -e 's|@BINNAME@|mkvdup|g' \
+sed -e 's|@PKGNAME@|mkvdup|g' -e 's|@BINNAME@|mkvdup|g' \
     -e "s|@PKGVER@|${VERSION}|g" -e "s|@TAG@|v${VERSION}|g" \
     -e 's|@PKGDESC@|Storage deduplication tool for MKV files and their source media|g' \
     -e 's|@SHA256_X86_64@|SKIP|g' -e 's|@SHA256_AARCH64@|SKIP|g' \

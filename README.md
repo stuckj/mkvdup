@@ -110,7 +110,7 @@ AUR packages nor the pacman repository.
 From the AUR, if you use an AUR helper:
 
 ```bash
-yay -S mkvdup-bin
+yay -S mkvdup
 ```
 
 Or add the binary repository, which serves the same package and updates through
@@ -130,19 +130,19 @@ Server = https://github.com/stuckj/mkvdup/releases/download/pacman-$arch
 EOF
 
 # Install
-sudo pacman -Syu mkvdup-bin
+sudo pacman -Syu mkvdup
 ```
 
-Both routes install the same `mkvdup-bin` package, so you can add the repository later
+Both routes install the same `mkvdup` package, so you can add the repository later
 without uninstalling the AUR build — pacman takes over the upgrade from there.
 
 <details>
 <summary><strong>Canary (pre-release)</strong></summary>
 
-Installs as `mkvdup-canary-bin`, providing the `mkvdup-canary` command alongside stable.
+Installs as `mkvdup-canary`, providing the `mkvdup-canary` command alongside stable.
 
 ```bash
-yay -S mkvdup-canary-bin
+yay -S mkvdup-canary
 ```
 
 Or via the canary repository:
@@ -161,7 +161,7 @@ Server = https://github.com/stuckj/mkvdup/releases/download/pacman-canary-$arch
 EOF
 
 # Install
-sudo pacman -Syu mkvdup-canary-bin
+sudo pacman -Syu mkvdup-canary
 ```
 
 </details>

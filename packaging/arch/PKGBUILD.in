@@ -4,45 +4,71 @@
 # Changes belong in that template: https://github.com/stuckj/mkvdup
 
 pkgname=@PKGNAME@
-_binname=@BINNAME@
 pkgver=@PKGVER@
 pkgrel=1
 pkgdesc="@PKGDESC@"
 arch=('x86_64' 'aarch64')
 url='https://github.com/stuckj/mkvdup'
 license=('MIT')
-depends=('fuse3')
-provides=("${_binname}=${pkgver}")
-conflicts=("${_binname}")
-# Upstream builds with -ldflags="-s -w", so there is nothing left to strip and no
-# debug info to split out.
-options=('!strip' '!debug')
-_dl="${url}/releases/download/@TAG@"
-source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${_dl}/${_binname}_linux_amd64.tar.gz")
-source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::${_dl}/${_binname}_linux_arm64.tar.gz")
-sha256sums_x86_64=('@SHA256_X86_64@')
-sha256sums_aarch64=('@SHA256_AARCH64@')
+depends=('fuse3' 'glibc')
+makedepends=('go')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/@TAG@.tar.gz")
+sha256sums=('@SHA256_SRC@')
+
+# The archive unpacks to the repository name and the tag without its leading v,
+# which is not $pkgname/$pkgver once a canary mangles the hyphen to an underscore.
+_srcdir="mkvdup-@VERSION@"
+
+build() {
+  cd "$_srcdir"
+
+  # The flag set Arch's Go packages use: CGO picks up the distribution's
+  # hardening flags, and PIE with external linking is what makes the result
+  # match what the official repositories ship.
+  export CGO_CPPFLAGS="${CPPFLAGS}"
+  export CGO_CFLAGS="${CFLAGS}"
+  export CGO_CXXFLAGS="${CXXFLAGS}"
+  export CGO_LDFLAGS="${LDFLAGS}"
+  export GOFLAGS="-buildmode=pie -trimpath -ldflags=-linkmode=external -mod=readonly -modcacherw"
+
+  # @VERSION@ rather than $pkgver: the binary reports the version upstream
+  # released, not the one mangled to satisfy pacman's pkgver rules.
+  go build -o "$pkgname" -ldflags "-X 'main.version=@VERSION@'" ./cmd/mkvdup
+}
+
+check() {
+  cd "$_srcdir"
+  # The suites needing FUSE, root or generated media are excluded by build tag,
+  # so a plain run is the subset that can pass in a packaging chroot.
+  go test ./...
+}
 
 package() {
-  install -Dm755 "${srcdir}/${_binname}" "${pkgdir}/usr/bin/${_binname}"
+  cd "$_srcdir"
+
+  install -Dm755 "$pkgname" "${pkgdir}/usr/bin/${pkgname}"
 
   # The helper execs the binary its own filename ends in, so installing it as
   # mount.fuse.mkvdup-canary is what makes a canary mount run the canary binary.
-  # It lands in /usr/bin rather than the /usr/sbin the deb and rpm use, because
-  # Arch symlinks /usr/sbin to /usr/bin and forbids packages from writing there.
-  install -Dm755 "${srcdir}/mount.fuse.mkvdup" "${pkgdir}/usr/bin/mount.fuse.${_binname}"
+  # It lands in /usr/bin rather than /usr/sbin, which Arch forbids packages from
+  # writing to.
+  install -Dm755 scripts/mount.fuse.mkvdup "${pkgdir}/usr/bin/mount.fuse.${pkgname}"
 
-  install -Dm644 "${srcdir}/${_binname}.1" "${pkgdir}/usr/share/man/man1/${_binname}.1"
+  # The man page ships with placeholders that the release tooling expands; a
+  # source build has to do it here.
+  sed -e "s/@PACKAGE_NAME_UPPER@/$(printf '%s' "$pkgname" | tr '[:lower:]' '[:upper:]')/g" \
+      -e "s/@PACKAGE_NAME@/${pkgname}/g" \
+      docs/mkvdup.1 > "${srcdir}/${pkgname}.1"
+  install -Dm644 "${srcdir}/${pkgname}.1" "${pkgdir}/usr/share/man/man1/${pkgname}.1"
 
-  install -Dm644 "${srcdir}/mkvdup-completion.bash" \
-    "${pkgdir}/usr/share/bash-completion/completions/${_binname}"
-  install -Dm644 "${srcdir}/mkvdup-completion.zsh" \
-    "${pkgdir}/usr/share/zsh/site-functions/_${_binname}"
-  install -Dm644 "${srcdir}/mkvdup.fish" \
-    "${pkgdir}/usr/share/fish/vendor_completions.d/${_binname}.fish"
+  install -Dm644 scripts/mkvdup-completion.bash \
+    "${pkgdir}/usr/share/bash-completion/completions/${pkgname}"
+  install -Dm644 scripts/mkvdup-completion.zsh \
+    "${pkgdir}/usr/share/zsh/site-functions/_${pkgname}"
+  install -Dm644 scripts/mkvdup.fish \
+    "${pkgdir}/usr/share/fish/vendor_completions.d/${pkgname}.fish"
 
-  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
-  install -Dm644 -t "${pkgdir}/usr/share/doc/${_binname}" \
-    "${srcdir}/README.md" "${srcdir}/DESIGN.md" "${srcdir}/LICENSE"
-  install -Dm644 -t "${pkgdir}/usr/share/doc/${_binname}/docs" "${srcdir}"/docs/*.md
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 -t "${pkgdir}/usr/share/doc/${pkgname}" README.md DESIGN.md
+  install -Dm644 -t "${pkgdir}/usr/share/doc/${pkgname}/docs" docs/*.md
 }
