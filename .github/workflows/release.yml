@@ -288,6 +288,7 @@ jobs:
   update-homebrew:
     needs: [prepare, build, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout homebrew-mkvdup tap repo
         uses: actions/checkout@v7

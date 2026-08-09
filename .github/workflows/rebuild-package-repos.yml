@@ -32,6 +32,9 @@ concurrency:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
+    # Bounded so a stalled download cannot hold the shared concurrency group
+    # for the six-hour default.
+    timeout-minutes: 60
     steps:
       - name: Check confirmation
         if: ${{ !inputs.dry_run }}

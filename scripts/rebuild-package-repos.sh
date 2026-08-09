@@ -86,6 +86,9 @@ WORK="$WORKPARENT/$(basename "$WORK")"
 # resolved path, not the argument: `rebuild-package-repos.sh docs` from a
 # checkout resolves to a real directory of tracked files.
 MARKER=.repobuild-marker
+# Normalise first: joining parent and basename turns "/" into "///", which the
+# literal comparison below would miss.
+WORK="$(printf '%s' "$WORK" | sed 's|//*|/|g; s|\(.\)/$|\1|')"
 case "$WORK" in
   / | "$HOME") die "refusing to use '$WORK' as a work directory" ;;
 esac
@@ -132,7 +135,12 @@ say "download packages"
 while IFS=$'\t' read -r path want url; do
   out="pkgs/$path"
   mkdir -p "$(dirname "$out")"
-  curl -fsSL --retry 3 --retry-delay 2 -o "$out" "$url" \
+  # Bounded: curl's retry does not fire on a transfer that merely stalls, and
+  # this job holds the package-repositories concurrency group — a hang would
+  # queue every later release behind it until the workflow timeout.
+  curl -fsSL --retry 3 --retry-delay 2 \
+       --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
+       -o "$out" "$url" \
     || die "could not download $path"
 done < assetsizes.txt
 
@@ -190,14 +198,17 @@ newest() {  # newest <stagedir> <prefix> -> highest Debian version, or non-zero
 # condition — where bash disables errexit for the whole function body.
 channel_ready() {  # channel_ready <debdir> <rpmdir> <prefix>
   local v vd a
-  [ "$(find "$1" -name '*.deb' | wc -l)" -gt 0 ] || return 1
-  [ "$(find "$2" -name '*.rpm' | wc -l)" -gt 0 ] || return 1
-  v=$(newest "$1" "$3") || return 1
+  # Say which condition failed: this gates the whole run, and "incomplete" alone
+  # leaves an operator unable to tell a transient API race from a real gap.
+  [ "$(find "$1" -name '*.deb' | wc -l)" -gt 0 ] || { echo "  no .deb packages in $1" >&2; return 1; }
+  [ "$(find "$2" -name '*.rpm' | wc -l)" -gt 0 ] || { echo "  no .rpm packages in $2" >&2; return 1; }
+  v=$(newest "$1" "$3") || { echo "  cannot determine the newest version in $1" >&2; return 1; }
   vd="${v//\~/.}"
   # Both architectures must exist for the version about to be advertised,
   # otherwise the missing one gets a signed but empty index.
   for a in amd64 arm64; do
-    [ -f "$1/${3}_${vd}_${a}.deb" ] || [ -f "$1/${3}_${v}_${a}.deb" ] || return 1
+    [ -f "$1/${3}_${vd}_${a}.deb" ] || [ -f "$1/${3}_${v}_${a}.deb" ] || {
+      echo "  newest version $v has no $a package in $1" >&2; return 1; }
   done
   return 0
 }
@@ -241,6 +252,19 @@ build_apt_history() {  # build_apt_history <channel> <stagedir> <label>
     fi
   done < "$out/.raw"
   rm -f "$out/.raw"
+  # dpkg-scanpackages emits stanzas in readdir order, which is not stable across
+  # runs even when the staged set is identical. Sorting them makes the index
+  # byte-reproducible, so an unchanged package set produces an unchanged asset
+  # instead of a fresh blob on every rebuild.
+  python3 - "$out/Packages" <<'PY'
+import sys
+path = sys.argv[1]
+stanzas = [s.strip("\n") for s in open(path).read().split("\n\n") if s.strip()]
+stanzas.sort()
+with open(path, "w") as fh:
+    for s in stanzas:
+        fh.write(s + "\n\n")
+PY
   # dpkg-scanpackages exits 0 on an empty directory, so check the result.
   local entries
   entries=$(grep -c '^Package:' "$out/Packages" || true)
@@ -332,12 +356,19 @@ done
 # tag is what names the directory the packages are fetched from, so it is both
 # stable and the thing that has to be right.
 if [ -n "${EXPECT_TAG:-}" ]; then
-  case "$EXPECT_TAG" in
-    *canary*) aptidx=apt/canary/Packages;  yumdir=pages/yum-canary ;;
-    *)        aptidx=apt/stable/Packages;  yumdir=pages/yum ;;
-  esac
-  grep -q "^${EXPECT_TAG}/" assetmap.txt \
+  grep -qF "${EXPECT_TAG}/" assetmap.txt \
     || die "no assets for ${EXPECT_TAG} — the releases API may not list the new release yet"
+  # Decide the channel from the packages the release actually produced, not from
+  # the tag text. Staging classifies by package name and the release workflow by
+  # `*-canary.*`; a looser tag match here would disagree with both — a version
+  # like 1.9.2-canary1 builds stable packages under a tag containing "canary",
+  # and looking for them in the canary index kills the run before anything at all
+  # is published, including the correctly built stable index.
+  if grep -qF "${EXPECT_TAG}/mkvdup-canary" assetmap.txt; then
+    aptidx=apt/canary/Packages;  yumdir=pages/yum-canary
+  else
+    aptidx=apt/stable/Packages;  yumdir=pages/yum
+  fi
   [ -f "$aptidx" ] || die "expected ${EXPECT_TAG} in ${aptidx}, but that channel was not rebuilt"
   grep -qF "Filename: ../${EXPECT_TAG}/" "$aptidx" \
     || die "${EXPECT_TAG} is not in the APT index ${aptidx}"
