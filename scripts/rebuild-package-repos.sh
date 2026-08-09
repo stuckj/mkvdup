@@ -71,9 +71,12 @@ sign() {  # sign <detached-out> <clear-out> <file>
 # The work tree is wiped, and later steps cd into it and then refer back to it,
 # so resolve it to an absolute path and refuse anything that is not clearly a
 # scratch directory.
-WORK="${1:-$PWD/.repobuild}"
-mkdir -p "$WORK"
-WORK="$(cd "$WORK" && pwd)"
+[ $# -ge 1 ] || die "usage: $(basename "$0") <work-directory>   (a scratch dir outside any checkout)"
+# Resolve via the parent so nothing is created before the guards below run — a
+# rejected invocation should not leave a directory behind.
+WORK="$1"
+WORK="$(cd "$(dirname "$WORK")" 2>/dev/null && pwd)/$(basename "$WORK")" \
+  || die "cannot resolve '$1' — its parent directory does not exist"
 # The wipe below is destructive and runs before the dry-run gate, so validate the
 # resolved path, not the argument: `rebuild-package-repos.sh docs` from a
 # checkout resolves to a real directory of tracked files.
@@ -81,12 +84,15 @@ MARKER=.repobuild-marker
 case "$WORK" in
   / | "$HOME") die "refusing to use '$WORK' as a work directory" ;;
 esac
-if git -C "$WORK" rev-parse --show-toplevel >/dev/null 2>&1; then
+# Ask about the parent, which is guaranteed to exist — $WORK may not yet, and
+# `git -C` on a missing directory just fails, which would skip the check.
+if git -C "$(dirname "$WORK")" rev-parse --show-toplevel >/dev/null 2>&1; then
   die "refusing to use '$WORK': it is inside a git working tree"
 fi
 if [ -n "$(ls -A "$WORK" 2>/dev/null)" ] && [ ! -e "$WORK/$MARKER" ]; then
   die "refusing to wipe non-empty '$WORK': this script did not create it"
 fi
+mkdir -p "$WORK"
 rm -rf "${WORK:?}"/* "${WORK:?}"/.[!.]* 2>/dev/null || true
 touch "$WORK/$MARKER"
 mkdir -p "$WORK"/{pkgs,apt/stable,apt/canary,pages}
@@ -193,7 +199,12 @@ channel_ready stage/deb-stable stage/rpm-stable mkvdup \
 DO_CANARY=1
 if ! channel_ready stage/deb-canary stage/rpm-canary mkvdup-canary; then
   DO_CANARY=0
-  echo "::warning::canary channel incomplete — its repositories are left exactly as they are"
+  msg="Canary channel incomplete — its repositories were left exactly as they are, so canary
+users stay on the last good version until a complete canary release is published."
+  echo "::warning::${msg}"
+  # A warning annotation on a green run is easy to miss, and the channel stays
+  # frozen until someone notices.
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] && printf '### ⚠️ Canary skipped\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
 fi
 
 say "build flat APT history repos (metadata only)"
@@ -303,17 +314,27 @@ done
 # replaced job fed the freshly built packages straight in, so this was
 # structurally guaranteed; now the index comes from the releases API, and a view
 # that does not yet list the new release would publish silently without it.
-if [ -n "${EXPECT_VERSION:-}" ]; then
-  # A canary is dispatched as 1.9.2-canary.1 but packaged as 1.9.2~canary.1,
-  # since Debian needs the tilde to sort it below the final release.
-  case "$EXPECT_VERSION" in
-    *-canary.*) want="${EXPECT_VERSION/-canary./\~canary.}"; idx=apt/canary/Packages ;;
-    *)          want="$EXPECT_VERSION";                      idx=apt/stable/Packages ;;
+# Confirm the release being published actually reached both indexes. Match on the
+# release tag, not the version: nfpm normalises the version it is handed (0.8
+# becomes 0.8.0, and any semver prerelease takes a tilde, so 1.9.2-rc1 becomes
+# 1.9.2~rc1), and re-deriving those rules here would reject valid releases. The
+# tag is what names the directory the packages are fetched from, so it is both
+# stable and the thing that has to be right.
+if [ -n "${EXPECT_TAG:-}" ]; then
+  case "$EXPECT_TAG" in
+    *canary*) aptidx=apt/canary/Packages;  yumdir=pages/yum-canary ;;
+    *)        aptidx=apt/stable/Packages;  yumdir=pages/yum ;;
   esac
-  [ -f "$idx" ] || die "expected ${want} in ${idx}, but that channel was not rebuilt"
-  grep -qx "Version: ${want}" "$idx" \
-    || die "version ${want} is not in ${idx} — the releases API may not list the new release yet"
-  echo "  confirmed ${want} is indexed"
+  grep -q "^${EXPECT_TAG}/" assetmap.txt \
+    || die "no assets for ${EXPECT_TAG} — the releases API may not list the new release yet"
+  [ -f "$aptidx" ] || die "expected ${EXPECT_TAG} in ${aptidx}, but that channel was not rebuilt"
+  grep -qF "Filename: ../${EXPECT_TAG}/" "$aptidx" \
+    || die "${EXPECT_TAG} is not in the APT index ${aptidx}"
+  # The rpm half is checked too: deb and rpm assets can finish uploading at
+  # different times, and indexing one without the other is silent.
+  gzip -dc "$yumdir"/repodata/*primary.xml.gz | grep -qF "/${EXPECT_TAG}/" \
+    || die "${EXPECT_TAG} is not in the YUM repodata under ${yumdir}"
+  echo "  confirmed ${EXPECT_TAG} is in both the APT and YUM indexes"
 fi
 bash "$SCRIPTS/repo-index.sh" > pages/index.html
 echo "  generated tree: $(du -sh pages | cut -f1), $(find pages -type f | wc -l) files"

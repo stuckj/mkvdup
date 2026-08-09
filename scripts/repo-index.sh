@@ -114,6 +114,12 @@ sudo dnf install mkvdup-canary</pre>
   <a href="https://github.com/${REPO}/releases">GitHub releases</a>; these repositories carry
   only the indexes. The APT archive reaches them with a relative
   <code>Filename</code>, and the YUM metadata with a per-package <code>xml:base</code>.</p>
+
+  <h2>Links</h2>
+  <ul>
+    <li><a href="https://github.com/${REPO}">GitHub Repository</a></li>
+    <li><a href="https://github.com/${REPO}/releases">Release Downloads</a></li>
+  </ul>
 </body>
 </html>
 EOF

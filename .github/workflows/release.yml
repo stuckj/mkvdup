@@ -883,5 +883,5 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           DRY_RUN: '0'   # the script defaults to a dry run; publishing is opt-in
           # Fail rather than publish an index that silently lacks this release.
-          EXPECT_VERSION: ${{ needs.prepare.outputs.version }}
+          EXPECT_TAG: ${{ needs.prepare.outputs.tag }}
         run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"

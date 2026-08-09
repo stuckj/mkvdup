@@ -42,8 +42,6 @@ Thumbs.db
 
 .claude/settings.local.json
 
-# Scratch tree from scripts/rebuild-package-repos.sh when run outside CI
-/.repobuild/
 
 # Python bytecode
 __pycache__/

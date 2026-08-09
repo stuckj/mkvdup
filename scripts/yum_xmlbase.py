@@ -71,7 +71,11 @@ def main(src, dst, mapfile, base):
             sys.exit("no <location> elements matched — createrepo_c output changed shape")
 
         body = raw.encode()
-        gz = gzip.compress(body)
+        # mtime=0: the default only became deterministic in Python 3.14, and the
+        # runner is on 3.12. Without it the digest — and so the filename and the
+        # repomd checksum — changes on every run, adding a blob to gh-pages and
+        # forcing every client to re-download primary.xml for no reason.
+        gz = gzip.compress(body, mtime=0)
         # createrepo_c prefixes the filename with the digest of the file it
         # wrote (--unique-md-filenames), so that changed metadata gets a changed
         # URL. Keeping its name for our rewritten bytes would break that: a cache
