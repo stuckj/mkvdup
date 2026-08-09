@@ -17,6 +17,10 @@ permissions:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
+    # Shared with release.yml's publish-pacman; see the note there.
+    concurrency:
+      group: pacman-repositories
+      cancel-in-progress: false
     # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2.
     container: archlinux:base
     steps:

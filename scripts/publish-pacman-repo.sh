@@ -18,9 +18,11 @@
 # accumulated. Every version stays on its own v* release regardless.
 #
 # Like rebuild-package-repos.sh, this reads the releases rather than any branch,
-# so it is idempotent, it repairs drift, and a package whose release was deleted
-# drops out. It picks the highest version present rather than trusting a caller,
-# which is what keeps a re-released older version from regressing a channel.
+# so it is idempotent and it repairs drift. It picks the highest version present
+# rather than trusting a caller, which is what keeps a re-released older version
+# from regressing a channel. Deleting a release therefore falls back to the next
+# version still published -- but a channel whose packages are *all* gone keeps
+# serving what it last published, because there is nothing left to rebuild from.
 #
 # Requires: gh (authenticated), repo-add and vercmp from pacman >= 6.1, and gpg
 # with the signing key imported. Run it inside archlinux:base -- Ubuntu ships
@@ -34,8 +36,31 @@ export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 # DRY_RUN=1 builds every repository and publishes nothing, so a run can be
 # inspected before it replaces what users are installing from.
 DRY_RUN="${DRY_RUN:-0}"
+# Set by the release workflow so this can tell "the channel already has something
+# newer" from "the release reached it". A standalone rebuild has no particular
+# version to expect and leaves both empty.
+RELEASED_VERSION="${RELEASED_VERSION:-}"
+RELEASED_CHANNEL="${RELEASED_CHANNEL:-}"
+# Same transformation build-arch applies: a pacman pkgver cannot contain a hyphen.
+RELEASED_PKGVER="${RELEASED_VERSION//-/_}"
 
 say() { printf '\n== %s\n' "$1"; }
+
+# The one path where a release deliberately does not reach this channel. A plain
+# log line on an otherwise green release is invisible -- that is how v1.9.0
+# shipped reporting 1.8.2 (#212) -- so say it as a warning and in the summary,
+# the way sync-nix does for its own stand-down.
+stand_down() {  # stand_down <tag> <message>
+  echo "::warning::$2"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    { echo "### ⚠️ pacman repository not updated ($1)"
+      echo
+      echo "$2"
+      echo
+      echo "Every other channel carries this release."
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+}
 gpg_sign() {  # detached *binary* signature: repo-add --include-sigs refuses an armoured one
   printf '%s' "${GPG_PASSPHRASE:-}" | gpg --batch --yes --passphrase-fd 0 \
     --pinentry-mode loopback --local-user "$KEY" --detach-sign --no-armor -o "$1.sig" "$1"
@@ -46,9 +71,17 @@ rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK"
 say "enumerate Arch packages across the v* releases"
 # apt-history*/pacman-* are output of this script and its sibling, never sources.
 # shellcheck disable=SC2016  # $t is jq's variable, not the shell's
+#
+# Fetched on its own line rather than piped straight into grep. grep exits 1 when
+# a repository has no Arch packages yet, which is a legitimate state and has to be
+# tolerated -- but tolerating it in a pipeline would tolerate a failed gh api call
+# with it, and this script's response to an empty list is to publish nothing and
+# exit 0. A rate-limited or 5xx enumeration would then leave every channel serving
+# its previous version behind a green release.
 gh api "repos/$REPO/releases" --paginate \
   -q '.[] | select(.tag_name | startswith("v")) | .tag_name as $t | .assets[] | "\($t)/\(.name)"' \
-  | grep -E '\.pkg\.tar\.zst$' | sort -u > assetmap.txt || true
+  > releaseassets.txt
+grep -E '\.pkg\.tar\.zst$' releaseassets.txt | sort -u > assetmap.txt || true
 echo "  $(wc -l < assetmap.txt) package assets"
 
 build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
@@ -71,9 +104,26 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
     fi
   done < assetmap.txt
 
+  # Only the channel this release belongs to is expected to move; the other one
+  # legitimately stays where it was.
+  local channel=stable
+  case "$pkgname" in *-canary-bin) channel=canary ;; esac
+  local released=0
+  [ -n "$RELEASED_PKGVER" ] && [ "$channel" = "$RELEASED_CHANNEL" ] && released=1
+
   if [ -z "$best" ]; then
-    echo "  $tag: no $pkgname package on any release yet, skipping"
+    if [ "$released" = 1 ]; then
+      stand_down "$tag" "No $pkgname package for $arch is attached to any release, including this one, so the pacman channel has nothing to serve."
+    else
+      echo "  $tag: no $pkgname package on any release yet, skipping"
+    fi
     return 0
+  fi
+
+  # ${best%-*} drops the pkgrel: best is <pkgver>-<pkgrel>, the released version
+  # is just <pkgver>.
+  if [ "$released" = 1 ] && [ "${best%-*}" != "$RELEASED_PKGVER" ]; then
+    stand_down "$tag" "${RELEASED_PKGVER} is not newer than the ${best} this channel already serves, so the pacman channel keeps its current version."
   fi
 
   mkdir -p "$dir"
@@ -118,7 +168,10 @@ for dir in "$WORK"/pacman-*; do
   [ -d "$dir" ] || continue
   tag=$(basename "$dir")
   if [ "$DRY_RUN" = 1 ]; then
-    echo "  DRY RUN: would publish $(find "$dir" -maxdepth 1 -type f | wc -l) assets -> $tag"
+    # Counted with the glob that actually uploads, so this does not include the
+    # dotfile the keep-list and the upload both exclude.
+    # shellcheck disable=SC2012  # names here are ours, not arbitrary
+    echo "  DRY RUN: would publish $(ls "$dir" | wc -l) assets -> $tag"
     continue
   fi
 

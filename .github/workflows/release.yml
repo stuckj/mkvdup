@@ -844,8 +844,11 @@ jobs:
             # "Unknown Packager" into .PKGINFO when it is unset -- which is what
             # pacman -Si would then show, unlike the maintainer nfpm.yaml gives
             # the deb and rpm.
+            # Both values are quoted in the file: makepkg source_safe()s the
+            # config and exits if it does not parse, and PACKAGER contains
+            # spaces and angle brackets, which bash would read as a redirection.
             cp /etc/makepkg.conf "makepkg-${target}.conf"
-            printf '\nCARCH=%s\nPACKAGER=%s\n' \
+            printf '\nCARCH=%q\nPACKAGER=%q\n' \
               "${target}" "stuckj <stuckj@users.noreply.github.com>" \
               >> "makepkg-${target}.conf"
             chown builder:builder "makepkg-${target}.conf"
@@ -992,6 +995,15 @@ jobs:
   publish-pacman:
     needs: [prepare, release]
     runs-on: ubuntu-latest
+    # Shared with rebuild-pacman-repo.yml: both run the same script against the
+    # same four releases, and its last step deletes every asset not in its own
+    # build. A rebuild dispatched mid-release would enumerate before this job
+    # attached the new packages and then delete them, leaving a signed database
+    # naming a file that 404s. Queued, never cancelled -- a release must not be
+    # interrupted part-way.
+    concurrency:
+      group: pacman-repositories
+      cancel-in-progress: false
     # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2. Same
     # rolling-tag caveat as build-arch above.
     container: archlinux:base
@@ -1019,6 +1031,10 @@ jobs:
           GPG_KEY_ID: ${{ env.GPG_KEY_ID }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # So the script can tell a release that reached this channel from one
+          # the channel declined as older, and warn about the latter.
+          RELEASED_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASED_CHANNEL: ${{ needs.prepare.outputs.is_canary == 'true' && 'canary' || 'stable' }}
         run: ./scripts/publish-pacman-repo.sh
 
   # Writes the release version, and a refreshed vendorHash, into the Nix files on
