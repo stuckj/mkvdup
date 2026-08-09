@@ -88,7 +88,7 @@ WORK="$(realpath -m -- "$1")" || die "cannot resolve '$1'"
 [ -d "$(dirname "$WORK")" ] || die "cannot resolve '$1' — its parent directory does not exist"
 MARKER=.repobuild-marker
 case "$WORK" in
-  / | "$HOME") die "refusing to use '$WORK' as a work directory" ;;
+  / | "${HOME:-/nonexistent}") die "refusing to use '$WORK' as a work directory" ;;
 esac
 # Ask about the parent, which is guaranteed to exist — $WORK may not yet, and
 # `git -C` on a missing directory just fails, which would skip the check.
@@ -108,12 +108,27 @@ say "enumerate release assets"
 # Only v* tags hold packages; apt-history* are this script's own output. Drafts
 # are excluded: the API returns them to a token with push access, but their
 # download URLs 404 for everyone else, so indexing one publishes a broken entry.
-gh api "repos/$REPO/releases" --paginate \
-  -q '.[] | select(.draft == false) | select(.tag_name | startswith("v"))
-      | .tag_name as $t | .assets[] | select(.state == "uploaded")
-      | "\($t)/\(.name)\t\(.size)\t\(.browser_download_url)"' \
-  | awk -F'\t' '$1 ~ /\.(deb|rpm)$/' | sort -u > assetsizes.txt
-cut -f1 assetsizes.txt > assetmap.txt
+enumerate() {
+  gh api "repos/$REPO/releases" --paginate \
+    -q '.[] | select(.draft == false) | select(.tag_name | startswith("v"))
+        | .tag_name as $t | .assets[] | select(.state == "uploaded")
+        | "\($t)/\(.name)\t\(.size)\t\(.browser_download_url)"' \
+    | awk -F'\t' '$1 ~ /\.(deb|rpm)$/' | sort -u > assetsizes.txt
+  cut -f1 assetsizes.txt > assetmap.txt
+}
+enumerate
+# The releases API is eventually consistent, and this job runs moments after the
+# release was created. A listing that does not yet show it — or still reports an
+# asset as not uploaded — would otherwise abort a release whose tag, GitHub
+# release, Homebrew formula and Nix bump have already shipped.
+if [ -n "${EXPECT_TAG:-}" ]; then
+  for attempt in 1 2 3 4 5; do
+    grep -q "^${EXPECT_TAG}/" assetmap.txt && break
+    echo "  ${EXPECT_TAG} not listed yet (attempt $attempt) — re-reading in ${ENUM_RETRY_DELAY:-10}s"
+    sleep "${ENUM_RETRY_DELAY:-10}"
+    enumerate
+  done
+fi
 [ -s assetmap.txt ] || die "no package assets found — refusing to publish an empty repository"
 # One asset name must map to one release. The APT index resolves a name to the
 # first matching tag and the YUM rewrite to the last, so a duplicate across two
@@ -293,12 +308,19 @@ PY
 # Pages suite to an older "current" release. Every other suspicious input here
 # fails loudly; this is the one that would not.
 check_no_shrink() {  # check_no_shrink <channel> <release-tag>
-  local ch="$1" tag="$2" prev=0 now
+  local ch="$1" tag="$2" prev=0 now rc=0
   now=$(grep -c '^Package:' "apt/$ch/Packages")
-  if curl -fsSL --connect-timeout 30 -o prev-Packages "$BASE/$tag/Packages" 2>/dev/null; then
-    prev=$(grep -c '^Package:' prev-Packages || true)
-    rm -f prev-Packages
-  fi
+  # Distinguish "no index published yet" from "could not read it". Treating a
+  # transport failure as zero would silently disable this guard on exactly the
+  # runs where something is already going wrong.
+  curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 120 \
+       -o prev-Packages "$BASE/$tag/Packages" 2>/dev/null || rc=$?
+  case "$rc" in
+    0)  prev=$(grep -c '^Package:' prev-Packages || true) ;;
+    22) prev=0 ;;   # 404 under -f: nothing published yet, so nothing to shrink
+    *)  die "cannot read the published $ch index to compare against (curl exit $rc)" ;;
+  esac
+  rm -f prev-Packages
   if [ "$prev" -gt "$now" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
     die "the $ch index would shrink from $prev to $now entries. If a release was
        deliberately deleted, re-run with ALLOW_SHRINK=1; otherwise the releases
@@ -484,7 +506,9 @@ for attempt in 1 2 3; do
     echo "  no change to gh-pages"
     pushed=1; break
   fi
-  git -C ghp commit -qm "Rebuild package repositories from release assets"
+  # Name the release when there is one, so the branch history still records
+  # which release produced a given state of the site.
+  git -C ghp commit -qm "Rebuild package repositories${EXPECT_TAG:+ for ${EXPECT_TAG}}"
   if git -C ghp push -q "$URL" gh-pages; then
     echo "  gh-pages updated (attempt $attempt)"
     pushed=1; break

@@ -16,6 +16,10 @@ on:
         description: 'For a real run, type REBUILD (ignored when dry_run is set)'
         required: false
         default: ''
+      allow_shrink:
+        description: 'Allow the indexes to lose entries — only when a release was deliberately deleted'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -66,6 +70,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          ALLOW_SHRINK: ${{ inputs.allow_shrink && '1' || '0' }}
         run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"
 
       # always(): a failed dry run is exactly when the partial output is worth

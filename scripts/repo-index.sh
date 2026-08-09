@@ -2,7 +2,9 @@
 # Emit the landing page for the package repositories on stdout.
 set -euo pipefail
 REPO="${GITHUB_REPOSITORY:-stuckj/mkvdup}"
-BASE="https://github.com/${REPO}/releases/download"
+# Honour the same seam as rebuild-package-repos.sh, so a test run does not write
+# production URLs into the page it generates.
+BASE="${RELEASE_BASE:-https://github.com/${REPO}/releases/download}"
 PAGES="${PAGES_URL:-https://stuckj.github.io/mkvdup}"
 
 cat <<EOF

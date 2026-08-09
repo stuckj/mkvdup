@@ -226,8 +226,10 @@ A real run needs `confirm: REBUILD`.
 The rebuild refuses to shrink an index. Deleting a release does legitimately
 drop its packages, but an incomplete read of the releases API looks the same and
 would quietly drop versions that still exist — so the run fails and asks you to
-confirm. Re-run it first; if the shrink really is intended, dispatch with
-`ALLOW_SHRINK=1` in the environment.
+confirm. Re-run it first; if the shrink really is intended, dispatch **Rebuild
+Package Repositories** with the `allow_shrink` box ticked. A release workflow run
+cannot override it, so after deliberately deleting a release, run the rebuild by
+hand once before the next release.
 
 Each run also re-downloads every package ever published (~1 GB today, growing
 about 8 MB per release) because the indexes are derived from the packages
