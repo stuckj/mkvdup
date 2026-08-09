@@ -75,8 +75,13 @@ sign() {  # sign <detached-out> <clear-out> <file>
 # Resolve via the parent so nothing is created before the guards below run — a
 # rejected invocation should not leave a directory behind.
 WORK="$1"
-WORK="$(cd "$(dirname "$WORK")" 2>/dev/null && pwd)/$(basename "$WORK")" \
+# Two statements: the exit status of an assignment is that of its *last*
+# command substitution, so a combined form would take basename's status (always
+# 0) and let a bad path resolve to /<basename>.
+WORKPARENT="$(cd "$(dirname "$WORK")" 2>/dev/null && pwd)" \
   || die "cannot resolve '$1' — its parent directory does not exist"
+[ -n "$WORKPARENT" ] || die "cannot resolve '$1' — its parent directory does not exist"
+WORK="$WORKPARENT/$(basename "$WORK")"
 # The wipe below is destructive and runs before the dry-run gate, so validate the
 # resolved path, not the argument: `rebuild-package-repos.sh docs` from a
 # checkout resolves to a real directory of tracked files.
@@ -105,7 +110,7 @@ say "enumerate release assets"
 gh api "repos/$REPO/releases" --paginate \
   -q '.[] | select(.draft == false) | select(.tag_name | startswith("v"))
       | .tag_name as $t | .assets[] | select(.state == "uploaded")
-      | "\($t)/\(.name)\t\(.size)"' \
+      | "\($t)/\(.name)\t\(.size)\t\(.browser_download_url)"' \
   | awk -F'\t' '$1 ~ /\.(deb|rpm)$/' | sort -u > assetsizes.txt
 cut -f1 assetsizes.txt > assetmap.txt
 [ -s assetmap.txt ] || die "no package assets found — refusing to publish an empty repository"
@@ -118,22 +123,24 @@ dupes=$(cut -d/ -f2- assetmap.txt | sort | uniq -d)
 echo "  $(wc -l < assetmap.txt) package assets across $(cut -d/ -f1 assetmap.txt | sort -u | wc -l) releases"
 
 say "download packages"
-# No `|| true` here. A silently dropped release would be published as an index
-# that no longer offers that version.
-while read -r tag; do
-  mkdir -p "pkgs/$tag"
-  gh release download "$tag" --repo "$REPO" --dir "pkgs/$tag" \
-     --pattern '*.deb' --pattern '*.rpm' --clobber >/dev/null \
-    || die "could not download assets for $tag"
-done < <(cut -d/ -f1 assetmap.txt | sort -u)
+# Fetched over the asset download URL rather than `gh release download`, which
+# spends one REST request per asset. At 540 assets that is most of the 1000/hour
+# GITHUB_TOKEN budget shared with the rest of the release, so two runs in an hour
+# — a release plus a manual rebuild, or two canaries — would start failing.
+# No `|| true`: a silently dropped release would be published as an index that no
+# longer offers that version.
+while IFS=$'\t' read -r path want url; do
+  out="pkgs/$path"
+  mkdir -p "$(dirname "$out")"
+  curl -fsSL --retry 3 --retry-delay 2 -o "$out" "$url" \
+    || die "could not download $path"
+done < assetsizes.txt
 
-# Size-check every asset. gh writes straight to the destination, so an
-# interrupted transfer leaves a short file that would otherwise be indexed with
-# the hash of the truncated bytes — a permanent mismatch for every client.
-# gh names each file after the asset, which is the name the API reported, so
-# these paths always line up.
+# Size-check every asset: an interrupted transfer leaves a short file that would
+# otherwise be indexed with the hash of the truncated bytes — a permanent
+# mismatch for every client.
 missing=0; short=0
-while IFS=$'\t' read -r path want; do
+while IFS=$'\t' read -r path want url; do
   f="pkgs/$path"
   if [ ! -f "$f" ]; then echo "  MISSING $path" >&2; missing=$((missing+1)); continue; fi
   got=$(stat -c%s "$f")
@@ -151,12 +158,16 @@ stage_one() { ln -f "$1" "$2" 2>/dev/null || cp -f "$1" "$2"; }
 while IFS=/ read -r tag name; do
   src="pkgs/$tag/$name"
   [ -f "$src" ] || die "staging lost $tag/$name"
+  # Match the package name, not the substring "canary": a version string that
+  # merely contains it (1.9.2-canary1, which the release workflow classifies as
+  # stable) would otherwise file stable packages into the canary channel and
+  # publish the release to the wrong repository without failing.
   case "$name" in
-    *canary*.deb) stage_one "$src" "stage/deb-canary/$name" ;;
-    *.deb)        stage_one "$src" "stage/deb-stable/$name" ;;
-    *canary*.rpm) stage_one "$src" "stage/rpm-canary/$name" ;;
-    *.rpm)        stage_one "$src" "stage/rpm-stable/$name" ;;
-    *)            die "unclassified asset $name" ;;
+    mkvdup-canary_*.deb) stage_one "$src" "stage/deb-canary/$name" ;;
+    mkvdup_*.deb)        stage_one "$src" "stage/deb-stable/$name" ;;
+    mkvdup-canary-*.rpm) stage_one "$src" "stage/rpm-canary/$name" ;;
+    mkvdup-*.rpm)        stage_one "$src" "stage/rpm-stable/$name" ;;
+    *)                   die "unclassified asset $name" ;;
   esac
 done < assetmap.txt
 for d in stage/*; do echo "  $(basename "$d"): $(find "$d" -type f | wc -l)"; done
@@ -332,7 +343,10 @@ if [ -n "${EXPECT_TAG:-}" ]; then
     || die "${EXPECT_TAG} is not in the APT index ${aptidx}"
   # The rpm half is checked too: deb and rpm assets can finish uploading at
   # different times, and indexing one without the other is silent.
-  gzip -dc "$yumdir"/repodata/*primary.xml.gz | grep -qF "/${EXPECT_TAG}/" \
+  # Redirect rather than pipe: `grep -q` exits on the first match, which SIGPIPEs
+  # gzip, and pipefail then reports the whole pipeline as failed — a false
+  # negative whenever the match is not near the end of the stream.
+  grep -qF "/${EXPECT_TAG}/" < <(gzip -dc "$yumdir"/repodata/*primary.xml.gz) \
     || die "${EXPECT_TAG} is not in the YUM repodata under ${yumdir}"
   echo "  confirmed ${EXPECT_TAG} is in both the APT and YUM indexes"
 fi

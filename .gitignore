@@ -42,7 +42,6 @@ Thumbs.db
 
 .claude/settings.local.json
 
-
 # Python bytecode
 __pycache__/
 *.pyc

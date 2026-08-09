@@ -70,11 +70,17 @@ def main(src, dst, mapfile, base):
         if not n:
             sys.exit("no <location> elements matched — createrepo_c output changed shape")
 
+        # createrepo_c stamps each package's filesystem mtime into
+        # <time file="…">, and the packages are re-downloaded on every run, so
+        # the metadata would otherwise differ every rebuild even with an
+        # unchanged package set — a fresh gh-pages blob each time and a pointless
+        # re-download for every client. Only --update consults this field, and
+        # this pipeline always rebuilds from scratch.
+        raw = re.sub(r'(<time file=")\d+(")', r"\g<1>0\g<2>", raw)
+
         body = raw.encode()
-        # mtime=0: the default only became deterministic in Python 3.14, and the
-        # runner is on 3.12. Without it the digest — and so the filename and the
-        # repomd checksum — changes on every run, adding a blob to gh-pages and
-        # forcing every client to re-download primary.xml for no reason.
+        # mtime=0 likewise: gzip's default only became deterministic in Python
+        # 3.14 and the runner is on 3.12.
         gz = gzip.compress(body, mtime=0)
         # createrepo_c prefixes the filename with the digest of the file it
         # wrote (--unique-md-filenames), so that changed metadata gets a changed
