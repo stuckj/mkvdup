@@ -344,7 +344,7 @@ the template, never a published copy.
 
 ### Where the pacman repository lives
 
-Not on GitHub Pages — in four releases of its own, one per channel and architecture:
+Not on GitHub Pages — in releases of its own, one per channel:
 
 | Release | `Server` line users add |
 |---------|-------------------------|
@@ -425,7 +425,7 @@ package name, so an older file is not installable through pacman anyway, and kee
 the dead weight the APT pool accumulated. Every version stays on its own `v*` release regardless;
 the `pacman-*` releases hold a second copy of the current one and nothing else.
 
-[`scripts/publish-pacman-repo.sh`](scripts/publish-pacman-repo.sh) rebuilds all four from the
+[`scripts/publish-pacman-repo.sh`](scripts/publish-pacman-repo.sh) rebuilds them from the
 release assets. It reads the releases
 rather than any branch, so it is idempotent, it repairs drift, and a package whose release was
 deleted drops out. It selects the highest version present with `vercmp` rather than trusting the
@@ -493,9 +493,11 @@ and helpers then show — regenerate it whenever the PKGBUILD changes. The workf
 - `Permission denied (publickey)` means the private key in the secret does not match a public
   key on the AUR account.
 - A rejected push on a package name that clones empty means someone else owns the name.
-- A failure in "Verify the release assets the PKGBUILD points at" means the URLs in the
-  PKGBUILD do not resolve to the tarballs that were built. The release itself is complete and
-  correct at that point; only the AUR is behind.
+- A failure in "Verify the source archive the PKGBUILD points at" means the tag's source
+  archive did not resolve, or did not match the checksum recorded when it was built. The
+  release itself is complete at that point; only the AUR is behind.
+- "is older than the ... already on the AUR" means a backport release declined to move the AUR
+  backwards, the same way the pacman channel declines. Every other channel has the release.
 
 ### pacman Reporting a Corrupted Database
 

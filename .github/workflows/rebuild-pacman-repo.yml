@@ -58,7 +58,10 @@ jobs:
           name: pacman-repositories
           path: .pacmanbuild/pacman-*
           # The search root starts with a dot, and the glob skips any traversal
-          # item whose basename does -- without this the artifact is empty and
-          # the dry run silently inspects nothing.
+          # item whose basename does -- without this the artifact is empty even
+          # when there is something to inspect.
+          #
+          # if-no-files-found is left at its default: no repositories built is a
+          # legitimate state before the first release carrying an Arch package,
+          # which is one of the things this workflow exists to bootstrap.
           include-hidden-files: true
-          if-no-files-found: error

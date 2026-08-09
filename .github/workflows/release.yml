@@ -196,7 +196,6 @@ jobs:
         run: |
           nfpm package --packager rpm --target .
 
-      # Consumed by the Homebrew formulae and by the Arch PKGBUILD.
       - name: Create release tarball
         env:
           PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
@@ -228,15 +227,6 @@ jobs:
           cp scripts/mkvdup-completion.bash staging/
           cp scripts/mkvdup-completion.zsh staging/
           cp scripts/mkvdup.fish staging/
-
-          # Mount helper for fstab/systemd integration. Kept under its own name --
-          # it derives the binary to exec from the name it is installed under, and
-          # the Arch package renames it at install time the way nfpm.yaml does.
-          # Linux only, like the deb and rpm steps above: it drives util-linux's
-          # mount helper protocol, which macOS has no equivalent of.
-          if [[ "$GOOS" == "linux" ]]; then
-            cp scripts/mount.fuse.mkvdup staging/
-          fi
 
           # Create tarball
           tar -czvf "${TARBALL_NAME}" -C staging .
@@ -756,8 +746,11 @@ jobs:
   build-arch:
     needs: [prepare, release]
     runs-on: ubuntu-latest
-    # Arch ships rolling tags only, so unlike go-version and nfpm above there is
-    # no versioned image to pin.
+    # Unpinned deliberately, unlike go-version and nfpm above. Docker Hub does
+    # publish dated tags, but pinning one would not pin what actually matters --
+    # the job installs its toolchain with pacman from the current repositories
+    # either way -- and the dated tags are pruned, so a pin becomes a broken
+    # build rather than a stable one.
     container: archlinux:base-devel
     steps:
       # The keyring is refreshed on its own first. A base image older than the
@@ -806,7 +799,14 @@ jobs:
   update-aur:
     needs: [prepare, build-arch]
     runs-on: ubuntu-latest
+    # For vercmp, which is what lets this refuse a downgrade the way the pacman
+    # channel does. Comparing pacman versions any other way gets it wrong.
+    container: archlinux:base
     steps:
+      - name: Install tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git openssh
       - name: Download PKGBUILD artifact
         uses: actions/download-artifact@v8
         with:
@@ -855,6 +855,19 @@ jobs:
           fi
           echo "OK ${url}"
 
+      # Sourced here rather than in the step below, which holds the AUR key: a
+      # PKGBUILD is executable, and the template comes from whichever branch was
+      # dispatched, so it should not run with a credential in the environment.
+      - name: Read the generated package identity
+        if: env.AUR_ENABLED == 'true'
+        run: |
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+          {
+            echo "AUR_PKGNAME=$pkgname"
+            echo "AUR_PKGVER=$pkgver"
+          } >> "$GITHUB_ENV"
+
       - name: Push to the AUR
         if: env.AUR_ENABLED == 'true'
         env:
@@ -864,12 +877,7 @@ jobs:
           # fingerprints are used for the AUR".
           AUR_ED25519_FINGERPRINT: 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
         run: |
-          # Read back out of the generated PKGBUILD, like the sums above: the AUR
-          # repository name has to equal the pkgbase being pushed, and aurweb
-          # rejects the push if they disagree.
-          # shellcheck disable=SC1091
-          source pkgbuild/PKGBUILD
-          PKGNAME=$pkgname
+          PKGNAME="$AUR_PKGNAME"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -893,8 +901,24 @@ jobs:
           # A package name the AUR has never seen clones as an empty repository;
           # pushing to it is what creates it.
           git clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
-          cp pkgbuild/PKGBUILD pkgbuild/.SRCINFO aur/
 
+          # The pacman channel refuses to go backwards; the AUR has to as well,
+          # or a backport release cut from a maintenance branch would advertise
+          # an older version than users already have -- on somebody else's
+          # server, where it cannot be taken back by rewriting anything here.
+          published=$(sed -n 's/^\tpkgver = //p' aur/.SRCINFO 2>/dev/null | head -1)
+          if [ -n "$published" ] && [ "$(vercmp "$AUR_PKGVER" "$published")" -lt 0 ]; then
+            echo "::warning::${AUR_PKGVER} is older than the ${published} already on the AUR, so ${PKGNAME} keeps its current version."
+            { echo "### ⚠️ AUR not updated"
+              echo
+              echo "\`${AUR_PKGVER}\` is older than the \`${published}\` already published, so it was not pushed."
+              echo
+              echo "Every other channel that reported success carries this release."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cp pkgbuild/PKGBUILD pkgbuild/.SRCINFO aur/
           cd aur
           git config user.name "stuckj"
           git config user.email "stuckj@users.noreply.github.com"
@@ -912,8 +936,8 @@ jobs:
   # database that lists them. A GitHub release is exactly that, which is why each
   # channel and architecture gets a release of its own to be the repository.
   #
-  # Gated on release for the same reason publish-repo is: the packages this reads
-  # are the ones build-arch just attached to the release.
+  # Gated on build-arch, which is what attaches the package this reads -- and
+  # which is itself gated on release, so the release exists by the time this runs.
   publish-pacman:
     needs: [prepare, build-arch]
     runs-on: ubuntu-latest
@@ -933,7 +957,7 @@ jobs:
       cancel-in-progress: false
       queue: max
     # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2. Same
-    # rolling-tag caveat as build-arch above.
+    # pinning caveat as build-arch above.
     container: archlinux:base
     steps:
       - name: Install tools

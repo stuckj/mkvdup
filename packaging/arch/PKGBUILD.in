@@ -14,7 +14,11 @@ depends=('fuse3' 'glibc')
 makedepends=('go')
 # Arch's stock OPTIONS include debug, which splits a -debug package out of every
 # build. Nothing here publishes one, so it would only ever be an unused asset.
-options=('!debug')
+#
+# !lto for the reason every official Arch Go package exporting CGO_CFLAGS does:
+# mkvdup is pure Go today so -flto reaches only the final link and does nothing,
+# but that stops being true the moment a cgo dependency arrives.
+options=('!debug' '!lto')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/@TAG@.tar.gz")
 sha256sums=('@SHA256_SRC@')
 
