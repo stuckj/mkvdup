@@ -46,6 +46,14 @@ def main(src, dst, mapfile, base):
         srcf = os.path.join(src, name)
 
         if data.get("type") != "primary":
+            # Only primary carries package locations, so everything else is
+            # copied through. Refuse an unrecognised type rather than pass it on:
+            # primary_db and primary_zck also carry locations, and copying one
+            # unmodified would publish a repository advertising the old
+            # packages/ paths to any client that prefers that variant.
+            if data.get("type") not in ("filelists", "other"):
+                sys.exit(f"unexpected repodata type {data.get('type')!r} — it may carry "
+                         "package locations that this rewrite does not handle")
             shutil.copy2(srcf, os.path.join(dst, name))
             loc.set("href", f"repodata/{name}")
             continue

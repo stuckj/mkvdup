@@ -30,13 +30,16 @@
 #                                 absolute per-package xml:base, so the index
 #                                 stays put and the rpms come from the releases.
 #
-# Requires: gh (authenticated), dpkg-scanpackages, createrepo_c, gpg with the
-# signing key imported, and GPG_KEY_ID set.
+# Requires: gh (authenticated), curl, python3, dpkg-scanpackages, createrepo_c,
+# realpath, and gpg with the signing key imported and GPG_KEY_ID set.
 set -euo pipefail
 
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${GITHUB_REPOSITORY:-stuckj/mkvdup}"
-BASE="https://github.com/${REPO}/releases/download"
+# RELEASE_BASE overrides where release assets are read from and pointed at, so
+# the publish path can be exercised against a local server. Same purpose as
+# PAGES_REMOTE below.
+BASE="${RELEASE_BASE:-https://github.com/${REPO}/releases/download}"
 # Exported so repo-index.sh honours an override rather than re-deriving a default.
 export PAGES_URL="${PAGES_URL:-https://stuckj.github.io/mkvdup}"
 KEY="${GPG_KEY_ID:?GPG_KEY_ID must be set}"
@@ -72,23 +75,18 @@ sign() {  # sign <detached-out> <clear-out> <file>
 # so resolve it to an absolute path and refuse anything that is not clearly a
 # scratch directory.
 [ $# -ge 1 ] || die "usage: $(basename "$0") <work-directory>   (a scratch dir outside any checkout)"
-# Resolve via the parent so nothing is created before the guards below run — a
-# rejected invocation should not leave a directory behind.
-WORK="$1"
-# Two statements: the exit status of an assignment is that of its *last*
-# command substitution, so a combined form would take basename's status (always
-# 0) and let a bad path resolve to /<basename>.
-WORKPARENT="$(cd "$(dirname "$WORK")" 2>/dev/null && pwd)" \
-  || die "cannot resolve '$1' — its parent directory does not exist"
-[ -n "$WORKPARENT" ] || die "cannot resolve '$1' — its parent directory does not exist"
-WORK="$WORKPARENT/$(basename "$WORK")"
 # The wipe below is destructive and runs before the dry-run gate, so validate the
-# resolved path, not the argument: `rebuild-package-repos.sh docs` from a
+# fully resolved path, not the argument: `rebuild-package-repos.sh docs` from a
 # checkout resolves to a real directory of tracked files.
+#
+# realpath -m resolves "." and ".." without requiring the path to exist. A
+# dirname/basename split does not, so "$HOME/." slipped past the guards below;
+# and under uutils coreutils, which Ubuntu 25.10 ships by default, basename of
+# "$HOME/./" is "claude", which would have retargeted the wipe at a directory the
+# operator never named. Nothing is created before the guards run.
+WORK="$(realpath -m -- "$1")" || die "cannot resolve '$1'"
+[ -d "$(dirname "$WORK")" ] || die "cannot resolve '$1' — its parent directory does not exist"
 MARKER=.repobuild-marker
-# Normalise first: joining parent and basename turns "/" into "///", which the
-# literal comparison below would miss.
-WORK="$(printf '%s' "$WORK" | sed 's|//*|/|g; s|\(.\)/$|\1|')"
 case "$WORK" in
   / | "$HOME") die "refusing to use '$WORK' as a work directory" ;;
 esac
@@ -210,6 +208,14 @@ channel_ready() {  # channel_ready <debdir> <rpmdir> <prefix>
     [ -f "$1/${3}_${vd}_${a}.deb" ] || [ -f "$1/${3}_${v}_${a}.deb" ] || {
       echo "  newest version $v has no $a package in $1" >&2; return 1; }
   done
+  # Same for the rpms. Checking only that the directory is non-empty would let a
+  # half-uploaded pair through: the yum repo would then offer the new version to
+  # one architecture and the previous one to the other, with the run green.
+  for a in x86_64 aarch64; do
+    compgen -G "$2/${3}-${vd}-*.${a}.rpm" >/dev/null \
+      || compgen -G "$2/${3}-${v}-*.${a}.rpm" >/dev/null || {
+      echo "  newest version $v has no $a rpm in $2" >&2; return 1; }
+  done
   return 0
 }
 
@@ -281,9 +287,31 @@ PY
     sign Release.gpg InRelease Release )
   echo "  $ch: $entries entries, index $(stat -c%s "$out/Packages.gz")B"
 }
+# Deleting a release legitimately drops its packages from the index, but a
+# partial read of the releases API looks identical and would quietly republish
+# every repository without versions that still exist — including re-pinning the
+# Pages suite to an older "current" release. Every other suspicious input here
+# fails loudly; this is the one that would not.
+check_no_shrink() {  # check_no_shrink <channel> <release-tag>
+  local ch="$1" tag="$2" prev=0 now
+  now=$(grep -c '^Package:' "apt/$ch/Packages")
+  if curl -fsSL --connect-timeout 30 -o prev-Packages "$BASE/$tag/Packages" 2>/dev/null; then
+    prev=$(grep -c '^Package:' prev-Packages || true)
+    rm -f prev-Packages
+  fi
+  if [ "$prev" -gt "$now" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
+    die "the $ch index would shrink from $prev to $now entries. If a release was
+       deliberately deleted, re-run with ALLOW_SHRINK=1; otherwise the releases
+       API returned an incomplete view and re-running should fix it."
+  fi
+  echo "  $ch: $now entries (currently published: $prev)"
+}
+
 build_apt_history stable stage/deb-stable mkvdup
+check_no_shrink stable apt-history
 if [ "$DO_CANARY" = 1 ]; then
   build_apt_history canary stage/deb-canary mkvdup-canary
+  check_no_shrink canary apt-history-canary
 fi
 gpg --armor --export "$KEY" > apt/gpg-key.asc
 # gpg exits 0 and writes nothing if the key id does not resolve, which would

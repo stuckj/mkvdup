@@ -288,7 +288,6 @@ jobs:
   update-homebrew:
     needs: [prepare, build, release]
     runs-on: ubuntu-latest
-    timeout-minutes: 60
     steps:
       - name: Checkout homebrew-mkvdup tap repo
         uses: actions/checkout@v7
@@ -851,6 +850,11 @@ jobs:
     # exist before its packages can be indexed.
     needs: [prepare, build, release]
     runs-on: ubuntu-latest
+    # Bounded: this job holds the package-repositories group, so a hang anywhere
+    # outside the curl transfers — the API enumeration, createrepo_c, the asset
+    # uploads, the gh-pages clone — would queue every later release behind it for
+    # the six-hour default.
+    timeout-minutes: 60
     # Shared with rebuild-package-repos.yml. Two runs replacing the same
     # apt-history assets at once can leave a signed InRelease from one beside a
     # Packages.gz from the other, failing apt update until the next good run.

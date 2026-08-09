@@ -223,6 +223,17 @@ Repositories**. It is idempotent. Run it with `dry_run: true` first: that builds
 everything, publishes nothing, and uploads the generated metadata as an artifact.
 A real run needs `confirm: REBUILD`.
 
+The rebuild refuses to shrink an index. Deleting a release does legitimately
+drop its packages, but an incomplete read of the releases API looks the same and
+would quietly drop versions that still exist — so the run fails and asks you to
+confirm. Re-run it first; if the shrink really is intended, dispatch with
+`ALLOW_SHRINK=1` in the environment.
+
+Each run also re-downloads every package ever published (~1 GB today, growing
+about 8 MB per release) because the indexes are derived from the packages
+themselves. That is transient runner scratch, never committed, but it is what
+the job's 60-minute bound has to accommodate as the archive grows.
+
 Both writers share a `package-repositories` concurrency group, so a manual
 rebuild and a release queue rather than interleave. Replacing the `apt-history`
 assets is still not atomic — release assets cannot be swapped as a set — so a
