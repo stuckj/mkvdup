@@ -129,7 +129,7 @@ build_channel() {  # build_channel <pkgname> <arch> <tag> <dbname>
   # Only the channel this release belongs to is expected to move; the other one
   # legitimately stays where it was.
   local channel=stable
-  case "$pkgname" in *-canary-bin) channel=canary ;; esac
+  case "$pkgname" in *-canary) channel=canary ;; esac
   local released=0
   [ -n "$RELEASED_PKGVER" ] && [ "$channel" = "$RELEASED_CHANNEL" ] && released=1
 

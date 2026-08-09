@@ -301,10 +301,9 @@ jobs:
             packages/*.tar.gz
           # Without this the action defaults to shrugging at a glob that matches
           # nothing, so an artifact that failed to land would publish a release
-          # missing a whole package format -- and publish-pacman would then only
-          # warn about it. build-arch runs before release precisely so an Arch
-          # failure cannot half-publish a version; this closes the same gap on
-          # the delivery side.
+          # missing a whole package format. The Arch package is not in this list:
+          # build-arch runs after this job and attaches it separately, because it
+          # compiles from the tag's source archive.
           fail_on_unmatched_files: true
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
@@ -801,7 +800,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Publishes the same PKGBUILD to the AUR as mkvdup-bin / mkvdup-canary-bin. This
+  # Publishes the same PKGBUILD to the AUR as mkvdup / mkvdup-canary. This
   # is the Arch analogue of update-homebrew: a recipe pushed to an external repo,
   # rather than packages served from gh-pages.
   update-aur:
@@ -914,12 +913,12 @@ jobs:
   # channel and architecture gets a release of its own to be the repository.
   #
   # Gated on release for the same reason publish-repo is: the packages this reads
-  # are the ones the release job just attached.
+  # are the ones build-arch just attached to the release.
   publish-pacman:
     needs: [prepare, build-arch]
     runs-on: ubuntu-latest
     # Shared with rebuild-pacman-repo.yml: both run the same script against the
-    # same four releases, and its last step deletes every asset not in its own
+    # same releases, and its last step deletes every asset not in its own
     # build. A rebuild dispatched mid-release would enumerate before this job
     # attached the new packages and then delete them, leaving a signed database
     # naming a file that 404s.
@@ -1319,11 +1318,11 @@ jobs:
           REPO
 
           # Install
-          sudo pacman -Syu mkvdup-bin</pre>
+          sudo pacman -Syu mkvdup</pre>
 
             <p>Also on the AUR as
-            <a href="https://aur.archlinux.org/packages/mkvdup-bin"><code>mkvdup-bin</code></a>,
-            if you would rather not add a repository: <code>yay -S mkvdup-bin</code>.</p>
+            <a href="https://aur.archlinux.org/packages/mkvdup"><code>mkvdup</code></a>,
+            if you would rather not add a repository: <code>yay -S mkvdup</code>.</p>
 
             <h2>Canary Channel (Pre-release)</h2>
             <p>The canary channel provides early access to new features. It installs as
@@ -1376,7 +1375,7 @@ jobs:
           REPO
 
           # Install
-          sudo pacman -Syu mkvdup-canary-bin</pre>
+          sudo pacman -Syu mkvdup-canary</pre>
 
             <h2>Links</h2>
             <ul>

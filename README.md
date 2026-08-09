@@ -114,7 +114,8 @@ yay -S mkvdup
 ```
 
 Or add the binary repository, which serves the same package and updates through
-`pacman -Syu` without a rebuild:
+`pacman -Syu` without a rebuild. **x86_64 only** — Arch publishes no aarch64 container for CI to
+build one in, so on Arch Linux ARM use the AUR route above, which builds natively:
 
 ```bash
 # Trust the signing key (the same key the APT and YUM repositories use)

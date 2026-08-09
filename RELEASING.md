@@ -408,14 +408,13 @@ Three things about the naming are load-bearing:
 The mount helper installs to `/usr/bin/mount.fuse.mkvdup` rather than the `/usr/sbin` the deb
 and rpm use: Arch symlinks `/usr/sbin` to `/usr/bin` and packages may not write there.
 
-`build-arch` runs *before* the release, alongside every other build, so that an Arch failure
-cannot leave a version tagged and live on Homebrew while the repositories still serve the
-previous one. Its PKGBUILD therefore points at release URLs that do not exist yet: the build
-seeds the tarballs from the build artifacts under the filenames the PKGBUILD's `::` renames
-give them, which makes makepkg reuse them instead of downloading, while still checking them
-against `sha256sums`. `update-aur` runs after the release and downloads those URLs for real,
-comparing them against the sums in the PKGBUILD, so a wrong URL is caught before it reaches
-the AUR — and failing there leaves everything except the AUR published.
+`build-arch` runs *after* the release, unlike every other build. It has to: `source=()` points at
+the tag's source archive, so the tag must exist before the checksum can be taken or makepkg can
+fetch it. The cost is that an Arch failure lands on a published release rather than preventing
+one — re-running the job is the whole recovery, and nothing else has to be undone. `update-aur`
+then downloads that same URL again and compares it against the sum in the PKGBUILD before
+pushing, so a source archive that does not resolve stops the AUR publish rather than reaching
+users who would build from it.
 
 Signatures are the same GPG key as APT and YUM, but detached *binary* rather than ASCII-armoured:
 `repo-add --include-sigs` refuses to record an armoured package signature in the database. pacman
@@ -447,32 +446,20 @@ chgrp -R builder . && chmod -R g+rX .
 su builder   # keeps the working directory, unlike `su -`
 ```
 
-Generate a PKGBUILD from the template the way the workflow does and build it in a scratch
-directory:
+Run the same script the workflow runs. It generates the PKGBUILD from the template, downloads
+the tag's source archive to take its checksum, and builds it:
 
 ```bash
-VERSION=1.9.2
-work=$(mktemp -d)
-sed -e 's|@PKGNAME@|mkvdup|g' -e 's|@BINNAME@|mkvdup|g' \
-    -e "s|@PKGVER@|${VERSION}|g" -e "s|@TAG@|v${VERSION}|g" \
-    -e 's|@PKGDESC@|Storage deduplication tool for MKV files and their source media|g' \
-    -e 's|@SHA256_X86_64@|SKIP|g' -e 's|@SHA256_AARCH64@|SKIP|g' \
-    packaging/arch/PKGBUILD.in > "$work/PKGBUILD"
-
-cd "$work"
-makepkg --nodeps
-makepkg --printsrcinfo > .SRCINFO
-namcap PKGBUILD ./*.pkg.tar.zst
+VERSION=1.9.1 TAG=v1.9.1 ./scripts/build-arch-package.sh /tmp/archbuild
+namcap /tmp/archbuild/PKGBUILD /tmp/archbuild/*.pkg.tar.zst
 ```
 
-**Pick a version at or after the first release cut from this branch.** The package installs
-`mount.fuse.mkvdup`, which the release tarball only started carrying when Arch support landed;
-against an older tag `package()` fails on the missing file.
+Set `IS_CANARY=true` to build the canary package instead. Any released tag works — the package
+builds from source, so it does not depend on what a particular release happened to attach.
 
-`SKIP` disables makepkg's checksum verification, which is what makes this usable against a
-release whose checksums you have not looked up. It is for local inspection only — the workflow
-always substitutes real sums, and a PKGBUILD carrying `SKIP` must never be pushed to the AUR,
-where it would install an unverified download.
+Substituting the placeholders by hand is not worth doing: the set they come from is defined in
+that script, and a hand-written `sed` drifts from it silently. The script refuses to overwrite a
+directory it did not create, so point it somewhere disposable.
 
 `.SRCINFO` is not needed to build, only to publish: the AUR rejects a push whose tree lacks one,
 or whose `.SRCINFO` names a `pkgbase` other than the repository being pushed to. It does not

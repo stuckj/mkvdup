@@ -12,6 +12,9 @@ url='https://github.com/stuckj/mkvdup'
 license=('MIT')
 depends=('fuse3' 'glibc')
 makedepends=('go')
+# Arch's stock OPTIONS include debug, which splits a -debug package out of every
+# build. Nothing here publishes one, so it would only ever be an unused asset.
+options=('!debug')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/@TAG@.tar.gz")
 sha256sums=('@SHA256_SRC@')
 
@@ -29,11 +32,19 @@ build() {
   export CGO_CFLAGS="${CFLAGS}"
   export CGO_CXXFLAGS="${CXXFLAGS}"
   export CGO_LDFLAGS="${LDFLAGS}"
-  export GOFLAGS="-buildmode=pie -trimpath -ldflags=-linkmode=external -mod=readonly -modcacherw"
+  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
 
+  # -linkmode=external and -extldflags belong in this one string, not in GOFLAGS:
+  # a command-line -ldflags replaces the GOFLAGS one outright rather than adding
+  # to it, so splitting them drops the linker mode silently and with it the
+  # CGO_LDFLAGS hardening above -- the binary still builds, just without BIND_NOW
+  # or full RELRO.
+  #
   # @VERSION@ rather than $pkgver: the binary reports the version upstream
   # released, not the one mangled to satisfy pacman's pkgver rules.
-  go build -o "$pkgname" -ldflags "-X 'main.version=@VERSION@'" ./cmd/mkvdup
+  go build -o "$pkgname" \
+    -ldflags "-linkmode=external -extldflags '${LDFLAGS}' -X 'main.version=@VERSION@'" \
+    ./cmd/mkvdup
 }
 
 check() {

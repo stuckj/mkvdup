@@ -39,7 +39,19 @@ else
   PKGDESC="Storage deduplication tool for MKV files and their source media"
 fi
 
-rm -rf "$WORK"; mkdir -p "$WORK"
+# $WORK is caller-supplied and about to be deleted, and RELEASING.md invites
+# running this by hand -- so the argument is maintainer-typed. Same guard as
+# publish-pacman-repo.sh: absolute path, never a home or working directory, and
+# never an existing directory this script did not create.
+WORK=$(readlink -m -- "$WORK")
+case "$WORK" in
+  /|/*/..|"$HOME"|"$PWD") echo "::error::refusing to use $WORK as a work directory"; exit 1 ;;
+esac
+if [ -e "$WORK" ] && [ ! -e "$WORK/.archbuild-scratch" ]; then
+  echo "::error::$WORK already exists and was not created by this script; refusing to delete it"
+  exit 1
+fi
+rm -rf -- "$WORK"; mkdir -p "$WORK"; touch "$WORK/.archbuild-scratch"
 
 echo "== source archive checksum"
 # Taken from the archive GitHub actually serves, because that is the one an AUR

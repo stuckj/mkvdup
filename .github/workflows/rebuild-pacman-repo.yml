@@ -57,3 +57,8 @@ jobs:
         with:
           name: pacman-repositories
           path: .pacmanbuild/pacman-*
+          # The search root starts with a dot, and the glob skips any traversal
+          # item whose basename does -- without this the artifact is empty and
+          # the dry run silently inspects nothing.
+          include-hidden-files: true
+          if-no-files-found: error

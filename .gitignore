@@ -47,3 +47,7 @@ Thumbs.db
 *.log
 
 .claude/settings.local.json
+
+# Default work directories of the Arch packaging scripts
+/.archbuild/
+/.pacmanbuild/
