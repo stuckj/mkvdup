@@ -295,10 +295,15 @@ wrong passphrase or an unreadable key file fails nfpm outright.
 Verify a published package by hand with:
 
 ```bash
-rpm -K mkvdup-1.9.1-1.x86_64.rpm
-# digests signatures OK   <- signed
-# digests OK              <- NOT signed
+sudo rpm --import https://stuckj.github.io/mkvdup/yum/gpg-key.asc
+rpm -Kv mkvdup-1.9.1-1.x86_64.rpm
+# Header V4 EdDSA/SHA256 Signature, key ID cdb7b8f88afccbe3: OK   <- signed
+# Header V4 EdDSA/SHA256 Signature, key ID cdb7b8f88afccbe3: NOKEY <- signed, key not imported
+# digests OK (and no Signature line)                               <- NOT signed
 ```
+
+Import the key first: without it a correctly signed package reports `NOKEY`,
+which is easy to misread as unsigned.
 
 ### Re-signing already-published rpms
 
