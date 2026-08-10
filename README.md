@@ -121,6 +121,8 @@ sudo dnf install mkvdup-1.8.0
 <details>
 <summary><strong>Canary (pre-release)</strong></summary>
 
+Same rpm 4.16 requirement as the stable repository above.
+
 ```bash
 # Add the canary repository
 sudo tee /etc/yum.repos.d/mkvdup-canary.repo << 'EOF'

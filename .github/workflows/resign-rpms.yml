@@ -4,8 +4,9 @@ name: Re-sign Published RPMs
 # before rpm signing existed are unsigned, and dnf's gpgcheck=1 rejects them, so
 # the archive repository cannot serve exactly the old versions it exists for.
 #
-# Runs in a Fedora container: rpmsign is not packaged for the Ubuntu runner, and
-# an earlier attempt there exited 0 while signing nothing.
+# Runs in a Fedora container because signing needs rpmsign built with gpg
+# support. rpmsign also exits 0 when it has signed nothing, so the script checks
+# the resulting bytes rather than the exit status.
 #
 # Replacing an asset is a delete followed by an upload -- the GitHub API has no
 # atomic replace -- and the release asset is the only copy of each package. The
@@ -114,17 +115,25 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: resigned-recovery
-          path: ${{ runner.temp }}/resign/signed/**
+          # The manifests come too: signed/** alone does not say which assets
+          # were already replaced and which the run never reached.
+          path: |
+            ${{ runner.temp }}/resign/signed/**
+            ${{ runner.temp }}/resign/*.txt
           if-no-files-found: warn
           retention-days: 14
 
   # Every replaced asset has a new sha256, and the published repodata still
   # records the old one, so dnf fails a checksum for anything already replaced.
-  # Runs on any outcome that replaced at least one asset, including a partial
-  # one -- rebuilding is derived from the releases, so it is always safe.
+  #
+  # Only after the signing job *succeeded*, which includes the deliberate
+  # stop-short when the API budget runs low. If it failed, an asset may have
+  # been deleted with no replacement, and rebuilding then would republish the
+  # index without it -- so that case waits for a human. The empty-string test
+  # matters because a job that never reached the counting step has no output.
   rebuild:
     needs: resign
-    if: ${{ always() && inputs.publish && needs.resign.outputs.uploaded != '0' }}
+    if: ${{ inputs.publish && needs.resign.outputs.uploaded != '' && needs.resign.outputs.uploaded != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

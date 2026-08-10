@@ -108,6 +108,8 @@ sudo apt update
 sudo apt install mkvdup-canary</pre>
 
   <h3>RHEL/CentOS/Fedora (YUM/DNF) - Canary</h3>
+  <p>Same <strong>rpm 4.16 or newer</strong> requirement as the stable
+  repository above.</p>
   <pre>
 # Add the canary repository
 sudo tee /etc/yum.repos.d/mkvdup-canary.repo &lt;&lt; 'REPO'

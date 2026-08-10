@@ -137,6 +137,9 @@ echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://gi
 
 #### YUM/DNF (RHEL/Fedora) - Canary
 
+Requires rpm 4.16 or newer, as the stable repository does — see the
+[note on the signing key](#1-generate-a-gpg-key-if-you-dont-have-one).
+
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup-canary.repo << 'EOF'
 [mkvdup-canary]
@@ -195,9 +198,11 @@ sudo apt update && sudo apt install mkvdup=1.8.0
 Indexes every version published; there is no separate archive repository.
 
 Requires **rpm 4.16 or newer** (Fedora, RHEL/Alma/Rocky 9 and 10) — see the
-[note on the signing key](#1-generate-a-gpg-key-if-you-dont-have-one). The same
-caveat appears in `README.md` and in the landing page `scripts/repo-index.sh`
-generates; all three carry this snippet, so they change together.
+[note on the signing key](#1-generate-a-gpg-key-if-you-dont-have-one).
+
+This `.repo` snippet is published in **six** places — stable and canary, in
+`README.md`, in this file, and in the landing page `scripts/repo-index.sh`
+generates. All six carry the caveat, and they change together.
 
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'
@@ -302,9 +307,9 @@ Verify a published package by hand with:
 ```bash
 sudo rpm --import https://stuckj.github.io/mkvdup/yum/gpg-key.asc
 rpm -Kv mkvdup-1.9.1-1.x86_64.rpm
-# Header V4 EdDSA/SHA256 Signature, key ID cdb7b8f88afccbe3: OK   <- signed
-# Header V4 EdDSA/SHA256 Signature, key ID cdb7b8f88afccbe3: NOKEY <- signed, key not imported
-# digests OK (and no Signature line)                               <- NOT signed
+# Header V4 EdDSA/SHA256 Signature, key ID 8afccbe3: OK     <- signed
+# Header V4 EdDSA/SHA256 Signature, key ID 8afccbe3: NOKEY  <- signed, key not imported
+# digests OK, with no Signature line at all                 <- NOT signed
 ```
 
 Import the key first: without it a correctly signed package reports `NOKEY`,
@@ -316,13 +321,15 @@ Every rpm published before signing existed is unsigned, which breaks
 `gpgcheck=1` for exactly the old versions the archive repository exists to
 serve. **Re-sign RPMs** (`resign-rpms.yml`) fixes them in place.
 
-It runs in a Fedora container because `rpmsign` is not available on the Ubuntu
-runner — and, worse, an earlier attempt there exited 0 having signed nothing.
-For each published rpm it downloads the asset, signs it if it is not already
-signed, and checks two things before anything is uploaded: that a signature is
-now present, and that the main header and payload are **byte-identical** to the
-original, so signing cannot quietly alter a package. Already-signed packages are
-skipped, so re-running is cheap.
+It runs in a Fedora container because signing needs `rpmsign` built with gpg
+support. For each published rpm it downloads the asset, checks the download is
+the size the release says it is, signs it if it is not already signed, and
+checks two more things before anything is uploaded: that a signature is now
+present, and that the main header and payload are **byte-identical** to the
+original, so signing cannot quietly alter a package. `rpmsign` exits 0 when it
+has changed nothing, so none of these rely on its exit status. Already-signed
+packages are skipped, so re-running is cheap — and a run that stops partway
+resumes.
 
 Nothing is uploaded unless `publish` is set *and* `confirm` is `RESIGN`. Run it
 once without publishing first — the default — and read the counts.
@@ -340,12 +347,20 @@ no atomic replace — and the release asset is the only copy of that package. So
   the `resigned-recovery` artifact — the container is otherwise destroyed
   holding the only remaining copy of anything already deleted.
 
-A full backfill is roughly 270 assets: about 500 MiB each way, and **three**
-requests per asset (release lookup, delete, upload — gh batches the lookup per
-release), so a little over 800 against `GITHUB_TOKEN`'s budget of 1000 per hour
-per repository. That fits in one hour with little to spare, so do not run a
-release alongside it. The `tags` input limits a run to named releases, matched
-exactly; an unknown tag fails the run rather than narrowing it silently.
+A full backfill is currently 276 rpms across 138 releases, about 500 MiB each
+way. Assets are replaced a release at a time, costing one release lookup plus a
+delete and an upload per asset — with two rpms per release that is five requests
+each, so roughly **690** against `GITHUB_TOKEN`'s budget of 1000 per hour per
+repository. Do not run a release alongside it.
+
+The hourly budget is not the limit that bites first. GitHub also applies a
+*secondary* limit on content-generating requests — on the order of 80 a minute —
+and 552 writes will exceed it if issued flat out. Hence the pause between
+releases and the 0/60/300/900-second retry backoff; a full run takes a good
+deal longer than the transfers alone would suggest.
+
+The `tags` input limits a run to named releases, matched exactly; an unknown tag
+fails the run rather than narrowing it silently.
 
 Every replaced asset gets a new sha256 while the published repodata still
 records the old one, so the workflow runs `rebuild-package-repos.sh` in a

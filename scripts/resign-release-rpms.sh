@@ -27,8 +27,8 @@
 # repositories must be rebuilt afterwards. resign-rpms.yml does that in a
 # following job; a manual run must dispatch "Rebuild Package Repositories".
 #
-# Requires: gh (authenticated), curl, python3, rpm and rpmsign (so: a Fedora or
-# EL container, not the Ubuntu runner — see the note in RELEASING.md), and gpg
+# Requires: gh (authenticated), curl, python3, rpmsign built with gpg signing
+# support — the Fedora container resign-rpms.yml runs in provides it — and gpg
 # with the signing key imported and GPG_KEY_ID set.
 #
 # Usage: resign-release-rpms.sh <work-dir>
@@ -48,6 +48,12 @@ ONLY_TAGS="${ONLY_TAGS:-}"
 # Requests to keep in reserve so a stop-short never lands between a delete and
 # its upload.
 BUDGET_RESERVE="${BUDGET_RESERVE:-40}"
+# Waits before each upload attempt, and the pause between releases. GitHub's
+# secondary limit on content-generating requests is per minute and answers 403
+# for at least that long, so the retries have to outlast it. Overridable so a
+# test does not have to sit through the real thing.
+UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900}"
+UPLOAD_PACE="${UPLOAD_PACE:-2}"
 
 say() { printf '\n== %s\n' "$1"; }
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -73,7 +79,11 @@ if [ -n "$(ls -A "$WORK" 2>/dev/null)" ] && [ ! -e "$WORK/$MARKER" ]; then
   die "refusing to wipe non-empty '$WORK': this script did not create it"
 fi
 mkdir -p "$WORK"
-rm -rf "${WORK:?}"/* "${WORK:?}"/.[!.]* 2>/dev/null || true
+# signed/ survives: after a failed upload it holds the only copy of a package
+# that has already been deleted from its release, and the obvious response to a
+# failed run is to re-run it with the same work directory.
+find "$WORK" -mindepth 1 -maxdepth 1 \
+     ! -name signed ! -name "$MARKER" -exec rm -rf {} + 2>/dev/null || true
 touch "$WORK/$MARKER"
 mkdir -p "$WORK"/{orig,signed}
 cd "$WORK"
@@ -180,9 +190,9 @@ while IFS=$'\t' read -r tag name size url; do
     continue
   fi
 
-  # rpmsign reports success even where it has changed nothing — that is how the
-  # first attempt at this on an Ubuntu runner produced unsigned packages and a
-  # green build. Check the bytes.
+  # rpmsign exits 0 when it has changed nothing: it skips a package that already
+  # carries an identical signature, and it cannot distinguish that from a signing
+  # backend that produced none. Check the bytes rather than the exit status.
   if ! python3 "$SCRIPTS/check-rpm-signature.py" "$dst" >/dev/null 2>&1; then
     failed=$((failed + 1))
     echo "$tag/$name: rpmsign exited 0 but the package is still unsigned" >> failures.txt
@@ -262,46 +272,75 @@ while read -r tag; do
     *) if [ "$remaining" -lt "$need" ]; then stopped_at="$tag"; break; fi ;;
   esac
 
+  echo "  [$((tags_done + 1))/$tags_total] $tag"
   ok=0
-  for attempt in 1 2 3; do
+  # Backoff, not immediate retries: the limit that actually bites here is the
+  # secondary one, which caps content-generating requests per minute, and a
+  # backfill is two writes per asset. Retrying within seconds just spends the
+  # attempts against a block that is still in force.
+  # shellcheck disable=SC2086
+  for delay in $UPLOAD_BACKOFF; do
+    if [ "$delay" != 0 ]; then
+      echo "      waiting ${delay}s before retrying $tag"
+      sleep "$delay"
+    fi
     # --clobber deletes the existing asset first. On a retry the delete has
     # usually already happened, which --clobber also tolerates.
     if gh release upload "$tag" "${paths[@]}" --clobber --repo "$REPO" >upload.log 2>&1; then
       ok=1
       break
     fi
-    echo "  attempt $attempt failed for $tag"
     sed 's/^/      /' upload.log
   done
   if [ "$ok" != 1 ]; then
-    die "could not replace the assets of $tag after 3 attempts — its rpms may now be MISSING from that release; the signed copies are under $WORK/signed/$tag"
+    die "could not replace the assets of $tag — its rpms are probably now MISSING from that release. Recover them from $WORK/signed/$tag (the workflow keeps this as the resigned-recovery artifact) and upload them to $tag before rebuilding the repositories."
   fi
 
   uploaded=$((uploaded + ${#paths[@]}))
   tags_done=$((tags_done + 1))
   echo "$uploaded" > uploaded-count.txt
-  if [ $((tags_done % 20)) -eq 0 ]; then echo "  $tags_done/$tags_total releases"; fi
+  # Stay under the secondary limit on content-generating requests, which is far
+  # tighter than the hourly budget the check above reads.
+  if [ "$UPLOAD_PACE" != 0 ]; then sleep "$UPLOAD_PACE"; fi
 done < upload-tags.txt
 
 say "confirm every replacement is present"
 # One more enumeration, not one request per asset: it costs a handful of
 # requests and catches an upload that reported success but did not land.
+#
+# Sizes, not just names. --clobber replaces in place, so the name is there
+# whether or not the replacement happened — checking names alone would pass over
+# an asset that was never touched. A signed rpm is always larger than the
+# unsigned original, so the published size is what distinguishes them.
 enumerate after.tsv
 missing=0
+# Only the releases actually reached; the rest were never meant to change.
+head -n "$tags_done" upload-tags.txt > uploaded-tags.txt
 while IFS=$'\t' read -r tag name path; do
-  if ! awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {found=1} END {exit !found}' after.tsv; then
+  grep -qxF "$tag" uploaded-tags.txt || continue
+  want=$(stat -c%s "$path")
+  got=$(awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {print $3; exit}' after.tsv)
+  if [ -z "$got" ]; then
     echo "  MISSING $tag/$name"
+    missing=$((missing + 1))
+  elif [ "$got" != "$want" ]; then
+    echo "  WRONG SIZE $tag/$name: published $got, signed copy is $want"
     missing=$((missing + 1))
   fi
 done < to-upload.txt
-[ "$missing" -eq 0 ] || die "$missing replaced asset(s) are not present on their release — the signed copies are under $WORK/signed"
-echo "  all $uploaded replacement(s) present"
+[ "$missing" -eq 0 ] || die "$missing replaced asset(s) are missing or do not match on their release — the signed copies are under $WORK/signed"
+echo "  all $uploaded replacement(s) present at the expected size"
 
 if [ -n "$stopped_at" ]; then
+  # Not a failure: every release it started, it finished. Exiting non-zero here
+  # would make the designed outcome indistinguishable from the one where a
+  # package is missing, and would suppress the repository rebuild that the
+  # assets already replaced now need.
   say "stopped early to stay inside the API budget"
-  echo "  replaced $uploaded of $signed package(s); stopped before $stopped_at"
-  echo "  the repositories still need rebuilding for what did change"
-  die "run again once the hourly budget resets to finish the rest"
+  echo "::warning::Replaced $uploaded of $signed package(s); stopped before $stopped_at."
+  echo "  Nothing is missing. Re-run once the hourly budget resets: already-signed"
+  echo "  packages are skipped, so it will carry on from $stopped_at."
+  exit 0
 fi
 
 say "done"

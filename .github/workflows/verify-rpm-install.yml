@@ -36,12 +36,15 @@ jobs:
       matrix:
         image:
           - fedora:latest
-          - fedora:44
+          # A release behind, and a distinct image: fedora:latest currently
+          # resolves to the same digest as the newest numbered tag.
+          - fedora:43
           - almalinux:10
           - almalinux:9
           - rockylinux/rockylinux:9
     container: ${{ matrix.image }}
     name: ${{ matrix.image }}
+    timeout-minutes: 30
     steps:
       - name: Report rpm version
         run: rpm --version

@@ -128,7 +128,7 @@ def main(argv):
     for path in argv:
         try:
             signed, found = inspect(path)
-        except (OSError, ValueError, struct.error) as exc:
+        except (OSError, ValueError, IndexError, struct.error) as exc:
             print(f"UNREADABLE  {path}: {exc}")
             unsigned.append(path)
             continue

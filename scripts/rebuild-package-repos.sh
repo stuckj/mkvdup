@@ -317,9 +317,11 @@ PY
 # older "current" release. Every other suspicious input here fails loudly; this
 # is the one that would not.
 #
-# It compares the APT index only. A whole release vanishing takes its rpms with
-# its debs, so that case is covered; individual rpm assets disappearing while
-# their debs remain would shrink the YUM index unnoticed.
+# A whole release vanishing takes its rpms with its debs, so the APT count
+# covers that case. Individual rpm assets disappearing while their debs remain
+# would not move it at all, which is why check_no_shrink_yum exists as well —
+# resign-release-rpms.sh replaces rpms one at a time and can leave exactly that
+# asymmetry behind if it fails partway.
 check_no_shrink() {  # check_no_shrink <channel> <release-tag>
   local ch="$1" tag="$2" prev=0 now http
   now=$(grep -c '^Package:' "apt/$ch/Packages")
@@ -345,6 +347,39 @@ check_no_shrink() {  # check_no_shrink <channel> <release-tag>
 }
 
 build_apt_history stable stage/deb-stable mkvdup
+# The YUM equivalent, counting packages rather than Packages stanzas. The
+# published primary.xml is the comparison point because it is what clients
+# actually resolve; a count taken from the staged rpms alone could only ever
+# agree with itself.
+check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
+  local out="$1" dir="$2" now prev=0 http href
+  now=$(find "$dir" -name '*.rpm' | wc -l)
+  http=$(curl -sSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 120 \
+              -o prev-repomd.xml -w '%{http_code}' \
+              "$PAGES_URL/$out/repodata/repomd.xml" 2>/dev/null || true)
+  [ -n "$http" ] || http=000
+  case "$http" in
+    200)
+      href=$(grep -oE 'repodata/[a-f0-9]+-primary\.xml\.gz' prev-repomd.xml | head -1)
+      if [ -n "$href" ] \
+         && curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 \
+                 -o prev-primary.gz "$PAGES_URL/$out/$href"; then
+        prev=$(grep -c '<package type="rpm"' < <(gzip -dc prev-primary.gz) || true)
+      else
+        die "cannot read the published $out primary.xml to compare against"
+      fi ;;
+    404) prev=0 ;;   # nothing published yet, so nothing to shrink
+    *)   die "cannot read the published $out repodata to compare against (HTTP $http)" ;;
+  esac
+  rm -f prev-repomd.xml prev-primary.gz
+  if [ "$prev" -gt "$now" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
+    die "the $out index would shrink from $prev to $now packages. If a release
+       was deliberately deleted, re-run with ALLOW_SHRINK=1; otherwise release
+       assets are missing — check whether a re-signing run failed partway."
+  fi
+  echo "  $out: $now packages (currently published: $prev)"
+}
+
 check_no_shrink stable apt-history
 if [ "$DO_CANARY" = 1 ]; then
   build_apt_history canary stage/deb-canary mkvdup-canary
@@ -401,6 +436,7 @@ for spec in "yum:rpm-stable" "yum-canary:rpm-canary"; do
   mkdir -p "pages/$out"
   python3 "$SCRIPTS/yum_xmlbase.py" "stage/$dir/repodata" "pages/$out/repodata" assetmap.txt "$BASE"
   detach "pages/$out/repodata/repomd.xml.asc" "pages/$out/repodata/repomd.xml"
+  check_no_shrink_yum "$out" "stage/$dir"
   echo "  $out: $(find "stage/$dir" -name '*.rpm' | wc -l) packages indexed, 0 hosted"
 done
 
