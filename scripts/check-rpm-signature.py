@@ -33,10 +33,6 @@ PUBKEY_ALGO = {1: "RSA", 3: "RSA-sign-only", 17: "DSA", 19: "ECDSA",
                22: "EdDSA", 25: "Ed25519"}
 HASH_ALGO = {1: "MD5", 2: "SHA1", 8: "SHA256", 9: "SHA384", 10: "SHA512"}
 
-# rpm >= 4.16 is required to verify EdDSA (PGPPUBKEYALGO_EDDSA arrived in
-# 4.16.0), which excludes EL8's rpm 4.14. See the note in README.md.
-EDDSA = 22
-
 
 def signature_header(blob):
     """Return {tag: bytes} for the rpm's signature header.
@@ -59,6 +55,10 @@ def signature_header(blob):
         tag, _type, offset, length = struct.unpack(
             ">iiii", blob[index + 16 * i:index + 16 * i + 16]
         )
+        # Offsets are signed on the wire and are not otherwise constrained, so a
+        # malformed file could otherwise address bytes outside the data store.
+        if offset < 0 or length < 0 or offset + length > store_size:
+            raise ValueError(f"tag {tag} points outside the signature data store")
         entries[tag] = blob[store + offset:store + offset + length]
     return entries
 

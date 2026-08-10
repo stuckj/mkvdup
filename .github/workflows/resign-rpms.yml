@@ -7,8 +7,11 @@ name: Re-sign Published RPMs
 # Runs in a Fedora container: rpmsign is not packaged for the Ubuntu runner, and
 # an earlier attempt there exited 0 while signing nothing.
 #
-# Replacing an asset destroys the original and invalidates the checksums in the
-# YUM repodata, so dispatch "Rebuild Package Repositories" afterwards.
+# Replacing an asset is a delete followed by an upload -- the GitHub API has no
+# atomic replace -- and the release asset is the only copy of each package. The
+# script guards that path; this workflow keeps the signed copies retrievable if
+# it fails anyway, and rebuilds the repositories afterwards so the YUM repodata
+# stops referring to pre-signing checksums.
 
 on:
   workflow_dispatch:
@@ -39,9 +42,15 @@ concurrency:
 jobs:
   resign:
     runs-on: ubuntu-latest
-    container: fedora:42
+    # Not a pinned release: an EOL Fedora keeps working only until its content
+    # moves to the archive mirrors. Nothing here depends on a specific rpm
+    # version, and the script verifies the signature it gets before uploading,
+    # so a change in rpmsign fails the run rather than publishing something odd.
+    container: fedora:latest
     # Downloads and re-uploads roughly 500 MiB each way over ~270 assets.
     timeout-minutes: 90
+    outputs:
+      uploaded: ${{ steps.count.outputs.uploaded }}
     steps:
       - name: Check confirmation
         if: ${{ inputs.publish }}
@@ -55,13 +64,15 @@ jobs:
       # silently falls back to a tarball download without it.
       - name: Install tools
         run: dnf install -y --setopt=install_weak_deps=False
-             git rpm-sign gnupg2 gh python3 tar findutils
+             git rpm-sign gnupg2 gh python3 curl tar findutils
 
       - uses: actions/checkout@v7
 
       - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
 
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
@@ -77,14 +88,68 @@ jobs:
           ONLY_TAGS: ${{ inputs.tags }}
         run: bash scripts/resign-release-rpms.sh "${RUNNER_TEMP}/resign"
 
-      # The signed packages are the whole output of a non-publishing run, and on
-      # a failed publish they are what was already produced. Signatures are a few
-      # hundred bytes on top of ~500 MiB of packages, so only a sample is kept.
+      - name: Record how many assets were replaced
+        id: count
+        if: always()
+        run: |
+          n=$(cat "${RUNNER_TEMP}/resign/uploaded-count.txt" 2>/dev/null || echo 0)
+          echo "uploaded=$n" >> "$GITHUB_OUTPUT"
+          echo "replaced $n asset(s)"
+
+      # A sample is enough to eyeball a run that published nothing.
       - name: Upload a sample of the re-signed packages
-        if: ${{ always() && !inputs.publish }}
+        if: ${{ !inputs.publish }}
         uses: actions/upload-artifact@v7
         with:
           name: resigned-sample
           path: ${{ runner.temp }}/resign/signed/**/mkvdup-1.9.*
           if-no-files-found: warn
           retention-days: 7
+
+      # If a publish run dies or is cancelled, an asset may already have been
+      # deleted with its replacement never uploaded. The container goes away
+      # with the only remaining copy, so keep all of them.
+      - name: Preserve the signed packages for recovery
+        if: ${{ inputs.publish && (failure() || cancelled()) }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: resigned-recovery
+          path: ${{ runner.temp }}/resign/signed/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Every replaced asset has a new sha256, and the published repodata still
+  # records the old one, so dnf fails a checksum for anything already replaced.
+  # Runs on any outcome that replaced at least one asset, including a partial
+  # one -- rebuilding is derived from the releases, so it is always safe.
+  rebuild:
+    needs: resign
+    if: ${{ always() && inputs.publish && needs.resign.outputs.uploaded != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c gnupg
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
+
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
+
+      - name: Rebuild the package repositories
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DRY_RUN: '0'
+        run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"

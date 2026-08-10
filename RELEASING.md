@@ -194,6 +194,11 @@ sudo apt update && sudo apt install mkvdup=1.8.0
 
 Indexes every version published; there is no separate archive repository.
 
+Requires **rpm 4.16 or newer** (Fedora, RHEL/Alma/Rocky 9 and 10) — see the
+[note on the signing key](#1-generate-a-gpg-key-if-you-dont-have-one). The same
+caveat appears in `README.md` and in the landing page `scripts/repo-index.sh`
+generates; all three carry this snippet, so they change together.
+
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'
 [mkvdup]
@@ -322,25 +327,49 @@ skipped, so re-running is cheap.
 Nothing is uploaded unless `publish` is set *and* `confirm` is `RESIGN`. Run it
 once without publishing first — the default — and read the counts.
 
-Uploading replaces the only copy of each asset, and the checksums recorded in
-the YUM repodata refer to the pre-signing bytes. **Dispatch "Rebuild Package
-Repositories" immediately afterwards**, or every dnf install fails its checksum
-check.
+Replacing an asset is a **delete followed by an upload** — the GitHub API has
+no atomic replace — and the release asset is the only copy of that package. So:
 
-A full backfill is roughly 270 assets: about 500 MiB each way and a little over
-500 API requests, against `GITHUB_TOKEN`'s budget of 1000 per hour per
-repository. That fits in one hour but leaves little room, so avoid running a
-release alongside it. The script refuses to start uploading if the remaining
-budget is too small, and the `tags` input limits a run to named releases.
+- Uploads are retried, and a final pass re-reads every release to confirm each
+  replacement is actually present.
+- The API budget is checked **before each release**, not once at the start, and
+  a run that cannot afford the next one stops with every release it started
+  finished. Because already-signed packages are skipped, re-running later simply
+  resumes.
+- If a publish run fails or is cancelled, the signed packages are uploaded as
+  the `resigned-recovery` artifact — the container is otherwise destroyed
+  holding the only remaining copy of anything already deleted.
+
+A full backfill is roughly 270 assets: about 500 MiB each way, and **three**
+requests per asset (release lookup, delete, upload — gh batches the lookup per
+release), so a little over 800 against `GITHUB_TOKEN`'s budget of 1000 per hour
+per repository. That fits in one hour with little to spare, so do not run a
+release alongside it. The `tags` input limits a run to named releases, matched
+exactly; an unknown tag fails the run rather than narrowing it silently.
+
+Every replaced asset gets a new sha256 while the published repodata still
+records the old one, so the workflow runs `rebuild-package-repos.sh` in a
+following job whenever at least one asset changed — including after a partial
+run. A manual invocation of the script must dispatch **Rebuild Package
+Repositories** by hand instead.
 
 ### Checking that installs actually work
 
 **Verify RPM Installs** (`verify-rpm-install.yml`) installs from the live
-repository across Fedora, Alma/Rocky 9 and Alma 10 exactly as README.md
-documents, with `gpgcheck=1` and `repo_gpgcheck=1`, covering the current
-version, a pinned older version and a canary. It is the only check that the
-published instructions work end to end; the release workflow only proves a
-signature exists, not that a real dnf accepts it.
+repository across Fedora, Alma/Rocky 9 and Alma 10 using the `.repo` snippet
+README.md publishes — `gpgcheck=1`, no `repo_gpgcheck` — covering the current
+version, a pinned older version and a canary. It then asserts each installed
+package records a signing key ID, so the check cannot pass on an unsigned
+package if `gpgcheck` ever stops being enforced. A final step re-runs the
+install with `repo_gpgcheck=1`, labelled as stricter than anything documented.
+
+It is the only check that the published instructions work end to end; the
+release workflow only proves a signature exists on the package it just built,
+not that a real dnf accepts what is on the server.
+
+**It is dispatch-only.** Nothing runs it after a release or on a schedule, so it
+does not by itself prevent another #220 — it makes the check one dispatch away.
+Adding a `schedule:` trigger would close that gap.
 
 EL8 is deliberately not in that matrix — see the note under
 [Generate a GPG Key](#1-generate-a-gpg-key-if-you-dont-have-one).

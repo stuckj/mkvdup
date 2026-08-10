@@ -9,13 +9,23 @@
 # `rpm --addsign` rewrites only the signature header: the main header and the
 # payload come through byte-identical, and this script proves that for every
 # package rather than assuming it. A package that is already signed is left
-# alone, so re-running is cheap and safe.
+# alone, so re-running is cheap — and so a run that stops early resumes where
+# it left off.
 #
 # Nothing is uploaded unless PUBLISH=1. The default run downloads, signs and
 # verifies, then reports — the published releases are untouched.
 #
-# Replacing an asset destroys the original, so the checksums recorded in the YUM
-# repodata stop matching. Dispatch "Rebuild Package Repositories" afterwards.
+# Replacing an asset is a delete followed by an upload; the GitHub API has no
+# atomic replace. Between the two the package does not exist, and if the upload
+# never lands it is gone for good — the release asset is the only copy. So the
+# upload budget is checked before each release rather than once at the start,
+# and a run that cannot afford the next release stops with every release it did
+# start finished. Uploads are retried, and a final pass re-reads the releases to
+# confirm every replacement is actually present.
+#
+# Replacing an asset also invalidates the checksums in the YUM repodata, so the
+# repositories must be rebuilt afterwards. resign-rpms.yml does that in a
+# following job; a manual run must dispatch "Rebuild Package Repositories".
 #
 # Requires: gh (authenticated), curl, python3, rpm and rpmsign (so: a Fedora or
 # EL container, not the Ubuntu runner — see the note in RELEASING.md), and gpg
@@ -32,8 +42,12 @@ export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 # of each package that exists.
 PUBLISH="${PUBLISH:-0}"
 [ "$PUBLISH" = 1 ] || PUBLISH=0
-# Space-separated release tags to limit the run to. Empty means every release.
+# Space-separated release tags to limit the run to, matched exactly. Empty means
+# every release.
 ONLY_TAGS="${ONLY_TAGS:-}"
+# Requests to keep in reserve so a stop-short never lands between a delete and
+# its upload.
+BUDGET_RESERVE="${BUDGET_RESERVE:-40}"
 
 say() { printf '\n== %s\n' "$1"; }
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -44,6 +58,11 @@ WORK="$(realpath -m -- "$1")" || die "cannot resolve '$1'"
 MARKER=.resign-marker
 case "$WORK" in
   / | "${HOME:-/nonexistent}") die "refusing to use '$WORK' as a work directory" ;;
+esac
+# The signing macro interpolates this path into a command line rpm re-splits on
+# whitespace, so a space here would break signing in a confusing way.
+case "$WORK" in
+  *[[:space:]]*) die "refusing to use '$WORK': the path contains whitespace" ;;
 esac
 # Ask about the parent, which is guaranteed to exist — $WORK may not yet, and
 # `git -C` on a missing directory just fails, which would skip the check.
@@ -59,17 +78,34 @@ touch "$WORK/$MARKER"
 mkdir -p "$WORK"/{orig,signed}
 cd "$WORK"
 
-command -v rpmsign >/dev/null || die "rpmsign is not installed (need the rpm-sign package)"
+for tool in rpmsign curl python3 gh; do
+  command -v "$tool" >/dev/null || die "$tool is not installed"
+done
 
 say "configure rpm signing"
-# rpm shells out to gpg, which cannot prompt here, so the passphrase is fed from
-# a file. It is written inside the work directory, which the caller removes.
+# rpm shells out to gpg, which cannot prompt here, so the passphrase goes in a
+# file. rpm only reads macros from $HOME/.rpmmacros, so an existing one is moved
+# aside; the trap restores it and removes the passphrase however this exits.
 PASSFILE="$WORK/.passphrase"
+RPMMACROS="$HOME/.rpmmacros"
+SAVED_MACROS="$WORK/.rpmmacros.saved"
+cleanup() {
+  rm -f "$PASSFILE"
+  if [ -e "$SAVED_MACROS" ]; then
+    mv -f "$SAVED_MACROS" "$RPMMACROS"
+  else
+    rm -f "$RPMMACROS"
+  fi
+}
+# Save before arming the trap: armed first, an early exit here would delete an
+# existing ~/.rpmmacros that had not been copied anywhere yet.
+if [ -e "$RPMMACROS" ]; then cp -p "$RPMMACROS" "$SAVED_MACROS"; fi
+trap cleanup EXIT
 install -m 600 /dev/null "$PASSFILE"
 printf '%s' "${GPG_PASSPHRASE:-}" > "$PASSFILE"
 # SHA-256 to match what nfpm produces for newly built packages; rpm's own
 # default has been SHA-1 in older versions, which modern crypto policies reject.
-cat > "$HOME/.rpmmacros" <<EOF
+cat > "$RPMMACROS" <<EOF
 %_signature gpg
 %_gpg_name $KEY
 %_gpg_digest_algo sha256
@@ -77,22 +113,35 @@ cat > "$HOME/.rpmmacros" <<EOF
 EOF
 echo "  key $KEY, sha256 digests"
 
-say "enumerate published rpms"
 # browser_download_url is fetched with curl and costs no API request, unlike
 # `gh release download` which spends one per asset.
-gh api "repos/$REPO/releases" --paginate \
-  -q '.[] | select(.draft == false) | select(.tag_name | startswith("v"))
-      | .tag_name as $t | .assets[] | select(.state == "uploaded")
-      | "\($t)\t\(.name)\t\(.browser_download_url)"' \
-  | awk -F'\t' '$2 ~ /\.rpm$/' | sort -u > assets.tsv
+enumerate() {  # enumerate <output-file>
+  gh api "repos/$REPO/releases" --paginate \
+    -q '.[] | select(.draft == false) | select(.tag_name | startswith("v"))
+        | .tag_name as $t | .assets[] | select(.state == "uploaded")
+        | "\($t)\t\(.name)\t\(.size)\t\(.browser_download_url)"' \
+    | awk -F'\t' '$2 ~ /\.rpm$/' | sort -u > "$1"
+}
+
+say "enumerate published rpms"
+enumerate assets.tsv
 
 if [ -n "$ONLY_TAGS" ]; then
-  # Word splitting is what turns the space-separated input into patterns.
+  # Tags are matched exactly, not as patterns. -f keeps the shell from expanding
+  # anything glob-like in the input against the work directory.
+  set -f
   # shellcheck disable=SC2086
-  printf '%s\n' $ONLY_TAGS > wanted.txt
+  printf '%s\n' $ONLY_TAGS | sort -u > wanted.txt
+  set +f
   awk -F'\t' 'NR==FNR{w[$1];next} $1 in w' wanted.txt assets.tsv > filtered.tsv
   mv filtered.tsv assets.tsv
-  echo "  limited to: $ONLY_TAGS"
+  # A typo in a tag would otherwise silently narrow the run to nothing.
+  cut -f1 assets.tsv | sort -u > matched.txt
+  if ! comm -23 wanted.txt matched.txt | grep -q .; then
+    echo "  limited to: $ONLY_TAGS"
+  else
+    die "no rpm assets found for tag(s): $(comm -23 wanted.txt matched.txt | tr '\n' ' ')"
+  fi
 fi
 
 total=$(wc -l < assets.tsv)
@@ -104,7 +153,7 @@ signed=0; skipped=0; failed=0
 : > to-upload.txt
 : > failures.txt
 
-while IFS=$'\t' read -r tag name url; do
+while IFS=$'\t' read -r tag name size url; do
   mkdir -p "orig/$tag" "signed/$tag"
   src="orig/$tag/$name"
   dst="signed/$tag/$name"
@@ -113,8 +162,12 @@ while IFS=$'\t' read -r tag name url; do
        --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
        -o "$src" "$url" || die "could not download $tag/$name"
 
+  # A short read would otherwise be signed and uploaded over the intact original.
+  got=$(stat -c%s "$src")
+  [ "$got" = "$size" ] || die "$tag/$name downloaded as $got bytes, expected $size"
+
   # Already signed: nothing to do. Keeps a re-run from churning assets that are
-  # fine, and lets this run alongside releases that are signed at build time.
+  # fine, and lets a run that stopped early resume.
   if python3 "$SCRIPTS/check-rpm-signature.py" "$src" >/dev/null 2>&1; then
     skipped=$((skipped + 1))
     continue
@@ -128,8 +181,8 @@ while IFS=$'\t' read -r tag name url; do
   fi
 
   # rpmsign reports success even where it has changed nothing — that is how the
-  # first attempt at this on an Ubuntu runner produced 270 unsigned packages and
-  # a green build. Check the bytes.
+  # first attempt at this on an Ubuntu runner produced unsigned packages and a
+  # green build. Check the bytes.
   if ! python3 "$SCRIPTS/check-rpm-signature.py" "$dst" >/dev/null 2>&1; then
     failed=$((failed + 1))
     echo "$tag/$name: rpmsign exited 0 but the package is still unsigned" >> failures.txt
@@ -186,26 +239,72 @@ if [ "$PUBLISH" != 1 ]; then
 fi
 
 say "upload"
-# Each replacement is a delete plus an upload. GITHUB_TOKEN allows 1000 requests
-# per hour per repository, so a full backfill sits inside one budget but leaves
-# little room to share the hour with anything else.
-remaining=$(gh api rate_limit -q '.resources.core.remaining' 2>/dev/null || echo unknown)
-need=$((signed * 2 + 10))
-echo "  $need request(s) needed, $remaining remaining"
-case "$remaining" in
-  ''|*[!0-9]*) echo "  could not read the rate limit; continuing" ;;
-  *) [ "$remaining" -ge "$need" ] || die "not enough API budget left this hour" ;;
-esac
+# Assets are replaced a release at a time: one release lookup covers all of its
+# assets, and stopping between releases never leaves a half-replaced one.
+cut -f1 to-upload.txt | sort -u > upload-tags.txt
+tags_total=$(wc -l < upload-tags.txt)
+echo "  $signed package(s) across $tags_total release(s)"
+
+budget() { gh api rate_limit -q '.resources.core.remaining' 2>/dev/null || echo unknown; }
 
 uploaded=0
+tags_done=0
+stopped_at=""
+echo 0 > uploaded-count.txt
+
+while read -r tag; do
+  mapfile -t paths < <(awk -F'\t' -v t="$tag" '$1 == t {print $3}' to-upload.txt)
+  # One release lookup, then a delete and an upload for each asset.
+  need=$((1 + 2 * ${#paths[@]} + BUDGET_RESERVE))
+  remaining=$(budget)
+  case "$remaining" in
+    ''|*[!0-9]*) : ;;   # unreadable: proceed rather than stall the backfill
+    *) if [ "$remaining" -lt "$need" ]; then stopped_at="$tag"; break; fi ;;
+  esac
+
+  ok=0
+  for attempt in 1 2 3; do
+    # --clobber deletes the existing asset first. On a retry the delete has
+    # usually already happened, which --clobber also tolerates.
+    if gh release upload "$tag" "${paths[@]}" --clobber --repo "$REPO" >upload.log 2>&1; then
+      ok=1
+      break
+    fi
+    echo "  attempt $attempt failed for $tag"
+    sed 's/^/      /' upload.log
+  done
+  if [ "$ok" != 1 ]; then
+    die "could not replace the assets of $tag after 3 attempts — its rpms may now be MISSING from that release; the signed copies are under $WORK/signed/$tag"
+  fi
+
+  uploaded=$((uploaded + ${#paths[@]}))
+  tags_done=$((tags_done + 1))
+  echo "$uploaded" > uploaded-count.txt
+  if [ $((tags_done % 20)) -eq 0 ]; then echo "  $tags_done/$tags_total releases"; fi
+done < upload-tags.txt
+
+say "confirm every replacement is present"
+# One more enumeration, not one request per asset: it costs a handful of
+# requests and catches an upload that reported success but did not land.
+enumerate after.tsv
+missing=0
 while IFS=$'\t' read -r tag name path; do
-  gh release upload "$tag" "$path" --clobber --repo "$REPO" \
-    || die "failed to upload $name to $tag — $uploaded asset(s) already replaced, re-run to finish"
-  uploaded=$((uploaded + 1))
-  if [ $((uploaded % 25)) -eq 0 ]; then echo "  $uploaded/$signed"; fi
+  if ! awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {found=1} END {exit !found}' after.tsv; then
+    echo "  MISSING $tag/$name"
+    missing=$((missing + 1))
+  fi
 done < to-upload.txt
+[ "$missing" -eq 0 ] || die "$missing replaced asset(s) are not present on their release — the signed copies are under $WORK/signed"
+echo "  all $uploaded replacement(s) present"
+
+if [ -n "$stopped_at" ]; then
+  say "stopped early to stay inside the API budget"
+  echo "  replaced $uploaded of $signed package(s); stopped before $stopped_at"
+  echo "  the repositories still need rebuilding for what did change"
+  die "run again once the hourly budget resets to finish the rest"
+fi
 
 say "done"
 echo "  replaced $uploaded published rpm(s)"
 echo "  the YUM repodata still records the old checksums —"
-echo "  dispatch 'Rebuild Package Repositories' now"
+echo "  rebuild the package repositories now"
