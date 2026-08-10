@@ -11,16 +11,18 @@ It parses the rpm directly rather than shelling out to `rpm -K` because the
 release runners are Ubuntu and have no rpm, and because `rpm -K` conflates
 "unsigned" with "signed by a key I do not have" in its exit status.
 
-With --key it also requires the signature to be by that key, reported from the
-signature's Issuer subpacket. The backfill needs that distinction: after a key
-rotation every package is still signed, by the retired key, and a
-presence-only test would report nothing left to do.
+With --key it also requires the signature to be by one of those keys (comma
+separated), read from the signature's Issuer subpacket. The backfill needs that
+distinction: after a key rotation every package is still signed, by the retired
+key, and a presence-only test would report nothing left to do. It takes a set
+rather than one id because gpg signs with a signing subkey when the key has
+one, so the id on the signature need not be the primary's.
 
 Verifying the signature is *cryptographically valid* is deliberately out of
 scope — that needs the public key and rpm's own header canonicalisation, and it
 is what the distro matrix in RELEASING.md covers.
 
-Usage: check-rpm-signature.py [--key <keyid>] <package.rpm> [<package.rpm> ...]
+Usage: check-rpm-signature.py [--key <keyid>[,<keyid>...]] <package.rpm> ...
 """
 
 import struct
@@ -130,14 +132,18 @@ def issuer(body):
     pos = 6 + hashed_len
     unhashed_len = struct.unpack(">H", body[pos:pos + 2])[0]
     areas = (body[6:6 + hashed_len], body[pos + 2:pos + 2 + unhashed_len])
-    fingerprint = None
+    issuer_id = None
     for area in areas:
         for kind, data in subpackets(area):
-            if kind == 16 and len(data) == 8:
-                return data.hex()
+            kind &= 0x7F                       # strip the critical flag
+            # Issuer Fingerprint sits in the hashed area, so the signature
+            # covers it; plain Issuer usually sits in the unhashed one and can
+            # be rewritten without breaking the signature. Prefer the former.
             if kind == 33 and len(data) >= 21:
-                fingerprint = data[1:].hex()
-    return fingerprint[-16:] if fingerprint else None
+                return data[1:21].hex()[-16:]
+            if kind == 16 and len(data) == 8 and issuer_id is None:
+                issuer_id = data.hex()
+    return issuer_id
 
 
 def describe(body):
@@ -167,6 +173,8 @@ def inspect(path):
         for ptag, body in openpgp_packets(raw):
             if ptag == 2:                      # signature packet
                 text, key = describe(body)
+                if text == "malformed":
+                    continue          # not a signature this can vouch for
                 found.append(f"{SIG_TAGS[tag]}={text}")
                 if key:
                     keys.add(key)
@@ -178,9 +186,10 @@ def main(argv):
     # signature counts. The backfill needs the distinction: after a key
     # rotation every package is still signed, by the retired key, and a
     # presence-only test would report nothing left to do.
-    want = None
+    want = set()
     if len(argv) >= 2 and argv[0] == "--key":
-        want, argv = argv[1].lower()[-16:], argv[2:]
+        want = {k.strip().lower()[-16:] for k in argv[1].split(",") if k.strip()}
+        argv = argv[2:]
     if not argv:
         print(__doc__.strip().splitlines()[-1], file=sys.stderr)
         return 2
@@ -192,8 +201,9 @@ def main(argv):
             print(f"UNREADABLE  {path}: {exc}")
             unsigned.append(path)
             continue
-        if found and want and want not in keys:
-            print(f"WRONG KEY   {path}  [{', '.join(found)}] — wanted {want}")
+        if found and want and not (want & keys):
+            print(f"WRONG KEY   {path}  [{', '.join(found)}]"
+                  f" — wanted one of {', '.join(sorted(want))}")
             unsigned.append(path)
         elif found:
             print(f"signed      {path}  [{', '.join(found)}]")
@@ -201,10 +211,12 @@ def main(argv):
             print(f"UNSIGNED    {path}")
             unsigned.append(path)
     if unsigned:
-        what = f"are not signed by {want}" if want else "carry no signature"
+        what = ("are not signed by " + "/".join(sorted(want))) if want \
+            else "carry no signature"
         print(f"\n{len(unsigned)} of {len(argv)} package(s) {what}", file=sys.stderr)
         return 1
-    print(f"\nall {len(argv)} package(s) signed" + (f" by {want}" if want else ""))
+    print(f"\nall {len(argv)} package(s) signed"
+          + (" by " + "/".join(sorted(want)) if want else ""))
     return 0
 
 

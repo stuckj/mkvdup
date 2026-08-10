@@ -37,6 +37,11 @@ set -euo pipefail
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${GITHUB_REPOSITORY:-stuckj/mkvdup}"
 KEY="${GPG_KEY_ID:?GPG_KEY_ID must be set}"
+# Every key id that counts as "ours" when deciding whether a package is already
+# correctly signed. gpg signs with a signing subkey when the key has one, so the
+# id on the signature is not necessarily the primary's; resign-rpms.yml passes
+# the primary and every subkey. Falls back to the primary alone.
+KEY_IDS="${GPG_KEY_IDS:-$KEY}"
 export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 # Uploading requires PUBLISH=1 explicitly: the upload overwrites the only copy
 # of each package that exists.
@@ -56,8 +61,9 @@ BUDGET_RESERVE="${BUDGET_RESERVE:-40}"
 # stops on its own terms rather than on a 403 landing between a delete and its
 # upload; the next run resumes, because signed packages are skipped.
 WRITE_BUDGET="${WRITE_BUDGET:-450}"
-# Re-signing skips packages that already carry any signature. After a key
-# rotation that is every one of them, so FORCE=1 re-signs regardless.
+# Re-sign even packages already signed by this key. Rarely wanted: the skip is
+# what makes a run resumable, so with FORCE=1 every run redoes the same first
+# releases and a backfill larger than one write budget never reaches the end.
 FORCE="${FORCE:-0}"
 # Waits before each upload attempt, and the pause between releases. GitHub's
 # secondary limit on content-generating requests is per minute and answers 403
@@ -128,13 +134,22 @@ if [ -e "$RPMMACROS" ]; then cp -p "$RPMMACROS" "$SAVED_MACROS"; fi
 trap cleanup EXIT
 install -m 600 /dev/null "$PASSFILE"
 printf '%s' "${GPG_PASSPHRASE:-}" > "$PASSFILE"
-# SHA-256 to match what nfpm produces for newly built packages; rpm's own
-# default has been SHA-1 in older versions, which modern crypto policies reject.
+# Only the passphrase is added; rpm's own signing command is left alone. It has
+# to be, because its shape is version-specific: rpm 6 made %__gpg_sign_cmd
+# parametric (%{1} plaintext on stdin, %{2} signature), stopped repeating gpg as
+# argv[0], dropped __plaintext_filename, and reads the identity from
+# %_openpgp_sign_id rather than %_gpg_name. Replacing it works on one generation
+# and fails on the other -- measured: an override signs on rpm 4.20.1 and dies
+# with "/usr/bin/gpg exec failed (2)" on rpm 6.0.2, while the form below signs on
+# both. Both generations interpolate %_gpg_sign_cmd_extra_args.
+#
+# Both identity macros are set because which one is read depends on the version;
+# the unused one is inert. SHA-256 matches what nfpm produces for new packages.
 cat > "$RPMMACROS" <<EOF
-%_signature gpg
 %_gpg_name $KEY
+%_openpgp_sign_id $KEY
 %_gpg_digest_algo sha256
-%__gpg_sign_cmd %{__gpg} gpg --batch --no-verbose --no-armor --pinentry-mode loopback --passphrase-file $PASSFILE --digest-algo sha256 --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+%_gpg_sign_cmd_extra_args --batch --pinentry-mode loopback --passphrase-file $PASSFILE
 EOF
 echo "  key $KEY, sha256 digests"
 
@@ -164,8 +179,13 @@ if [ -n "$ONLY_TAGS" ]; then
   set +f
   awk -F'\t' 'NR==FNR{w[$1];next} $1 in w' wanted.txt assets.tsv > filtered.tsv
   mv filtered.tsv assets.tsv
-  # A typo in a tag would otherwise silently narrow the run to nothing.
-  cut -f1 assets.tsv | LC_ALL=C sort -u > matched.txt
+  # A typo in a tag would otherwise silently narrow the run to nothing. A tag
+  # whose rpms this tool deleted has no assets left to match, so the signed
+  # copies on disk count as a match too -- otherwise the recovery instruction
+  # ("pass those tags to ONLY_TAGS") is rejected by this very check.
+  { cut -f1 assets.tsv
+    [ -d signed ] && find signed -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
+  } | LC_ALL=C sort -u > matched.txt
   if ! LC_ALL=C comm -23 wanted.txt matched.txt | grep -q .; then
     echo "  limited to: $ONLY_TAGS"
   else
@@ -174,7 +194,6 @@ if [ -n "$ONLY_TAGS" ]; then
 fi
 
 total=$(wc -l < assets.tsv)
-[ "$total" -gt 0 ] || die "no rpm assets found — refusing to report success over an empty set"
 echo "  $total rpm asset(s) across $(cut -f1 assets.tsv | sort -u | wc -l) release(s)"
 
 # A signed copy left by an earlier run whose release no longer advertises it is
@@ -205,6 +224,13 @@ if [ -s orphans.txt ]; then
   echo "  they will be uploaded first"
 fi
 
+# Nothing to work on at all. Orphans count: a tag whose rpms this tool deleted
+# has no assets left to enumerate, and restoring it is exactly the job.
+if [ "$total" -eq 0 ] && [ ! -s orphans.txt ]; then
+  die "no rpm assets found — refusing to report success over an empty set"
+fi
+
+
 say "download, sign and verify"
 signed=0; skipped=0; failed=0
 orphans=$(wc -l < orphans.txt)
@@ -232,7 +258,7 @@ while IFS=$'\t' read -r tag name size url; do
   # retired key's signature, and a presence-only test would report nothing left
   # to do while none of them verify.
   if [ "$FORCE" != 1 ] \
-     && python3 "$SCRIPTS/check-rpm-signature.py" --key "$KEY" "$src" >/dev/null 2>&1; then
+     && python3 "$SCRIPTS/check-rpm-signature.py" --key "$KEY_IDS" "$src" >/dev/null 2>&1; then
     skipped=$((skipped + 1))
     continue
   fi
@@ -290,6 +316,8 @@ if [ "$failed" -gt 0 ]; then
 fi
 
 queued=$((signed + orphans))
+# Written before any early exit so the caller always has a count to read.
+echo 0 > uploaded-count.txt
 if [ "$queued" -eq 0 ]; then
   say "nothing to do"
   echo "  every published rpm already carries a signature"
@@ -301,6 +329,10 @@ fi
 if [ "$PUBLISH" != 1 ]; then
   say "dry run — nothing uploaded"
   echo "  $signed re-signed package(s) are under $WORK/signed"
+  # A handful for the workflow to attach; all of them would be ~590 MiB.
+  rm -rf sample && mkdir -p sample
+  head -4 to-upload.txt | cut -f3 | while IFS= read -r f; do cp -- "$f" sample/; done
+  echo "  a sample of $(find sample -type f | wc -l) is under $WORK/sample"
   echo "  re-run with PUBLISH=1 to replace the published assets"
   exit 0
 fi

@@ -79,6 +79,11 @@ jobs:
         run: |
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
+          # Every id that counts as ours: gpg signs with a signing subkey when
+          # the key has one, and the signature then carries the subkey's id, not
+          # the primary's. Comparing against the primary alone would read every
+          # package as signed by a stranger and re-sign it forever.
+          echo "GPG_KEY_IDS=$(gpg --list-secret-keys --with-colons | awk -F: '/^(sec|ssb):/ {print $5}' | paste -sd,)" >> "$GITHUB_ENV"
 
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
           echo "use-agent" >> ~/.gnupg/gpg.conf
@@ -89,6 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_IDS: ${{ env.GPG_KEY_IDS }}
           PUBLISH: ${{ inputs.publish && '1' || '0' }}
           ONLY_TAGS: ${{ inputs.tags }}
           FORCE: ${{ inputs.force && '1' || '0' }}
@@ -110,7 +116,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: resigned-sample
-          path: ${{ runner.temp }}/resign/signed/**/*.rpm
+          path: ${{ runner.temp }}/resign/sample/*.rpm
           if-no-files-found: warn
           retention-days: 7
 
@@ -150,7 +156,9 @@ jobs:
   # rebuild dispatch -- RELEASING.md says so.
   rebuild:
     needs: resign
-    if: ${{ !cancelled() && inputs.publish && needs.resign.outputs.uploaded != '0' }}
+    if: ${{ !cancelled() && inputs.publish
+        && needs.resign.outputs.uploaded != '0'
+        && needs.resign.outputs.uploaded != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

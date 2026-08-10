@@ -11,8 +11,7 @@ AUR — an AUR account:
 
 ```bash
 gpg --full-generate-key
-# Choose: RSA and RSA, 4096 bits, no expiration
-# Use your GitHub email address
+# Use your GitHub email address, no expiration
 ```
 
 The key in use today is **ed25519**, not RSA. That choice has one consequence
@@ -331,7 +330,7 @@ about 8 MB per release) because the indexes are derived from the packages
 themselves. That is transient runner scratch, never committed, but it is what
 the job's 60-minute bound has to accommodate as the archive grows.
 
-Both writers share a `package-repositories` concurrency group, so a manual
+All three writers share a `package-repositories` concurrency group, so a manual
 rebuild and a release queue rather than interleave. Replacing the `apt-history`
 assets is still not atomic — release assets cannot be swapped as a set — so a
 client that fetches `InRelease` and `Packages.gz` across that window may need to
@@ -397,7 +396,13 @@ Every rpm published before signing existed is unsigned, which breaks
 serve. **Re-sign RPMs** (`resign-rpms.yml`) fixes them in place.
 
 It runs in a Fedora container because signing needs `rpmsign` built with gpg
-support. For each published rpm it downloads the asset, checks the download is
+support. It adds only `%_gpg_sign_cmd_extra_args` and leaves rpm's own signing
+command alone, because that command's shape is version-specific: rpm 6 made it
+parametric, stopped repeating `gpg` as `argv[0]`, and reads the identity from
+`%_openpgp_sign_id` instead of `%_gpg_name`. Measured on both generations —
+replacing the command signs on rpm 4.20.1 and fails on rpm 6.0.2 with
+`/usr/bin/gpg exec failed (2)`, while the extra-args form signs on both, leaving
+the package byte-identical apart from a 128-byte signature. For each published rpm it downloads the asset, checks the download is
 the size the release says it is, signs it if it is not already signed, and
 checks two more things before anything is uploaded: that a signature is now
 present, and that the main header and payload are **byte-identical** to the
@@ -454,10 +459,18 @@ Rebuilding a repository that has genuinely lost a package is what
 the release assets and refuses, naming what went missing.
 
 The one case that does *not* rebuild automatically is a **cancelled** run, which
-may be mid-upload. Dispatch **Rebuild Package Repositories** by hand afterwards,
-and read the `resigned-recovery` artifact — it carries the signed packages plus
-the manifests saying which releases were reached. A manual invocation of the
-script must likewise dispatch the rebuild itself.
+may be mid-upload. Dispatch **Rebuild Package Repositories** by hand afterwards.
+A manual invocation of the script must likewise dispatch the rebuild itself.
+
+**Recovering a package that was deleted but never replaced.** The workflow gets
+a fresh work directory each dispatch, so the script's own orphan detection —
+which spots a signed copy on disk whose release no longer lists it — only fires
+if you give it that directory back. Download the `resigned-recovery` artifact,
+unpack it over an empty work directory (it carries `signed/`, the manifests and
+the `.resign-marker` the script needs to adopt the directory), and re-run with
+`publish` set; outstanding packages are uploaded before anything else. Or just
+`gh release upload <tag> <file>` them by hand. `check_no_shrink_yum` will refuse
+to rebuild the repositories until they are back either way.
 
 ### Checking that installs actually work
 
