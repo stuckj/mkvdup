@@ -389,6 +389,12 @@ rpm -Kv mkvdup-1.9.1-1.x86_64.rpm
 Import the key first: without it a correctly signed package reports `NOKEY`,
 which is easy to misread as unsigned.
 
+That wording is rpm 4's (EL9, EL10). rpm 6 — Fedora 43 and newer — prints
+`... OpenPGP ...` and, once the key is imported, gives the full fingerprint
+rather than the short key id. The distinction that matters is the same either
+way: a `Signature`/`OpenPGP` line at all means signed, `digests OK` alone means
+not.
+
 ### Re-signing already-published rpms
 
 Every rpm published before signing existed is unsigned, which breaks
@@ -439,8 +445,10 @@ repositories are rebuilt for what did change, and re-running an hour later
 carries on: already-signed packages are skipped. Expect **two runs** for the
 first full backfill.
 
-It also paces itself between releases for the per-minute half of that limit,
-and backs off 0/60/300/900 seconds on a failed upload.
+It also paces itself for the per-minute half of that limit: a release costs
+four writes (a delete and an upload for each of its two rpms), so the five
+seconds between them keeps the rate near 48 a minute. A failed upload backs off
+0/60/300/900 seconds.
 
 The looser `GITHUB_TOKEN` budget of 1000 core requests per hour is checked too
 — roughly 690 for a whole backfill — but it is not usually the binding one.

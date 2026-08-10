@@ -134,6 +134,10 @@ jobs:
             ${{ runner.temp }}/resign/signed/**
             ${{ runner.temp }}/resign/*.txt
             ${{ runner.temp }}/resign/.resign-marker
+          # Without this the marker is dropped -- upload-artifact skips dotfiles
+          # -- and the script then refuses to adopt the unpacked directory,
+          # which is the whole point of keeping it.
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
 
@@ -143,13 +147,10 @@ jobs:
   # Runs after a *failed* publish too. A failure partway through has already
   # replaced some assets, and skipping the rebuild would leave the repodata
   # advertising their pre-signing checksums -- dnf then refuses those packages
-  # outright, which is worse than the unsigned state this PR set out to fix.
+  # outright, which is worse than the unsigned state.
   #
-  # Rebuilding after a failure was the thing to avoid while nothing could tell
-  # a replaced package from a lost one. check_no_shrink_yum can: it compares the
-  # published package set against the release assets and refuses to publish an
-  # index that has lost any, naming them. So the rebuild is now safe to run on
-  # failure and dangerous to skip.
+  # Safe because check_no_shrink_yum compares the published package set against
+  # the release assets and refuses to publish an index that has lost any.
   #
   # !cancelled() rather than always(): a cancelled run is someone stopping the
   # whole thing deliberately, and it may be mid-upload. That case needs a manual

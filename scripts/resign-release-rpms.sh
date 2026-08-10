@@ -70,7 +70,10 @@ FORCE="${FORCE:-0}"
 # for at least that long, so the retries have to outlast it. Overridable so a
 # test does not have to sit through the real thing.
 UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900}"
-UPLOAD_PACE="${UPLOAD_PACE:-2}"
+# Each release costs four writes (a delete and an upload for each of its two
+# rpms), so staying under 80 a minute needs at least three seconds between
+# them; five leaves room for the release lookup.
+UPLOAD_PACE="${UPLOAD_PACE:-5}"
 
 say() { printf '\n== %s\n' "$1"; }
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -129,8 +132,13 @@ cleanup() {
   fi
 }
 # Save before arming the trap: armed first, an early exit here would delete an
-# existing ~/.rpmmacros that had not been copied anywhere yet.
-if [ -e "$RPMMACROS" ]; then cp -p "$RPMMACROS" "$SAVED_MACROS"; fi
+# existing ~/.rpmmacros that had not been copied anywhere yet. Only when there
+# is no saved copy already: after a run that died without its trap, the file in
+# place is this script's own, and copying it would overwrite the original the
+# wipe deliberately kept.
+if [ -e "$RPMMACROS" ] && [ ! -e "$SAVED_MACROS" ]; then
+  cp -p "$RPMMACROS" "$SAVED_MACROS"
+fi
 trap cleanup EXIT
 install -m 600 /dev/null "$PASSFILE"
 printf '%s' "${GPG_PASSPHRASE:-}" > "$PASSFILE"

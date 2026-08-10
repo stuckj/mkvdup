@@ -372,7 +372,20 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
       gzip -dc prev-primary.gz > prev-primary.xml \
         || die "the published $out primary.xml did not decompress — refusing to
        compare against a partial fetch"
-      prev=$(grep -c '<package type="rpm"' prev-primary.xml || true) ;;
+      # Counted from the same hrefs the comparison uses, and cross-checked
+      # against the packages="N" the index declares. Counting with a separate
+      # pattern let a published index whose markup differed report prev=0,
+      # which skips the comparison and looks exactly like "nothing published".
+      grep -oE 'href="[^"]+\.rpm"' prev-primary.xml \
+        | sed 's/^href="//; s/"$//' | LC_ALL=C sort -u > "$out-prev-names.txt"
+      prev=$(wc -l < "$out-prev-names.txt")
+      declared=$(grep -oE 'packages="[0-9]+"' prev-primary.xml | head -1 \
+                 | grep -oE '[0-9]+' || echo "")
+      if [ -n "$declared" ] && [ "$declared" != "$prev" ]; then
+        die "the published $out index declares $declared packages but $prev
+       locations could be read from it — refusing to compare against a listing
+       this script cannot parse"
+      fi ;;
     404) prev=0 ;;   # nothing published yet, so nothing to shrink
     *)   die "cannot read the published $out repodata to compare against (HTTP $http)" ;;
   esac
@@ -384,8 +397,6 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
     # LC_ALL=C throughout: en_US collation ignores the '-' and '.' in package
     # names, so sort's order and comm's byte comparison disagree and comm warns
     # "not in sorted order" and can miss entries.
-    grep -oE 'href="[^"]+\.rpm"' prev-primary.xml \
-      | sed 's/^href="//; s/"$//' | LC_ALL=C sort -u > "$out-prev-names.txt"
     find "$dir" -name '*.rpm' -printf '%f\n' | LC_ALL=C sort -u > "$out-now-names.txt"
     LC_ALL=C comm -23 "$out-prev-names.txt" "$out-now-names.txt" > "$out-gone.txt"
   fi

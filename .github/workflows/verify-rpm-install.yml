@@ -72,11 +72,17 @@ jobs:
       # `dnf install` succeeding under gpgcheck=1 already implies a good
       # signature, but only while gpgcheck is really in force. Asserting the
       # installed package records a key ID fails loudly if that ever stops
-      # being true. `Signature : (none)` is what an unsigned package shows.
+      # being true; an unsigned package shows `Signature : (none)`.
+      #
+      # Unanchored on purpose: rpm <= 4.20 puts the detail on the "Signature :"
+      # line, while rpm 6 prints an indented continuation line instead
+      # (rpmpopt.in `Signature   :%|OPENPGP?{[\n  %{OPENPGP:pgpsig}]}`), so an
+      # anchored match fails on Fedora for a correctly signed package. Both
+      # emit "Key ID <id>" (lib/formats.c and lib/formats.cc).
       - name: Assert the installed package is signed
         run: |
-          rpm -qi mkvdup | grep -i '^Signature'
-          rpm -qi mkvdup | grep -qi '^Signature *:.*Key ID'
+          rpm -qi mkvdup | grep -i -A1 '^Signature'
+          rpm -qi mkvdup | grep -qi 'Key ID'
 
       - name: Install a pinned older version from the archive
         env:
@@ -86,7 +92,7 @@ jobs:
           dnf list --showduplicates mkvdup | tail -5
           dnf install -y "mkvdup-${OLD}"
           rpm -q mkvdup | grep -F "${OLD}"
-          rpm -qi mkvdup | grep -qi '^Signature *:.*Key ID'
+          rpm -qi mkvdup | grep -qi 'Key ID'
 
       - name: Install from the canary repository
         if: ${{ inputs.test_canary }}
@@ -101,7 +107,7 @@ jobs:
           EOF
           dnf install -y mkvdup-canary
           mkvdup-canary --version
-          rpm -qi mkvdup-canary | grep -qi '^Signature *:.*Key ID'
+          rpm -qi mkvdup-canary | grep -qi 'Key ID'
 
       # repo_gpgcheck is not in the documented snippet; this is a separate,
       # stricter check that repomd.xml.asc verifies, run last so a failure here
