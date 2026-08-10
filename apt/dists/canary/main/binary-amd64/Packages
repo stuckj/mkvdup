@@ -1,0 +1,18 @@
+Package: mkvdup-canary
+Version: 1.8.2~canary.2
+Architecture: amd64
+Maintainer: stuckj <stuckj@users.noreply.github.com>
+Installed-Size: 5037
+Depends: fuse3
+Filename: pool/canary/mkvdup-canary_1.8.2.canary.2_amd64.deb
+Size: 2143322
+MD5sum: 50273ef828d8d51abac5d5d1cc8d445f
+SHA1: 4a675c0b115729f71b3517864f067b0a3d7bbcf9
+SHA256: 189937d67d0a43780a6cde950fe1c72fa9678e2d53a0eba75751753233aa0c63
+Section: video
+Priority: optional
+Homepage: https://github.com/stuckj/mkvdup
+Description: MKV deduplication tool using FUSE.
+ Stores MKV files as small dedup files that reference original DVD/Blu-ray sources,
+ providing massive storage savings while maintaining instant access to video files.
+

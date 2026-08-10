@@ -1,0 +1,18 @@
+Package: mkvdup
+Version: 1.9.1
+Architecture: arm64
+Maintainer: stuckj <stuckj@users.noreply.github.com>
+Installed-Size: 4961
+Depends: fuse3
+Filename: pool/main/mkvdup_1.9.1_arm64.deb
+Size: 2026216
+MD5sum: 9d4b70c2967f7bbec95daa1e4c700191
+SHA1: f99bd05c2030353eeb398f33de00746e3391fa77
+SHA256: 7fa8794654f3d218f402be2d7d334463163b359affe57194c7331afe1c1df02c
+Section: video
+Priority: optional
+Homepage: https://github.com/stuckj/mkvdup
+Description: MKV deduplication tool using FUSE.
+ Stores MKV files as small dedup files that reference original DVD/Blu-ray sources,
+ providing massive storage savings while maintaining instant access to video files.
+
