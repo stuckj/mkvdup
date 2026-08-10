@@ -11,11 +11,16 @@ It parses the rpm directly rather than shelling out to `rpm -K` because the
 release runners are Ubuntu and have no rpm, and because `rpm -K` conflates
 "unsigned" with "signed by a key I do not have" in its exit status.
 
-Verifying the signature is *correct* is deliberately out of scope — that needs
-the public key and rpm's own header canonicalisation, and it is what the distro
-matrix in RELEASING.md covers.
+With --key it also requires the signature to be by that key, reported from the
+signature's Issuer subpacket. The backfill needs that distinction: after a key
+rotation every package is still signed, by the retired key, and a
+presence-only test would report nothing left to do.
 
-Usage: check-rpm-signature.py <package.rpm> [<package.rpm> ...]
+Verifying the signature is *cryptographically valid* is deliberately out of
+scope — that needs the public key and rpm's own header canonicalisation, and it
+is what the distro matrix in RELEASING.md covers.
+
+Usage: check-rpm-signature.py [--key <keyid>] <package.rpm> [<package.rpm> ...]
 """
 
 import struct
@@ -30,7 +35,7 @@ HEADER_MAGIC = b"\x8e\xad\xe8"
 SIG_TAGS = {267: "DSAHEADER", 268: "RSAHEADER", 1002: "PGP", 1005: "GPG"}
 
 PUBKEY_ALGO = {1: "RSA", 3: "RSA-sign-only", 17: "DSA", 19: "ECDSA",
-               22: "EdDSA", 25: "Ed25519"}
+               22: "EdDSA", 25: "X25519", 27: "Ed25519"}
 HASH_ALGO = {1: "MD5", 2: "SHA1", 8: "SHA256", 9: "SHA384", 10: "SHA512"}
 
 
@@ -95,53 +100,111 @@ def openpgp_packets(blob):
         i += length
 
 
+def subpackets(area):
+    """Yield (type, data) for each subpacket in a v4 subpacket area."""
+    i = 0
+    while i < len(area):
+        first = area[i]
+        if first < 192:
+            length, i = first, i + 1
+        elif first < 255:
+            length = ((first - 192) << 8) + area[i + 1] + 192
+            i += 2
+        else:
+            length = struct.unpack(">I", area[i + 1:i + 5])[0]
+            i += 5
+        if length == 0:
+            return
+        yield area[i], area[i + 1:i + length]     # length counts the type octet
+        i += length
+
+
+def issuer(body):
+    """Long key ID of a v4 signature's issuer, lowercase hex, or None.
+
+    Issuer (subpacket 16) carries the 8-byte key ID directly. Issuer
+    Fingerprint (33) carries a version octet then the fingerprint, whose last
+    eight bytes are the key ID for v4 keys. gpg emits both; either will do.
+    """
+    hashed_len = struct.unpack(">H", body[4:6])[0]
+    pos = 6 + hashed_len
+    unhashed_len = struct.unpack(">H", body[pos:pos + 2])[0]
+    areas = (body[6:6 + hashed_len], body[pos + 2:pos + 2 + unhashed_len])
+    fingerprint = None
+    for area in areas:
+        for kind, data in subpackets(area):
+            if kind == 16 and len(data) == 8:
+                return data.hex()
+            if kind == 33 and len(data) >= 21:
+                fingerprint = data[1:].hex()
+    return fingerprint[-16:] if fingerprint else None
+
+
 def describe(body):
-    """Describe a v4 signature packet body as 'EdDSA/SHA256'."""
-    if len(body) < 4:
-        return "malformed"
+    """Describe a v4 signature packet body as 'EdDSA/SHA256 by 4599d3032f3cd570'."""
+    if len(body) < 6:
+        return "malformed", None
     version = body[0]
     if version != 4:
-        return f"v{version} signature"
+        return f"v{version} signature", None
     pub, hsh = body[2], body[3]
-    return f"{PUBKEY_ALGO.get(pub, pub)}/{HASH_ALGO.get(hsh, hsh)}"
+    try:
+        key = issuer(body)
+    except (IndexError, struct.error):
+        key = None
+    text = f"{PUBKEY_ALGO.get(pub, pub)}/{HASH_ALGO.get(hsh, hsh)}"
+    return (f"{text} by {key}" if key else text), key
 
 
 def inspect(path):
-    """Return (signed, [description]) for one rpm."""
+    """Return (descriptions, {key ids}) for one rpm."""
     with open(path, "rb") as fh:
         blob = fh.read()
-    found = []
+    found, keys = [], set()
     for tag, raw in sorted(signature_header(blob).items()):
         if tag not in SIG_TAGS:
             continue
         for ptag, body in openpgp_packets(raw):
             if ptag == 2:                      # signature packet
-                found.append(f"{SIG_TAGS[tag]}={describe(body)}")
-    return bool(found), found
+                text, key = describe(body)
+                found.append(f"{SIG_TAGS[tag]}={text}")
+                if key:
+                    keys.add(key)
+    return found, keys
 
 
 def main(argv):
+    # --key <hex>: require the signature to be by that key. Without it any
+    # signature counts. The backfill needs the distinction: after a key
+    # rotation every package is still signed, by the retired key, and a
+    # presence-only test would report nothing left to do.
+    want = None
+    if len(argv) >= 2 and argv[0] == "--key":
+        want, argv = argv[1].lower()[-16:], argv[2:]
     if not argv:
         print(__doc__.strip().splitlines()[-1], file=sys.stderr)
         return 2
     unsigned = []
     for path in argv:
         try:
-            signed, found = inspect(path)
+            found, keys = inspect(path)
         except (OSError, ValueError, IndexError, struct.error) as exc:
             print(f"UNREADABLE  {path}: {exc}")
             unsigned.append(path)
             continue
-        if signed:
+        if found and want and want not in keys:
+            print(f"WRONG KEY   {path}  [{', '.join(found)}] — wanted {want}")
+            unsigned.append(path)
+        elif found:
             print(f"signed      {path}  [{', '.join(found)}]")
         else:
             print(f"UNSIGNED    {path}")
             unsigned.append(path)
     if unsigned:
-        print(f"\n{len(unsigned)} of {len(argv)} package(s) carry no signature",
-              file=sys.stderr)
+        what = f"are not signed by {want}" if want else "carry no signature"
+        print(f"\n{len(unsigned)} of {len(argv)} package(s) {what}", file=sys.stderr)
         return 1
-    print(f"\nall {len(argv)} package(s) signed")
+    print(f"\nall {len(argv)} package(s) signed" + (f" by {want}" if want else ""))
     return 0
 
 

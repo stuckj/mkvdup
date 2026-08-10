@@ -93,8 +93,12 @@ mkdir -p "$WORK"
 # signed/ survives: after a failed upload it holds the only copy of a package
 # that has already been deleted from its release, and the obvious response to a
 # failed run is to re-run it with the same work directory.
+# .rpmmacros.saved survives too: a run killed with SIGKILL leaves the operator's
+# original only there, and wiping it before re-saving would replace it with this
+# script's own generated file.
 find "$WORK" -mindepth 1 -maxdepth 1 \
-     ! -name signed ! -name "$MARKER" -exec rm -rf {} + 2>/dev/null || true
+     ! -name signed ! -name "$MARKER" ! -name .rpmmacros.saved \
+     -exec rm -rf {} + 2>/dev/null || true
 touch "$WORK/$MARKER"
 mkdir -p "$WORK"/{orig,signed}
 cd "$WORK"
@@ -145,7 +149,11 @@ enumerate() {  # enumerate <output-file>
 }
 
 say "enumerate published rpms"
-enumerate assets.tsv
+# all-assets.tsv is the unfiltered view, kept because orphan detection below
+# must ask "is this package on its release?" of every release, not just the
+# ones this run was asked to touch.
+enumerate all-assets.tsv
+cp all-assets.tsv assets.tsv
 
 if [ -n "$ONLY_TAGS" ]; then
   # Tags are matched exactly, not as patterns. -f keeps the shell from expanding
@@ -173,13 +181,18 @@ echo "  $total rpm asset(s) across $(cut -f1 assets.tsv | sort -u | wc -l) relea
 # an asset this tool deleted and did not put back. Enumeration cannot see it —
 # it is gone from the release — so without this a re-run would sign what remains
 # and report success while the package is still missing.
+#
+# Judged against the *unfiltered* enumeration. Against the ONLY_TAGS-filtered
+# one every signed copy from another release looks orphaned, which would turn a
+# two-tag run into a replacement of everything on disk.
 : > orphans.txt
 if [ -d signed ]; then
   while IFS= read -r path; do
     tag=$(basename "$(dirname "$path")")
     name=$(basename "$path")
+    if [ -n "$ONLY_TAGS" ] && ! grep -qxF "$tag" wanted.txt; then continue; fi
     awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {found=1} END {exit !found}' \
-      assets.tsv || printf '%s\t%s\t%s\n' "$tag" "$name" "$path" >> orphans.txt
+      all-assets.tsv || printf '%s\t%s\t%s\n' "$tag" "$name" "$path" >> orphans.txt
   done < <(find signed -type f -name '*.rpm')
 fi
 if [ -s orphans.txt ]; then
@@ -212,10 +225,14 @@ while IFS=$'\t' read -r tag name size url; do
   got=$(stat -c%s "$src")
   [ "$got" = "$size" ] || die "$tag/$name downloaded as $got bytes, expected $size"
 
-  # Already signed: nothing to do. Keeps a re-run from churning assets that are
-  # fine, and lets a run that stopped early resume. This asks whether there is a
-  # signature, not whose it is, so a key rotation needs FORCE=1.
-  if [ "$FORCE" != 1 ] && python3 "$SCRIPTS/check-rpm-signature.py" "$src" >/dev/null 2>&1; then
+  # Already signed by *this* key: nothing to do. Keeps a re-run from churning
+  # assets that are fine, and lets a run that stopped early resume. Asking whose
+  # signature it is, rather than whether there is one, is what makes a key
+  # rotation resumable too: after a rotation every package still carries the
+  # retired key's signature, and a presence-only test would report nothing left
+  # to do while none of them verify.
+  if [ "$FORCE" != 1 ] \
+     && python3 "$SCRIPTS/check-rpm-signature.py" --key "$KEY" "$src" >/dev/null 2>&1; then
     skipped=$((skipped + 1))
     continue
   fi
@@ -291,7 +308,15 @@ fi
 say "upload"
 # Assets are replaced a release at a time: one release lookup covers all of its
 # assets, and stopping between releases never leaves a half-replaced one.
-cut -f1 to-upload.txt | sort -u > upload-tags.txt
+# Orphans first. They are the only packages that are *currently missing* from
+# their release; everything else is merely still unsigned, which is the state
+# the repository has been in all along. If the budget runs out, it should run
+# out having restored those.
+cut -f1 orphans.txt | LC_ALL=C sort -u > orphan-tags.txt
+cut -f1 to-upload.txt | LC_ALL=C sort -u > other-tags.txt
+cat orphan-tags.txt > upload-tags.txt
+LC_ALL=C comm -23 other-tags.txt orphan-tags.txt >> upload-tags.txt
+orphan_tags=$(wc -l < orphan-tags.txt)
 tags_total=$(wc -l < upload-tags.txt)
 echo "  $queued package(s) across $tags_total release(s)"
 echo "  write budget for this run: $WRITE_BUDGET content-generating request(s)"
@@ -320,6 +345,7 @@ while read -r tag; do
 
   echo "  [$((tags_done + 1))/$tags_total] $tag"
   ok=0
+  attempts=0
   # Backoff, not immediate retries: the limit that actually bites here is the
   # secondary one, which caps content-generating requests per minute, and a
   # backfill is two writes per asset. Retrying within seconds just spends the
@@ -332,6 +358,7 @@ while read -r tag; do
     fi
     # --clobber deletes the existing asset first. On a retry the delete has
     # usually already happened, which --clobber also tolerates.
+    attempts=$((attempts + 1))
     if gh release upload "$tag" "${paths[@]}" --clobber --repo "$REPO" >upload.log 2>&1; then
       ok=1
       break
@@ -343,7 +370,10 @@ while read -r tag; do
   fi
 
   uploaded=$((uploaded + ${#paths[@]}))
-  writes=$((writes + writes_needed))
+  # Charge every attempt, not just the successful one: a retry re-issues the
+  # deletes and uploads, and those count against the same limit the budget
+  # exists to respect.
+  writes=$((writes + writes_needed * attempts))
   tags_done=$((tags_done + 1))
   echo "$uploaded" > uploaded-count.txt
   # Stay under the secondary limit on content-generating requests, which is far
@@ -402,6 +432,9 @@ if [ -n "$stopped_at" ]; then
   # assets already replaced now need.
   say "stopped early to stay inside the API budget"
   echo "::warning::Replaced $uploaded of $queued package(s); stopped before $stopped_at."
+  if [ "$tags_done" -lt "$orphan_tags" ]; then
+    die "stopped before restoring every package that was missing from its release — $((orphan_tags - tags_done)) release(s) still short. Raise WRITE_BUDGET or pass those tags to ONLY_TAGS and run again now."
+  fi
   echo "  Nothing is missing. GitHub allows 500 content-generating requests an"
   echo "  hour and each replacement costs two, so a full backfill takes more than"
   echo "  one run by design. Re-run in an hour: already-signed packages are"

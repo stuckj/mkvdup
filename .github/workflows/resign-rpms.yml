@@ -110,7 +110,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: resigned-sample
-          path: ${{ runner.temp }}/resign/signed/**/mkvdup-1.9.*
+          path: ${{ runner.temp }}/resign/signed/**/*.rpm
           if-no-files-found: warn
           retention-days: 7
 
@@ -127,25 +127,30 @@ jobs:
           path: |
             ${{ runner.temp }}/resign/signed/**
             ${{ runner.temp }}/resign/*.txt
+            ${{ runner.temp }}/resign/.resign-marker
           if-no-files-found: warn
           retention-days: 14
 
   # Every replaced asset has a new sha256 while the published repodata still
   # records the old one, so dnf fails a checksum for anything already replaced.
   #
-  # Runs after any *successful* publish dispatch, including one that replaced
-  # nothing. Keying it on this run's upload count would skip the rebuild on
-  # exactly the run that repairs a repository left stale by an earlier one --
-  # everything is already signed, nothing is uploaded, and the checksums stay
-  # wrong. Rebuilding is derived from the releases and idempotent, so the cost
-  # of running it needlessly is a few minutes.
+  # Runs after a *failed* publish too. A failure partway through has already
+  # replaced some assets, and skipping the rebuild would leave the repodata
+  # advertising their pre-signing checksums -- dnf then refuses those packages
+  # outright, which is worse than the unsigned state this PR set out to fix.
   #
-  # A *failed* signing job is the case this must not cover: an asset may have
-  # been deleted with no replacement, and rebuilding would republish the index
-  # without it. There is no status function here, so success() is implied.
+  # Rebuilding after a failure was the thing to avoid while nothing could tell
+  # a replaced package from a lost one. check_no_shrink_yum can: it compares the
+  # published package set against the release assets and refuses to publish an
+  # index that has lost any, naming them. So the rebuild is now safe to run on
+  # failure and dangerous to skip.
+  #
+  # !cancelled() rather than always(): a cancelled run is someone stopping the
+  # whole thing deliberately, and it may be mid-upload. That case needs a manual
+  # rebuild dispatch -- RELEASING.md says so.
   rebuild:
     needs: resign
-    if: ${{ inputs.publish }}
+    if: ${{ !cancelled() && inputs.publish && needs.resign.outputs.uploaded != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

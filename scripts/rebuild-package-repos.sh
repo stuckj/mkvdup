@@ -361,13 +361,18 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
   case "$http" in
     200)
       href=$(grep -oE 'repodata/[a-f0-9]+-primary\.xml\.gz' prev-repomd.xml | head -1)
-      if [ -n "$href" ] \
-         && curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 \
-                 -o prev-primary.gz "$PAGES_URL/$out/$href"; then
-        prev=$(grep -c '<package type="rpm"' < <(gzip -dc prev-primary.gz) || true)
-      else
-        die "cannot read the published $out primary.xml to compare against"
-      fi ;;
+      [ -n "$href" ] || die "the published $out repomd.xml names no primary.xml"
+      curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 \
+           -o prev-primary.gz "$PAGES_URL/$out/$href" \
+        || die "cannot fetch the published $out primary.xml to compare against"
+      # Decompress to a file and check the status. Piping into grep hides it:
+      # a truncated 200 makes gzip fail inside a process substitution, grep
+      # prints 0, and the comparison below would silently be skipped on exactly
+      # the sort of incident this guard exists for.
+      gzip -dc prev-primary.gz > prev-primary.xml \
+        || die "the published $out primary.xml did not decompress — refusing to
+       compare against a partial fetch"
+      prev=$(grep -c '<package type="rpm"' prev-primary.xml || true) ;;
     404) prev=0 ;;   # nothing published yet, so nothing to shrink
     *)   die "cannot read the published $out repodata to compare against (HTTP $http)" ;;
   esac
@@ -379,12 +384,12 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
     # LC_ALL=C throughout: en_US collation ignores the '-' and '.' in package
     # names, so sort's order and comm's byte comparison disagree and comm warns
     # "not in sorted order" and can miss entries.
-    grep -oE 'href="[^"]+\.rpm"' < <(gzip -dc prev-primary.gz) \
+    grep -oE 'href="[^"]+\.rpm"' prev-primary.xml \
       | sed 's/^href="//; s/"$//' | LC_ALL=C sort -u > "$out-prev-names.txt"
     find "$dir" -name '*.rpm' -printf '%f\n' | LC_ALL=C sort -u > "$out-now-names.txt"
     LC_ALL=C comm -23 "$out-prev-names.txt" "$out-now-names.txt" > "$out-gone.txt"
   fi
-  rm -f prev-repomd.xml prev-primary.gz
+  rm -f prev-repomd.xml prev-primary.gz prev-primary.xml
   if [ -s "$out-gone.txt" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
     sed 's/^/    /' "$out-gone.txt" >&2
     die "$(wc -l < "$out-gone.txt") package(s) listed above are published in $out

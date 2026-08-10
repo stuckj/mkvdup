@@ -24,9 +24,12 @@ with one. Measured on `almalinux:8` — `rpm --import` fails with
 new key means re-signing every published rpm and every user re-importing it, so
 this is a decision to make deliberately rather than a default to drift into.
 
-To re-sign after a rotation, dispatch **Re-sign RPMs** with `force` set. Without
-it the run does nothing: the skip test asks whether a package carries *a*
-signature, not whose, and after a rotation they all still carry the old one.
+To re-sign after a rotation, dispatch **Re-sign RPMs** as usual — it compares
+each package's signature against `GPG_KEY_ID` and re-signs anything carrying the
+old key, so it resumes across runs exactly as a first backfill does. (`force`
+exists to re-sign packages that are already correct, which is rarely wanted: it
+disables the skip that makes a run resumable, so every run redoes the same first
+releases and the backfill never reaches the end.)
 
 ### 2. Export and Add Secrets to GitHub
 
@@ -443,9 +446,18 @@ fails the run rather than narrowing it silently.
 
 Every replaced asset gets a new sha256 while the published repodata still
 records the old one, so the workflow runs `rebuild-package-repos.sh` in a
-following job whenever at least one asset changed — including after a partial
-run. A manual invocation of the script must dispatch **Rebuild Package
-Repositories** by hand instead.
+following job — after a successful run, a stop-short, **and a failure**. A
+failure partway has already replaced some assets, and skipping the rebuild would
+leave dnf refusing them on a checksum mismatch: worse than the unsigned state.
+Rebuilding a repository that has genuinely lost a package is what
+`check_no_shrink_yum` prevents; it compares the published package set against
+the release assets and refuses, naming what went missing.
+
+The one case that does *not* rebuild automatically is a **cancelled** run, which
+may be mid-upload. Dispatch **Rebuild Package Repositories** by hand afterwards,
+and read the `resigned-recovery` artifact — it carries the signed packages plus
+the manifests saying which releases were reached. A manual invocation of the
+script must likewise dispatch the rebuild itself.
 
 ### Checking that installs actually work
 
