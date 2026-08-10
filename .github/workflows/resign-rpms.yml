@@ -29,6 +29,10 @@ on:
         description: 'Optional space-separated release tags to limit to, e.g. "v1.9.0 v1.9.1"'
         required: false
         default: ''
+      force:
+        description: 'Re-sign packages that already carry a signature (needed after a key rotation)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -87,6 +91,7 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           PUBLISH: ${{ inputs.publish && '1' || '0' }}
           ONLY_TAGS: ${{ inputs.tags }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
         run: bash scripts/resign-release-rpms.sh "${RUNNER_TEMP}/resign"
 
       - name: Record how many assets were replaced
@@ -97,9 +102,11 @@ jobs:
           echo "uploaded=$n" >> "$GITHUB_OUTPUT"
           echo "replaced $n asset(s)"
 
-      # A sample is enough to eyeball a run that published nothing.
+      # A sample is enough to eyeball a run that published nothing. always():
+      # a dry run that failed on one package of 278 is exactly when the ones
+      # that did sign are worth looking at.
       - name: Upload a sample of the re-signed packages
-        if: ${{ !inputs.publish }}
+        if: ${{ always() && !inputs.publish }}
         uses: actions/upload-artifact@v7
         with:
           name: resigned-sample
@@ -123,17 +130,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Every replaced asset has a new sha256, and the published repodata still
+  # Every replaced asset has a new sha256 while the published repodata still
   # records the old one, so dnf fails a checksum for anything already replaced.
   #
-  # Only after the signing job *succeeded*, which includes the deliberate
-  # stop-short when the API budget runs low. If it failed, an asset may have
-  # been deleted with no replacement, and rebuilding then would republish the
-  # index without it -- so that case waits for a human. The empty-string test
-  # matters because a job that never reached the counting step has no output.
+  # Runs after any *successful* publish dispatch, including one that replaced
+  # nothing. Keying it on this run's upload count would skip the rebuild on
+  # exactly the run that repairs a repository left stale by an earlier one --
+  # everything is already signed, nothing is uploaded, and the checksums stay
+  # wrong. Rebuilding is derived from the releases and idempotent, so the cost
+  # of running it needlessly is a few minutes.
+  #
+  # A *failed* signing job is the case this must not cover: an asset may have
+  # been deleted with no replacement, and rebuilding would republish the index
+  # without it. There is no status function here, so success() is implied.
   rebuild:
     needs: resign
-    if: ${{ inputs.publish && needs.resign.outputs.uploaded != '' && needs.resign.outputs.uploaded != '0' }}
+    if: ${{ inputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

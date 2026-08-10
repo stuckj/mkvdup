@@ -21,9 +21,12 @@ EL8's rpm 4.14 cannot import an ed25519 key and cannot verify packages signed
 with one. Measured on `almalinux:8` — `rpm --import` fails with
 `key 1 import failed`, and a `gpgcheck=1` install then fails with
 `GPG check FAILED`. RSA-4096 verifies everywhere including EL8. Generating a
-new key means re-signing every published rpm (see below) and every user
-re-importing it, so this is a decision to make deliberately rather than a
-default to drift into.
+new key means re-signing every published rpm and every user re-importing it, so
+this is a decision to make deliberately rather than a default to drift into.
+
+To re-sign after a rotation, dispatch **Re-sign RPMs** with `force` set. Without
+it the run does nothing: the skip test asks whether a package carries *a*
+signature, not whose, and after a rotation they all still carry the old one.
 
 ### 2. Export and Add Secrets to GitHub
 
@@ -251,7 +254,9 @@ Requires **rpm 4.16 or newer** (Fedora, RHEL/Alma/Rocky 9 and 10) — see the
 
 This `.repo` snippet is published in **six** places — stable and canary, in
 `README.md`, in this file, and in the landing page `scripts/repo-index.sh`
-generates. All six carry the caveat, and they change together.
+generates. All six carry the caveat, and they change together. Two further
+copies live in `.github/workflows/verify-rpm-install.yml`, which installs from
+them; those need no caveat but do need the same `baseurl`.
 
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'
@@ -414,17 +419,24 @@ no atomic replace — and the release asset is the only copy of that package. So
   the `resigned-recovery` artifact — the container is otherwise destroyed
   holding the only remaining copy of anything already deleted.
 
-A full backfill is currently 276 rpms across 138 releases, about 500 MiB each
-way. Assets are replaced a release at a time, costing one release lookup plus a
-delete and an upload per asset — with two rpms per release that is five requests
-each, so roughly **690** against `GITHUB_TOKEN`'s budget of 1000 per hour per
-repository. Do not run a release alongside it.
+**A full backfill does not fit in one run, by design.** GitHub allows "no more
+than 80 content-generating requests per minute and no more than 500
+content-generating requests per hour". Replacing an asset is a delete plus an
+upload, so the ~278 published rpms need ~556 writes — more than one hour allows.
 
-The hourly budget is not the limit that bites first. GitHub also applies a
-*secondary* limit on content-generating requests — on the order of 80 a minute —
-and 552 writes will exceed it if issued flat out. Hence the pause between
-releases and the 0/60/300/900-second retry backoff; a full run takes a good
-deal longer than the transfers alone would suggest.
+Rather than run until a 403 lands between a delete and its upload, the script
+tracks the writes it has issued and stops cleanly at `WRITE_BUDGET` (450),
+finishing whatever release it was on. That run exits **0** with a warning, the
+repositories are rebuilt for what did change, and re-running an hour later
+carries on: already-signed packages are skipped. Expect **two runs** for the
+first full backfill.
+
+It also paces itself between releases for the per-minute half of that limit,
+and backs off 0/60/300/900 seconds on a failed upload.
+
+The looser `GITHUB_TOKEN` budget of 1000 core requests per hour is checked too
+— roughly 690 for a whole backfill — but it is not usually the binding one.
+Still, do not run a release alongside this.
 
 The `tags` input limits a run to named releases, matched exactly; an unknown tag
 fails the run rather than narrowing it silently.
@@ -708,9 +720,9 @@ and helpers then show — regenerate it whenever the PKGBUILD changes. The workf
 - Check that the key hasn't expired
 - `Failed to create signatures: ... private key checksum failure` from nfpm means
   `GPG_PASSPHRASE` does not match `GPG_PRIVATE_KEY`
-- "the rpm is not signed" from the build job means `RPM_SIGNING_KEY_FILE` was
-  empty, so nfpm skipped signing and exited 0 — check the *Stage the rpm signing
-  key* step ran
+- `UNSIGNED  ./mkvdup-…rpm` and `1 of 1 package(s) carry no signature` from the
+  build job means `RPM_SIGNING_KEY_FILE` was empty, so nfpm skipped signing and
+  exited 0 — check the *Stage the rpm signing key* step ran
 - `key 1 import failed` on a user's machine is not a key problem: their rpm
   predates 4.16 and cannot read ed25519 keys
 

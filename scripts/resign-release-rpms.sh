@@ -48,6 +48,17 @@ ONLY_TAGS="${ONLY_TAGS:-}"
 # Requests to keep in reserve so a stop-short never lands between a delete and
 # its upload.
 BUDGET_RESERVE="${BUDGET_RESERVE:-40}"
+# GitHub allows "no more than 80 content-generating requests per minute and no
+# more than 500 content-generating requests per hour"
+# (docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api,
+# read 2026-08-10). Replacing an asset is a delete plus an upload, so a full
+# backfill needs more writes than one hour allows and *must* stop partway. It
+# stops on its own terms rather than on a 403 landing between a delete and its
+# upload; the next run resumes, because signed packages are skipped.
+WRITE_BUDGET="${WRITE_BUDGET:-450}"
+# Re-signing skips packages that already carry any signature. After a key
+# rotation that is every one of them, so FORCE=1 re-signs regardless.
+FORCE="${FORCE:-0}"
 # Waits before each upload attempt, and the pause between releases. GitHub's
 # secondary limit on content-generating requests is per minute and answers 403
 # for at least that long, so the retries have to outlast it. Overridable so a
@@ -141,16 +152,16 @@ if [ -n "$ONLY_TAGS" ]; then
   # anything glob-like in the input against the work directory.
   set -f
   # shellcheck disable=SC2086
-  printf '%s\n' $ONLY_TAGS | sort -u > wanted.txt
+  printf '%s\n' $ONLY_TAGS | LC_ALL=C sort -u > wanted.txt
   set +f
   awk -F'\t' 'NR==FNR{w[$1];next} $1 in w' wanted.txt assets.tsv > filtered.tsv
   mv filtered.tsv assets.tsv
   # A typo in a tag would otherwise silently narrow the run to nothing.
-  cut -f1 assets.tsv | sort -u > matched.txt
-  if ! comm -23 wanted.txt matched.txt | grep -q .; then
+  cut -f1 assets.tsv | LC_ALL=C sort -u > matched.txt
+  if ! LC_ALL=C comm -23 wanted.txt matched.txt | grep -q .; then
     echo "  limited to: $ONLY_TAGS"
   else
-    die "no rpm assets found for tag(s): $(comm -23 wanted.txt matched.txt | tr '\n' ' ')"
+    die "no rpm assets found for tag(s): $(LC_ALL=C comm -23 wanted.txt matched.txt | tr '\n' ' ')"
   fi
 fi
 
@@ -158,9 +169,34 @@ total=$(wc -l < assets.tsv)
 [ "$total" -gt 0 ] || die "no rpm assets found — refusing to report success over an empty set"
 echo "  $total rpm asset(s) across $(cut -f1 assets.tsv | sort -u | wc -l) release(s)"
 
+# A signed copy left by an earlier run whose release no longer advertises it is
+# an asset this tool deleted and did not put back. Enumeration cannot see it —
+# it is gone from the release — so without this a re-run would sign what remains
+# and report success while the package is still missing.
+: > orphans.txt
+if [ -d signed ]; then
+  while IFS= read -r path; do
+    tag=$(basename "$(dirname "$path")")
+    name=$(basename "$path")
+    awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {found=1} END {exit !found}' \
+      assets.tsv || printf '%s\t%s\t%s\n' "$tag" "$name" "$path" >> orphans.txt
+  done < <(find signed -type f -name '*.rpm')
+fi
+if [ -s orphans.txt ]; then
+  echo "  $(wc -l < orphans.txt) package(s) are missing from their release but"
+  echo "  present here from an earlier run:"
+  cut -f1,2 orphans.txt | sed 's|^|    |;s|\t|/|'
+  if [ "$PUBLISH" != 1 ]; then
+    die "re-run with PUBLISH=1 to put them back"
+  fi
+  echo "  they will be uploaded first"
+fi
+
 say "download, sign and verify"
 signed=0; skipped=0; failed=0
-: > to-upload.txt
+orphans=$(wc -l < orphans.txt)
+# Orphans are already signed and already queued; they only need putting back.
+cp orphans.txt to-upload.txt
 : > failures.txt
 
 while IFS=$'\t' read -r tag name size url; do
@@ -177,8 +213,9 @@ while IFS=$'\t' read -r tag name size url; do
   [ "$got" = "$size" ] || die "$tag/$name downloaded as $got bytes, expected $size"
 
   # Already signed: nothing to do. Keeps a re-run from churning assets that are
-  # fine, and lets a run that stopped early resume.
-  if python3 "$SCRIPTS/check-rpm-signature.py" "$src" >/dev/null 2>&1; then
+  # fine, and lets a run that stopped early resume. This asks whether there is a
+  # signature, not whose it is, so a key rotation needs FORCE=1.
+  if [ "$FORCE" != 1 ] && python3 "$SCRIPTS/check-rpm-signature.py" "$src" >/dev/null 2>&1; then
     skipped=$((skipped + 1))
     continue
   fi
@@ -235,9 +272,12 @@ if [ "$failed" -gt 0 ]; then
   die "$failed package(s) could not be signed — nothing has been uploaded"
 fi
 
-if [ "$signed" -eq 0 ]; then
+queued=$((signed + orphans))
+if [ "$queued" -eq 0 ]; then
   say "nothing to do"
   echo "  every published rpm already carries a signature"
+  echo "  (if the repositories were left mid-backfill, rebuild them anyway —"
+  echo "   the repodata records whatever checksums were current when it ran)"
   exit 0
 fi
 
@@ -253,19 +293,25 @@ say "upload"
 # assets, and stopping between releases never leaves a half-replaced one.
 cut -f1 to-upload.txt | sort -u > upload-tags.txt
 tags_total=$(wc -l < upload-tags.txt)
-echo "  $signed package(s) across $tags_total release(s)"
+echo "  $queued package(s) across $tags_total release(s)"
+echo "  write budget for this run: $WRITE_BUDGET content-generating request(s)"
 
 budget() { gh api rate_limit -q '.resources.core.remaining' 2>/dev/null || echo unknown; }
 
 uploaded=0
 tags_done=0
+writes=0
 stopped_at=""
-echo 0 > uploaded-count.txt
 
 while read -r tag; do
   mapfile -t paths < <(awk -F'\t' -v t="$tag" '$1 == t {print $3}' to-upload.txt)
-  # One release lookup, then a delete and an upload for each asset.
-  need=$((1 + 2 * ${#paths[@]} + BUDGET_RESERVE))
+  # A delete and an upload per asset, all content-generating.
+  writes_needed=$((2 * ${#paths[@]}))
+  if [ $((writes + writes_needed)) -gt "$WRITE_BUDGET" ]; then stopped_at="$tag"; break; fi
+
+  # The hourly core budget is the looser of the two and rarely binds, but a run
+  # sharing its hour with a release could still hit it.
+  need=$((1 + writes_needed + BUDGET_RESERVE))
   remaining=$(budget)
   case "$remaining" in
     ''|*[!0-9]*) : ;;   # unreadable: proceed rather than stall the backfill
@@ -297,6 +343,7 @@ while read -r tag; do
   fi
 
   uploaded=$((uploaded + ${#paths[@]}))
+  writes=$((writes + writes_needed))
   tags_done=$((tags_done + 1))
   echo "$uploaded" > uploaded-count.txt
   # Stay under the secondary limit on content-generating requests, which is far
@@ -312,23 +359,40 @@ say "confirm every replacement is present"
 # whether or not the replacement happened — checking names alone would pass over
 # an asset that was never touched. A signed rpm is always larger than the
 # unsigned original, so the published size is what distinguishes them.
-enumerate after.tsv
-missing=0
 # Only the releases actually reached; the rest were never meant to change.
 head -n "$tags_done" upload-tags.txt > uploaded-tags.txt
-while IFS=$'\t' read -r tag name path; do
-  grep -qxF "$tag" uploaded-tags.txt || continue
-  want=$(stat -c%s "$path")
-  got=$(awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {print $3; exit}' after.tsv)
-  if [ -z "$got" ]; then
-    echo "  MISSING $tag/$name"
-    missing=$((missing + 1))
-  elif [ "$got" != "$want" ]; then
-    echo "  WRONG SIZE $tag/$name: published $got, signed copy is $want"
-    missing=$((missing + 1))
+
+# The releases API is eventually consistent — an asset uploaded seconds ago can
+# be absent or still 'uploading' in the next listing. Reporting that as a lost
+# package would fail the run and, worse, skip the repository rebuild that the
+# assets already replaced now need. Re-read a few times before believing it.
+missing=0
+for attempt in 1 2 3 4 5; do
+  enumerate after.tsv
+  missing=0
+  : > mismatches.txt
+  while IFS=$'\t' read -r tag name path; do
+    grep -qxF "$tag" uploaded-tags.txt || continue
+    want=$(stat -c%s "$path")
+    got=$(awk -F'\t' -v t="$tag" -v n="$name" '$1 == t && $2 == n {print $3; exit}' after.tsv)
+    if [ -z "$got" ]; then
+      echo "  MISSING $tag/$name" >> mismatches.txt
+      missing=$((missing + 1))
+    elif [ "$got" != "$want" ]; then
+      echo "  WRONG SIZE $tag/$name: published $got, signed copy is $want" >> mismatches.txt
+      missing=$((missing + 1))
+    fi
+  done < to-upload.txt
+  [ "$missing" -eq 0 ] && break
+  if [ "$attempt" != 5 ]; then
+    echo "  $missing not visible yet; re-reading (attempt $attempt)"
+    sleep "${VERIFY_RETRY_DELAY:-10}"
   fi
-done < to-upload.txt
-[ "$missing" -eq 0 ] || die "$missing replaced asset(s) are missing or do not match on their release — the signed copies are under $WORK/signed"
+done
+if [ "$missing" -ne 0 ]; then
+  cat mismatches.txt
+  die "$missing replaced asset(s) are missing or do not match on their release. The signed copies are under $WORK/signed — put them back, then rebuild the package repositories."
+fi
 echo "  all $uploaded replacement(s) present at the expected size"
 
 if [ -n "$stopped_at" ]; then
@@ -337,9 +401,11 @@ if [ -n "$stopped_at" ]; then
   # package is missing, and would suppress the repository rebuild that the
   # assets already replaced now need.
   say "stopped early to stay inside the API budget"
-  echo "::warning::Replaced $uploaded of $signed package(s); stopped before $stopped_at."
-  echo "  Nothing is missing. Re-run once the hourly budget resets: already-signed"
-  echo "  packages are skipped, so it will carry on from $stopped_at."
+  echo "::warning::Replaced $uploaded of $queued package(s); stopped before $stopped_at."
+  echo "  Nothing is missing. GitHub allows 500 content-generating requests an"
+  echo "  hour and each replacement costs two, so a full backfill takes more than"
+  echo "  one run by design. Re-run in an hour: already-signed packages are"
+  echo "  skipped, so it carries on from $stopped_at."
   exit 0
 fi
 

@@ -371,11 +371,26 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
     404) prev=0 ;;   # nothing published yet, so nothing to shrink
     *)   die "cannot read the published $out repodata to compare against (HTTP $http)" ;;
   esac
+  # Compare the sets, not just the totals: a rebuild that adds as many packages
+  # as an earlier failure dropped nets out, and a count would call that
+  # unchanged. Comparing names also lets the failure say which package went.
+  : > "$out-gone.txt"
+  if [ "$prev" -gt 0 ]; then
+    # LC_ALL=C throughout: en_US collation ignores the '-' and '.' in package
+    # names, so sort's order and comm's byte comparison disagree and comm warns
+    # "not in sorted order" and can miss entries.
+    grep -oE 'href="[^"]+\.rpm"' < <(gzip -dc prev-primary.gz) \
+      | sed 's/^href="//; s/"$//' | LC_ALL=C sort -u > "$out-prev-names.txt"
+    find "$dir" -name '*.rpm' -printf '%f\n' | LC_ALL=C sort -u > "$out-now-names.txt"
+    LC_ALL=C comm -23 "$out-prev-names.txt" "$out-now-names.txt" > "$out-gone.txt"
+  fi
   rm -f prev-repomd.xml prev-primary.gz
-  if [ "$prev" -gt "$now" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
-    die "the $out index would shrink from $prev to $now packages. If a release
-       was deliberately deleted, re-run with ALLOW_SHRINK=1; otherwise release
-       assets are missing — check whether a re-signing run failed partway."
+  if [ -s "$out-gone.txt" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
+    sed 's/^/    /' "$out-gone.txt" >&2
+    die "$(wc -l < "$out-gone.txt") package(s) listed above are published in $out
+       but are no longer among the release assets. If a release was deliberately
+       deleted, re-run with ALLOW_SHRINK=1; otherwise assets are missing — check
+       whether a re-signing run failed partway."
   fi
   echo "  $out: $now packages (currently published: $prev)"
 }
