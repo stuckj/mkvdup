@@ -36,7 +36,12 @@ build() {
   export CGO_CFLAGS="${CFLAGS}"
   export CGO_CXXFLAGS="${CXXFLAGS}"
   export CGO_LDFLAGS="${LDFLAGS}"
-  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
+  # -buildvcs=false because the stamp is wrong here and the attempt is fatal.
+  # Go stamps VCS metadata when it finds a .git above the source; the archive can
+  # be unpacked anywhere, including inside an unrelated repository, and then go
+  # shells out to git and dies on exit 128 rather than skipping it. The commit it
+  # would record would not be mkvdup's in any case.
+  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw -buildvcs=false"
 
   # -linkmode=external and -extldflags belong in this one string, not in GOFLAGS:
   # a command-line -ldflags replaces the GOFLAGS one outright rather than adding

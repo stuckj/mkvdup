@@ -12,8 +12,9 @@
 # That is why this runs after the release exists: source=() points at the tag's
 # archive, so the tag has to be there before the checksum can be taken or
 # makepkg can fetch it. An Arch failure therefore lands on a published release
-# rather than preventing one. Re-running the job is the recovery; nothing else
-# has to be undone.
+# rather than preventing one. Re-running the job recovers a transient failure;
+# a code fix does not, since the job checks out the commit the release was cut
+# from -- that needs a new canary.
 #
 # Requires makepkg and go. archlinux:base-devel supplies makepkg but not go --
 # its depends array has no Go toolchain -- so install it as well. makepkg refuses

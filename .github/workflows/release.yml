@@ -737,8 +737,9 @@ jobs:
   # That is what puts this after release rather than before it: source=() points
   # at the tag's archive, so the tag has to exist before the checksum can be taken
   # or makepkg can fetch it. The cost is that an Arch failure lands on a published
-  # release instead of preventing one -- re-running this job is the recovery, and
-  # nothing else has to be undone.
+  # release instead of preventing one. Re-running this job recovers a transient
+  # failure, but not a fix: it checks out the commit prepare resolved, so a code
+  # change needs a new canary rather than a re-run.
   #
   # x86_64 only. Arch itself is x86_64-only and publishes no aarch64 container, so
   # there is nothing to build an aarch64 package in; the PKGBUILD still declares
@@ -772,7 +773,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           TAG: ${{ needs.prepare.outputs.tag }}
           IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
-        run: ./scripts/build-arch-package.sh "$GITHUB_WORKSPACE/.archbuild"
+        run: ./scripts/build-arch-package.sh "${RUNNER_TEMP}/archbuild"
 
       # Advisory. makepkg runs with --nodeps because fuse3 is not in the
       # container, so nothing else ever checks depends=() against what the binary
@@ -780,7 +781,7 @@ jobs:
       # that should not block a release.
       - name: Lint the package
         continue-on-error: true
-        run: namcap .archbuild/PKGBUILD .archbuild/*.pkg.tar.zst
+        run: namcap "${RUNNER_TEMP}"/archbuild/PKGBUILD "${RUNNER_TEMP}"/archbuild/*.pkg.tar.zst
 
       # Attached here rather than by the release job, which has to run first for
       # the source archive to exist. Keeps the release page carrying every package
@@ -789,15 +790,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
-        run: gh release upload "$TAG" .archbuild/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" "${RUNNER_TEMP}"/archbuild/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Upload PKGBUILD artifact
         uses: actions/upload-artifact@v7
         with:
           name: aur-pkgbuild
           path: |
-            .archbuild/PKGBUILD
-            .archbuild/.SRCINFO
+            ${{ runner.temp }}/archbuild/PKGBUILD
+            ${{ runner.temp }}/archbuild/.SRCINFO
           include-hidden-files: true
           if-no-files-found: error
 

@@ -509,7 +509,8 @@ and rpm use: Arch symlinks `/usr/sbin` to `/usr/bin` and packages may not write 
 `build-arch` runs *after* the release, unlike every other build. It has to: `source=()` points at
 the tag's source archive, so the tag must exist before the checksum can be taken or makepkg can
 fetch it. The cost is that an Arch failure lands on a published release rather than preventing
-one — re-running the job is the whole recovery, and nothing else has to be undone. `update-aur`
+one. Re-running the job recovers a transient failure, but not a code fix: it checks out the
+commit the release was cut from, so a fix needs a new canary rather than a re-run. `update-aur`
 then downloads that same URL again and compares it against the sum in the PKGBUILD before
 pushing, so a source archive that does not resolve stops the AUR publish rather than reaching
 users who would build from it.
