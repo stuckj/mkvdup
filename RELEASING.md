@@ -119,6 +119,12 @@ sudo apt update
 sudo apt install mkvdup-canary
 ```
 
+Current canary only. For every canary ever published:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history-canary/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-canary-history.list
+```
+
 #### YUM/DNF (RHEL/Fedora) - Canary
 
 ```bash
@@ -166,7 +172,17 @@ sudo apt update
 sudo apt install mkvdup
 ```
 
+The Pages repository carries the current release only. Every version ever
+published is in the archive repository, which is signed with the same key:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-history.list
+sudo apt update && sudo apt install mkvdup=1.8.0
+```
+
 ### YUM/DNF (RHEL/Fedora)
+
+Indexes every version published; there is no separate archive repository.
 
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'
@@ -179,6 +195,82 @@ gpgkey=https://stuckj.github.io/mkvdup/yum/gpg-key.asc
 EOF
 
 sudo dnf install mkvdup
+```
+
+### How the repositories are built
+
+Package files are stored **once**, as assets on the per-version GitHub release.
+The repositories hold only indexes, which `scripts/rebuild-package-repos.sh`
+derives from those releases — so the release must exist before its packages can
+be indexed, and a package whose release is deleted drops out of the index.
+
+| Repository | Index lives in | Covers |
+|------------|----------------|--------|
+| `apt-history`, `apt-history-canary` | a release asset | every version |
+| `gh-pages apt/` | Pages | current version only |
+| `gh-pages yum/`, `yum-canary/` | Pages | every version |
+
+APT needs two repositories and YUM one because of a format difference, not a
+preference: RPM-MD takes an absolute per-package `xml:base`, so its index can
+sit on Pages and point at the releases. APT resolves `Filename` against the
+`sources.list` root and has no absolute form, so a Pages-hosted index can only
+offer packages that are themselves on Pages. The archive repository is a flat
+APT repo living beside the packages, reaching them with `../<tag>/<asset>`.
+
+`publish-repo` runs the script on every release. To rebuild by hand — after
+deleting a release, or if the indexes drift — dispatch **Rebuild Package
+Repositories**. It is idempotent. Run it with `dry_run: true` first: that builds
+everything, publishes nothing, and uploads the generated metadata as an artifact.
+A real run needs `confirm: REBUILD`.
+
+The rebuild refuses to shrink an index. Deleting a release does legitimately
+drop its packages, but an incomplete read of the releases API looks the same and
+would quietly drop versions that still exist — so the run fails and asks you to
+confirm. Re-run it first; if the shrink really is intended, dispatch **Rebuild
+Package Repositories** with the `allow_shrink` box ticked. A release workflow run
+cannot override it, so after deliberately deleting a release, run the rebuild by
+hand once before the next release.
+
+Each run also re-downloads every package ever published (~1 GB today, growing
+about 8 MB per release) because the indexes are derived from the packages
+themselves. That is transient runner scratch, never committed, but it is what
+the job's 60-minute bound has to accommodate as the archive grows.
+
+Both writers share a `package-repositories` concurrency group, so a manual
+rebuild and a release queue rather than interleave. Replacing the `apt-history`
+assets is still not atomic — release assets cannot be swapped as a set — so a
+client that fetches `InRelease` and `Packages.gz` across that window may need to
+re-run `apt update`.
+
+GitHub cancels a run that is still *pending* in a concurrency group when a newer
+one joins it, even though the group sets `cancel-in-progress: false`. Release
+three versions in quick succession and the middle `publish-repo` may show as
+cancelled. A run cancelled while pending is harmless — each rebuild indexes every
+release, so the last one to run covers the ones before it.
+
+**A run that fails after it logs `publish APT history releases` is not
+harmless.** The indexes and their signatures upload separately, so an
+interruption between them leaves `apt-history` with a new `Packages` and an old
+`InRelease`. Clients then get `Hash Sum mismatch`, which fails their whole
+`apt update`, not just this source, and nothing repairs it on its own. Dispatch
+**Rebuild Package Repositories** by hand as soon as you see it.
+
+The rebuild reclaims space on the *published site*, which is what the 1 GB Pages
+limit measures. It does not shrink the repository: the old package blobs stay in
+`gh-pages` history, because the script commits on top of the branch rather than
+replacing its history. That is deliberate — force-pushing an orphan would drop
+commits from the benchmark and coverage workflows.
+
+### Migrating an existing client
+
+The first rebuild removes `yum/packages/` and trims the Pages APT pool to the
+current release. Clients hold cached metadata pointing at the old layout — dnf
+keeps it for 48 hours by default — so until it expires an install can 404. To
+refresh immediately:
+
+```bash
+sudo apt update                       # Debian/Ubuntu
+sudo dnf clean metadata && sudo dnf makecache   # RHEL/Fedora
 ```
 
 ### Nix
