@@ -6,9 +6,9 @@
 # releases would leave the archive repository unusable for exactly the old
 # versions it exists to serve, so the published assets are re-signed in place.
 #
-# `rpm --addsign` rewrites only the signature header: the main header and the
-# payload come through byte-identical, and this script proves that for every
-# package rather than assuming it. A package that is already signed is left
+# Signing rewrites only the signature header: the main header and the payload
+# come through byte-identical, and this script proves that for every package
+# rather than assuming it. A package that is already signed is left
 # alone, so re-running is cheap — and so a run that stops early resumes where
 # it left off.
 #
@@ -118,11 +118,20 @@ done
 
 say "configure rpm signing"
 # rpm shells out to gpg, which cannot prompt here, so the passphrase goes in a
-# file. rpm only reads macros from $HOME/.rpmmacros, so an existing one is moved
-# aside; the trap restores it and removes the passphrase however this exits.
+# file. The macros go in ~/.rpmmacros, so an existing one is moved aside; the
+# trap restores it and removes the passphrase however this exits.
 PASSFILE="$WORK/.passphrase"
 RPMMACROS="$HOME/.rpmmacros"
 SAVED_MACROS="$WORK/.rpmmacros.saved"
+# rpm >= 4.18 reads $XDG_CONFIG_HOME/rpm/macros in preference to ~/.rpmmacros
+# and falls back only when that directory does not exist. If it ever does, the
+# macros below are ignored, gpg is left with no passphrase and no pinentry, and
+# every package fails to sign for a reason nothing here would report. Refuse
+# rather than sign nothing quietly.
+XDG_RPM="${XDG_CONFIG_HOME:-$HOME/.config}/rpm"
+if [ -d "$XDG_RPM" ]; then
+  die "'$XDG_RPM' exists, so rpm would read its macros in preference to $RPMMACROS"
+fi
 cleanup() {
   rm -f "$PASSFILE"
   if [ -e "$SAVED_MACROS" ]; then
@@ -192,7 +201,11 @@ if [ -n "$ONLY_TAGS" ]; then
   # copies on disk count as a match too -- otherwise the recovery instruction
   # ("pass those tags to ONLY_TAGS") is rejected by this very check.
   { cut -f1 assets.tsv
-    [ -d signed ] && find signed -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
+    # Only directories that actually hold a package: every enumerated tag gets
+    # an empty signed/<tag> created for it, so their mere existence would let
+    # any previously seen tag past this check.
+    [ -d signed ] && find signed -mindepth 2 -name '*.rpm' -printf '%h\n' \
+      | sed 's|^signed/||'
   } | LC_ALL=C sort -u > matched.txt
   if ! LC_ALL=C comm -23 wanted.txt matched.txt | grep -q .; then
     echo "  limited to: $ONLY_TAGS"
@@ -272,7 +285,12 @@ while IFS=$'\t' read -r tag name size url; do
   fi
 
   cp -- "$src" "$dst"
-  if ! rpmsign --addsign "$dst" >"sign.log" 2>&1; then
+  # --resign, not --addsign: rpm 6 refuses to add a second header signature
+  # ("already contains a legacy signature") and only deletes the existing one
+  # under --resign, which is what re-signing after a key rotation needs. rpm 4
+  # treats the two as identical. Measured on both: --addsign re-signs fine on
+  # 4.20.1 and exits 1 on 6.0.2, --resign works on both, contents unchanged.
+  if ! rpmsign --resign "$dst" >"sign.log" 2>&1; then
     failed=$((failed + 1))
     { echo "$tag/$name: rpmsign failed"; sed 's/^/    /' sign.log; } >> failures.txt
     continue
@@ -318,6 +336,12 @@ PY
 done < assets.tsv
 
 echo "  signed $signed, already signed $skipped, failed $failed"
+
+# Built before the failure gate below: a dry run that died on one package is
+# exactly when the ones that did sign are worth looking at. A handful only —
+# all of them would be ~590 MiB.
+rm -rf sample && mkdir -p sample
+head -4 to-upload.txt | cut -f3 | while IFS= read -r f; do cp -- "$f" sample/; done
 if [ "$failed" -gt 0 ]; then
   sed 's/^/    /' failures.txt
   die "$failed package(s) could not be signed — nothing has been uploaded"
@@ -337,9 +361,6 @@ fi
 if [ "$PUBLISH" != 1 ]; then
   say "dry run — nothing uploaded"
   echo "  $signed re-signed package(s) are under $WORK/signed"
-  # A handful for the workflow to attach; all of them would be ~590 MiB.
-  rm -rf sample && mkdir -p sample
-  head -4 to-upload.txt | cut -f3 | while IFS= read -r f; do cp -- "$f" sample/; done
   echo "  a sample of $(find sample -type f | wc -l) is under $WORK/sample"
   echo "  re-run with PUBLISH=1 to replace the published assets"
   exit 0
@@ -427,8 +448,8 @@ say "confirm every replacement is present"
 #
 # Sizes, not just names. --clobber replaces in place, so the name is there
 # whether or not the replacement happened — checking names alone would pass over
-# an asset that was never touched. A signed rpm is always larger than the
-# unsigned original, so the published size is what distinguishes them.
+# an asset that was never touched. The comparison is against the exact size of
+# the signed copy on disk, so it holds however the signature changed the size.
 # Only the releases actually reached; the rest were never meant to change.
 head -n "$tags_done" upload-tags.txt > uploaded-tags.txt
 

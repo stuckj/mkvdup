@@ -352,7 +352,7 @@ build_apt_history stable stage/deb-stable mkvdup
 # actually resolve; a count taken from the staged rpms alone could only ever
 # agree with itself.
 check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
-  local out="$1" dir="$2" now prev=0 http href
+  local out="$1" dir="$2" now prev=0 http href declared
   now=$(find "$dir" -name '*.rpm' | wc -l)
   http=$(curl -sSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 120 \
               -o prev-repomd.xml -w '%{http_code}' \

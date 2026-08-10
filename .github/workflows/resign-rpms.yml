@@ -30,7 +30,7 @@ on:
         required: false
         default: ''
       force:
-        description: 'Re-sign packages that already carry a signature (needed after a key rotation)'
+        description: 'Re-sign packages already signed by the current key (rarely wanted; a key rotation does not need it)'
         type: boolean
         default: false
 

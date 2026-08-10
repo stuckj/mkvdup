@@ -404,11 +404,18 @@ serve. **Re-sign RPMs** (`resign-rpms.yml`) fixes them in place.
 It runs in a Fedora container because signing needs `rpmsign` built with gpg
 support. It adds only `%_gpg_sign_cmd_extra_args` and leaves rpm's own signing
 command alone, because that command's shape is version-specific: rpm 6 made it
-parametric, stopped repeating `gpg` as `argv[0]`, and reads the identity from
-`%_openpgp_sign_id` instead of `%_gpg_name`. Measured on both generations —
+parametric and stopped repeating `gpg` as `argv[0]`; it also reads the identity
+from `%_openpgp_sign_id`, which defaults to `%_gpg_name`, so the script sets
+both. Measured on both generations —
 replacing the command signs on rpm 4.20.1 and fails on rpm 6.0.2 with
 `/usr/bin/gpg exec failed (2)`, while the extra-args form signs on both, leaving
-the package byte-identical apart from a 128-byte signature. For each published rpm it downloads the asset, checks the download is
+the package byte-identical apart from a 128-byte signature.
+
+It signs with `--resign` rather than `--addsign` for the same reason: rpm 6
+refuses to add a second header signature and deletes the existing one only
+under `--resign`, which is what re-signing after a key rotation needs. rpm 4
+treats the two as identical (measured: `--addsign` on an already-signed package
+exits 0 on rpm 4.20.1 and 1 on rpm 6.0.2; `--resign` works on both). For each published rpm it downloads the asset, checks the download is
 the size the release says it is, signs it if it is not already signed, and
 checks two more things before anything is uploaded: that a signature is now
 present, and that the main header and payload are **byte-identical** to the
@@ -476,7 +483,9 @@ which spots a signed copy on disk whose release no longer lists it — only fire
 if you give it that directory back. Download the `resigned-recovery` artifact,
 unpack it over an empty work directory (it carries `signed/`, the manifests and
 the `.resign-marker` the script needs to adopt the directory), and re-run with
-`publish` set; outstanding packages are uploaded before anything else. Or just
+`publish` set; outstanding packages are uploaded before anything else — though
+only once the signing pass over the rest has finished without error, since
+nothing is uploaded from a run that failed to sign something. Or just
 `gh release upload <tag> <file>` them by hand. `check_no_shrink_yum` will refuse
 to rebuild the repositories until they are back either way.
 
