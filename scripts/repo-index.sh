@@ -79,6 +79,27 @@ REPO
 sudo dnf install mkvdup
 sudo dnf install mkvdup-1.8.0      # or pin an older version</pre>
 
+  <h2>Arch Linux (pacman or AUR)</h2>
+  <p>The AUR package builds from source. The repository below serves a prebuilt,
+  signed <strong>x86_64</strong> package and updates through <code>pacman -Syu</code>;
+  on Arch Linux ARM use the AUR route, which builds natively.</p>
+  <pre>
+# From the AUR, with a helper
+yay -S mkvdup
+
+# Or add the binary repository
+curl -fsSL ${PAGES}/gpg-key.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
+
+sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
+
+[mkvdup]
+SigLevel = Required
+Server = https://github.com/${REPO}/releases/download/pacman-\$arch
+REPO
+
+sudo pacman -Syu mkvdup</pre>
+
   <h2>Canary Channel (Pre-release)</h2>
   <p>The canary channel provides early access to new features. It installs as
   <code>mkvdup-canary</code> and can be installed alongside the stable version.</p>
@@ -116,6 +137,23 @@ REPO
 
 # Install
 sudo dnf install mkvdup-canary</pre>
+
+  <h3>Arch Linux (pacman or AUR) - Canary</h3>
+  <pre>
+yay -S mkvdup-canary
+
+# Or add the canary repository (same signing key as stable)
+curl -fsSL ${PAGES}/gpg-key.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
+
+sudo tee -a /etc/pacman.conf &lt;&lt; 'REPO'
+
+[mkvdup-canary]
+SigLevel = Required
+Server = https://github.com/${REPO}/releases/download/pacman-canary-\$arch
+REPO
+
+sudo pacman -Syu mkvdup-canary</pre>
 
   <h2>Where the packages live</h2>
   <p>Package files are served from the per-version

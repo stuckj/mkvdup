@@ -7,11 +7,14 @@ on:
         description: 'Version to build (without v prefix, e.g. 1.0.0)'
         required: true
 
-# NOTE: intentionally has no `concurrency` block. The other workflows cancel
-# superseded PR runs, but a release must never be cancelled part-way: it
-# publishes a tag, a GitHub release, APT/YUM packages, a Homebrew formula and a
-# Nix bump. Interrupting it between those leaves exactly the inconsistent state
-# the job ordering here exists to prevent.
+# NOTE: intentionally has no *workflow-level* `concurrency` block. (publish-pacman
+# and update-aur have job-level ones, for narrower reasons they document
+# themselves.) The other workflows cancel superseded PR runs, but a release must
+# never be cancelled part-way: it publishes a tag, a GitHub release,
+# APT/YUM/pacman packages, a Homebrew formula, a PKGBUILD on the AUR and a Nix
+# bump. Interrupting it between those leaves exactly the inconsistent state the
+# job ordering here exists to prevent -- and the AUR is somebody else's server,
+# so that one cannot be undone by rewriting anything here.
 permissions:
   contents: write
   pages: write
@@ -193,7 +196,7 @@ jobs:
         run: |
           nfpm package --packager rpm --target .
 
-      - name: Create Homebrew tarball
+      - name: Create release tarball
         env:
           PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -279,7 +282,19 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           target_commitish: ${{ needs.sync-nix.outputs.commit }}
-          files: packages/*
+          # Listed by extension rather than as packages/*: it makes the set
+          # explicit, and pairs with fail_on_unmatched_files below so a format
+          # that failed to build stops the release instead of quietly missing.
+          files: |
+            packages/*.deb
+            packages/*.rpm
+            packages/*.tar.gz
+          # Without this the action defaults to shrugging at a glob that matches
+          # nothing, so an artifact that failed to land would publish a release
+          # missing a whole package format. The Arch package is not in this list:
+          # build-arch runs after this job and attaches it separately, because it
+          # compiles from the tag's source archive.
+          fail_on_unmatched_files: true
           generate_release_notes: true
           prerelease: ${{ needs.prepare.outputs.is_canary == 'true' }}
         env:
@@ -712,6 +727,288 @@ jobs:
           git diff --staged --quiet || git commit -m "Update formula for ${{ needs.prepare.outputs.tag }}"
           git push
 
+  # Generates the PKGBUILD for this release and builds it.
+  #
+  # The package builds from source, as every Go package in Arch's own
+  # repositories does. A prebuilt one would have to be named mkvdup-bin under the
+  # AUR submission rules, and could never be promoted out of the AUR, because
+  # Arch builds what it ships.
+  #
+  # That is what puts this after release rather than before it: source=() points
+  # at the tag's archive, so the tag has to exist before the checksum can be taken
+  # or makepkg can fetch it. The cost is that an Arch failure lands on a published
+  # release instead of preventing one. Re-running this job recovers a transient
+  # failure, but not a fix: it checks out the commit prepare resolved, so a code
+  # change needs a new canary rather than a re-run.
+  #
+  # x86_64 only. Arch itself is x86_64-only and publishes no aarch64 container, so
+  # there is nothing to build an aarch64 package in; the PKGBUILD still declares
+  # aarch64 for Arch Linux ARM users, who build it natively themselves.
+  build-arch:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    # Unpinned deliberately, unlike go-version and nfpm above. Docker Hub does
+    # publish dated tags, but pinning one would not pin what actually matters --
+    # the job installs its toolchain with pacman from the current repositories
+    # either way -- and the dated tags are pruned, so a pin becomes a broken
+    # build rather than a stable one.
+    container: archlinux:base-devel
+    steps:
+      # The keyring is refreshed on its own first. A base image older than the
+      # current signing keys cannot verify the packages in the upgrade that would
+      # deliver its own replacement, and fails the whole transaction on an unknown
+      # trust signature.
+      - name: Install packaging tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git go github-cli namcap
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Build
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          IS_CANARY: ${{ needs.prepare.outputs.is_canary }}
+        run: ./scripts/build-arch-package.sh "${RUNNER_TEMP}/archbuild"
+
+      # Advisory. makepkg runs with --nodeps because fuse3 is not in the
+      # container, so nothing else ever checks depends=() against what the binary
+      # actually links; namcap does. Not fatal -- it also reports style opinions
+      # that should not block a release.
+      - name: Lint the package
+        continue-on-error: true
+        run: namcap "${RUNNER_TEMP}"/archbuild/PKGBUILD "${RUNNER_TEMP}"/archbuild/*.pkg.tar.zst
+
+      # Attached here rather than by the release job, which has to run first for
+      # the source archive to exist. Keeps the release page carrying every package
+      # format, as it does for deb and rpm.
+      - name: Attach the package to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" "${RUNNER_TEMP}"/archbuild/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload PKGBUILD artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aur-pkgbuild
+          path: |
+            ${{ runner.temp }}/archbuild/PKGBUILD
+            ${{ runner.temp }}/archbuild/.SRCINFO
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # Publishes the same PKGBUILD to the AUR as mkvdup / mkvdup-canary. This
+  # is the Arch analogue of update-homebrew: a recipe pushed to an external repo,
+  # rather than packages served from gh-pages.
+  update-aur:
+    needs: [prepare, build-arch]
+    runs-on: ubuntu-latest
+    # Two releases dispatched close together -- a backport alongside a normal one
+    # is the case the downgrade guard below exists for -- would otherwise clone
+    # the same commit and race, and the loser's push is rejected non-fast-forward
+    # with no retry. Queued rather than cancelled, like the pacman group.
+    concurrency:
+      group: aur-push
+      cancel-in-progress: false
+      queue: max
+    # For vercmp, which is what lets this refuse a downgrade the way the pacman
+    # channel does. Comparing pacman versions any other way gets it wrong.
+    container: archlinux:base
+    steps:
+      - name: Install tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git openssh
+      - name: Download PKGBUILD artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: aur-pkgbuild
+          path: pkgbuild/
+
+      # First, so that nothing below can turn a release red for a channel that is
+      # not configured.
+      - name: Check for AUR credentials
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::AUR_SSH_PRIVATE_KEY secret not configured. Skipping AUR publish."
+            { echo "### ⚠️ AUR not updated"
+              echo
+              echo "\`AUR_SSH_PRIVATE_KEY\` is not configured, so this release did not reach the AUR."
+              echo
+              echo "Every other channel carries it."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "AUR_ENABLED=false" >> "$GITHUB_ENV"
+          else
+            echo "AUR_ENABLED=true" >> "$GITHUB_ENV"
+          fi
+
+      # build-arch already downloaded this archive to take its checksum, so the
+      # URL has been exercised once. Checked again here because the next step
+      # publishes to somebody else's server: an AUR PKGBUILD whose source does
+      # not resolve is a broken package for every user who tries to build it, and
+      # failing here leaves everything except the AUR published.
+      - name: Verify the source archive the PKGBUILD points at
+        if: env.AUR_ENABLED == 'true'
+        run: |
+          # A PKGBUILD is a bash script of plain assignments plus its functions,
+          # so the URL and sum can be read back out of the generated file rather
+          # than reconstructed here and left to drift from it.
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+
+          url=${source[0]#*::}
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o src.tar.gz "$url"
+          got=$(sha256sum src.tar.gz | awk '{print $1}')
+          if [[ "$got" != "${sha256sums[0]}" ]]; then
+            echo "::error::${url} hashes to ${got}, but the PKGBUILD claims ${sha256sums[0]}"
+            exit 1
+          fi
+          echo "OK ${url}"
+
+      # Sourced here rather than in the step below, which holds the AUR key: a
+      # PKGBUILD is executable, and the template comes from whichever branch was
+      # dispatched, so it should not run with a credential in the environment.
+      - name: Read the generated package identity
+        if: env.AUR_ENABLED == 'true'
+        run: |
+          # shellcheck disable=SC1091
+          source pkgbuild/PKGBUILD
+          {
+            echo "AUR_PKGNAME=$pkgname"
+            echo "AUR_PKGVER=$pkgver"
+          } >> "$GITHUB_ENV"
+
+      - name: Push to the AUR
+        if: env.AUR_ENABLED == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          # Published at https://aur.archlinux.org/ under "The following SSH
+          # fingerprints are used for the AUR".
+          AUR_ED25519_FINGERPRINT: 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+        run: |
+          PKGNAME="$AUR_PKGNAME"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+
+          # Scanned, then checked against the fingerprint aur.archlinux.org
+          # publishes over HTTPS. A bare keyscan trusts whatever answers, and
+          # exits 0 having written nothing when nothing does -- which surfaces
+          # much later as "Host key verification failed" from the clone.
+          ssh-keyscan -t ed25519 aur.archlinux.org > aur-hostkey
+          scanned=$(ssh-keygen -lf aur-hostkey | awk '{print $2}')
+          if [[ "$scanned" != "$AUR_ED25519_FINGERPRINT" ]]; then
+            echo "::error::aur.archlinux.org presented ${scanned}, expected ${AUR_ED25519_FINGERPRINT}"
+            exit 1
+          fi
+          cat aur-hostkey >> ~/.ssh/known_hosts
+
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+
+          # A package name the AUR has never seen clones as an empty repository;
+          # pushing to it is what creates it.
+          git clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
+
+          # The pacman channel refuses to go backwards; the AUR has to as well,
+          # or a backport release cut from a maintenance branch would advertise
+          # an older version than users already have -- on somebody else's
+          # server, where it cannot be taken back by rewriting anything here.
+          # pkgver only. pkgrel is fixed at 1 here, so it cannot distinguish two
+          # releases of the same version -- it would matter only if someone hand-
+          # published a -2 on the AUR.
+          published=$(sed -n 's/^\tpkgver = //p' aur/.SRCINFO 2>/dev/null | head -1)
+          if [ -n "$published" ] && [ "$(vercmp "$AUR_PKGVER" "$published")" -lt 0 ]; then
+            echo "::warning::${AUR_PKGVER} is older than the ${published} already on the AUR, so ${PKGNAME} keeps its current version."
+            { echo "### ⚠️ AUR not updated"
+              echo
+              echo "\`${AUR_PKGVER}\` is older than the \`${published}\` already published, so it was not pushed."
+              echo
+              echo "Every other channel that reported success carries this release."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cp pkgbuild/PKGBUILD pkgbuild/.SRCINFO aur/
+          cd aur
+          git config user.name "stuckj"
+          git config user.email "stuckj@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git diff --staged --quiet || git commit -m "Update to ${VERSION}"
+          # Explicit refspec: an empty clone has no upstream branch to infer one
+          # from, and the AUR only accepts master.
+          git push origin HEAD:refs/heads/master
+
+  # Rebuilds the pacman repositories from the release assets.
+  #
+  # Unlike APT and YUM, this touches nothing on gh-pages. A pacman database can
+  # only name a package by bare filename -- libalpm rejects a %FILENAME% with a
+  # '/' in it -- so the packages have to sit in the same flat directory as the
+  # database that lists them. A GitHub release is exactly that, which is why each
+  # channel and architecture gets a release of its own to be the repository.
+  #
+  # Gated on build-arch, which is what attaches the package this reads -- and
+  # which is itself gated on release, so the release exists by the time this runs.
+  publish-pacman:
+    needs: [prepare, build-arch]
+    runs-on: ubuntu-latest
+    # Shared with rebuild-pacman-repo.yml: both run the same script against the
+    # same releases, and its last step deletes every asset not in its own
+    # build. A rebuild dispatched mid-release would enumerate before this job
+    # attached the new packages and then delete them, leaving a signed database
+    # naming a file that 404s.
+    #
+    # queue: max is load-bearing, not decoration. cancel-in-progress only spares
+    # the job that is already running: by default a *pending* one is cancelled to
+    # make room for the newcomer, which would silently drop a release's publish
+    # while it waited behind a rebuild -- the part-way cancellation the top of
+    # this file exists to prevent.
+    concurrency:
+      group: pacman-repositories
+      cancel-in-progress: false
+      queue: max
+    # repo-add --include-sigs needs pacman 6.1; ubuntu-latest ships 6.0.2. Same
+    # pinning caveat as build-arch above.
+    container: archlinux:base
+    steps:
+      - name: Install tools
+        run: |
+          pacman -Sy --needed --noconfirm archlinux-keyring
+          pacman -Su --needed --noconfirm git github-cli
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --keyid-format LONG --with-colons | awk -F: '/^sec/{print $5; exit}')
+          echo "GPG_KEY_ID=$KEY_ID" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          GPG_KEY_ID: ${{ env.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # So the script can tell a release that reached this channel from one
+          # the channel declined as older, and warn about the latter.
+          RELEASED_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASED_CHANNEL: ${{ needs.prepare.outputs.is_canary == 'true' && 'canary' || 'stable' }}
+        run: ./scripts/publish-pacman-repo.sh
+
   # Writes the release version, and a refreshed vendorHash, into the Nix files on
   # the ref being released, so the tag created below actually contains them.
   #
@@ -721,8 +1018,8 @@ jobs:
   # inherited whatever version its branch happened to carry, and main was left
   # claiming a version whose code was not on it.
   #
-  # Ordering: after build, so nothing is pushed until every build has passed, and
-  # before release, so the tag can be created at the resulting commit.
+  # Ordering: after every build, so nothing is pushed until all of them have passed,
+  # and before release, so the tag can be created at the resulting commit.
   sync-nix:
     needs: [prepare, build]
     runs-on: ubuntu-latest
