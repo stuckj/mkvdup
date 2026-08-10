@@ -51,3 +51,7 @@ Thumbs.db
 # Default work directories of the Arch packaging scripts
 /.archbuild/
 /.pacmanbuild/
+
+# Python bytecode
+__pycache__/
+*.pyc

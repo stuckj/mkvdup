@@ -1,0 +1,88 @@
+name: Rebuild Package Repositories
+
+# Regenerates the APT and YUM repositories from the release assets. The release
+# workflow runs the same script, so this exists for the initial migration and
+# for repairing drift. It is idempotent: the repositories are derived from the
+# releases, so re-running produces the same result.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build everything, publish nothing, upload the result as an artifact'
+        type: boolean
+        default: true
+      confirm:
+        description: 'For a real run, type REBUILD (ignored when dry_run is set)'
+        required: false
+        default: ''
+      allow_shrink:
+        description: 'Allow the indexes to lose entries — only when a release was deliberately deleted'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Shared with release.yml's publish-repo job. Two runs replacing the same
+# apt-history assets at once can leave a signed InRelease from one beside a
+# Packages.gz from the other, which fails apt update for everyone until the next
+# successful run. Queue instead of cancelling: a half-finished publish is worse
+# than a delayed one.
+concurrency:
+  group: package-repositories
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    # Bounded so a stalled download cannot hold the shared concurrency group
+    # for the six-hour default.
+    timeout-minutes: 60
+    steps:
+      - name: Check confirmation
+        if: ${{ !inputs.dry_run }}
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [[ "$CONFIRM" == "REBUILD" ]] || {
+            echo "::error::A real run rewrites the live repositories. Type REBUILD to confirm."; exit 1; }
+
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c gnupg
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
+
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
+
+      - name: Rebuild
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          ALLOW_SHRINK: ${{ inputs.allow_shrink && '1' || '0' }}
+        run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"
+
+      # always(): a failed dry run is exactly when the partial output is worth
+      # reading. Excludes the staged packages, which are ~1 GB of release assets.
+      - name: Upload generated metadata
+        if: ${{ always() && inputs.dry_run }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: repo-metadata
+          path: |
+            ${{ runner.temp }}/repobuild/apt/**
+            ${{ runner.temp }}/repobuild/pages/**
+            ${{ runner.temp }}/repobuild/assetmap.txt
+          if-no-files-found: warn
+          retention-days: 7

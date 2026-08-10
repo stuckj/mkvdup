@@ -48,6 +48,25 @@ sudo apt update
 sudo apt install mkvdup
 ```
 
+This repository carries the **current release only**. To install or pin an older
+version, add the archive repository as well — it indexes every version ever
+published.
+
+Enabling both is safe. They are two *sources for the same package*, not two
+packages, so apt merges them and still installs exactly one `mkvdup` — one
+binary, one man page, one mount helper. The current release appears in both, with
+the same checksum, and apt simply lists two sources for it. (The canary channel
+is the different case: it installs under its own name, `mkvdup-canary`, and is
+meant to sit alongside a stable install.) Both are signed with the same key.
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-history.list
+
+sudo apt update
+apt list -a mkvdup              # every published version
+sudo apt install mkvdup=1.8.0   # pin one
+```
+
 <details>
 <summary><strong>Canary (pre-release)</strong></summary>
 
@@ -55,8 +74,11 @@ sudo apt install mkvdup
 # Add the GPG key (same as stable)
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo gpg --dearmor -o /usr/share/keyrings/mkvdup.gpg
 
-# Add the canary repository
+# Add the canary repository (current canary only)
 echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://stuckj.github.io/mkvdup/apt canary main" | sudo tee /etc/apt/sources.list.d/mkvdup-canary.list
+
+# ...or every canary ever published
+echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history-canary/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-canary-history.list
 
 # Install
 sudo apt update
@@ -66,6 +88,9 @@ sudo apt install mkvdup-canary
 </details>
 
 ### RHEL/Fedora (DNF)
+
+This repository indexes every version published, so no separate archive
+repository is needed.
 
 ```bash
 # Add the repository
@@ -80,6 +105,10 @@ EOF
 
 # Install
 sudo dnf install mkvdup
+
+# ...or pin an older version
+dnf list --showduplicates mkvdup
+sudo dnf install mkvdup-1.8.0
 ```
 
 <details>
