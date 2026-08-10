@@ -25,6 +25,7 @@ VERSION="${VERSION:?VERSION must be set}"      # 1.9.2 or 1.9.2-canary.1
 TAG="${TAG:?TAG must be set}"                  # v1.9.2
 IS_CANARY="${IS_CANARY:-false}"
 REPO="${GITHUB_REPOSITORY:-stuckj/mkvdup}"
+PACKAGER="${PACKAGER:-stuckj <stuckj@users.noreply.github.com>}"
 WORK="${1:-$PWD/.archbuild}"
 TEMPLATE="${TEMPLATE:-$PWD/packaging/arch/PKGBUILD.in}"
 
@@ -100,9 +101,13 @@ run_makepkg() {
   if [ "$(id -u)" -eq 0 ]; then
     id builder >/dev/null 2>&1 || useradd --create-home builder
     chown -R builder:builder "$WORK"
-    sudo -u builder bash -c "cd '$WORK' && $*"
+    # PACKAGER through the environment: load_makepkg_config restores it after
+    # sourcing the config, so it wins without having to write a config at all.
+    # Left unset, makepkg stamps "Unknown Packager" into .PKGINFO, which is what
+    # pacman -Si then shows -- unlike the maintainer nfpm.yaml gives deb and rpm.
+    sudo -u builder bash -c "cd '$WORK' && PACKAGER='$PACKAGER' $*"
   else
-    ( cd "$WORK" && eval "$*" )
+    ( cd "$WORK" && PACKAGER="$PACKAGER" eval "$*" )
   fi
 }
 
