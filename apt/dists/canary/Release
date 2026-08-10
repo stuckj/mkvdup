@@ -5,9 +5,9 @@ Codename: canary
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup-canary (current version; see the apt-history release for older versions)
-Date: Mon, 10 Aug 2026 15:53:09 +0000
+Date: Mon, 10 Aug 2026 16:03:03 +0000
 SHA256:
- ae2096c073cf62ac28f4110cadc1c60abddcf4ec190e5d47e406a435215832a4 686 main/binary-amd64/Packages
- 74b239fb913379715b3fcd862b1a0daec02ac898d3d2d12bb5d6c546733a984c 481 main/binary-amd64/Packages.gz
- 6eb9c5887c588ecdba2b2cbb6e5446b41dd879083a74648284b355f2c3e2b443 686 main/binary-arm64/Packages
- bc2fafc11d9af2de0d077d2d8c33a24d05a4674ae5dace4b197bed2330fb4d21 480 main/binary-arm64/Packages.gz
+ e25e6b9f8d76e74948282d4fd655db31ca6ee8bc072f456bc9f3f15392cf244b 686 main/binary-amd64/Packages
+ 151626a64e7f90dfcc22206eb6d1906c0f27b306251c476e6be2e86b30e895a3 481 main/binary-amd64/Packages.gz
+ ce5e6aa5924e50cfdb9fcc84bf0de1bcd835ba7f9f3c8375d9844427fd680090 686 main/binary-arm64/Packages
+ 18e8aeb088a0486d62e0d66f12cf91714ec2cab27a2d878cbf17aab85af34495 481 main/binary-arm64/Packages.gz
