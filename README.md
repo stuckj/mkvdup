@@ -50,7 +50,14 @@ sudo apt install mkvdup
 
 This repository carries the **current release only**. To install or pin an older
 version, add the archive repository as well — it indexes every version ever
-published. Both are signed with the same key and can be enabled at once.
+published.
+
+Enabling both is safe. They are two *sources for the same package*, not two
+packages, so apt merges them and still installs exactly one `mkvdup` — one
+binary, one man page, one mount helper. The current release appears in both, with
+the same checksum, and apt simply lists two sources for it. (The canary channel
+is the different case: it installs under its own name, `mkvdup-canary`, and is
+meant to sit alongside a stable install.) Both are signed with the same key.
 
 ```bash
 echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://github.com/stuckj/mkvdup/releases/download/apt-history/ ./" | sudo tee /etc/apt/sources.list.d/mkvdup-history.list

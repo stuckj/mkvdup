@@ -44,8 +44,14 @@ sudo apt install mkvdup</pre>
 
   <div class="note">
     <p>This repository carries the <strong>current release only</strong>. To install or pin an
-    older version, use the archive repository below instead — it indexes every version ever
-    published. Both are signed with the same key, and both may be enabled at once.</p>
+    older version, add the archive repository below — it indexes every version ever
+    published.</p>
+    <p>Enabling both is safe. They are two <em>sources for the same package</em>, not two
+    packages, so apt merges them and still installs exactly one <code>mkvdup</code> — one
+    binary, one man page, one mount helper. The current release appears in both, with the same
+    checksum, and apt simply lists two sources for it. The canary channel is the different
+    case: it installs under its own name, <code>mkvdup-canary</code>, and is meant to sit
+    alongside a stable install. Both are signed with the same key.</p>
   </div>
 
   <h3>Debian/Ubuntu (APT) — full version history</h3>
