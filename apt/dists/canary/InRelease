@@ -8,16 +8,16 @@ Codename: canary
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup-canary (current version; see the apt-history release for older versions)
-Date: Mon, 10 Aug 2026 15:33:08 +0000
+Date: Mon, 10 Aug 2026 15:53:09 +0000
 SHA256:
- 67be4e45983e6017acfdf3459a7f26f5f8e9690e327e309380a4856d099d30e9 686 main/binary-amd64/Packages
- 666156dc5064db8592cd4f75c3cb3639705dd4070fb46f0900ded5da6b22c3e6 481 main/binary-amd64/Packages.gz
- 720a959023dc938d0c010e3847e25c7ef4aae919b1a50b59d057bf8f2392f631 686 main/binary-arm64/Packages
- 1db24bfa804c952fde3476866508daaf78feedca649b7decf61f9db4ab1bab76 480 main/binary-arm64/Packages.gz
+ ae2096c073cf62ac28f4110cadc1c60abddcf4ec190e5d47e406a435215832a4 686 main/binary-amd64/Packages
+ 74b239fb913379715b3fcd862b1a0daec02ac898d3d2d12bb5d6c546733a984c 481 main/binary-amd64/Packages.gz
+ 6eb9c5887c588ecdba2b2cbb6e5446b41dd879083a74648284b355f2c3e2b443 686 main/binary-arm64/Packages
+ bc2fafc11d9af2de0d077d2d8c33a24d05a4674ae5dace4b197bed2330fb4d21 480 main/binary-arm64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCannvNAAKCRDNt7j4ivzL
-49xNAQDej8jFcffpsv7bGj7oTHS2yqUgSYdmQm/1md0zwSd4sAD/UDKvZla/7mmx
-xuTDeljM/Awf4wftPnmszFE1hSnmowg=
-=fjEG
+iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCannz5QAKCRDNt7j4ivzL
+421EAP42eyJYqYIaDvAAHuFGY3wqXgAzKDIhNyUXjuoLHS2ttgD+IK8H1UgsxDy6
+Eg0WKToHps0NGAKRlDXwZ4zptveWdAY=
+=1H2V
 -----END PGP SIGNATURE-----
