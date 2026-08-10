@@ -118,7 +118,7 @@ Or add the binary repository, which serves the same package and updates through
 build one in, so on Arch Linux ARM use the AUR route above, which builds natively:
 
 ```bash
-# Trust the signing key (the same key the APT and YUM repositories use)
+# Trust the signing key (public; the same key the APT and YUM repositories use)
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
 sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
@@ -149,7 +149,7 @@ yay -S mkvdup-canary
 Or via the canary repository:
 
 ```bash
-# Trust the signing key (same as stable)
+# Trust the signing key (public; same as stable)
 curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
 sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 

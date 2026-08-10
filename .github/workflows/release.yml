@@ -1348,7 +1348,7 @@ jobs:
 
             <h2>Arch Linux (pacman)</h2>
             <pre>
-          # Trust the signing key (the same key the APT and YUM repositories use)
+          # Trust the signing key (public; the same key the APT and YUM repositories use)
           curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
           sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
@@ -1405,7 +1405,7 @@ jobs:
 
             <h3>Arch Linux (pacman) - Canary</h3>
             <pre>
-          # Trust the signing key (same key as stable)
+          # Trust the signing key (public; same key as stable)
           curl -fsSL https://stuckj.github.io/mkvdup/gpg-key.asc | sudo pacman-key --add -
           sudo pacman-key --lsign-key 3AABF4C834FFE7E08D91A9BACDB7B8F88AFCCBE3
 
