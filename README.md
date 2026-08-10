@@ -92,6 +92,13 @@ sudo apt install mkvdup-canary
 This repository indexes every version published, so no separate archive
 repository is needed.
 
+> **Requires rpm 4.16 or newer** — Fedora, RHEL/Alma/Rocky 9 and 10. The
+> packages are signed with an ed25519 key, and rpm only learned to read
+> EdDSA signatures in 4.16.0. EL8 ships rpm 4.14, which cannot import the
+> key at all (`key 1 import failed`), so `gpgcheck=1` cannot be satisfied
+> there. Debian and Ubuntu are unaffected: apt verifies the signed
+> `Release` file rather than a signature inside each package.
+
 ```bash
 # Add the repository
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'

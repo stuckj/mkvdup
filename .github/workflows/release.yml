@@ -184,14 +184,44 @@ jobs:
         run: |
           nfpm package --packager deb --target .
 
+      # nfpm reads the armored private key straight from disk, so unlike
+      # publish-repo this needs no gpg keyring -- just the file and its
+      # passphrase. RUNNER_TEMP is outside the workspace, so the key cannot be
+      # swept into a package by the contents globs.
+      - name: Stage the rpm signing key
+        if: matrix.goos == 'linux'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::GPG_PRIVATE_KEY is empty; rpms would be built unsigned"
+            exit 1
+          fi
+          key="${RUNNER_TEMP}/rpm-signing-key.asc"
+          install -m 600 /dev/null "$key"
+          printf '%s\n' "$GPG_PRIVATE_KEY" > "$key"
+          echo "RPM_SIGNING_KEY_FILE=$key" >> "$GITHUB_ENV"
+
       - name: Build rpm package
         if: matrix.goos == 'linux'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           GOARCH: ${{ matrix.goarch }}
           PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+          NFPM_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           nfpm package --packager rpm --target .
+
+      # nfpm builds an unsigned package with exit 0 when the key file resolves
+      # to an empty path, and dnf's gpgcheck=1 then rejects the release for
+      # every user. Fail here instead.
+      - name: Verify the rpm is signed
+        if: matrix.goos == 'linux'
+        run: python3 scripts/check-rpm-signature.py ./*.rpm
+
+      - name: Remove the signing key
+        if: always() && matrix.goos == 'linux'
+        run: rm -f "${RUNNER_TEMP}/rpm-signing-key.asc"
 
       - name: Create Homebrew tarball
         env:

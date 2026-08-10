@@ -1,0 +1,90 @@
+name: Verify RPM Installs
+
+# Installs mkvdup from the live YUM repository exactly as README.md documents,
+# with gpgcheck=1 and repo_gpgcheck=1. Nothing else checks that the published
+# install instructions actually work: the release workflow verifies that a
+# signature exists, not that a real dnf accepts it.
+#
+# EL8 is deliberately absent. Its rpm 4.14 predates PGPPUBKEYALGO_EDDSA
+# (rpm 4.16.0), so it cannot import the ed25519 signing key at all -- see the
+# RPM support note in README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      old_version:
+        description: 'Older stable version to pin-install from the archive, e.g. 1.8.0'
+        required: false
+        default: '1.8.0'
+      test_canary:
+        description: 'Also install from the canary repository'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  dnf:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - fedora:42
+          - fedora:41
+          - almalinux:10
+          - almalinux:9
+          - rockylinux/rockylinux:9
+    container: ${{ matrix.image }}
+    name: ${{ matrix.image }}
+    steps:
+      - name: Report rpm version
+        run: rpm --version
+
+      - name: Configure the repository as documented
+        run: |
+          cat > /etc/yum.repos.d/mkvdup.repo <<'EOF'
+          [mkvdup]
+          name=mkvdup
+          baseurl=https://stuckj.github.io/mkvdup/yum
+          enabled=1
+          gpgcheck=1
+          repo_gpgcheck=1
+          gpgkey=https://stuckj.github.io/mkvdup/yum/gpg-key.asc
+          EOF
+
+      - name: Install the current version
+        run: |
+          dnf install -y mkvdup
+          mkvdup --version
+          rpm -q mkvdup
+          # 'digests signatures OK' -- 'digests OK' alone means unsigned.
+          rpm -K "$(rpm -q --qf '%{name}' mkvdup)" 2>/dev/null || true
+          rpm -qi mkvdup | grep -i '^signature' || echo "no Signature line"
+
+      - name: Install a pinned older version from the archive
+        env:
+          OLD: ${{ inputs.old_version }}
+        run: |
+          dnf remove -y mkvdup
+          dnf list --showduplicates mkvdup | tail -5
+          dnf install -y "mkvdup-${OLD}"
+          rpm -q mkvdup
+          rpm -qi mkvdup | grep -i '^signature' || echo "no Signature line"
+
+      - name: Install from the canary repository
+        if: ${{ inputs.test_canary }}
+        run: |
+          cat > /etc/yum.repos.d/mkvdup-canary.repo <<'EOF'
+          [mkvdup-canary]
+          name=mkvdup-canary
+          baseurl=https://stuckj.github.io/mkvdup/yum-canary
+          enabled=1
+          gpgcheck=1
+          repo_gpgcheck=1
+          gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
+          EOF
+          dnf install -y mkvdup-canary
+          mkvdup-canary --version
+          rpm -qi mkvdup-canary | grep -i '^signature' || echo "no Signature line"

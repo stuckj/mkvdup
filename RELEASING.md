@@ -14,6 +14,16 @@ gpg --full-generate-key
 # Use your GitHub email address
 ```
 
+The key in use today is **ed25519**, not RSA. That choice has one consequence
+worth knowing before rotating it: rpm gained EdDSA support in 4.16.0, so
+EL8's rpm 4.14 cannot import an ed25519 key and cannot verify packages signed
+with one. Measured on `almalinux:8` — `rpm --import` fails with
+`key 1 import failed`, and a `gpgcheck=1` install then fails with
+`GPG check FAILED`. RSA-4096 verifies everywhere including EL8. Generating a
+new key means re-signing every published rpm (see below) and every user
+re-importing it, so this is a decision to make deliberately rather than a
+default to drift into.
+
 ### 2. Export and Add Secrets to GitHub
 
 ```bash
@@ -261,6 +271,75 @@ limit measures. It does not shrink the repository: the old package blobs stay in
 replacing its history. That is deliberate — force-pushing an orphan would drop
 commits from the benchmark and coverage workflows.
 
+### Package signing
+
+The two package formats need different things, because they check different
+things:
+
+| | What is signed | Verified by |
+|---|---|---|
+| **deb** | the repository's `Release` / `InRelease`, which covers each package through its hash | `apt update`, via `signed-by` |
+| **rpm** | a signature *inside every package*, plus `repomd.xml.asc` | `gpgcheck=1` / `repo_gpgcheck=1` |
+
+So a signed index is enough for apt and is not enough for dnf. rpms are signed
+at build time by nfpm: the `build` job writes `secrets.GPG_PRIVATE_KEY` to a
+file, points `RPM_SIGNING_KEY_FILE` at it, and passes the passphrase as
+`NFPM_PASSPHRASE`.
+
+nfpm signs only when that path resolves to a readable key, and **builds an
+unsigned package with exit 0 when it does not** — a missing secret would ship a
+release that no `gpgcheck=1` client can install. `scripts/check-rpm-signature.py`
+runs straight after the build and fails the job if the signature is absent. A
+wrong passphrase or an unreadable key file fails nfpm outright.
+
+Verify a published package by hand with:
+
+```bash
+rpm -K mkvdup-1.9.1-1.x86_64.rpm
+# digests signatures OK   <- signed
+# digests OK              <- NOT signed
+```
+
+### Re-signing already-published rpms
+
+Every rpm published before signing existed is unsigned, which breaks
+`gpgcheck=1` for exactly the old versions the archive repository exists to
+serve. **Re-sign RPMs** (`resign-rpms.yml`) fixes them in place.
+
+It runs in a Fedora container because `rpmsign` is not available on the Ubuntu
+runner — and, worse, an earlier attempt there exited 0 having signed nothing.
+For each published rpm it downloads the asset, signs it if it is not already
+signed, and checks two things before anything is uploaded: that a signature is
+now present, and that the main header and payload are **byte-identical** to the
+original, so signing cannot quietly alter a package. Already-signed packages are
+skipped, so re-running is cheap.
+
+Nothing is uploaded unless `publish` is set *and* `confirm` is `RESIGN`. Run it
+once without publishing first — the default — and read the counts.
+
+Uploading replaces the only copy of each asset, and the checksums recorded in
+the YUM repodata refer to the pre-signing bytes. **Dispatch "Rebuild Package
+Repositories" immediately afterwards**, or every dnf install fails its checksum
+check.
+
+A full backfill is roughly 270 assets: about 500 MiB each way and a little over
+500 API requests, against `GITHUB_TOKEN`'s budget of 1000 per hour per
+repository. That fits in one hour but leaves little room, so avoid running a
+release alongside it. The script refuses to start uploading if the remaining
+budget is too small, and the `tags` input limits a run to named releases.
+
+### Checking that installs actually work
+
+**Verify RPM Installs** (`verify-rpm-install.yml`) installs from the live
+repository across Fedora, Alma/Rocky 9 and Alma 10 exactly as README.md
+documents, with `gpgcheck=1` and `repo_gpgcheck=1`, covering the current
+version, a pinned older version and a canary. It is the only check that the
+published instructions work end to end; the release workflow only proves a
+signature exists, not that a real dnf accepts it.
+
+EL8 is deliberately not in that matrix — see the note under
+[Generate a GPG Key](#1-generate-a-gpg-key-if-you-dont-have-one).
+
 ### Migrating an existing client
 
 The first rebuild removes `yum/packages/` and trims the Pages APT pool to the
@@ -378,6 +457,13 @@ and needs a code fix — it deliberately refuses to rewrite the hash in that cas
 - Verify `GPG_PRIVATE_KEY` secret contains the full armored key
 - Verify `GPG_PASSPHRASE` is correct
 - Check that the key hasn't expired
+- `Failed to create signatures: ... private key checksum failure` from nfpm means
+  `GPG_PASSPHRASE` does not match `GPG_PRIVATE_KEY`
+- "the rpm is not signed" from the build job means `RPM_SIGNING_KEY_FILE` was
+  empty, so nfpm skipped signing and exited 0 — check the *Stage the rpm signing
+  key* step ran
+- `key 1 import failed` on a user's machine is not a key problem: their rpm
+  predates 4.16 and cannot read ed25519 keys
 
 ### Repository Not Updating
 
