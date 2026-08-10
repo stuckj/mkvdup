@@ -5,9 +5,9 @@ Codename: stable
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup (current version; see the apt-history release for older versions)
-Date: Mon, 10 Aug 2026 16:03:02 +0000
+Date: Mon, 10 Aug 2026 16:41:09 +0000
 SHA256:
- df3fa175c3bed87b4e7feb8b5cc3ca635be3a856670bd02e1b076017bfda8c65 652 main/binary-amd64/Packages
- 2b20ee80cb10b0474d42339612be3dc01358fcfd52bdf8be7a5ac5f82a8ed606 465 main/binary-amd64/Packages.gz
- c3b54e4d7bf40fd021c92ba6bdeed5710b12e801e0a5a4adf51f67aa0bfe8335 652 main/binary-arm64/Packages
- d32cea58e4a9bb58d6032756c3b3847e626798b77c63834fc5a8a9f1960fd489 466 main/binary-arm64/Packages.gz
+ cc877d55d585969da57da22d9259600064a62d207638f44fee7cfb51f36c5ef8 652 main/binary-amd64/Packages
+ 9c733c0dba944f26c409da5afcc813838b471e1fbbf464e25b20b184684c2486 465 main/binary-amd64/Packages.gz
+ 5225e7958c5ff1a80da9d14280959d303e8b2335d4eeb6e160f84e86bfe50b95 652 main/binary-arm64/Packages
+ a725e07a1a8ef06de4a8ddd9f2f4cd144a5f8d8a80e584a7ae928912907683b8 466 main/binary-arm64/Packages.gz
