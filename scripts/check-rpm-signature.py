@@ -211,6 +211,9 @@ def main(argv):
             print(f"UNSIGNED    {path}")
             unsigned.append(path)
     if unsigned:
+        # stdout is block-buffered when redirected and stderr is not, so without
+        # this the summary lands above the lines it summarises in a CI log.
+        sys.stdout.flush()
         what = ("are not signed by " + "/".join(sorted(want))) if want \
             else "carry no signature"
         print(f"\n{len(unsigned)} of {len(argv)} package(s) {what}", file=sys.stderr)

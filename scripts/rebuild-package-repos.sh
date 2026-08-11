@@ -259,7 +259,11 @@ if ! channel_ready stage/deb-canary stage/rpm-canary mkvdup-canary; then
   # aborting would leave *every* channel's index untouched — including the one
   # whose packages were just rewritten, which is the outcome the flag exists to
   # prevent. Publish what can be published, then fail.
-  CANARY_REQUIRED_BUT_SKIPPED="${REQUIRE_ALL_CHANNELS:-0}"
+  # Normalised the way DRY_RUN is: anything but an explicit 0 means "required",
+  # so REQUIRE_ALL_CHANNELS=true enables the gate rather than silently disabling
+  # it.
+  CANARY_REQUIRED_BUT_SKIPPED=1
+  [ "${REQUIRE_ALL_CHANNELS:-0}" != 0 ] || CANARY_REQUIRED_BUT_SKIPPED=0
   DO_CANARY=0
   msg="Canary channel incomplete — its repositories were left exactly as they are, so canary
 users stay on the last good version until a complete canary release is published."
@@ -421,8 +425,11 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
     sed 's/^/    /' "$out-gone.txt" >&2
     die "$(wc -l < "$out-gone.txt") package(s) listed above are published in $out
        but are no longer among the release assets. If a release was deliberately
-       deleted, re-run with ALLOW_SHRINK=1; otherwise assets are missing — check
-       whether a re-signing run failed partway."
+       deleted, re-run with ALLOW_SHRINK=1. Otherwise a re-signing run deleted
+       them without putting them back: restore them from its resigned-recovery
+       artifact (gh release upload <tag> <file>) and run this again. Until then
+       every package that run already replaced keeps a stale checksum, so leaving
+       it is not the safe option."
   fi
   echo "  $out: $now packages (currently published: $prev)"
 }
@@ -533,6 +540,13 @@ bash "$SCRIPTS/repo-index.sh" > pages/index.html
 echo "  generated tree: $(du -sh pages | cut -f1), $(find pages -type f | wc -l) files"
 
 if [ "$DRY_RUN" = 1 ]; then
+  # The caller asked for every channel and one was skipped; say so here too,
+  # or a dry run cannot preview whether the real rebuild will pass.
+  if [ "${CANARY_REQUIRED_BUT_SKIPPED:-0}" = 1 ]; then
+    die "the canary channel is incomplete, so a real run would publish the rest
+       and then fail. Publish a complete canary release, or delete the
+       incomplete one, before rebuilding."
+  fi
   say "dry run — publishing nothing"
   echo "  APT history and gh-pages tree left in $WORK"
   exit 0

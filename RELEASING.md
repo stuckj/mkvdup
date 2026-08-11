@@ -11,7 +11,9 @@ AUR — an AUR account:
 
 ```bash
 gpg --full-generate-key
-# Use your GitHub email address, no expiration
+# Use your GitHub email address, no expiration.
+# Algorithm: see the note below before choosing — ed25519 is what is in use,
+# RSA-4096 is what EL8 can verify.
 ```
 
 The key in use today is **ed25519**, not RSA. That choice has one consequence
@@ -451,7 +453,15 @@ upload, so the ~278 published rpms need ~556 writes — more than one hour allow
 
 Rather than run until a 403 lands between a delete and its upload, the script
 tracks the writes it has issued and stops cleanly at `WRITE_BUDGET` (450),
-finishing whatever release it was on. That run exits **0** with a warning, the
+finishing whatever release it was on. It stops on the clock too, at
+`TIME_BUDGET` (three hours against a four-hour job timeout): a release that
+exhausts the retry ladder costs 51 minutes and only 20 writes, so the write
+budget alone would not keep the run inside its timeout — and a job killed by
+its timeout can die between a delete and its upload.
+
+Releases are replaced newest first, so the version `dnf install mkvdup`
+resolves to is fixed by the first run and the archive catches up in the
+second. That run exits **0** with a warning, the
 repositories are rebuilt for what did change, and re-running an hour later
 carries on: already-signed packages are skipped. Expect **two runs** for the
 first full backfill.
@@ -488,9 +498,10 @@ describing them as they were. So the rebuild publishes everything it can and
 incomplete one, and dispatch **Rebuild Package Repositories**.
 
 It does not rebuild automatically after a **cancelled** run, nor after one that
-failed before replacing anything — the job also requires that at least one asset
-was uploaded, and a run that died on the very first release leaves that count at
-zero while its assets are already deleted. Dispatch **Rebuild Package Repositories** by hand afterwards.
+never started — a failed confirmation check, say, where the signing script never
+ran and so reported no count at all. A run that *did* run and replaced nothing
+still rebuilds, because that is the natural way to repair a repository an
+earlier rebuild left stale. Dispatch **Rebuild Package Repositories** by hand afterwards.
 A manual invocation of the script must likewise dispatch the rebuild itself.
 
 **Recovering a package that was deleted but never replaced.** The workflow gets

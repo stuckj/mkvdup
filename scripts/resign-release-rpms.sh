@@ -76,6 +76,13 @@ UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900 1800}"
 # rpms), so staying under 80 a minute needs at least three seconds between
 # them; five leaves room for the release lookup.
 UPLOAD_PACE="${UPLOAD_PACE:-5}"
+# Seconds this run may spend before it stops taking on another release. The
+# write budget bounds API calls, not time: a release that exhausts the ladder
+# costs 20 writes and 51 minutes, so a handful of them would run past the job's
+# timeout -- and a job killed by its timeout can die between a delete and its
+# upload, which is the one state where a package exists nowhere. Stopping short
+# on the clock turns that into the same clean resume the write budget produces.
+TIME_BUDGET="${TIME_BUDGET:-10800}"
 
 say() { printf '\n== %s\n' "$1"; }
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -386,8 +393,11 @@ say "upload"
 # out having restored those.
 cut -f1 orphans.txt | LC_ALL=C sort -u > orphan-tags.txt
 cut -f1 to-upload.txt | LC_ALL=C sort -u > other-tags.txt
+# comm needs both inputs byte-sorted; the upload order does not have to be.
+# Newest release first, because a full backfill takes more than one run and the
+# version `dnf install mkvdup` resolves to should be fixed by the first.
 cat orphan-tags.txt > upload-tags.txt
-LC_ALL=C comm -23 other-tags.txt orphan-tags.txt >> upload-tags.txt
+LC_ALL=C comm -23 other-tags.txt orphan-tags.txt | sort -rV >> upload-tags.txt
 orphan_tags=$(wc -l < orphan-tags.txt)
 tags_total=$(wc -l < upload-tags.txt)
 echo "  $queued package(s) across $tags_total release(s)"
@@ -399,12 +409,21 @@ uploaded=0
 tags_done=0
 writes=0
 stopped_at=""
+stopped_reason=budget
+# The longest a single release can spend waiting out rate-limit blocks.
+WORST_CASE_BACKOFF=0
+for _d in $UPLOAD_BACKOFF; do WORST_CASE_BACKOFF=$((WORST_CASE_BACKOFF + _d)); done
 
 while read -r tag; do
   mapfile -t paths < <(awk -F'\t' -v t="$tag" '$1 == t {print $3}' to-upload.txt)
   # A delete and an upload per asset, all content-generating.
   writes_needed=$((2 * ${#paths[@]}))
   if [ $((writes + writes_needed)) -gt "$WRITE_BUDGET" ]; then stopped_at="$tag"; break; fi
+  # Room for this release to exhaust the whole retry ladder and still finish
+  # inside the budget, so the run is never killed mid-replacement.
+  if [ $((SECONDS + WORST_CASE_BACKOFF)) -gt "$TIME_BUDGET" ]; then
+    stopped_at="$tag"; stopped_reason=clock; break
+  fi
 
   # The hourly core budget is the looser of the two and rarely binds, but a run
   # sharing its hour with a release could still hit it.
@@ -508,7 +527,7 @@ if [ -n "$stopped_at" ]; then
   # package is missing, and would suppress the repository rebuild that the
   # assets already replaced now need.
   say "stopped early to stay inside the API budget"
-  echo "::warning::Replaced $uploaded of $queued package(s); stopped before $stopped_at."
+  echo "::warning::Replaced $uploaded of $queued package(s); stopped before $stopped_at (${stopped_reason})."
   if [ "$tags_done" -lt "$orphan_tags" ]; then
     die "stopped before restoring every package that was missing from its release — $((orphan_tags - tags_done)) release(s) still short. Raise WRITE_BUDGET or pass those tags to ONLY_TAGS and run again now."
   fi

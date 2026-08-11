@@ -106,9 +106,13 @@ jobs:
         id: count
         if: always()
         run: |
-          n=$(cat "${RUNNER_TEMP}/resign/uploaded-count.txt" 2>/dev/null || echo 0)
+          # Empty when the file is absent, not 0: the script writes it before
+          # every early exit, so its absence means the script never ran at all
+          # -- a failed confirmation check, say -- and the rebuild below must
+          # not treat that as "ran, replaced nothing".
+          n=$(cat "${RUNNER_TEMP}/resign/uploaded-count.txt" 2>/dev/null || true)
           echo "uploaded=$n" >> "$GITHUB_OUTPUT"
-          echo "replaced $n asset(s)"
+          echo "replaced ${n:-no} asset(s)"
 
       # A sample is enough to eyeball a run that published nothing. always():
       # a dry run that failed on one package of 278 is exactly when the ones
@@ -151,8 +155,11 @@ jobs:
   # advertising their pre-signing checksums -- dnf then refuses those packages
   # outright, which is worse than the unsigned state.
   #
-  # Safe because check_no_shrink_yum compares the published package set against
-  # the release assets and refuses to publish an index that has lost any.
+  # check_no_shrink_yum makes that safe: it compares the published package set
+  # against the release assets and refuses to publish an index that has lost
+  # any. Note what that means when an asset really was lost -- the rebuild
+  # refuses, so the already-replaced packages keep their stale checksums until
+  # the missing one is restored. It names what to restore.
   #
   # Including when this run replaced nothing. A run that finds everything
   # already signed is the natural response to an earlier rebuild having failed,
