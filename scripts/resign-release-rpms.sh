@@ -372,11 +372,20 @@ if [ "$failed" -gt 0 ]; then
 fi
 
 queued=$((signed + orphans))
-# Written before any early exit so the caller always has a count to read.
+# Written before the upload loop, so the file is absent exactly when nothing can
+# have been uploaded — which is what the workflow's rebuild gate keys on.
 echo 0 > uploaded-count.txt
 if [ "$queued" -eq 0 ]; then
   say "nothing to do"
-  echo "::warning::Every published rpm is already signed, so nothing was replaced. If an earlier backfill's rebuild did not finish, the published repodata still records pre-signing checksums — dispatch 'Rebuild Package Repositories'."
+  echo "::warning::Every published rpm is already signed, so nothing was replaced."
+  if [ "$PUBLISH" = 1 ]; then
+    echo "  If an earlier backfill's rebuild did not finish, the following job"
+    echo "  rebuilds the repositories anyway."
+  else
+    echo "  If an earlier backfill's rebuild did not finish, the published repodata"
+    echo "  still records pre-signing checksums — dispatch 'Rebuild Package"
+    echo "  Repositories'."
+  fi
   exit 0
 fi
 
@@ -435,7 +444,9 @@ while read -r tag; do
   remaining=$(budget)
   case "$remaining" in
     ''|*[!0-9]*) : ;;   # unreadable: proceed rather than stall the backfill
-    *) if [ "$remaining" -lt "$need" ]; then stopped_at="$tag"; break; fi ;;
+    *) if [ "$remaining" -lt "$need" ]; then
+         stopped_at="$tag"; stopped_reason=ratelimit; break
+       fi ;;
   esac
 
   echo "  [$((tags_done + 1))/$tags_total] $tag"
@@ -533,7 +544,13 @@ if [ -n "$stopped_at" ]; then
   say "stopped early to stay inside the API budget"
   echo "::warning::Replaced $uploaded of $queued package(s); stopped before $stopped_at (${stopped_reason})."
   if [ "$tags_done" -lt "$orphan_tags" ]; then
-    die "stopped before restoring every package that was missing from its release — $((orphan_tags - tags_done)) release(s) still short. Raise WRITE_BUDGET or pass those tags to ONLY_TAGS and run again now."
+    outstanding=$(tail -n +$((tags_done + 1)) orphan-tags.txt | tr '\n' ' ')
+    case "$stopped_reason" in
+      clock)     remedy="Raise TIME_BUDGET, or pass those tags to ONLY_TAGS, and run again now." ;;
+      ratelimit) remedy="Wait for the hourly limit to reset, then run again with ONLY_TAGS set to those tags." ;;
+      *)         remedy="Raise WRITE_BUDGET, or pass those tags to ONLY_TAGS, and run again now." ;;
+    esac
+    die "stopped ($stopped_reason) before restoring every package that was missing from its release. Still outstanding: $outstanding. $remedy"
   fi
   echo "  Nothing is missing. GitHub allows 500 content-generating requests an"
   echo "  hour and each replacement costs two, so a full backfill takes more than"

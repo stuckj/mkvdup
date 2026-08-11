@@ -432,15 +432,11 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
     LC_ALL=C comm -23 "$out-prev-names.txt" "$out-now-names.txt" > "$out-gone.txt"
   fi
   rm -f prev-repomd.xml prev-primary.gz prev-primary.xml
+  # Recorded rather than fatal, so the other channel is still examined and one
+  # report names everything missing. The caller decides what to do about it.
   if [ -s "$out-gone.txt" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
-    sed 's/^/    /' "$out-gone.txt" >&2
-    die "$(wc -l < "$out-gone.txt") package(s) listed above are published in $out
-       but are no longer among the release assets. If a release was deliberately
-       deleted, re-run with ALLOW_SHRINK=1. Otherwise a re-signing run deleted
-       them without putting them back: restore them from its resigned-recovery
-       artifact (gh release upload <tag> <file>) and run this again. Until then
-       every package that run already replaced keeps a stale checksum, so leaving
-       it is not the safe option."
+    SHRUNK_CHANNELS="${SHRUNK_CHANNELS:+$SHRUNK_CHANNELS }$out"
+    { echo "  $out has lost:"; sed 's/^/    /' "$out-gone.txt"; } >&2
   fi
   echo "  $out: $now packages (currently published: $prev)"
 }
@@ -449,6 +445,28 @@ check_no_shrink stable apt-history
 if [ "$DO_CANARY" = 1 ]; then
   build_apt_history canary stage/deb-canary mkvdup-canary
   check_no_shrink canary apt-history-canary
+fi
+
+# Both YUM channels are compared before either index is built. Doing it inside
+# the build loop made the outcome depend on which channel came first: a loss in
+# the second was never reported when the first had one too.
+say "check the published YUM indexes against the release assets"
+SHRUNK_CHANNELS=""
+check_no_shrink_yum yum stage/rpm-stable
+if [ "$DO_CANARY" = 1 ]; then
+  check_no_shrink_yum yum-canary stage/rpm-canary
+fi
+if [ -n "$SHRUNK_CHANNELS" ]; then
+  die "the packages listed above are published in [$SHRUNK_CHANNELS] but are no
+       longer among the release assets. If a release was deliberately deleted,
+       re-run with ALLOW_SHRINK=1. Otherwise a re-signing run deleted them
+       without putting them back: restore them from that run's resigned-recovery
+       artifact with 'gh release upload <tag> <file>', then run this again.
+
+       Nothing is published when this fires, including channels that are intact.
+       If a re-signing run already replaced packages in one of those, they keep a
+       stale checksum until this is resolved, so it wants doing now rather than
+       later."
 fi
 gpg --armor --export "$KEY" > apt/gpg-key.asc
 # gpg exits 0 and writes nothing if the key id does not resolve, which would
@@ -501,7 +519,6 @@ for spec in "yum:rpm-stable" "yum-canary:rpm-canary"; do
   mkdir -p "pages/$out"
   python3 "$SCRIPTS/yum_xmlbase.py" "stage/$dir/repodata" "pages/$out/repodata" assetmap.txt "$BASE"
   detach "pages/$out/repodata/repomd.xml.asc" "pages/$out/repodata/repomd.xml"
-  check_no_shrink_yum "$out" "stage/$dir"
   echo "  $out: $(find "stage/$dir" -name '*.rpm' | wc -l) packages indexed, 0 hosted"
 done
 

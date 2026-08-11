@@ -509,10 +509,19 @@ a fresh work directory each dispatch, so the script's own orphan detection —
 which spots a signed copy on disk whose release no longer lists it — only fires
 if you give it that directory back. Download the `resigned-recovery` artifact,
 unpack it over an empty work directory (it carries `signed/`, the manifests and
-the `.resign-marker` the script needs to adopt the directory), and re-run with
-`publish` set; outstanding packages are uploaded before anything else — though
+the `.resign-marker` the script needs to adopt the directory), and run
+`scripts/resign-release-rpms.sh` against that directory **locally** with
+`PUBLISH=1`. Outstanding packages are uploaded before anything else — though
 only once the signing pass over the rest has finished without error, since
-nothing is uploaded from a run that failed to sign something. Or just
+nothing is uploaded from a run that failed to sign something.
+
+It has to be local. The workflow starts every run on a fresh runner with an
+empty `RUNNER_TEMP`, so a dispatch can never see the unpacked tree and the
+orphan path is unreachable through it. The machine needs `rpmsign` built with
+gpg support (a Fedora container will do), `gh` authenticated with write access,
+and the signing key imported with `GPG_KEY_ID`, `GPG_KEY_IDS` and
+`GPG_PASSPHRASE` set. When only one or two assets are outstanding,
+`gh release upload <tag> <file>` by hand is simpler. Or just
 `gh release upload <tag> <file>` them by hand. `check_no_shrink_yum` will refuse
 to rebuild the repositories until they are back either way.
 
