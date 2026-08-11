@@ -24,14 +24,16 @@ on:
 permissions:
   contents: write
 
-# Shared with release.yml's publish-repo job. Two runs replacing the same
-# apt-history assets at once can leave a signed InRelease from one beside a
-# Packages.gz from the other, which fails apt update for everyone until the next
-# successful run. Queue instead of cancelling: a half-finished publish is worse
-# than a delayed one.
+# Shared with release.yml's publish-repo job and resign-rpms.yml. Two runs
+# replacing the same apt-history assets at once can leave a signed InRelease
+# from one beside a Packages.gz from the other, which fails apt update for
+# everyone until the next successful run. Queue instead of cancelling: a
+# half-finished publish is worse than a delayed one -- and queue: max so a
+# pending run is not cancelled to make room for a newcomer.
 concurrency:
   group: package-repositories
   cancel-in-progress: false
+  queue: max
 
 jobs:
   rebuild:

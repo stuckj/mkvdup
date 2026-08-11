@@ -1182,14 +1182,16 @@ jobs:
     # uploads, the gh-pages clone — would queue every later release behind it for
     # the six-hour default.
     timeout-minutes: 60
-    # Shared with rebuild-package-repos.yml. Two runs replacing the same
-    # apt-history assets at once can leave a signed InRelease from one beside a
-    # Packages.gz from the other, failing apt update until the next good run.
-    # Queued, never cancelled — see the note on this workflow having no
-    # top-level concurrency.
+    # Shared with rebuild-package-repos.yml and resign-rpms.yml. Two runs
+    # replacing the same apt-history assets at once can leave a signed InRelease
+    # from one beside a Packages.gz from the other, failing apt update until the
+    # next good run. Queued, never cancelled — see the note on this workflow
+    # having no top-level concurrency, and the queue: max note on the pacman
+    # group above, which applies here for the same reason.
     concurrency:
       group: package-repositories
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@v7
 

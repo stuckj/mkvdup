@@ -244,7 +244,10 @@ channel_ready() {  # channel_ready <debdir> <rpmdir> <prefix>
 }
 
 channel_ready stage/deb-stable stage/rpm-stable mkvdup \
-  || die "the stable channel is incomplete — refusing to rebuild"
+  || die "the stable channel is incomplete — refusing to rebuild. If a re-signing
+       run deleted an asset without putting it back, it is in that run's
+       resigned-recovery artifact: restore it with 'gh release upload <tag>
+       <file>' rather than deleting the release."
 # Canary is optional. Retiring it, or one malformed canary release, must not stop
 # a stable release from reaching users, so the channel is checked up front and
 # skipped as a whole rather than failing the run part-way through.
@@ -401,6 +404,14 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
       prev=$(wc -l < "$out-prev-names.txt")
       declared=$(grep -oE 'packages="[0-9]+"' prev-primary.xml | head -1 \
                  | grep -oE '[0-9]+' || echo "")
+      # Both patterns failing looks exactly like "nothing published yet", which
+      # skips the comparison below. A 200 that parses as neither is a listing
+      # this script cannot reason about.
+      if [ "$prev" -eq 0 ] && [ -z "$declared" ]; then
+        die "the published $out index parsed as neither package locations nor a
+       package count — refusing to compare against a listing this script cannot
+       read"
+      fi
       if [ -n "$declared" ] && [ "$declared" != "$prev" ]; then
         die "the published $out index declares $declared packages but $prev
        locations could be read from it — refusing to compare against a listing
@@ -635,6 +646,9 @@ done
 if [ "${CANARY_REQUIRED_BUT_SKIPPED:-0}" = 1 ]; then
   die "the canary channel was incomplete, so its repositories still describe the
        packages as they were. Everything else has been rebuilt and published.
-       Publish a complete canary release, or delete the incomplete one, then
-       dispatch 'Rebuild Package Repositories' to bring canary back in line."
+       First check whether a re-signing run deleted one of its assets without
+       putting it back — the run's resigned-recovery artifact holds the copy, and
+       'gh release upload <tag> <file>' restores it. Only if the release is
+       genuinely half-built should you publish a complete canary release or
+       delete the incomplete one. Then dispatch 'Rebuild Package Repositories'."
 fi

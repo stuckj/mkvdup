@@ -37,12 +37,17 @@ on:
 permissions:
   contents: write
 
-# Shared with release.yml and rebuild-package-repos.yml. Replacing assets while
-# a rebuild is reading them would index checksums for packages that are being
-# overwritten underneath it.
+# Shared with release.yml's publish-repo job and rebuild-package-repos.yml.
+# Replacing assets while a rebuild is reading them would index checksums for
+# packages that are being overwritten underneath it.
 concurrency:
   group: package-repositories
   cancel-in-progress: false
+  # Load-bearing, as it is on the pacman group: cancel-in-progress only spares
+  # the run already going. A *pending* one is cancelled by default to make room
+  # for a newcomer, and this workflow can hold the group for hours, so a
+  # release's publish-repo could sit pending behind it and then be dropped.
+  queue: max
 
 jobs:
   resign:
