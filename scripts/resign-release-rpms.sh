@@ -65,11 +65,13 @@ WRITE_BUDGET="${WRITE_BUDGET:-450}"
 # what makes a run resumable, so with FORCE=1 every run redoes the same first
 # releases and a backfill larger than one write budget never reaches the end.
 FORCE="${FORCE:-0}"
-# Waits before each upload attempt, and the pause between releases. GitHub's
-# secondary limit on content-generating requests is per minute and answers 403
-# for at least that long, so the retries have to outlast it. Overridable so a
-# test does not have to sit through the real thing.
-UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900}"
+# Waits before each upload attempt. The secondary limits are per minute and per
+# hour, and a 403 that lands on the upload half of a replacement has already
+# deleted the asset — so the ladder has to be able to outlast the longer window,
+# because waiting recovers the package where giving up loses it. That is what
+# the last two steps are for; a run that needs them is pathological, and the
+# job's timeout allows for it. Overridable so a test need not sit through it.
+UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900 1800 3600}"
 # Each release costs four writes (a delete and an upload for each of its two
 # rpms), so staying under 80 a minute needs at least three seconds between
 # them; five leaves room for the release lookup.
@@ -290,7 +292,10 @@ while IFS=$'\t' read -r tag name size url; do
   # under --resign, which is what re-signing after a key rotation needs. rpm 4
   # treats the two as identical. Measured on both: --addsign re-signs fine on
   # 4.20.1 and exits 1 on 6.0.2, --resign works on both, contents unchanged.
-  if ! rpmsign --resign "$dst" >"sign.log" 2>&1; then
+  # </dev/null: this loop reads assets.tsv on stdin, and rpm 6 hands the
+  # plaintext to gpg on *its* stdin, so anything that reads from ours would
+  # swallow the rest of the work list.
+  if ! rpmsign --resign "$dst" >"sign.log" 2>&1 </dev/null; then
     failed=$((failed + 1))
     { echo "$tag/$name: rpmsign failed"; sed 's/^/    /' sign.log; } >> failures.txt
     continue
@@ -336,6 +341,12 @@ PY
 done < assets.tsv
 
 echo "  signed $signed, already signed $skipped, failed $failed"
+# Every asset must have been accounted for. Without this, anything that ends the
+# loop early — a command that consumes the work list on stdin, say — reports a
+# tidy summary over a fraction of the packages and exits 0.
+if [ $((signed + skipped + failed)) -ne "$total" ]; then
+  die "only $((signed + skipped + failed)) of $total asset(s) were processed — refusing to report on a partial pass"
+fi
 
 # Built before the failure gate below: a dry run that died on one package is
 # exactly when the ones that did sign are worth looking at. A handful only —
@@ -420,7 +431,8 @@ while read -r tag; do
     # --clobber deletes the existing asset first. On a retry the delete has
     # usually already happened, which --clobber also tolerates.
     attempts=$((attempts + 1))
-    if gh release upload "$tag" "${paths[@]}" --clobber --repo "$REPO" >upload.log 2>&1; then
+    if gh release upload "$tag" "${paths[@]}" --clobber --repo "$REPO" \
+         >upload.log 2>&1 </dev/null; then
       ok=1
       break
     fi
@@ -441,6 +453,10 @@ while read -r tag; do
   # tighter than the hourly budget the check above reads.
   if [ "$UPLOAD_PACE" != 0 ]; then sleep "$UPLOAD_PACE"; fi
 done < upload-tags.txt
+
+if [ -z "$stopped_at" ] && [ "$tags_done" -ne "$tags_total" ]; then
+  die "only $tags_done of $tags_total release(s) were uploaded without the budget stopping the run — refusing to report success"
+fi
 
 say "confirm every replacement is present"
 # One more enumeration, not one request per asset: it costs a handful of

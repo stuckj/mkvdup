@@ -250,6 +250,16 @@ channel_ready stage/deb-stable stage/rpm-stable mkvdup \
 # skipped as a whole rather than failing the run part-way through.
 DO_CANARY=1
 if ! channel_ready stage/deb-canary stage/rpm-canary mkvdup-canary; then
+  # Skipping a channel leaves its published index exactly as it is, which is the
+  # right answer when the index still describes the packages on the releases. It
+  # is the wrong answer when a run has just rewritten those packages' bytes: the
+  # index would keep advertising pre-signing checksums and dnf would refuse
+  # every one. resign-rpms.yml sets this so that case fails instead.
+  if [ "${REQUIRE_ALL_CHANNELS:-0}" = 1 ]; then
+    die "the canary channel is incomplete, and this rebuild must not leave any
+       channel's published index behind — its checksums would no longer match
+       the packages on the releases"
+  fi
   DO_CANARY=0
   msg="Canary channel incomplete — its repositories were left exactly as they are, so canary
 users stay on the last good version until a complete canary release is published."
@@ -360,7 +370,9 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
   [ -n "$http" ] || http=000
   case "$http" in
     200)
-      href=$(grep -oE 'repodata/[a-f0-9]+-primary\.xml\.gz' prev-repomd.xml | head -1)
+      # || true: a no-match makes the pipeline fail under errexit, which would
+      # abort here with no output instead of reaching the die below.
+      href=$(grep -oE 'repodata/[a-f0-9]+-primary\.xml\.gz' prev-repomd.xml | head -1 || true)
       [ -n "$href" ] || die "the published $out repomd.xml names no primary.xml"
       curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 \
            -o prev-primary.gz "$PAGES_URL/$out/$href" \
@@ -376,8 +388,12 @@ check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
       # against the packages="N" the index declares. Counting with a separate
       # pattern let a published index whose markup differed report prev=0,
       # which skips the comparison and looks exactly like "nothing published".
+      # Basenames: the published index carries bare names under xml:base, but
+      # an older layout prefixed them with a directory, and comparing those
+      # against find's %f would call every package missing.
       grep -oE 'href="[^"]+\.rpm"' prev-primary.xml \
-        | sed 's/^href="//; s/"$//' | LC_ALL=C sort -u > "$out-prev-names.txt"
+        | sed 's/^href="//; s/"$//; s|.*/||' | LC_ALL=C sort -u \
+        > "$out-prev-names.txt" || true
       prev=$(wc -l < "$out-prev-names.txt")
       declared=$(grep -oE 'packages="[0-9]+"' prev-primary.xml | head -1 \
                  | grep -oE '[0-9]+' || echo "")

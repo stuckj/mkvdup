@@ -473,8 +473,10 @@ Rebuilding a repository that has genuinely lost a package is what
 `check_no_shrink_yum` prevents; it compares the published package set against
 the release assets and refuses, naming what went missing.
 
-The one case that does *not* rebuild automatically is a **cancelled** run, which
-may be mid-upload. Dispatch **Rebuild Package Repositories** by hand afterwards.
+It does not rebuild automatically after a **cancelled** run, nor after one that
+failed before replacing anything — the job also requires that at least one asset
+was uploaded, and a run that died on the very first release leaves that count at
+zero while its assets are already deleted. Dispatch **Rebuild Package Repositories** by hand afterwards.
 A manual invocation of the script must likewise dispatch the rebuild itself.
 
 **Recovering a package that was deleted but never replaced.** The workflow gets

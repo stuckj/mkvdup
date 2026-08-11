@@ -52,8 +52,10 @@ jobs:
     # version, and the script verifies the signature it gets before uploading,
     # so a change in rpmsign fails the run rather than publishing something odd.
     container: fedora:latest
-    # Downloads and re-uploads roughly 500 MiB each way over ~270 assets.
-    timeout-minutes: 90
+    # Downloads and re-uploads roughly 500 MiB each way over ~270 assets. The
+    # headroom is for the retry ladder, whose last step waits out an hourly
+    # rate-limit window rather than abandoning a half-replaced asset.
+    timeout-minutes: 240
     outputs:
       uploaded: ${{ steps.count.outputs.uploaded }}
     steps:
@@ -187,4 +189,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           DRY_RUN: '0'
+          # This run has just rewritten package bytes. Skipping a channel would
+          # leave its published index advertising the old checksums, so an
+          # incomplete channel has to fail rather than be passed over.
+          REQUIRE_ALL_CHANNELS: '1'
         run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"
