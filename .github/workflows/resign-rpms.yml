@@ -111,10 +111,11 @@ jobs:
         id: count
         if: always()
         run: |
-          # Empty when the file is absent, not 0: the script writes it before
-          # every early exit, so its absence means the script never ran at all
-          # -- a failed confirmation check, say -- and the rebuild below must
-          # not treat that as "ran, replaced nothing".
+          # Empty when the file is absent, not 0. The script writes it just
+          # before the upload loop, so an absent file means the run ended before
+          # it could upload anything -- a failed confirmation, a bad tag, a
+          # download or signing failure -- and the rebuild below must not treat
+          # that as "ran, replaced nothing".
           n=$(cat "${RUNNER_TEMP}/resign/uploaded-count.txt" 2>/dev/null || true)
           echo "uploaded=$n" >> "$GITHUB_OUTPUT"
           echo "replaced ${n:-no} asset(s)"

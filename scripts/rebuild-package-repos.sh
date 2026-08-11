@@ -572,8 +572,11 @@ if [ "$DRY_RUN" = 1 ]; then
   # or a dry run cannot preview whether the real rebuild will pass.
   if [ "${CANARY_REQUIRED_BUT_SKIPPED:-0}" = 1 ]; then
     die "the canary channel is incomplete, so a real run would publish the rest
-       and then fail. Publish a complete canary release, or delete the
-       incomplete one, before rebuilding."
+       and then fail. First check whether a re-signing run deleted one of its
+       assets without putting it back — the run's resigned-recovery artifact
+       holds the copy, and 'gh release upload <tag> <file>' restores it. Only if
+       the release is genuinely half-built should you publish a complete canary
+       release or delete the incomplete one."
   fi
   say "dry run — publishing nothing"
   echo "  APT history and gh-pages tree left in $WORK"

@@ -248,6 +248,28 @@ if [ -d signed ]; then
       all-assets.tsv || printf '%s\t%s\t%s\n' "$tag" "$name" "$path" >> orphans.txt
   done < <(find signed -type f -name '*.rpm')
 fi
+# Every other package is checked three ways before it can overwrite a release
+# asset: its download matches the size the release advertises, it is signed by
+# this run's key, and its main header and payload are byte-identical to the
+# original. An orphan can be checked none of those ways — the release copy it
+# would be compared against is the one that is gone — and it is the last copy
+# in existence. So check the one thing that is still checkable, and refuse
+# rather than publish bytes this run cannot vouch for.
+if [ -s orphans.txt ]; then
+  unusable=0
+  while IFS=$'\t' read -r otag oname opath; do
+    python3 "$SCRIPTS/check-rpm-signature.py" --key "$KEY_IDS" "$opath" >/dev/null 2>&1 \
+      || { echo "  UNUSABLE $otag/$oname — not an rpm signed by $KEY_IDS" >&2
+           unusable=$((unusable + 1)); }
+  done < orphans.txt
+  if [ "$unusable" -gt 0 ]; then
+    die "$unusable recovered package(s) listed above are not usable. They are
+       missing from their release and the copy here cannot be vouched for, so
+       uploading them would replace the last copy with something unverifiable.
+       Re-sign them, or fetch an intact copy, before running again."
+  fi
+fi
+
 if [ -s orphans.txt ]; then
   echo "  $(wc -l < orphans.txt) package(s) are missing from their release but"
   echo "  present here from an earlier run:"

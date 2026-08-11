@@ -30,8 +30,11 @@ each package's signature against the key ids in the container's keyring (the
 primary and any subkeys of `GPG_PRIVATE_KEY`) and re-signs anything carrying a
 different one, so it resumes across runs exactly as a first backfill does.
 
-Put only the new key in `GPG_PRIVATE_KEY`: leaving the retired one alongside it
-makes its signatures count as current, and the backfill reports nothing to do.
+Put only the new key in `GPG_PRIVATE_KEY`. Leaving the retired one alongside it
+makes its signatures count as current, so the backfill reports nothing to do —
+and worse, `GPG_KEY_ID` is taken from the *first* `sec` line `gpg
+--list-secret-keys` prints, which is keyring order rather than import order, so
+a run could sign every package with the key you are retiring.
 (`force` exists to re-sign packages that are already correct, which is rarely
 wanted: it disables the skip that makes a run resumable, so every run redoes the
 same first releases and the backfill never reaches the end.)
@@ -408,8 +411,8 @@ Every rpm published before signing existed is unsigned, which breaks
 serve. **Re-sign RPMs** (`resign-rpms.yml`) fixes them in place.
 
 It runs in a Fedora container because signing needs `rpmsign` built with gpg
-support. It adds only `%_gpg_sign_cmd_extra_args` and leaves rpm's own signing
-command alone, because that command's shape is version-specific: rpm 6 made it
+support. It leaves rpm's own signing command alone and only adds arguments to it via
+`%_gpg_sign_cmd_extra_args`, because that command's shape is version-specific: rpm 6 made it
 parametric and stopped repeating `gpg` as `argv[0]`; it also reads the identity
 from `%_openpgp_sign_id`, which defaults to `%_gpg_name`, so the script sets
 both. Measured on both generations —
@@ -521,8 +524,7 @@ orphan path is unreachable through it. The machine needs `rpmsign` built with
 gpg support (a Fedora container will do), `gh` authenticated with write access,
 and the signing key imported with `GPG_KEY_ID`, `GPG_KEY_IDS` and
 `GPG_PASSPHRASE` set. When only one or two assets are outstanding,
-`gh release upload <tag> <file>` by hand is simpler. Or just
-`gh release upload <tag> <file>` them by hand. `check_no_shrink_yum` will refuse
+`gh release upload <tag> <file>` by hand is simpler. `check_no_shrink_yum` will refuse
 to rebuild the repositories until they are back either way.
 
 ### Checking that installs actually work
