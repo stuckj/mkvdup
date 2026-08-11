@@ -65,13 +65,13 @@ WRITE_BUDGET="${WRITE_BUDGET:-450}"
 # what makes a run resumable, so with FORCE=1 every run redoes the same first
 # releases and a backfill larger than one write budget never reaches the end.
 FORCE="${FORCE:-0}"
-# Waits before each upload attempt. The secondary limits are per minute and per
-# hour, and a 403 that lands on the upload half of a replacement has already
-# deleted the asset — so the ladder has to be able to outlast the longer window,
-# because waiting recovers the package where giving up loses it. That is what
-# the last two steps are for; a run that needs them is pathological, and the
-# job's timeout allows for it. Overridable so a test need not sit through it.
-UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900 1800 3600}"
+# Waits before each upload attempt. A 403 that lands on the upload half of a
+# replacement has already deleted the asset, so waiting recovers the package
+# where giving up loses it — hence a ladder long enough to outlast a
+# secondary-limit block. It stops at 1800: the five steps total 51 minutes per
+# release, so even two pathological releases stay inside the job's timeout,
+# where adding an hour-long step would not. Overridable for tests.
+UPLOAD_BACKOFF="${UPLOAD_BACKOFF:-0 60 300 900 1800}"
 # Each release costs four writes (a delete and an upload for each of its two
 # rpms), so staying under 80 a minute needs at least three seconds between
 # them; five leaves room for the release lookup.
@@ -304,9 +304,11 @@ while IFS=$'\t' read -r tag name size url; do
   # rpmsign exits 0 when it has changed nothing: it skips a package that already
   # carries an identical signature, and it cannot distinguish that from a signing
   # backend that produced none. Check the bytes rather than the exit status.
-  if ! python3 "$SCRIPTS/check-rpm-signature.py" "$dst" >/dev/null 2>&1; then
+  # --key as well: on a re-sign the source already carried a signature, so
+  # "there is one" proves nothing. It has to be by a key this run holds.
+  if ! python3 "$SCRIPTS/check-rpm-signature.py" --key "$KEY_IDS" "$dst" >/dev/null 2>&1; then
     failed=$((failed + 1))
-    echo "$tag/$name: rpmsign exited 0 but the package is still unsigned" >> failures.txt
+    echo "$tag/$name: rpmsign exited 0 but the package is not signed by $KEY_IDS" >> failures.txt
     continue
   fi
 
@@ -363,9 +365,7 @@ queued=$((signed + orphans))
 echo 0 > uploaded-count.txt
 if [ "$queued" -eq 0 ]; then
   say "nothing to do"
-  echo "  every published rpm already carries a signature"
-  echo "  (if the repositories were left mid-backfill, rebuild them anyway —"
-  echo "   the repodata records whatever checksums were current when it ran)"
+  echo "::warning::Every published rpm is already signed, so nothing was replaced. If an earlier backfill's rebuild did not finish, the published repodata still records pre-signing checksums — dispatch 'Rebuild Package Repositories'." 
   exit 0
 fi
 

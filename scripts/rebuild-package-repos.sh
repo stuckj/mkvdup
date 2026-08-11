@@ -255,11 +255,11 @@ if ! channel_ready stage/deb-canary stage/rpm-canary mkvdup-canary; then
   # is the wrong answer when a run has just rewritten those packages' bytes: the
   # index would keep advertising pre-signing checksums and dnf would refuse
   # every one. resign-rpms.yml sets this so that case fails instead.
-  if [ "${REQUIRE_ALL_CHANNELS:-0}" = 1 ]; then
-    die "the canary channel is incomplete, and this rebuild must not leave any
-       channel's published index behind — its checksums would no longer match
-       the packages on the releases"
-  fi
+  # Not a die here: this point is ~280 lines before anything is published, so
+  # aborting would leave *every* channel's index untouched — including the one
+  # whose packages were just rewritten, which is the outcome the flag exists to
+  # prevent. Publish what can be published, then fail.
+  CANARY_REQUIRED_BUT_SKIPPED="${REQUIRE_ALL_CHANNELS:-0}"
   DO_CANARY=0
   msg="Canary channel incomplete — its repositories were left exactly as they are, so canary
 users stay on the last good version until a complete canary release is published."
@@ -614,3 +614,13 @@ for attempt in 1 2 3; do
   echo "  push rejected — another writer landed first, retrying from a fresh clone"
 done
 [ "$pushed" = 1 ] || die "could not push gh-pages after 3 attempts"
+
+# Everything publishable has been published by now. A caller that rewrote
+# package bytes asked for every channel, and one of them was skipped, so its
+# published index still records checksums for packages that no longer match.
+if [ "${CANARY_REQUIRED_BUT_SKIPPED:-0}" = 1 ]; then
+  die "the canary channel was incomplete, so its repositories still describe the
+       packages as they were. Everything else has been rebuilt and published.
+       Publish a complete canary release, or delete the incomplete one, then
+       dispatch 'Rebuild Package Repositories' to bring canary back in line."
+fi

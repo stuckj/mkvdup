@@ -24,11 +24,15 @@ new key means re-signing every published rpm and every user re-importing it, so
 this is a decision to make deliberately rather than a default to drift into.
 
 To re-sign after a rotation, dispatch **Re-sign RPMs** as usual — it compares
-each package's signature against `GPG_KEY_ID` and re-signs anything carrying the
-old key, so it resumes across runs exactly as a first backfill does. (`force`
-exists to re-sign packages that are already correct, which is rarely wanted: it
-disables the skip that makes a run resumable, so every run redoes the same first
-releases and the backfill never reaches the end.)
+each package's signature against the key ids in the container's keyring (the
+primary and any subkeys of `GPG_PRIVATE_KEY`) and re-signs anything carrying a
+different one, so it resumes across runs exactly as a first backfill does.
+
+Put only the new key in `GPG_PRIVATE_KEY`: leaving the retired one alongside it
+makes its signatures count as current, and the backfill reports nothing to do.
+(`force` exists to re-sign packages that are already correct, which is rarely
+wanted: it disables the skip that makes a run resumable, so every run redoes the
+same first releases and the backfill never reaches the end.)
 
 ### 2. Export and Add Secrets to GitHub
 
@@ -455,7 +459,9 @@ first full backfill.
 It also paces itself for the per-minute half of that limit: a release costs
 four writes (a delete and an upload for each of its two rpms), so the five
 seconds between them keeps the rate near 48 a minute. A failed upload backs off
-0/60/300/900 seconds.
+0/60/300/900/1800 seconds — long enough to outlast a secondary-limit block,
+since a 403 on the upload half of a replacement has already deleted the asset,
+and short enough that two such releases still fit inside the job's timeout.
 
 The looser `GITHUB_TOKEN` budget of 1000 core requests per hour is checked too
 — roughly 690 for a whole backfill — but it is not usually the binding one.
@@ -472,6 +478,14 @@ leave dnf refusing them on a checksum mismatch: worse than the unsigned state.
 Rebuilding a repository that has genuinely lost a package is what
 `check_no_shrink_yum` prevents; it compares the published package set against
 the release assets and refuses, naming what went missing.
+
+The rebuild that follows a backfill runs with `REQUIRE_ALL_CHANNELS=1`. A normal
+release skips a channel whose newest version is incomplete and carries on, which
+is right when that channel's packages are untouched; after a run that rewrote
+package bytes it is not, because the skipped channel's index would keep
+describing them as they were. So the rebuild publishes everything it can and
+*then* fails, naming the fix: publish a complete canary release, or delete the
+incomplete one, and dispatch **Rebuild Package Repositories**.
 
 It does not rebuild automatically after a **cancelled** run, nor after one that
 failed before replacing anything — the job also requires that at least one asset

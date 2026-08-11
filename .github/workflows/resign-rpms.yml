@@ -154,13 +154,21 @@ jobs:
   # Safe because check_no_shrink_yum compares the published package set against
   # the release assets and refuses to publish an index that has lost any.
   #
+  # Including when this run replaced nothing. A run that finds everything
+  # already signed is the natural response to an earlier rebuild having failed,
+  # and skipping the rebuild there leaves the repodata recording pre-signing
+  # checksums with a green run to say otherwise. Rebuilding is idempotent, so a
+  # needless one costs minutes; a skipped one costs a working repository.
+  #
+  # The empty-string test still matters: no output at all means the job never
+  # reached the counting step, so there is nothing to act on.
+  #
   # !cancelled() rather than always(): a cancelled run is someone stopping the
   # whole thing deliberately, and it may be mid-upload. That case needs a manual
   # rebuild dispatch -- RELEASING.md says so.
   rebuild:
     needs: resign
     if: ${{ !cancelled() && inputs.publish
-        && needs.resign.outputs.uploaded != '0'
         && needs.resign.outputs.uploaded != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
