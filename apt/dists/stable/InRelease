@@ -8,7 +8,7 @@ Codename: stable
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup (current version; see the apt-history release for older versions)
-Date: Wed, 12 Aug 2026 05:02:59 +0000
+Date: Wed, 12 Aug 2026 06:14:45 +0000
 SHA256:
  cc877d55d585969da57da22d9259600064a62d207638f44fee7cfb51f36c5ef8 652 main/binary-amd64/Packages
  9c733c0dba944f26c409da5afcc813838b471e1fbbf464e25b20b184684c2486 465 main/binary-amd64/Packages.gz
@@ -16,8 +16,8 @@ SHA256:
  a725e07a1a8ef06de4a8ddd9f2f4cd144a5f8d8a80e584a7ae928912907683b8 466 main/binary-arm64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCanv+gwAKCRDNt7j4ivzL
-45ahAP97h0O4TpsjByUYYYbfhAavW/mS6H5GYy2eS0VtrDTd8AD/bZmZSVvVBtP4
-F4V2JJIcRV32dBxIVT2u2gd0YXLBOQQ=
-=okHe
+iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCanwPVQAKCRDNt7j4ivzL
+40grAP4pKBOQUwGCmLkrRHuIOxfOVy7htflyHeaDwV4xe4l7BgD8CBZdrOkQOTyS
+FuBv9UnYrdapLQRcWK58KLIpco6j1QA=
+=AyfW
 -----END PGP SIGNATURE-----
