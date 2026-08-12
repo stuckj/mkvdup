@@ -244,12 +244,29 @@ channel_ready() {  # channel_ready <debdir> <rpmdir> <prefix>
 }
 
 channel_ready stage/deb-stable stage/rpm-stable mkvdup \
-  || die "the stable channel is incomplete — refusing to rebuild"
+  || die "the stable channel is incomplete — refusing to rebuild. If a re-signing
+       run deleted an asset without putting it back, it is in that run's
+       resigned-recovery artifact: restore it with 'gh release upload <tag>
+       <file>' rather than deleting the release."
 # Canary is optional. Retiring it, or one malformed canary release, must not stop
 # a stable release from reaching users, so the channel is checked up front and
 # skipped as a whole rather than failing the run part-way through.
 DO_CANARY=1
 if ! channel_ready stage/deb-canary stage/rpm-canary mkvdup-canary; then
+  # Skipping a channel leaves its published index exactly as it is, which is the
+  # right answer when the index still describes the packages on the releases. It
+  # is the wrong answer when a run has just rewritten those packages' bytes: the
+  # index would keep advertising pre-signing checksums and dnf would refuse
+  # every one. resign-rpms.yml sets this so that case fails instead.
+  # Not a die here: this point is ~280 lines before anything is published, so
+  # aborting would leave *every* channel's index untouched — including the one
+  # whose packages were just rewritten, which is the outcome the flag exists to
+  # prevent. Publish what can be published, then fail.
+  # Normalised the way DRY_RUN is: anything but an explicit 0 means "required",
+  # so REQUIRE_ALL_CHANNELS=true enables the gate rather than silently disabling
+  # it.
+  CANARY_REQUIRED_BUT_SKIPPED=1
+  [ "${REQUIRE_ALL_CHANNELS:-0}" != 0 ] || CANARY_REQUIRED_BUT_SKIPPED=0
   DO_CANARY=0
   msg="Canary channel incomplete — its repositories were left exactly as they are, so canary
 users stay on the last good version until a complete canary release is published."
@@ -317,9 +334,11 @@ PY
 # older "current" release. Every other suspicious input here fails loudly; this
 # is the one that would not.
 #
-# It compares the APT index only. A whole release vanishing takes its rpms with
-# its debs, so that case is covered; individual rpm assets disappearing while
-# their debs remain would shrink the YUM index unnoticed.
+# A whole release vanishing takes its rpms with its debs, so the APT count
+# covers that case. Individual rpm assets disappearing while their debs remain
+# would not move it at all, which is why check_no_shrink_yum exists as well —
+# resign-release-rpms.sh replaces rpms one at a time and can leave exactly that
+# asymmetry behind if it fails partway.
 check_no_shrink() {  # check_no_shrink <channel> <release-tag>
   local ch="$1" tag="$2" prev=0 now http
   now=$(grep -c '^Package:' "apt/$ch/Packages")
@@ -345,10 +364,109 @@ check_no_shrink() {  # check_no_shrink <channel> <release-tag>
 }
 
 build_apt_history stable stage/deb-stable mkvdup
+# The YUM equivalent, counting packages rather than Packages stanzas. The
+# published primary.xml is the comparison point because it is what clients
+# actually resolve; a count taken from the staged rpms alone could only ever
+# agree with itself.
+check_no_shrink_yum() {  # check_no_shrink_yum <pages-subdir> <stage-dir>
+  local out="$1" dir="$2" now prev=0 http href declared
+  now=$(find "$dir" -name '*.rpm' | wc -l)
+  http=$(curl -sSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 120 \
+              -o prev-repomd.xml -w '%{http_code}' \
+              "$PAGES_URL/$out/repodata/repomd.xml" 2>/dev/null || true)
+  [ -n "$http" ] || http=000
+  case "$http" in
+    200)
+      # || true: a no-match makes the pipeline fail under errexit, which would
+      # abort here with no output instead of reaching the die below.
+      href=$(grep -oE 'repodata/[a-f0-9]+-primary\.xml\.gz' prev-repomd.xml | head -1 || true)
+      [ -n "$href" ] || die "the published $out repomd.xml names no primary.xml"
+      curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 \
+           -o prev-primary.gz "$PAGES_URL/$out/$href" \
+        || die "cannot fetch the published $out primary.xml to compare against"
+      # Decompress to a file and check the status. Piping into grep hides it:
+      # a truncated 200 makes gzip fail inside a process substitution, grep
+      # prints 0, and the comparison below would silently be skipped on exactly
+      # the sort of incident this guard exists for.
+      gzip -dc prev-primary.gz > prev-primary.xml \
+        || die "the published $out primary.xml did not decompress — refusing to
+       compare against a partial fetch"
+      # Counted from the same hrefs the comparison uses, and cross-checked
+      # against the packages="N" the index declares. Counting with a separate
+      # pattern let a published index whose markup differed report prev=0,
+      # which skips the comparison and looks exactly like "nothing published".
+      # Basenames: the published index carries bare names under xml:base, but
+      # an older layout prefixed them with a directory, and comparing those
+      # against find's %f would call every package missing.
+      grep -oE 'href="[^"]+\.rpm"' prev-primary.xml \
+        | sed 's/^href="//; s/"$//; s|.*/||' | LC_ALL=C sort -u \
+        > "$out-prev-names.txt" || true
+      prev=$(wc -l < "$out-prev-names.txt")
+      declared=$(grep -oE 'packages="[0-9]+"' prev-primary.xml | head -1 \
+                 | grep -oE '[0-9]+' || echo "")
+      # Both patterns failing looks exactly like "nothing published yet", which
+      # skips the comparison below. A 200 that parses as neither is a listing
+      # this script cannot reason about.
+      if [ "$prev" -eq 0 ] && [ -z "$declared" ]; then
+        die "the published $out index parsed as neither package locations nor a
+       package count — refusing to compare against a listing this script cannot
+       read"
+      fi
+      if [ -n "$declared" ] && [ "$declared" != "$prev" ]; then
+        die "the published $out index declares $declared packages but $prev
+       locations could be read from it — refusing to compare against a listing
+       this script cannot parse"
+      fi ;;
+    404) prev=0 ;;   # nothing published yet, so nothing to shrink
+    *)   die "cannot read the published $out repodata to compare against (HTTP $http)" ;;
+  esac
+  # Compare the sets, not just the totals: a rebuild that adds as many packages
+  # as an earlier failure dropped nets out, and a count would call that
+  # unchanged. Comparing names also lets the failure say which package went.
+  : > "$out-gone.txt"
+  if [ "$prev" -gt 0 ]; then
+    # LC_ALL=C throughout: en_US collation ignores the '-' and '.' in package
+    # names, so sort's order and comm's byte comparison disagree and comm warns
+    # "not in sorted order" and can miss entries.
+    find "$dir" -name '*.rpm' -printf '%f\n' | LC_ALL=C sort -u > "$out-now-names.txt"
+    LC_ALL=C comm -23 "$out-prev-names.txt" "$out-now-names.txt" > "$out-gone.txt"
+  fi
+  rm -f prev-repomd.xml prev-primary.gz prev-primary.xml
+  # Recorded rather than fatal, so the other channel is still examined and one
+  # report names everything missing. The caller decides what to do about it.
+  if [ -s "$out-gone.txt" ] && [ "${ALLOW_SHRINK:-0}" != 1 ]; then
+    SHRUNK_CHANNELS="${SHRUNK_CHANNELS:+$SHRUNK_CHANNELS }$out"
+    { echo "  $out has lost:"; sed 's/^/    /' "$out-gone.txt"; } >&2
+  fi
+  echo "  $out: $now packages (currently published: $prev)"
+}
+
 check_no_shrink stable apt-history
 if [ "$DO_CANARY" = 1 ]; then
   build_apt_history canary stage/deb-canary mkvdup-canary
   check_no_shrink canary apt-history-canary
+fi
+
+# Both YUM channels are compared before either index is built. Doing it inside
+# the build loop made the outcome depend on which channel came first: a loss in
+# the second was never reported when the first had one too.
+say "check the published YUM indexes against the release assets"
+SHRUNK_CHANNELS=""
+check_no_shrink_yum yum stage/rpm-stable
+if [ "$DO_CANARY" = 1 ]; then
+  check_no_shrink_yum yum-canary stage/rpm-canary
+fi
+if [ -n "$SHRUNK_CHANNELS" ]; then
+  die "the packages listed above are published in [$SHRUNK_CHANNELS] but are no
+       longer among the release assets. If a release was deliberately deleted,
+       re-run with ALLOW_SHRINK=1. Otherwise a re-signing run deleted them
+       without putting them back: restore them from that run's resigned-recovery
+       artifact with 'gh release upload <tag> <file>', then run this again.
+
+       Nothing is published when this fires, including channels that are intact.
+       If a re-signing run already replaced packages in one of those, they keep a
+       stale checksum until this is resolved, so it wants doing now rather than
+       later."
 fi
 gpg --armor --export "$KEY" > apt/gpg-key.asc
 # gpg exits 0 and writes nothing if the key id does not resolve, which would
@@ -450,6 +568,16 @@ bash "$SCRIPTS/repo-index.sh" > pages/index.html
 echo "  generated tree: $(du -sh pages | cut -f1), $(find pages -type f | wc -l) files"
 
 if [ "$DRY_RUN" = 1 ]; then
+  # The caller asked for every channel and one was skipped; say so here too,
+  # or a dry run cannot preview whether the real rebuild will pass.
+  if [ "${CANARY_REQUIRED_BUT_SKIPPED:-0}" = 1 ]; then
+    die "the canary channel is incomplete, so a real run would publish the rest
+       and then fail. First check whether a re-signing run deleted one of its
+       assets without putting it back — the run's resigned-recovery artifact
+       holds the copy, and 'gh release upload <tag> <file>' restores it. Only if
+       the release is genuinely half-built should you publish a complete canary
+       release or delete the incomplete one."
+  fi
   say "dry run — publishing nothing"
   echo "  APT history and gh-pages tree left in $WORK"
   exit 0
@@ -531,3 +659,16 @@ for attempt in 1 2 3; do
   echo "  push rejected — another writer landed first, retrying from a fresh clone"
 done
 [ "$pushed" = 1 ] || die "could not push gh-pages after 3 attempts"
+
+# Everything publishable has been published by now. A caller that rewrote
+# package bytes asked for every channel, and one of them was skipped, so its
+# published index still records checksums for packages that no longer match.
+if [ "${CANARY_REQUIRED_BUT_SKIPPED:-0}" = 1 ]; then
+  die "the canary channel was incomplete, so its repositories still describe the
+       packages as they were. Everything else has been rebuilt and published.
+       First check whether a re-signing run deleted one of its assets without
+       putting it back — the run's resigned-recovery artifact holds the copy, and
+       'gh release upload <tag> <file>' restores it. Only if the release is
+       genuinely half-built should you publish a complete canary release or
+       delete the incomplete one. Then dispatch 'Rebuild Package Repositories'."
+fi

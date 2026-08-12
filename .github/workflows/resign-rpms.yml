@@ -1,0 +1,217 @@
+name: Re-sign Published RPMs
+
+# Adds an OpenPGP signature to published rpms that lack one. Packages built
+# before rpm signing existed are unsigned, and dnf's gpgcheck=1 rejects them, so
+# the archive repository cannot serve exactly the old versions it exists for.
+#
+# Runs in a Fedora container because signing needs rpmsign built with gpg
+# support. rpmsign also exits 0 when it has signed nothing, so the script checks
+# the resulting bytes rather than the exit status.
+#
+# Replacing an asset is a delete followed by an upload -- the GitHub API has no
+# atomic replace -- and the release asset is the only copy of each package. The
+# script guards that path; this workflow keeps the signed copies retrievable if
+# it fails anyway, and rebuilds the repositories afterwards so the YUM repodata
+# stops referring to pre-signing checksums.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Replace the published assets (otherwise sign, verify and report only)'
+        type: boolean
+        default: false
+      confirm:
+        description: 'To publish, type RESIGN (ignored when publish is unset)'
+        required: false
+        default: ''
+      tags:
+        description: 'Optional space-separated release tags to limit to, e.g. "v1.9.0 v1.9.1"'
+        required: false
+        default: ''
+      force:
+        description: 'Re-sign packages already signed by the current key (rarely wanted; a key rotation does not need it)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Shared with release.yml's publish-repo job and rebuild-package-repos.yml.
+# Replacing assets while a rebuild is reading them would index checksums for
+# packages that are being overwritten underneath it.
+concurrency:
+  group: package-repositories
+  cancel-in-progress: false
+  # Load-bearing, as it is on the pacman group: cancel-in-progress only spares
+  # the run already going. A *pending* one is cancelled by default to make room
+  # for a newcomer, and this workflow can hold the group for hours, so a
+  # release's publish-repo could sit pending behind it and then be dropped.
+  queue: max
+
+jobs:
+  resign:
+    runs-on: ubuntu-latest
+    # Not a pinned release: an EOL Fedora keeps working only until its content
+    # moves to the archive mirrors. Nothing here depends on a specific rpm
+    # version, and the script verifies the signature it gets before uploading,
+    # so a change in rpmsign fails the run rather than publishing something odd.
+    container: fedora:latest
+    # Downloads and re-uploads roughly 500 MiB each way over ~270 assets. The
+    # headroom is for the retry ladder, whose last step waits out an hourly
+    # rate-limit window rather than abandoning a half-replaced asset.
+    timeout-minutes: 240
+    outputs:
+      uploaded: ${{ steps.count.outputs.uploaded }}
+    steps:
+      - name: Check confirmation
+        if: ${{ inputs.publish }}
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [[ "$CONFIRM" == "RESIGN" ]] || {
+            echo "::error::Publishing overwrites the only copy of each package. Type RESIGN to confirm."; exit 1; }
+
+      # Ahead of checkout: the Fedora image has no git, and actions/checkout
+      # silently falls back to a tarball download without it.
+      - name: Install tools
+        run: dnf install -y --setopt=install_weak_deps=False
+             git rpm-sign gnupg2 gh python3 curl tar findutils
+
+      - uses: actions/checkout@v7
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
+          # Every id that counts as ours: gpg signs with a signing subkey when
+          # the key has one, and the signature then carries the subkey's id, not
+          # the primary's. Comparing against the primary alone would read every
+          # package as signed by a stranger and re-sign it forever.
+          echo "GPG_KEY_IDS=$(gpg --list-secret-keys --with-colons | awk -F: '/^(sec|ssb):/ {print $5}' | paste -sd,)" >> "$GITHUB_ENV"
+
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
+
+      - name: Re-sign
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_IDS: ${{ env.GPG_KEY_IDS }}
+          PUBLISH: ${{ inputs.publish && '1' || '0' }}
+          ONLY_TAGS: ${{ inputs.tags }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: bash scripts/resign-release-rpms.sh "${RUNNER_TEMP}/resign"
+
+      - name: Record how many assets were replaced
+        id: count
+        if: always()
+        run: |
+          # Empty when the file is absent, not 0. The script writes it just
+          # before the upload loop, so an absent file means the run ended before
+          # it could upload anything -- a failed confirmation, a bad tag, a
+          # download or signing failure -- and the rebuild below must not treat
+          # that as "ran, replaced nothing".
+          n=$(cat "${RUNNER_TEMP}/resign/uploaded-count.txt" 2>/dev/null || true)
+          echo "uploaded=$n" >> "$GITHUB_OUTPUT"
+          echo "replaced ${n:-no} asset(s)"
+
+      # A sample is enough to eyeball a run that published nothing. always():
+      # a dry run that failed on one package of 278 is exactly when the ones
+      # that did sign are worth looking at.
+      - name: Upload a sample of the re-signed packages
+        if: ${{ always() && !inputs.publish }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: resigned-sample
+          path: ${{ runner.temp }}/resign/sample/*.rpm
+          if-no-files-found: warn
+          retention-days: 7
+
+      # If a publish run dies or is cancelled, an asset may already have been
+      # deleted with its replacement never uploaded. The container goes away
+      # with the only remaining copy, so keep all of them.
+      - name: Preserve the signed packages for recovery
+        if: ${{ inputs.publish && (failure() || cancelled()) }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: resigned-recovery
+          # The manifests come too: signed/** alone does not say which assets
+          # were already replaced and which the run never reached.
+          path: |
+            ${{ runner.temp }}/resign/signed/**
+            ${{ runner.temp }}/resign/*.txt
+            ${{ runner.temp }}/resign/.resign-marker
+          # Without this the marker is dropped -- upload-artifact skips dotfiles
+          # -- and the script then refuses to adopt the unpacked directory,
+          # which is the whole point of keeping it.
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Every replaced asset has a new sha256 while the published repodata still
+  # records the old one, so dnf fails a checksum for anything already replaced.
+  #
+  # Runs after a *failed* publish too. A failure partway through has already
+  # replaced some assets, and skipping the rebuild would leave the repodata
+  # advertising their pre-signing checksums -- dnf then refuses those packages
+  # outright, which is worse than the unsigned state.
+  #
+  # check_no_shrink_yum makes that safe: it compares the published package set
+  # against the release assets and refuses to publish an index that has lost
+  # any. Note what that means when an asset really was lost -- the rebuild
+  # refuses, so the already-replaced packages keep their stale checksums until
+  # the missing one is restored. It names what to restore.
+  #
+  # Including when this run replaced nothing. A run that finds everything
+  # already signed is the natural response to an earlier rebuild having failed,
+  # and skipping the rebuild there leaves the repodata recording pre-signing
+  # checksums with a green run to say otherwise. Rebuilding is idempotent, so a
+  # needless one costs minutes; a skipped one costs a working repository.
+  #
+  # The empty-string test still matters: no output at all means the job never
+  # reached the counting step, so there is nothing to act on.
+  #
+  # !cancelled() rather than always(): a cancelled run is someone stopping the
+  # whole thing deliberately, and it may be mid-upload. That case needs a manual
+  # rebuild dispatch -- RELEASING.md says so.
+  rebuild:
+    needs: resign
+    if: ${{ !cancelled() && inputs.publish
+        && needs.resign.outputs.uploaded != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c gnupg
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')" >> "$GITHUB_ENV"
+
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
+
+      - name: Rebuild the package repositories
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DRY_RUN: '0'
+          # This run has just rewritten package bytes. Skipping a channel would
+          # leave its published index advertising the old checksums, so an
+          # incomplete channel has to fail rather than be passed over.
+          REQUIRE_ALL_CHANNELS: '1'
+        run: bash scripts/rebuild-package-repos.sh "${RUNNER_TEMP}/repobuild"

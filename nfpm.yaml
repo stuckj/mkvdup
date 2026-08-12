@@ -96,3 +96,16 @@ contents:
 rpm:
   group: Applications/Multimedia
   summary: MKV deduplication tool using FUSE
+
+  # dnf's gpgcheck=1 verifies a signature stored inside the package, which a
+  # signed repomd.xml cannot substitute for -- unlike apt, where a signed
+  # Release covers the packages through their hashes.
+  #
+  # RPM_SIGNING_KEY_FILE points at the exported private key and is set only by
+  # the release workflow; NFPM_PASSPHRASE unlocks it. Unset -- local builds,
+  # forks, anything without the secret -- nfpm expands this to the empty string
+  # and builds an *unsigned* package with exit 0, so the release workflow runs
+  # scripts/check-rpm-signature.py to make sure that never ships. A bad
+  # passphrase or an unreadable key file fails the build outright.
+  signature:
+    key_file: "${RPM_SIGNING_KEY_FILE}"

@@ -11,9 +11,33 @@ AUR — an AUR account:
 
 ```bash
 gpg --full-generate-key
-# Choose: RSA and RSA, 4096 bits, no expiration
-# Use your GitHub email address
+# Use your GitHub email address, no expiration.
+# Algorithm: see the note below before choosing — ed25519 is what is in use,
+# RSA-4096 is what EL8 can verify.
 ```
+
+The key in use today is **ed25519**, not RSA. That choice has one consequence
+worth knowing before rotating it: rpm gained EdDSA support in 4.16.0, so
+EL8's rpm 4.14 cannot import an ed25519 key and cannot verify packages signed
+with one. Measured on `almalinux:8` — `rpm --import` fails with
+`key 1 import failed`, and a `gpgcheck=1` install then fails with
+`GPG check FAILED`. RSA-4096 verifies everywhere including EL8. Generating a
+new key means re-signing every published rpm and every user re-importing it, so
+this is a decision to make deliberately rather than a default to drift into.
+
+To re-sign after a rotation, dispatch **Re-sign RPMs** as usual — it compares
+each package's signature against the key ids in the container's keyring (the
+primary and any subkeys of `GPG_PRIVATE_KEY`) and re-signs anything carrying a
+different one, so it resumes across runs exactly as a first backfill does.
+
+Put only the new key in `GPG_PRIVATE_KEY`. Leaving the retired one alongside it
+makes its signatures count as current, so the backfill reports nothing to do —
+and worse, `GPG_KEY_ID` is taken from the *first* `sec` line `gpg
+--list-secret-keys` prints, which is keyring order rather than import order, so
+a run could sign every package with the key you are retiring.
+(`force` exists to re-sign packages that are already correct, which is rarely
+wanted: it disables the skip that makes a run resumable, so every run redoes the
+same first releases and the backfill never reaches the end.)
 
 ### 2. Export and Add Secrets to GitHub
 
@@ -157,6 +181,9 @@ echo "deb [signed-by=/usr/share/keyrings/mkvdup.gpg arch=amd64,arm64] https://gi
 
 #### YUM/DNF (RHEL/Fedora) - Canary
 
+Requires rpm 4.16 or newer, as the stable repository does — see the
+[note on the signing key](#1-generate-a-gpg-key-if-you-dont-have-one).
+
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup-canary.repo << 'EOF'
 [mkvdup-canary]
@@ -233,6 +260,15 @@ sudo apt update && sudo apt install mkvdup=1.8.0
 
 Indexes every version published; there is no separate archive repository.
 
+Requires **rpm 4.16 or newer** (Fedora, RHEL/Alma/Rocky 9 and 10) — see the
+[note on the signing key](#1-generate-a-gpg-key-if-you-dont-have-one).
+
+This `.repo` snippet is published in **six** places — stable and canary, in
+`README.md`, in this file, and in the landing page `scripts/repo-index.sh`
+generates. All six carry the caveat, and they change together. Two further
+copies live in `.github/workflows/verify-rpm-install.yml`, which installs from
+them; those need no caveat but do need the same `baseurl`.
+
 ```bash
 sudo tee /etc/yum.repos.d/mkvdup.repo << 'EOF'
 [mkvdup]
@@ -303,7 +339,7 @@ about 8 MB per release) because the indexes are derived from the packages
 themselves. That is transient runner scratch, never committed, but it is what
 the job's 60-minute bound has to accommodate as the archive grows.
 
-Both writers share a `package-repositories` concurrency group, so a manual
+All three writers share a `package-repositories` concurrency group, so a manual
 rebuild and a release queue rather than interleave. Replacing the `apt-history`
 assets is still not atomic — release assets cannot be swapped as a set — so a
 client that fetches `InRelease` and `Packages.gz` across that window may need to
@@ -327,6 +363,190 @@ limit measures. It does not shrink the repository: the old package blobs stay in
 `gh-pages` history, because the script commits on top of the branch rather than
 replacing its history. That is deliberate — force-pushing an orphan would drop
 commits from the benchmark and coverage workflows.
+
+### Package signing
+
+The two package formats need different things, because they check different
+things:
+
+| | What is signed | Verified by |
+|---|---|---|
+| **deb** | the repository's `Release` / `InRelease`, which covers each package through its hash | `apt update`, via `signed-by` |
+| **rpm** | a signature *inside every package*, plus `repomd.xml.asc` | `gpgcheck=1` / `repo_gpgcheck=1` |
+
+So a signed index is enough for apt and is not enough for dnf. rpms are signed
+at build time by nfpm: the `build` job writes `secrets.GPG_PRIVATE_KEY` to a
+file, points `RPM_SIGNING_KEY_FILE` at it, and passes the passphrase as
+`NFPM_PASSPHRASE`.
+
+nfpm signs only when that path resolves to a readable key, and **builds an
+unsigned package with exit 0 when it does not** — a missing secret would ship a
+release that no `gpgcheck=1` client can install. `scripts/check-rpm-signature.py`
+runs straight after the build and fails the job if the signature is absent. A
+wrong passphrase or an unreadable key file fails nfpm outright.
+
+Verify a published package by hand with:
+
+```bash
+sudo rpm --import https://stuckj.github.io/mkvdup/yum/gpg-key.asc
+rpm -Kv mkvdup-1.9.1-1.x86_64.rpm
+# Header V4 EdDSA/SHA256 Signature, key ID 8afccbe3: OK     <- signed
+# Header V4 EdDSA/SHA256 Signature, key ID 8afccbe3: NOKEY  <- signed, key not imported
+# digests OK, with no Signature line at all                 <- NOT signed
+```
+
+Import the key first: without it a correctly signed package reports `NOKEY`,
+which is easy to misread as unsigned.
+
+That wording is rpm 4's (EL9, EL10). rpm 6 — Fedora 43 and newer — prints
+`... OpenPGP ...` and, once the key is imported, gives the full fingerprint
+rather than the short key id. The distinction that matters is the same either
+way: a `Signature`/`OpenPGP` line at all means signed, `digests OK` alone means
+not.
+
+### Re-signing already-published rpms
+
+Every rpm published before signing existed is unsigned, which breaks
+`gpgcheck=1` for exactly the old versions the archive repository exists to
+serve. **Re-sign RPMs** (`resign-rpms.yml`) fixes them in place.
+
+It runs in a Fedora container because signing needs `rpmsign` built with gpg
+support. It leaves rpm's own signing command alone and only adds arguments to it via
+`%_gpg_sign_cmd_extra_args`, because that command's shape is version-specific: rpm 6 made it
+parametric and stopped repeating `gpg` as `argv[0]`; it also reads the identity
+from `%_openpgp_sign_id`, which defaults to `%_gpg_name`, so the script sets
+both. Measured on both generations —
+replacing the command signs on rpm 4.20.1 and fails on rpm 6.0.2 with
+`/usr/bin/gpg exec failed (2)`, while the extra-args form signs on both, leaving
+the package byte-identical apart from a 128-byte signature.
+
+It signs with `--resign` rather than `--addsign` for the same reason: rpm 6
+refuses to add a second header signature and deletes the existing one only
+under `--resign`, which is what re-signing after a key rotation needs. rpm 4
+treats the two as identical (measured: `--addsign` on an already-signed package
+exits 0 on rpm 4.20.1 and 1 on rpm 6.0.2; `--resign` works on both). For each published rpm it downloads the asset, checks the download is
+the size the release says it is, signs it if it is not already signed, and
+checks two more things before anything is uploaded: that a signature is now
+present, and that the main header and payload are **byte-identical** to the
+original, so signing cannot quietly alter a package. `rpmsign` exits 0 when it
+has changed nothing, so none of these rely on its exit status. Already-signed
+packages are skipped, so re-running is cheap — and a run that stops partway
+resumes.
+
+Nothing is uploaded unless `publish` is set *and* `confirm` is `RESIGN`. Run it
+once without publishing first — the default — and read the counts.
+
+Replacing an asset is a **delete followed by an upload** — the GitHub API has
+no atomic replace — and the release asset is the only copy of that package. So:
+
+- Uploads are retried, and a final pass re-reads every release to confirm each
+  replacement is actually present.
+- The API budget is checked **before each release**, not once at the start, and
+  a run that cannot afford the next one stops with every release it started
+  finished. Because already-signed packages are skipped, re-running later simply
+  resumes.
+- If a publish run fails or is cancelled, the signed packages are uploaded as
+  the `resigned-recovery` artifact — the container is otherwise destroyed
+  holding the only remaining copy of anything already deleted.
+
+**A full backfill does not fit in one run, by design.** GitHub allows "no more
+than 80 content-generating requests per minute and no more than 500
+content-generating requests per hour". Replacing an asset is a delete plus an
+upload, so the ~278 published rpms need ~556 writes — more than one hour allows.
+
+Rather than run until a 403 lands between a delete and its upload, the script
+tracks the writes it has issued and stops cleanly at `WRITE_BUDGET` (450),
+finishing whatever release it was on. It stops on the clock too, at
+`TIME_BUDGET` (three hours against a four-hour job timeout): a release that
+exhausts the retry ladder costs 51 minutes and only 20 writes, so the write
+budget alone would not keep the run inside its timeout — and a job killed by
+its timeout can die between a delete and its upload.
+
+Releases are replaced newest first, so the version `dnf install mkvdup`
+resolves to is fixed by the first run and the archive catches up in the
+second. That run exits **0** with a warning, the
+repositories are rebuilt for what did change, and re-running an hour later
+carries on: already-signed packages are skipped. Expect **two runs** for the
+first full backfill.
+
+It also paces itself for the per-minute half of that limit: a release costs
+four writes (a delete and an upload for each of its two rpms), so the five
+seconds between them keeps the rate near 48 a minute. A failed upload backs off
+0/60/300/900/1800 seconds — long enough to outlast a secondary-limit block,
+since a 403 on the upload half of a replacement has already deleted the asset,
+and short enough that two such releases still fit inside the job's timeout.
+
+The looser `GITHUB_TOKEN` budget of 1000 core requests per hour is checked too
+— roughly 690 for a whole backfill — but it is not usually the binding one.
+Still, do not run a release alongside this.
+
+The `tags` input limits a run to named releases, matched exactly; an unknown tag
+fails the run rather than narrowing it silently.
+
+Every replaced asset gets a new sha256 while the published repodata still
+records the old one, so the workflow runs `rebuild-package-repos.sh` in a
+following job — after a successful run, a stop-short, **and a failure**. A
+failure partway has already replaced some assets, and skipping the rebuild would
+leave dnf refusing them on a checksum mismatch: worse than the unsigned state.
+Rebuilding a repository that has genuinely lost a package is what
+`check_no_shrink_yum` prevents; it compares the published package set against
+the release assets and refuses, naming what went missing.
+
+The rebuild that follows a backfill runs with `REQUIRE_ALL_CHANNELS=1`. A normal
+release skips a channel whose newest version is incomplete and carries on, which
+is right when that channel's packages are untouched; after a run that rewrote
+package bytes it is not, because the skipped channel's index would keep
+describing them as they were. So the rebuild publishes everything it can and
+*then* fails, naming the fix: publish a complete canary release, or delete the
+incomplete one, and dispatch **Rebuild Package Repositories**.
+
+It does not rebuild automatically after a **cancelled** run, nor after one that
+never started — a failed confirmation check, say, where the signing script never
+ran and so reported no count at all. A run that *did* run and replaced nothing
+still rebuilds, because that is the natural way to repair a repository an
+earlier rebuild left stale. Dispatch **Rebuild Package Repositories** by hand afterwards.
+A manual invocation of the script must likewise dispatch the rebuild itself.
+
+**Recovering a package that was deleted but never replaced.** The workflow gets
+a fresh work directory each dispatch, so the script's own orphan detection —
+which spots a signed copy on disk whose release no longer lists it — only fires
+if you give it that directory back. Download the `resigned-recovery` artifact,
+unpack it over an empty work directory (it carries `signed/`, the manifests and
+the `.resign-marker` the script needs to adopt the directory), and run
+`scripts/resign-release-rpms.sh` against that directory **locally** with
+`PUBLISH=1`. Outstanding packages are uploaded before anything else — though
+only once the signing pass over the rest has finished without error, since
+nothing is uploaded from a run that failed to sign something.
+
+It has to be local. The workflow starts every run on a fresh runner with an
+empty `RUNNER_TEMP`, so a dispatch can never see the unpacked tree and the
+orphan path is unreachable through it. The machine needs `rpmsign` built with
+gpg support (a Fedora container will do), `gh` authenticated with write access,
+and the signing key imported with `GPG_KEY_ID`, `GPG_KEY_IDS` and
+`GPG_PASSPHRASE` set. When only one or two assets are outstanding,
+`gh release upload <tag> <file>` by hand is simpler. `check_no_shrink_yum` will refuse
+to rebuild the repositories until they are back either way.
+
+### Checking that installs actually work
+
+**Verify RPM Installs** (`verify-rpm-install.yml`) installs from the live
+repository across Fedora, Alma/Rocky 9 and Alma 10 using the `.repo` snippet
+README.md publishes — `gpgcheck=1`, no `repo_gpgcheck` — covering the current
+version, a pinned older version and a canary. It then asserts each installed
+package records a signing key ID, so the check cannot pass on an unsigned
+package if `gpgcheck` ever stops being enforced. A final step re-runs the
+install with `repo_gpgcheck=1`, labelled as stricter than anything documented.
+
+It is the only check that the published instructions work end to end; the
+release workflow only proves a signature exists on the package it just built,
+not that a real dnf accepts what is on the server.
+
+**It is dispatch-only.** Nothing runs it after a release or on a schedule, so it
+does not by itself prevent another #220 — it makes the check one dispatch away.
+Adding a `schedule:` trigger would close that gap.
+
+EL8 is deliberately not in that matrix — see the note under
+[Generate a GPG Key](#1-generate-a-gpg-key-if-you-dont-have-one).
 
 ### Migrating an existing client
 
@@ -578,6 +798,13 @@ and helpers then show — regenerate it whenever the PKGBUILD changes. The workf
 - Verify `GPG_PRIVATE_KEY` secret contains the full armored key
 - Verify `GPG_PASSPHRASE` is correct
 - Check that the key hasn't expired
+- `Failed to create signatures: ... private key checksum failure` from nfpm means
+  `GPG_PASSPHRASE` does not match `GPG_PRIVATE_KEY`
+- `UNSIGNED  ./mkvdup-…rpm` and `1 of 1 package(s) carry no signature` from the
+  build job means `RPM_SIGNING_KEY_FILE` was empty, so nfpm skipped signing and
+  exited 0 — check the *Stage the rpm signing key* step ran
+- `key 1 import failed` on a user's machine is not a key problem: their rpm
+  predates 4.16 and cannot read ed25519 keys
 
 ### Repository Not Updating
 

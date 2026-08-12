@@ -64,6 +64,11 @@ sudo apt install mkvdup=1.8.0      # pin one</pre>
 
   <h2>RHEL/CentOS/Fedora (YUM/DNF)</h2>
   <p>Indexes every version published; no separate archive repository is needed.</p>
+  <p><strong>Requires rpm 4.16 or newer</strong> &mdash; Fedora, RHEL/Alma/Rocky 9
+  and 10. Packages are signed with an ed25519 key, and rpm only learned to read
+  EdDSA signatures in 4.16.0. EL8 ships rpm 4.14, which cannot import the key
+  (<code>key 1 import failed</code>), so <code>gpgcheck=1</code> cannot be
+  satisfied there.</p>
   <pre>
 # Add the repository
 sudo tee /etc/yum.repos.d/mkvdup.repo &lt;&lt; 'REPO'
@@ -124,6 +129,8 @@ sudo apt update
 sudo apt install mkvdup-canary</pre>
 
   <h3>RHEL/CentOS/Fedora (YUM/DNF) - Canary</h3>
+  <p>Same <strong>rpm 4.16 or newer</strong> requirement as the stable
+  repository above.</p>
   <pre>
 # Add the canary repository
 sudo tee /etc/yum.repos.d/mkvdup-canary.repo &lt;&lt; 'REPO'

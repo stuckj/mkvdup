@@ -1,0 +1,127 @@
+name: Verify RPM Installs
+
+# Installs mkvdup from the live YUM repository using the .repo snippet README.md
+# publishes, and asserts the installed package is actually signed. Nothing else
+# checks that the published install instructions work: the release workflow
+# proves a signature exists on the package it just built, not that a real dnf
+# accepts what is on the server.
+#
+# Dispatch-only. It does not run after a release, so it does not by itself
+# prevent a repeat of #220 -- it makes the check one dispatch away.
+#
+# EL8 is deliberately absent. Its rpm 4.14 predates PGPPUBKEYALGO_EDDSA
+# (rpm 4.16.0), so it cannot import the ed25519 signing key at all -- see the
+# RPM support note in README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      old_version:
+        description: 'Older stable version to pin-install from the archive, e.g. 1.8.0'
+        required: false
+        default: '1.8.0'
+      test_canary:
+        description: 'Also install from the canary repository'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  dnf:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - fedora:latest
+          # A release behind, and a distinct image: fedora:latest currently
+          # resolves to the same digest as the newest numbered tag.
+          - fedora:43
+          - almalinux:10
+          - almalinux:9
+          - rockylinux/rockylinux:9
+    container: ${{ matrix.image }}
+    name: ${{ matrix.image }}
+    timeout-minutes: 30
+    steps:
+      - name: Report rpm version
+        run: rpm --version
+
+      # Byte-for-byte the snippet in README.md. Anything stricter -- adding
+      # repo_gpgcheck, say -- would test a configuration no user was told to
+      # use, and could pass or fail for reasons the documented one never hits.
+      - name: Configure the repository as documented
+        run: |
+          cat > /etc/yum.repos.d/mkvdup.repo <<'EOF'
+          [mkvdup]
+          name=mkvdup
+          baseurl=https://stuckj.github.io/mkvdup/yum
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://stuckj.github.io/mkvdup/yum/gpg-key.asc
+          EOF
+
+      - name: Install the current version
+        run: |
+          dnf install -y mkvdup
+          mkvdup --version
+          rpm -q mkvdup
+
+      # `dnf install` succeeding under gpgcheck=1 already implies a good
+      # signature, but only while gpgcheck is really in force. Asserting the
+      # installed package records a key ID fails loudly if that ever stops
+      # being true; an unsigned package shows `Signature : (none)`.
+      #
+      # Unanchored on purpose: rpm <= 4.20 puts the detail on the "Signature :"
+      # line, while rpm 6 prints an indented continuation line instead
+      # (rpmpopt.in `Signature   :%|OPENPGP?{[\n  %{OPENPGP:pgpsig}]}`), so an
+      # anchored match fails on Fedora for a correctly signed package. Both
+      # emit "Key ID <id>" (lib/formats.c and lib/formats.cc).
+      - name: Assert the installed package is signed
+        run: |
+          rpm -qi mkvdup | grep -i -A1 '^Signature'
+          rpm -qi mkvdup | grep -qi 'Key ID'
+
+      - name: Install a pinned older version from the archive
+        env:
+          OLD: ${{ inputs.old_version }}
+        run: |
+          dnf remove -y mkvdup
+          dnf list --showduplicates mkvdup | tail -5
+          dnf install -y "mkvdup-${OLD}"
+          rpm -q mkvdup | grep -F "${OLD}"
+          rpm -qi mkvdup | grep -qi 'Key ID'
+
+      - name: Install from the canary repository
+        if: ${{ inputs.test_canary }}
+        run: |
+          cat > /etc/yum.repos.d/mkvdup-canary.repo <<'EOF'
+          [mkvdup-canary]
+          name=mkvdup-canary
+          baseurl=https://stuckj.github.io/mkvdup/yum-canary
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://stuckj.github.io/mkvdup/yum-canary/gpg-key.asc
+          EOF
+          dnf install -y mkvdup-canary
+          mkvdup-canary --version
+          rpm -qi mkvdup-canary | grep -qi 'Key ID'
+
+      # repo_gpgcheck is not in the documented snippet; this is a separate,
+      # stricter check that repomd.xml.asc verifies, run last so a failure here
+      # cannot be mistaken for the documented install being broken.
+      - name: Also check repo_gpgcheck (stricter than documented)
+        run: |
+          # Separately: dnf fails the whole transaction on an unmatched spec, so
+          # removing both at once leaves mkvdup installed when canary is not,
+          # and the install below then does nothing.
+          dnf remove -y mkvdup || true
+          dnf remove -y mkvdup-canary || true
+          rm -f /etc/yum.repos.d/mkvdup-canary.repo
+          sed -i 's/^gpgcheck=1/gpgcheck=1\nrepo_gpgcheck=1/' /etc/yum.repos.d/mkvdup.repo
+          dnf clean all
+          rpm -q mkvdup && { echo "::error::mkvdup still installed; the check below would be a no-op"; exit 1; }
+          dnf install -y mkvdup
+          rpm -q mkvdup
