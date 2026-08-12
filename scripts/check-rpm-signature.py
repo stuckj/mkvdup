@@ -86,9 +86,15 @@ def openpgp_packets(blob):
             elif first < 224:
                 length = ((first - 192) << 8) + blob[i + 1] + 192
                 i += 2
-            else:
+            elif first == 255:
                 length = struct.unpack(">I", blob[i + 1:i + 5])[0]
                 i += 5
+            else:
+                # 224-254 is a partial body length (RFC 4880 4.2.2.4), legal
+                # only for literal, compressed and encrypted data packets and
+                # so never for the signature packets read here. Reading it as
+                # the 5-octet form would take a length from the wrong offset.
+                return
         else:                                  # old format
             tag = (c & 0x3C) >> 2
             size = {0: 1, 1: 2, 2: 4}.get(c & 0x03)
