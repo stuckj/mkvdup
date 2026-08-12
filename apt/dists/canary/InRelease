@@ -8,7 +8,7 @@ Codename: canary
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup-canary (current version; see the apt-history release for older versions)
-Date: Mon, 10 Aug 2026 16:41:11 +0000
+Date: Wed, 12 Aug 2026 05:03:00 +0000
 SHA256:
  e25e6b9f8d76e74948282d4fd655db31ca6ee8bc072f456bc9f3f15392cf244b 686 main/binary-amd64/Packages
  151626a64e7f90dfcc22206eb6d1906c0f27b306251c476e6be2e86b30e895a3 481 main/binary-amd64/Packages.gz
@@ -16,8 +16,8 @@ SHA256:
  18e8aeb088a0486d62e0d66f12cf91714ec2cab27a2d878cbf17aab85af34495 481 main/binary-arm64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCann/JwAKCRDNt7j4ivzL
-4/DdAQCMndN6M38bDJeCYXHh8xwcvQalpynI4xMXMfjtlu7+8wEAosPogFOS8PE5
-UstIBiRTC12vwKrxowZNrnhaD6FlXwQ=
-=0qjn
+iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCanv+hQAKCRDNt7j4ivzL
+4+VCAQDZLEgW/dXs+OEFfyfyfQOhOGSc3DgQidy77iMoZnVOHwEAgqEgO6ZLdDKi
+F1yCL49zXKN6/2qMo5WrA4HRMu6Qeg4=
+=72MZ
 -----END PGP SIGNATURE-----
