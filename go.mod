@@ -16,7 +16,7 @@ require github.com/bmatcuk/doublestar/v4 v4.10.0
 
 require github.com/fsnotify/fsnotify v1.10.1
 
-require al.essio.dev/pkg/shellescape v1.6.0
+require al.essio.dev/pkg/shellescape v1.6.1
 
 require (
 	github.com/bitfield/gotestdox v0.2.2 // indirect
