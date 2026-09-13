@@ -7,7 +7,7 @@ toolchain go1.26.3
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/hanwen/go-fuse/v2 v2.11.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 )
 
 require gopkg.in/yaml.v3 v3.0.1
