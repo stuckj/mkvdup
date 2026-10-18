@@ -33,7 +33,7 @@
             pname = command;
             inherit version;
             src = ./.;
-            vendorHash = "sha256-rp2M/Fe5P+ganzJ6/0c75PO9Kg38LL7+vwb6pwIOgSE=";
+            vendorHash = "sha256-+HAVumdD3Hhnr9KXH/r8x9fhjHA9sTjcSF8b4rL8u80=";
             subPackages = [ "cmd/mkvdup" ];
             ldflags = [
               "-s"
