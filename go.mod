@@ -6,13 +6,13 @@ toolchain go1.26.3
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/hanwen/go-fuse/v2 v2.11.0
-	golang.org/x/sys v0.47.0
+	github.com/hanwen/go-fuse/v2 v2.12.1
+	golang.org/x/sys v0.49.0
 )
 
 require gopkg.in/yaml.v3 v3.0.1
 
-require github.com/bmatcuk/doublestar/v4 v4.10.0
+require github.com/bmatcuk/doublestar/v4 v4.10.4
 
 require github.com/fsnotify/fsnotify v1.10.1
 
