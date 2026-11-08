@@ -8,6 +8,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # One PR for all Go updates. Every Go update changes vendorHash in flake.nix and
+    # default.nix, so separate PRs conflict with each other as soon as one merges.
+    groups:
+      go:
+        patterns:
+          - "*"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
