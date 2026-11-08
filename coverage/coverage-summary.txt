@@ -668,9 +668,9 @@ github.com/stuckj/mkvdup/internal/source/video.go:46:			FindVideoStartCodesInRan
 github.com/stuckj/mkvdup/internal/source/video.go:76:			FindVideoNALStarts			100.0%
 github.com/stuckj/mkvdup/internal/source/video.go:108:			FindVideoNALStartsInRange		93.3%
 github.com/stuckj/mkvdup/internal/source/video.go:140:			FindAVCCNALStarts			90.9%
-github.com/stuckj/mkvdup/testdata/testdata.go:39:			Find					21.7%
-github.com/stuckj/mkvdup/testdata/testdata.go:84:			checkPaths				60.0%
+github.com/stuckj/mkvdup/testdata/testdata.go:39:			Find					60.9%
+github.com/stuckj/mkvdup/testdata/testdata.go:84:			checkPaths				86.7%
 github.com/stuckj/mkvdup/testdata/testdata.go:113:			SkipIfNotAvailable			75.0%
 github.com/stuckj/mkvdup/testdata/testdata.go:127:			CreateBlurayData			76.9%
-github.com/stuckj/mkvdup/testdata/testdata.go:159:			findLocalTestdataDir			0.0%
-total:									(statements)				65.9%
+github.com/stuckj/mkvdup/testdata/testdata.go:159:			findLocalTestdataDir			80.0%
+total:									(statements)				66.1%
