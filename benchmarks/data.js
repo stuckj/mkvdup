@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794158241206,
+  "lastUpdate": 1794197938845,
   "repoUrl": "https://github.com/stuckj/mkvdup",
   "entries": {
     "Benchmark": [
@@ -1182654,6 +1182654,13230 @@ window.BENCHMARK_DATA = {
             "value": 0,
             "unit": "allocs/op",
             "extra": "4143603 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "stuckj-claude-bot@stuckj.me",
+            "name": "John Stucklen (Claude Bot)",
+            "username": "stuckj-claude-bot"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "643ef35728e9d0b1338914cd7d9a8b66d6c90102",
+          "message": "Ask createrepo_c for gzip repodata (#240)\n\nFixes #237.\n\n## What was wrong\n\n`createrepo_c` 1.x writes primary/filelists/other as zstd by default.\n`yum_xmlbase.py` reads primary with `gzip.decompress`, so on a 1.x\n`createrepo_c` the rewrite dies with `gzip.BadGzipFile`. `ubuntu-latest`\nnow resolves to 26.04 (createrepo_c 1.2.1), which is how the v1.9.3\n`publish-repo` job failed and left the APT and YUM repositories on\n1.9.2.\n\n## What changed\n\n- **`scripts/yum-repodata.sh`** (new): the `createrepo_c` +\n`yum_xmlbase.py` pair, now with `--general-compress-type gz`.\n`rebuild-package-repos.sh` calls it, so the test below exercises the\nexact production invocation.\n- **`scripts/yum_xmlbase.py`**: when primary is not `.gz`, exits naming\nthe cause and the flag instead of a gzip traceback.\n- **`package-scripts.yml`** + **`scripts/test-yum-repodata.sh`**: builds\nrepodata from the published v1.9.3 x86_64 rpm under `ubuntu:24.04`\n(createrepo_c 0.17.3), `ubuntu:26.04` (1.2.1) and `fedora:latest`\n(1.2.6); checks every repomd checksum, that primary is gzip with the\nrelease `xml:base`, and on Fedora that `dnf repoquery` resolves the\npackage location to the release. Runs on changes to those files and\nweekly, so the next default change shows up before a release does.\n- **RELEASING.md**: a paragraph on the gzip requirement and the new\ncheck.\n- **Retries.** `release.yml`'s `publish-repo` apt install now retries\nupdate and install together, up to five times with backoff: a failed\nindex download leaves `apt-get update` exiting 0, and only the install\nfails. No `--error-on=any` there, because the hosted runner also carries\nthird-party sources. `package-scripts.yml` does the same with\n`--error-on=any` (its containers carry only Ubuntu sources) and points\nthe Ubuntu containers at the Azure mirror the hosted runner uses;\n`test-yum-repodata.sh` retries its rpm download. This PR's first CI runs\nhit the 2026-11-09 Ubuntu archive outage on `ubuntu:26.04` twice.\n\n## Verification\n\nPackage Scripts passes on all three images in CI. Locally in podman,\nsame images:\n\n| Image | createrepo_c | Result |\n| --- | --- | --- |\n| ubuntu:24.04 | 0.17.3 | PASS |\n| ubuntu:26.04 | 1.2.1 | PASS |\n| fedora:latest | 1.2.6 | PASS — dnf sees\n`https://github.com/stuckj/mkvdup/releases/download/v1.9.3/mkvdup-1.9.3-1.x86_64.rpm`\n|\n| ubuntu:26.04, flag removed | 1.2.1 | FAIL as intended: `primary\nmetadata …-primary.xml.zst is not gzip — run createrepo_c with\n--general-compress-type gz` |\n\n## 1.9.3 is already published\n\n**Rebuild Package Repositories** was dispatched from this branch: dry\nrun\n[42554939824](https://github.com/stuckj/mkvdup/actions/runs/42554939824)\non createrepo_c 1.2.1, then the real run\n[42555511235](https://github.com/stuckj/mkvdup/actions/runs/42555511235).\nThe live APT stable index reports `Version: 1.9.3` and the live YUM\nprimary lists the 1.9.3 packages. Nothing further is needed after merge;\nthe next release's `publish-repo` picks up the fix from `main`.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_01YUV4iSqAQZeTXQpE2uSxuY\n\n---------\n\nCo-authored-by: stuckj <stuckj@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T23:06:56-05:00",
+          "tree_id": "e1560d09caa8afec0b037bf3bd312edd7cded3b8",
+          "url": "https://github.com/stuckj/mkvdup/commit/643ef35728e9d0b1338914cd7d9a8b66d6c90102"
+        },
+        "date": 1794197938089,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.31,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28869146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.31,
+            "unit": "ns/op",
+            "extra": "28869146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28869146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28869146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.18,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29087842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.18,
+            "unit": "ns/op",
+            "extra": "29087842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29087842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29087842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.2,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29037729 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.2,
+            "unit": "ns/op",
+            "extra": "29037729 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29037729 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29037729 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.15,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29002790 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.15,
+            "unit": "ns/op",
+            "extra": "29002790 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29002790 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29002790 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.19,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28944618 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.19,
+            "unit": "ns/op",
+            "extra": "28944618 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28944618 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28944618 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.2,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28403400 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.2,
+            "unit": "ns/op",
+            "extra": "28403400 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28403400 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28403400 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.19,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29039443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.19,
+            "unit": "ns/op",
+            "extra": "29039443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29039443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29039443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.2,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29043548 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.2,
+            "unit": "ns/op",
+            "extra": "29043548 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29043548 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29043548 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.34,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29003918 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.34,
+            "unit": "ns/op",
+            "extra": "29003918 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29003918 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29003918 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.21,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28986049 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.21,
+            "unit": "ns/op",
+            "extra": "28986049 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28986049 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28986049 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.15,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29187564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.15,
+            "unit": "ns/op",
+            "extra": "29187564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29187564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29187564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.05,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29211367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.05,
+            "unit": "ns/op",
+            "extra": "29211367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29211367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29211367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.03,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29220296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.03,
+            "unit": "ns/op",
+            "extra": "29220296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29220296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29220296 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.03,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29080062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.03,
+            "unit": "ns/op",
+            "extra": "29080062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29080062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29080062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.11,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "28808734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.11,
+            "unit": "ns/op",
+            "extra": "28808734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "28808734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "28808734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 40.97,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29201262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 40.97,
+            "unit": "ns/op",
+            "extra": "29201262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29201262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29201262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.05,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29087323 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.05,
+            "unit": "ns/op",
+            "extra": "29087323 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29087323 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29087323 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.04,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29213562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.04,
+            "unit": "ns/op",
+            "extra": "29213562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29213562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29213562 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41.04,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29302504 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41.04,
+            "unit": "ns/op",
+            "extra": "29302504 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29302504 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29302504 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 41,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "29186588 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 41,
+            "unit": "ns/op",
+            "extra": "29186588 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "29186588 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetEntry_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "29186588 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.44,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.44,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.62,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.62,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.48,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.48,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.48,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.48,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.6,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.6,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.49,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.49,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.47,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.47,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.45,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.45,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.46,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.46,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 10.6,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 10.6,
+            "unit": "ns/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGetMkvOffset (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "100000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37822,
+            "unit": "ns/op\t1732.75 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31828 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37822,
+            "unit": "ns/op",
+            "extra": "31828 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1732.75,
+            "unit": "MB/s",
+            "extra": "31828 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31828 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31828 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37819,
+            "unit": "ns/op\t1732.87 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31770 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37819,
+            "unit": "ns/op",
+            "extra": "31770 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1732.87,
+            "unit": "MB/s",
+            "extra": "31770 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31770 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31770 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 38228,
+            "unit": "ns/op\t1714.37 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31650 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 38228,
+            "unit": "ns/op",
+            "extra": "31650 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1714.37,
+            "unit": "MB/s",
+            "extra": "31650 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31650 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31650 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37701,
+            "unit": "ns/op\t1738.29 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37701,
+            "unit": "ns/op",
+            "extra": "31856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1738.29,
+            "unit": "MB/s",
+            "extra": "31856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37657,
+            "unit": "ns/op\t1740.33 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37657,
+            "unit": "ns/op",
+            "extra": "31872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1740.33,
+            "unit": "MB/s",
+            "extra": "31872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37761,
+            "unit": "ns/op\t1735.53 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37761,
+            "unit": "ns/op",
+            "extra": "31897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1735.53,
+            "unit": "MB/s",
+            "extra": "31897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37726,
+            "unit": "ns/op\t1737.14 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31690 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37726,
+            "unit": "ns/op",
+            "extra": "31690 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1737.14,
+            "unit": "MB/s",
+            "extra": "31690 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31690 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31690 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37937,
+            "unit": "ns/op\t1727.50 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37937,
+            "unit": "ns/op",
+            "extra": "31448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1727.5,
+            "unit": "MB/s",
+            "extra": "31448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37893,
+            "unit": "ns/op\t1729.49 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37893,
+            "unit": "ns/op",
+            "extra": "31868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1729.49,
+            "unit": "MB/s",
+            "extra": "31868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 38065,
+            "unit": "ns/op\t1721.67 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "31656 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 38065,
+            "unit": "ns/op",
+            "extra": "31656 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1721.67,
+            "unit": "MB/s",
+            "extra": "31656 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "31656 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Sequential (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31656 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37478,
+            "unit": "ns/op\t1748.65 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32383 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37478,
+            "unit": "ns/op",
+            "extra": "32383 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1748.65,
+            "unit": "MB/s",
+            "extra": "32383 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32383 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32383 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37362,
+            "unit": "ns/op\t1754.07 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37362,
+            "unit": "ns/op",
+            "extra": "32456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1754.07,
+            "unit": "MB/s",
+            "extra": "32456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37093,
+            "unit": "ns/op\t1766.79 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32466 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37093,
+            "unit": "ns/op",
+            "extra": "32466 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1766.79,
+            "unit": "MB/s",
+            "extra": "32466 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32466 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32466 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37498,
+            "unit": "ns/op\t1747.71 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37498,
+            "unit": "ns/op",
+            "extra": "32443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1747.71,
+            "unit": "MB/s",
+            "extra": "32443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37026,
+            "unit": "ns/op\t1769.98 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37026,
+            "unit": "ns/op",
+            "extra": "32406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1769.98,
+            "unit": "MB/s",
+            "extra": "32406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 36797,
+            "unit": "ns/op\t1781.02 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32234 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 36797,
+            "unit": "ns/op",
+            "extra": "32234 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1781.02,
+            "unit": "MB/s",
+            "extra": "32234 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32234 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32234 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37080,
+            "unit": "ns/op\t1767.44 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32442 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37080,
+            "unit": "ns/op",
+            "extra": "32442 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1767.44,
+            "unit": "MB/s",
+            "extra": "32442 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32442 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32442 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37674,
+            "unit": "ns/op\t1739.56 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37674,
+            "unit": "ns/op",
+            "extra": "32276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1739.56,
+            "unit": "MB/s",
+            "extra": "32276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37086,
+            "unit": "ns/op\t1767.14 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32552 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37086,
+            "unit": "ns/op",
+            "extra": "32552 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1767.14,
+            "unit": "MB/s",
+            "extra": "32552 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32552 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32552 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 37014,
+            "unit": "ns/op\t1770.59 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "32338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 37014,
+            "unit": "ns/op",
+            "extra": "32338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 1770.59,
+            "unit": "MB/s",
+            "extra": "32338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "32338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Random (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "32338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 352.1,
+            "unit": "ns/op\t 727.02 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3436692 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 352.1,
+            "unit": "ns/op",
+            "extra": "3436692 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 727.02,
+            "unit": "MB/s",
+            "extra": "3436692 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3436692 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3436692 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 350.4,
+            "unit": "ns/op\t 730.60 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3422916 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 350.4,
+            "unit": "ns/op",
+            "extra": "3422916 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 730.6,
+            "unit": "MB/s",
+            "extra": "3422916 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3422916 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3422916 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 351.8,
+            "unit": "ns/op\t 727.77 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3432014 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 351.8,
+            "unit": "ns/op",
+            "extra": "3432014 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 727.77,
+            "unit": "MB/s",
+            "extra": "3432014 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3432014 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3432014 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 348.9,
+            "unit": "ns/op\t 733.78 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3421903 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 348.9,
+            "unit": "ns/op",
+            "extra": "3421903 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 733.78,
+            "unit": "MB/s",
+            "extra": "3421903 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3421903 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3421903 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 351.6,
+            "unit": "ns/op\t 728.06 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3440059 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 351.6,
+            "unit": "ns/op",
+            "extra": "3440059 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 728.06,
+            "unit": "MB/s",
+            "extra": "3440059 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3440059 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3440059 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 348.8,
+            "unit": "ns/op\t 733.98 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3425712 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 348.8,
+            "unit": "ns/op",
+            "extra": "3425712 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 733.98,
+            "unit": "MB/s",
+            "extra": "3425712 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3425712 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3425712 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 350.2,
+            "unit": "ns/op\t 731.06 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3445218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 350.2,
+            "unit": "ns/op",
+            "extra": "3445218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 731.06,
+            "unit": "MB/s",
+            "extra": "3445218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3445218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3445218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 348.7,
+            "unit": "ns/op\t 734.12 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3427814 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 348.7,
+            "unit": "ns/op",
+            "extra": "3427814 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 734.12,
+            "unit": "MB/s",
+            "extra": "3427814 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3427814 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3427814 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 350.2,
+            "unit": "ns/op\t 731.03 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3413474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 350.2,
+            "unit": "ns/op",
+            "extra": "3413474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 731.03,
+            "unit": "MB/s",
+            "extra": "3413474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3413474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3413474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 350.2,
+            "unit": "ns/op\t 730.94 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3420638 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 350.2,
+            "unit": "ns/op",
+            "extra": "3420638 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 730.94,
+            "unit": "MB/s",
+            "extra": "3420638 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3420638 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadAt_Small (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3420638 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 954.2,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1249270 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 954.2,
+            "unit": "ns/op",
+            "extra": "1249270 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1249270 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1249270 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 958.2,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1253528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 958.2,
+            "unit": "ns/op",
+            "extra": "1253528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1253528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1253528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 958,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1253842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 958,
+            "unit": "ns/op",
+            "extra": "1253842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1253842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1253842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 958.3,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1253437 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 958.3,
+            "unit": "ns/op",
+            "extra": "1253437 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1253437 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1253437 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 954.2,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1240156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 954.2,
+            "unit": "ns/op",
+            "extra": "1240156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1240156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1240156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 956.2,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1249575 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 956.2,
+            "unit": "ns/op",
+            "extra": "1249575 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1249575 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1249575 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 960.3,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1241062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 960.3,
+            "unit": "ns/op",
+            "extra": "1241062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1241062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1241062 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 962.7,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1260512 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 962.7,
+            "unit": "ns/op",
+            "extra": "1260512 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1260512 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1260512 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 974.7,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1243694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 974.7,
+            "unit": "ns/op",
+            "extra": "1243694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1243694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1243694 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 959.4,
+            "unit": "ns/op\t    1248 B/op\t       5 allocs/op",
+            "extra": "1232878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 959.4,
+            "unit": "ns/op",
+            "extra": "1232878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1248,
+            "unit": "B/op",
+            "extra": "1232878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindEntriesForRange (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1232878 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 488189,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 488189,
+            "unit": "ns/op",
+            "extra": "2469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 485008,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 485008,
+            "unit": "ns/op",
+            "extra": "2456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 485156,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2467 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 485156,
+            "unit": "ns/op",
+            "extra": "2467 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2467 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2467 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 495564,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 495564,
+            "unit": "ns/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 480286,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2457 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 480286,
+            "unit": "ns/op",
+            "extra": "2457 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2457 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2457 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 483650,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2438 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 483650,
+            "unit": "ns/op",
+            "extra": "2438 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2438 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2438 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 489185,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2421 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 489185,
+            "unit": "ns/op",
+            "extra": "2421 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2421 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2421 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 485538,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 485538,
+            "unit": "ns/op",
+            "extra": "2472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 487988,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2395 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 487988,
+            "unit": "ns/op",
+            "extra": "2395 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2395 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2395 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 486159,
+            "unit": "ns/op\t    2408 B/op\t      28 allocs/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 486159,
+            "unit": "ns/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 2408,
+            "unit": "B/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReader (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 28,
+            "unit": "allocs/op",
+            "extra": "2461 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31911,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37934 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31911,
+            "unit": "ns/op",
+            "extra": "37934 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37934 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37934 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31767,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "36706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31767,
+            "unit": "ns/op",
+            "extra": "36706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "36706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "36706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31931,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31931,
+            "unit": "ns/op",
+            "extra": "37872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31933,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37392 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31933,
+            "unit": "ns/op",
+            "extra": "37392 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37392 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37392 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 32062,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "36576 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 32062,
+            "unit": "ns/op",
+            "extra": "36576 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "36576 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "36576 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31742,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37275 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31742,
+            "unit": "ns/op",
+            "extra": "37275 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37275 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37275 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31827,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37603 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31827,
+            "unit": "ns/op",
+            "extra": "37603 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37603 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37603 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31895,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31895,
+            "unit": "ns/op",
+            "extra": "37522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31716,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31716,
+            "unit": "ns/op",
+            "extra": "37563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37563 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 31585,
+            "unit": "ns/op\t    1128 B/op\t      27 allocs/op",
+            "extra": "37340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 31585,
+            "unit": "ns/op",
+            "extra": "37340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 1128,
+            "unit": "B/op",
+            "extra": "37340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkNewReaderLazy (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 27,
+            "unit": "allocs/op",
+            "extra": "37340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 824378,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 824378,
+            "unit": "ns/op",
+            "extra": "1429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 864645,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1410 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 864645,
+            "unit": "ns/op",
+            "extra": "1410 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1410 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1410 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 928452,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1388 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 928452,
+            "unit": "ns/op",
+            "extra": "1388 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1388 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1388 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 925447,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 925447,
+            "unit": "ns/op",
+            "extra": "1406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 930640,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1360 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 930640,
+            "unit": "ns/op",
+            "extra": "1360 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1360 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1360 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 939804,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 939804,
+            "unit": "ns/op",
+            "extra": "1177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 918987,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1329 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 918987,
+            "unit": "ns/op",
+            "extra": "1329 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1329 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1329 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 937072,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 937072,
+            "unit": "ns/op",
+            "extra": "1141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 928734,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1382 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 928734,
+            "unit": "ns/op",
+            "extra": "1382 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1382 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1382 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 936496,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "1166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 936496,
+            "unit": "ns/op",
+            "extra": "1166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "1166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1166 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6654681,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "182 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6654681,
+            "unit": "ns/op",
+            "extra": "182 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "182 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "182 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6755354,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6755354,
+            "unit": "ns/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6741269,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6741269,
+            "unit": "ns/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6646227,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6646227,
+            "unit": "ns/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "178 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6770546,
+            "unit": "ns/op\t   66200 B/op\t      23 allocs/op",
+            "extra": "174 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6770546,
+            "unit": "ns/op",
+            "extra": "174 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66200,
+            "unit": "B/op",
+            "extra": "174 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "174 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6755187,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6755187,
+            "unit": "ns/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6661197,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6661197,
+            "unit": "ns/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6726064,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6726064,
+            "unit": "ns/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6711170,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6711170,
+            "unit": "ns/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "181 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 6660215,
+            "unit": "ns/op\t   66216 B/op\t      23 allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 6660215,
+            "unit": "ns/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeIndex (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "177 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2562509,
+            "unit": "ns/op\t 409.20 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "487 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2562509,
+            "unit": "ns/op",
+            "extra": "487 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 409.2,
+            "unit": "MB/s",
+            "extra": "487 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "487 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "487 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2544506,
+            "unit": "ns/op\t 412.09 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "507 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2544506,
+            "unit": "ns/op",
+            "extra": "507 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 412.09,
+            "unit": "MB/s",
+            "extra": "507 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "507 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "507 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2526762,
+            "unit": "ns/op\t 414.99 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2526762,
+            "unit": "ns/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 414.99,
+            "unit": "MB/s",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2543371,
+            "unit": "ns/op\t 412.28 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2543371,
+            "unit": "ns/op",
+            "extra": "472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 412.28,
+            "unit": "MB/s",
+            "extra": "472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2546384,
+            "unit": "ns/op\t 411.79 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2546384,
+            "unit": "ns/op",
+            "extra": "469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 411.79,
+            "unit": "MB/s",
+            "extra": "469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "469 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2518569,
+            "unit": "ns/op\t 416.34 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2518569,
+            "unit": "ns/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 416.34,
+            "unit": "MB/s",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2577307,
+            "unit": "ns/op\t 406.85 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "477 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2577307,
+            "unit": "ns/op",
+            "extra": "477 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 406.85,
+            "unit": "MB/s",
+            "extra": "477 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "477 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "477 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2535298,
+            "unit": "ns/op\t 413.59 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2535298,
+            "unit": "ns/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 413.59,
+            "unit": "MB/s",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "476 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2520963,
+            "unit": "ns/op\t 415.94 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2520963,
+            "unit": "ns/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 415.94,
+            "unit": "MB/s",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "478 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup)",
+            "value": 2557807,
+            "unit": "ns/op\t 409.95 MB/s\t   66216 B/op\t      23 allocs/op",
+            "extra": "505 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - ns/op",
+            "value": 2557807,
+            "unit": "ns/op",
+            "extra": "505 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - MB/s",
+            "value": 409.95,
+            "unit": "MB/s",
+            "extra": "505 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - B/op",
+            "value": 66216,
+            "unit": "B/op",
+            "extra": "505 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkWriter_Write_LargeDelta (github.com/stuckj/mkvdup/internal/dedup) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "505 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.31,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "23552882 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.31,
+            "unit": "ns/op",
+            "extra": "23552882 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "23552882 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "23552882 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.3,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "24484099 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.3,
+            "unit": "ns/op",
+            "extra": "24484099 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "24484099 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "24484099 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.47,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "24370671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.47,
+            "unit": "ns/op",
+            "extra": "24370671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "24370671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "24370671 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.34,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "24178239 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.34,
+            "unit": "ns/op",
+            "extra": "24178239 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "24178239 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "24178239 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 50.81,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "24323667 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 50.81,
+            "unit": "ns/op",
+            "extra": "24323667 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "24323667 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "24323667 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.29,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "23378846 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.29,
+            "unit": "ns/op",
+            "extra": "23378846 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "23378846 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "23378846 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.49,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "23421474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.49,
+            "unit": "ns/op",
+            "extra": "23421474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "23421474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "23421474 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.55,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "23744284 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.55,
+            "unit": "ns/op",
+            "extra": "23744284 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "23744284 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "23744284 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.28,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "23881048 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.28,
+            "unit": "ns/op",
+            "extra": "23881048 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "23881048 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "23881048 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 49.33,
+            "unit": "ns/op\t      49 B/op\t       2 allocs/op",
+            "extra": "24072252 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 49.33,
+            "unit": "ns/op",
+            "extra": "24072252 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 49,
+            "unit": "B/op",
+            "extra": "24072252 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/1-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "24072252 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.29,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17414194 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.29,
+            "unit": "ns/op",
+            "extra": "17414194 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17414194 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17414194 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.39,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17854792 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.39,
+            "unit": "ns/op",
+            "extra": "17854792 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17854792 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17854792 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.18,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17651218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.18,
+            "unit": "ns/op",
+            "extra": "17651218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17651218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17651218 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.4,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17504199 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.4,
+            "unit": "ns/op",
+            "extra": "17504199 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17504199 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17504199 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.5,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17504431 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.5,
+            "unit": "ns/op",
+            "extra": "17504431 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17504431 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17504431 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.51,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17374306 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.51,
+            "unit": "ns/op",
+            "extra": "17374306 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17374306 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17374306 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.2,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17412348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.2,
+            "unit": "ns/op",
+            "extra": "17412348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17412348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17412348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.3,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17717186 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.3,
+            "unit": "ns/op",
+            "extra": "17717186 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17717186 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17717186 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.22,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17596532 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.22,
+            "unit": "ns/op",
+            "extra": "17596532 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17596532 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17596532 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 68.13,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "17350831 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 68.13,
+            "unit": "ns/op",
+            "extra": "17350831 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "17350831 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/2-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "17350831 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.37,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16824132 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.37,
+            "unit": "ns/op",
+            "extra": "16824132 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16824132 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16824132 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.81,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16781337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.81,
+            "unit": "ns/op",
+            "extra": "16781337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16781337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16781337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.99,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16174335 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.99,
+            "unit": "ns/op",
+            "extra": "16174335 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16174335 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16174335 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.86,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16749832 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.86,
+            "unit": "ns/op",
+            "extra": "16749832 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16749832 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16749832 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.78,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16534113 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.78,
+            "unit": "ns/op",
+            "extra": "16534113 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16534113 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16534113 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.91,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16523138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.91,
+            "unit": "ns/op",
+            "extra": "16523138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16523138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16523138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.55,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16613848 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.55,
+            "unit": "ns/op",
+            "extra": "16613848 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16613848 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16613848 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.33,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16642593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.33,
+            "unit": "ns/op",
+            "extra": "16642593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16642593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16642593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.72,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16691203 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.72,
+            "unit": "ns/op",
+            "extra": "16691203 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16691203 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16691203 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 71.94,
+            "unit": "ns/op\t      52 B/op\t       3 allocs/op",
+            "extra": "16771088 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 71.94,
+            "unit": "ns/op",
+            "extra": "16771088 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 52,
+            "unit": "B/op",
+            "extra": "16771088 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/4-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16771088 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.49,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16171741 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.49,
+            "unit": "ns/op",
+            "extra": "16171741 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16171741 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16171741 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 74.02,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "15871011 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 74.02,
+            "unit": "ns/op",
+            "extra": "15871011 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "15871011 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "15871011 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.99,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16196756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.99,
+            "unit": "ns/op",
+            "extra": "16196756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16196756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16196756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 74,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16189756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 74,
+            "unit": "ns/op",
+            "extra": "16189756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16189756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16189756 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.94,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16234135 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.94,
+            "unit": "ns/op",
+            "extra": "16234135 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16234135 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16234135 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.89,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16335300 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.89,
+            "unit": "ns/op",
+            "extra": "16335300 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16335300 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16335300 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.91,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16286923 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.91,
+            "unit": "ns/op",
+            "extra": "16286923 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16286923 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16286923 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 74.08,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16177876 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 74.08,
+            "unit": "ns/op",
+            "extra": "16177876 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16177876 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16177876 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.57,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "16218406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.57,
+            "unit": "ns/op",
+            "extra": "16218406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "16218406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16218406 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 74.47,
+            "unit": "ns/op\t      56 B/op\t       3 allocs/op",
+            "extra": "15908344 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 74.47,
+            "unit": "ns/op",
+            "extra": "15908344 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 56,
+            "unit": "B/op",
+            "extra": "15908344 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadVINT/8-byte (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "15908344 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 72.86,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16297926 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 72.86,
+            "unit": "ns/op",
+            "extra": "16297926 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16297926 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16297926 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 72.55,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16546315 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 72.55,
+            "unit": "ns/op",
+            "extra": "16546315 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16546315 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16546315 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 72.39,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16485331 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 72.39,
+            "unit": "ns/op",
+            "extra": "16485331 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16485331 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16485331 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 78.84,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16177071 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 78.84,
+            "unit": "ns/op",
+            "extra": "16177071 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16177071 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16177071 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 83.19,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "13729825 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 83.19,
+            "unit": "ns/op",
+            "extra": "13729825 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "13729825 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "13729825 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 72.63,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16646241 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 72.63,
+            "unit": "ns/op",
+            "extra": "16646241 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16646241 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16646241 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.55,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16355060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.55,
+            "unit": "ns/op",
+            "extra": "16355060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16355060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16355060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.17,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16666720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.17,
+            "unit": "ns/op",
+            "extra": "16666720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16666720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16666720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.45,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16272106 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.45,
+            "unit": "ns/op",
+            "extra": "16272106 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16272106 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16272106 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 73.6,
+            "unit": "ns/op\t      50 B/op\t       3 allocs/op",
+            "extra": "16270615 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 73.6,
+            "unit": "ns/op",
+            "extra": "16270615 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 50,
+            "unit": "B/op",
+            "extra": "16270615 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/SimpleBlock (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "16270615 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 116.4,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10338249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 116.4,
+            "unit": "ns/op",
+            "extra": "10338249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10338249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10338249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 116.4,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10413242 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 116.4,
+            "unit": "ns/op",
+            "extra": "10413242 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10413242 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10413242 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 116.5,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10316619 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 116.5,
+            "unit": "ns/op",
+            "extra": "10316619 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10316619 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10316619 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115.9,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "9873676 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115.9,
+            "unit": "ns/op",
+            "extra": "9873676 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "9873676 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "9873676 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 117.7,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10093033 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 117.7,
+            "unit": "ns/op",
+            "extra": "10093033 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10093033 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10093033 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115.8,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10165658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115.8,
+            "unit": "ns/op",
+            "extra": "10165658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10165658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10165658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115.6,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10447964 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115.6,
+            "unit": "ns/op",
+            "extra": "10447964 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10447964 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10447964 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 114.8,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10299141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 114.8,
+            "unit": "ns/op",
+            "extra": "10299141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10299141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10299141 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10405440 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115,
+            "unit": "ns/op",
+            "extra": "10405440 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10405440 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10405440 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 114.8,
+            "unit": "ns/op\t      54 B/op\t       5 allocs/op",
+            "extra": "10437219 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 114.8,
+            "unit": "ns/op",
+            "extra": "10437219 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 54,
+            "unit": "B/op",
+            "extra": "10437219 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Cluster (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10437219 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10083668 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118,
+            "unit": "ns/op",
+            "extra": "10083668 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10083668 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10083668 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118.1,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10158188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118.1,
+            "unit": "ns/op",
+            "extra": "10158188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10158188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10158188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118.4,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10110686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118.4,
+            "unit": "ns/op",
+            "extra": "10110686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10110686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10110686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 119.1,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10072155 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 119.1,
+            "unit": "ns/op",
+            "extra": "10072155 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10072155 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10072155 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10177454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118,
+            "unit": "ns/op",
+            "extra": "10177454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10177454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10177454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118.3,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10066539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118.3,
+            "unit": "ns/op",
+            "extra": "10066539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10066539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10066539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118.4,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10171862 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118.4,
+            "unit": "ns/op",
+            "extra": "10171862 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10171862 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10171862 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118.3,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10185082 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118.3,
+            "unit": "ns/op",
+            "extra": "10185082 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10185082 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10185082 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 117.8,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10192984 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 117.8,
+            "unit": "ns/op",
+            "extra": "10192984 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10192984 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10192984 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 118.4,
+            "unit": "ns/op\t      64 B/op\t       5 allocs/op",
+            "extra": "10198130 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 118.4,
+            "unit": "ns/op",
+            "extra": "10198130 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 64,
+            "unit": "B/op",
+            "extra": "10198130 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkReadElementHeader/Segment (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "10198130 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.302,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226239501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.302,
+            "unit": "ns/op",
+            "extra": "226239501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226239501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226239501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.304,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226457245 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.304,
+            "unit": "ns/op",
+            "extra": "226457245 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226457245 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226457245 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.297,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226491061 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.297,
+            "unit": "ns/op",
+            "extra": "226491061 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226491061 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226491061 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.299,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226472799 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.299,
+            "unit": "ns/op",
+            "extra": "226472799 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226472799 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226472799 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.317,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226379587 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.317,
+            "unit": "ns/op",
+            "extra": "226379587 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226379587 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226379587 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.389,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "219151220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.389,
+            "unit": "ns/op",
+            "extra": "219151220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "219151220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "219151220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.302,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226005523 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.302,
+            "unit": "ns/op",
+            "extra": "226005523 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226005523 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226005523 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.306,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "225944569 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.306,
+            "unit": "ns/op",
+            "extra": "225944569 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "225944569 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "225944569 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.304,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "226211269 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.304,
+            "unit": "ns/op",
+            "extra": "226211269 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "226211269 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "226211269 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 5.324,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "224838607 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 5.324,
+            "unit": "ns/op",
+            "extra": "224838607 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "224838607 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParseSimpleBlockHeader (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "224838607 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 730930,
+            "unit": "ns/op\t14059.05 MB/s\t 1011663 B/op\t   21063 allocs/op",
+            "extra": "1634 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 730930,
+            "unit": "ns/op",
+            "extra": "1634 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14059.05,
+            "unit": "MB/s",
+            "extra": "1634 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011663,
+            "unit": "B/op",
+            "extra": "1634 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1634 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 739350,
+            "unit": "ns/op\t13898.96 MB/s\t 1011663 B/op\t   21063 allocs/op",
+            "extra": "1567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 739350,
+            "unit": "ns/op",
+            "extra": "1567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 13898.96,
+            "unit": "MB/s",
+            "extra": "1567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011663,
+            "unit": "B/op",
+            "extra": "1567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1567 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 731685,
+            "unit": "ns/op\t14044.55 MB/s\t 1011664 B/op\t   21063 allocs/op",
+            "extra": "1590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 731685,
+            "unit": "ns/op",
+            "extra": "1590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14044.55,
+            "unit": "MB/s",
+            "extra": "1590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011664,
+            "unit": "B/op",
+            "extra": "1590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 729765,
+            "unit": "ns/op\t14081.50 MB/s\t 1011663 B/op\t   21063 allocs/op",
+            "extra": "1604 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 729765,
+            "unit": "ns/op",
+            "extra": "1604 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14081.5,
+            "unit": "MB/s",
+            "extra": "1604 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011663,
+            "unit": "B/op",
+            "extra": "1604 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1604 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 732861,
+            "unit": "ns/op\t14022.01 MB/s\t 1011663 B/op\t   21063 allocs/op",
+            "extra": "1584 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 732861,
+            "unit": "ns/op",
+            "extra": "1584 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14022.01,
+            "unit": "MB/s",
+            "extra": "1584 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011663,
+            "unit": "B/op",
+            "extra": "1584 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1584 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 732274,
+            "unit": "ns/op\t14033.25 MB/s\t 1011663 B/op\t   21063 allocs/op",
+            "extra": "1581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 732274,
+            "unit": "ns/op",
+            "extra": "1581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14033.25,
+            "unit": "MB/s",
+            "extra": "1581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011663,
+            "unit": "B/op",
+            "extra": "1581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1581 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 731730,
+            "unit": "ns/op\t14043.68 MB/s\t 1011664 B/op\t   21063 allocs/op",
+            "extra": "1594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 731730,
+            "unit": "ns/op",
+            "extra": "1594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14043.68,
+            "unit": "MB/s",
+            "extra": "1594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011664,
+            "unit": "B/op",
+            "extra": "1594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 732292,
+            "unit": "ns/op\t14032.92 MB/s\t 1011664 B/op\t   21063 allocs/op",
+            "extra": "1586 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 732292,
+            "unit": "ns/op",
+            "extra": "1586 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14032.92,
+            "unit": "MB/s",
+            "extra": "1586 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011664,
+            "unit": "B/op",
+            "extra": "1586 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1586 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 730472,
+            "unit": "ns/op\t14067.88 MB/s\t 1011662 B/op\t   21063 allocs/op",
+            "extra": "1624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 730472,
+            "unit": "ns/op",
+            "extra": "1624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 14067.88,
+            "unit": "MB/s",
+            "extra": "1624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011662,
+            "unit": "B/op",
+            "extra": "1624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 754554,
+            "unit": "ns/op\t13618.88 MB/s\t 1011664 B/op\t   21063 allocs/op",
+            "extra": "1564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 754554,
+            "unit": "ns/op",
+            "extra": "1564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 13618.88,
+            "unit": "MB/s",
+            "extra": "1564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 1011664,
+            "unit": "B/op",
+            "extra": "1564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 21063,
+            "unit": "allocs/op",
+            "extra": "1564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 116071,
+            "unit": "ns/op\t8857.85 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "8919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 116071,
+            "unit": "ns/op",
+            "extra": "8919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8857.85,
+            "unit": "MB/s",
+            "extra": "8919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "8919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "8919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115990,
+            "unit": "ns/op\t8864.06 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "8666 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115990,
+            "unit": "ns/op",
+            "extra": "8666 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8864.06,
+            "unit": "MB/s",
+            "extra": "8666 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "8666 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "8666 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115997,
+            "unit": "ns/op\t8863.47 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "9501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115997,
+            "unit": "ns/op",
+            "extra": "9501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8863.47,
+            "unit": "MB/s",
+            "extra": "9501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "9501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "9501 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 127313,
+            "unit": "ns/op\t8075.68 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "9720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 127313,
+            "unit": "ns/op",
+            "extra": "9720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8075.68,
+            "unit": "MB/s",
+            "extra": "9720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "9720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "9720 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 127811,
+            "unit": "ns/op\t8044.22 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "9313 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 127811,
+            "unit": "ns/op",
+            "extra": "9313 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8044.22,
+            "unit": "MB/s",
+            "extra": "9313 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "9313 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "9313 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115496,
+            "unit": "ns/op\t8901.92 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "9976 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115496,
+            "unit": "ns/op",
+            "extra": "9976 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8901.92,
+            "unit": "MB/s",
+            "extra": "9976 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "9976 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "9976 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 117055,
+            "unit": "ns/op\t8783.39 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "8623 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 117055,
+            "unit": "ns/op",
+            "extra": "8623 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8783.39,
+            "unit": "MB/s",
+            "extra": "8623 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "8623 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "8623 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 115863,
+            "unit": "ns/op\t8873.75 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "9658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 115863,
+            "unit": "ns/op",
+            "extra": "9658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8873.75,
+            "unit": "MB/s",
+            "extra": "9658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "9658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "9658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 116894,
+            "unit": "ns/op\t8795.51 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "8816 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 116894,
+            "unit": "ns/op",
+            "extra": "8816 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8795.51,
+            "unit": "MB/s",
+            "extra": "8816 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "8816 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "8816 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv)",
+            "value": 116929,
+            "unit": "ns/op\t8792.82 MB/s\t   78072 B/op\t    2557 allocs/op",
+            "extra": "10244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - ns/op",
+            "value": 116929,
+            "unit": "ns/op",
+            "extra": "10244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - MB/s",
+            "value": 8792.82,
+            "unit": "MB/s",
+            "extra": "10244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - B/op",
+            "value": 78072,
+            "unit": "B/op",
+            "extra": "10244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkParser_Parse_Small (github.com/stuckj/mkvdup/internal/mkv) - allocs/op",
+            "value": 2557,
+            "unit": "allocs/op",
+            "extra": "10244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2639187,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2639187,
+            "unit": "ns/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2636775,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2636775,
+            "unit": "ns/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2638530,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2638530,
+            "unit": "ns/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2637802,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2637802,
+            "unit": "ns/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2633524,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2633524,
+            "unit": "ns/op",
+            "extra": "448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2635229,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2635229,
+            "unit": "ns/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2636038,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2636038,
+            "unit": "ns/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2637436,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2637436,
+            "unit": "ns/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "454 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2633969,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2633969,
+            "unit": "ns/op",
+            "extra": "452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "452 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2638414,
+            "unit": "ns/op\t   25152 B/op\t       9 allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2638414,
+            "unit": "ns/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 25152,
+            "unit": "B/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 9,
+            "unit": "allocs/op",
+            "extra": "453 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2699008,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2699008,
+            "unit": "ns/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2712772,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2712772,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2686898,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2686898,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2688624,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2688624,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2688304,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2688304,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2695424,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2695424,
+            "unit": "ns/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2687977,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2687977,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2690142,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2690142,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2692470,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2692470,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source)",
+            "value": 2689833,
+            "unit": "ns/op\t   83904 B/op\t      14 allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 2689833,
+            "unit": "ns/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 83904,
+            "unit": "B/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "444 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1276900,
+            "unit": "ns/op\t8211.89 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "938 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1276900,
+            "unit": "ns/op",
+            "extra": "938 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8211.89,
+            "unit": "MB/s",
+            "extra": "938 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "938 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "938 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1275197,
+            "unit": "ns/op\t8222.85 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1275197,
+            "unit": "ns/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8222.85,
+            "unit": "MB/s",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1272068,
+            "unit": "ns/op\t8243.08 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1272068,
+            "unit": "ns/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8243.08,
+            "unit": "MB/s",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1275035,
+            "unit": "ns/op\t8223.90 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1275035,
+            "unit": "ns/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8223.9,
+            "unit": "MB/s",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1275853,
+            "unit": "ns/op\t8218.63 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1275853,
+            "unit": "ns/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8218.63,
+            "unit": "MB/s",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "942 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1271580,
+            "unit": "ns/op\t8246.25 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1271580,
+            "unit": "ns/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8246.25,
+            "unit": "MB/s",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1271692,
+            "unit": "ns/op\t8245.52 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1271692,
+            "unit": "ns/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8245.52,
+            "unit": "MB/s",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1274369,
+            "unit": "ns/op\t8228.20 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1274369,
+            "unit": "ns/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8228.2,
+            "unit": "MB/s",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "944 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1274901,
+            "unit": "ns/op\t8224.76 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "945 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1274901,
+            "unit": "ns/op",
+            "extra": "945 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8224.76,
+            "unit": "MB/s",
+            "extra": "945 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "945 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "945 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 1275534,
+            "unit": "ns/op\t8220.68 MB/s\t   49152 B/op\t       1 allocs/op",
+            "extra": "940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 1275534,
+            "unit": "ns/op",
+            "extra": "940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 8220.68,
+            "unit": "MB/s",
+            "extra": "940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 49152,
+            "unit": "B/op",
+            "extra": "940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26479034,
+            "unit": "ns/op\t 396.00 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26479034,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 396,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26491353,
+            "unit": "ns/op\t 395.82 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26491353,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 395.82,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26472972,
+            "unit": "ns/op\t 396.09 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26472972,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 396.09,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26534784,
+            "unit": "ns/op\t 395.17 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26534784,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 395.17,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26511085,
+            "unit": "ns/op\t 395.52 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26511085,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 395.52,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26479341,
+            "unit": "ns/op\t 396.00 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26479341,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 396,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26473712,
+            "unit": "ns/op\t 396.08 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26473712,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 396.08,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26512534,
+            "unit": "ns/op\t 395.50 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26512534,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 395.5,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26913000,
+            "unit": "ns/op\t 389.62 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26913000,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 389.62,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26850211,
+            "unit": "ns/op\t 390.53 MB/s\t  128192 B/op\t      13 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26850211,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 390.53,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 128192,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAudioSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 13,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27026320,
+            "unit": "ns/op\t 387.98 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27026320,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 387.98,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27100776,
+            "unit": "ns/op\t 386.92 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27100776,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 386.92,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27040681,
+            "unit": "ns/op\t 387.78 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27040681,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 387.78,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27074262,
+            "unit": "ns/op\t 387.30 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27074262,
+            "unit": "ns/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 387.3,
+            "unit": "MB/s",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "44 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27120869,
+            "unit": "ns/op\t 386.63 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27120869,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 386.63,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27049774,
+            "unit": "ns/op\t 387.65 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27049774,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 387.65,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27031013,
+            "unit": "ns/op\t 387.92 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27031013,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 387.92,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27020511,
+            "unit": "ns/op\t 388.07 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27020511,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 388.07,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 26970347,
+            "unit": "ns/op\t 388.79 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 26970347,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 388.79,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source)",
+            "value": 27069456,
+            "unit": "ns/op\t 387.37 MB/s\t  115264 B/op\t      12 allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 27069456,
+            "unit": "ns/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - MB/s",
+            "value": 387.37,
+            "unit": "MB/s",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 115264,
+            "unit": "B/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindAllSyncPoints_Large (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "43 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 30928,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38527 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 30928,
+            "unit": "ns/op",
+            "extra": "38527 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38527 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38527 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 30632,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "39223 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 30632,
+            "unit": "ns/op",
+            "extra": "39223 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "39223 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "39223 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 31044,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 31044,
+            "unit": "ns/op",
+            "extra": "38214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 30996,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 30996,
+            "unit": "ns/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 30508,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "39043 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 30508,
+            "unit": "ns/op",
+            "extra": "39043 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "39043 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "39043 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 30993,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38746 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 30993,
+            "unit": "ns/op",
+            "extra": "38746 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38746 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38746 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 31065,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 31065,
+            "unit": "ns/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 31074,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 31074,
+            "unit": "ns/op",
+            "extra": "38842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 31028,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 31028,
+            "unit": "ns/op",
+            "extra": "38593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38593 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source)",
+            "value": 30889,
+            "unit": "ns/op\t   21888 B/op\t       3 allocs/op",
+            "extra": "38769 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - ns/op",
+            "value": 30889,
+            "unit": "ns/op",
+            "extra": "38769 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - B/op",
+            "value": 21888,
+            "unit": "B/op",
+            "extra": "38769 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkFindVideoStartCodes (github.com/stuckj/mkvdup/internal/source) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "38769 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3507009,
+            "unit": "ns/op\t1133.48 MB/s\t  452312 B/op\t    1037 allocs/op",
+            "extra": "338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3507009,
+            "unit": "ns/op",
+            "extra": "338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1133.48,
+            "unit": "MB/s",
+            "extra": "338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452312,
+            "unit": "B/op",
+            "extra": "338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3506555,
+            "unit": "ns/op\t1133.62 MB/s\t  452300 B/op\t    1037 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3506555,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1133.62,
+            "unit": "MB/s",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452300,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3502678,
+            "unit": "ns/op\t1134.88 MB/s\t  452296 B/op\t    1037 allocs/op",
+            "extra": "339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3502678,
+            "unit": "ns/op",
+            "extra": "339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1134.88,
+            "unit": "MB/s",
+            "extra": "339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452296,
+            "unit": "B/op",
+            "extra": "339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3508304,
+            "unit": "ns/op\t1133.06 MB/s\t  452298 B/op\t    1037 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3508304,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1133.06,
+            "unit": "MB/s",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452298,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3532196,
+            "unit": "ns/op\t1125.39 MB/s\t  452298 B/op\t    1037 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3532196,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1125.39,
+            "unit": "MB/s",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452298,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3512065,
+            "unit": "ns/op\t1131.84 MB/s\t  452299 B/op\t    1037 allocs/op",
+            "extra": "337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3512065,
+            "unit": "ns/op",
+            "extra": "337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1131.84,
+            "unit": "MB/s",
+            "extra": "337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452299,
+            "unit": "B/op",
+            "extra": "337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3531433,
+            "unit": "ns/op\t1125.64 MB/s\t  452296 B/op\t    1037 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3531433,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1125.64,
+            "unit": "MB/s",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452296,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3516896,
+            "unit": "ns/op\t1130.29 MB/s\t  452298 B/op\t    1037 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3516896,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1130.29,
+            "unit": "MB/s",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452298,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3579784,
+            "unit": "ns/op\t1110.43 MB/s\t  452305 B/op\t    1037 allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3579784,
+            "unit": "ns/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1110.43,
+            "unit": "MB/s",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452305,
+            "unit": "B/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3528189,
+            "unit": "ns/op\t1126.67 MB/s\t  452299 B/op\t    1037 allocs/op",
+            "extra": "334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3528189,
+            "unit": "ns/op",
+            "extra": "334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1126.67,
+            "unit": "MB/s",
+            "extra": "334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 452299,
+            "unit": "B/op",
+            "extra": "334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Small_125V_125A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 1037,
+            "unit": "allocs/op",
+            "extra": "334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13506221,
+            "unit": "ns/op\t1166.01 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13506221,
+            "unit": "ns/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1166.01,
+            "unit": "MB/s",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13700473,
+            "unit": "ns/op\t1149.48 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13700473,
+            "unit": "ns/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1149.48,
+            "unit": "MB/s",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13525977,
+            "unit": "ns/op\t1164.31 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13525977,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1164.31,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13402349,
+            "unit": "ns/op\t1175.05 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13402349,
+            "unit": "ns/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1175.05,
+            "unit": "MB/s",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13483457,
+            "unit": "ns/op\t1167.98 MB/s\t  989961 B/op\t    4036 allocs/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13483457,
+            "unit": "ns/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1167.98,
+            "unit": "MB/s",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989961,
+            "unit": "B/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "86 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13485735,
+            "unit": "ns/op\t1167.78 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13485735,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1167.78,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13568199,
+            "unit": "ns/op\t1160.69 MB/s\t  989961 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13568199,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1160.69,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989961,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13562987,
+            "unit": "ns/op\t1161.13 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13562987,
+            "unit": "ns/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1161.13,
+            "unit": "MB/s",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13597640,
+            "unit": "ns/op\t1158.17 MB/s\t  989960 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13597640,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1158.17,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989960,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13410149,
+            "unit": "ns/op\t1174.37 MB/s\t  989961 B/op\t    4036 allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13410149,
+            "unit": "ns/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1174.37,
+            "unit": "MB/s",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989961,
+            "unit": "B/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Medium_500V_500A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27694774,
+            "unit": "ns/op\t1167.60 MB/s\t 1721674 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27694774,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1167.6,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721674,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27729730,
+            "unit": "ns/op\t1166.12 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27729730,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1166.12,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27858707,
+            "unit": "ns/op\t1160.73 MB/s\t 1721674 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27858707,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1160.73,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721674,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28031549,
+            "unit": "ns/op\t1153.57 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28031549,
+            "unit": "ns/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1153.57,
+            "unit": "MB/s",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27778904,
+            "unit": "ns/op\t1164.06 MB/s\t 1721671 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27778904,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1164.06,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721671,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27881775,
+            "unit": "ns/op\t1159.77 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27881775,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1159.77,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28667957,
+            "unit": "ns/op\t1127.96 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28667957,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1127.96,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28077270,
+            "unit": "ns/op\t1151.69 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28077270,
+            "unit": "ns/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1151.69,
+            "unit": "MB/s",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "42 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27874713,
+            "unit": "ns/op\t1160.06 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27874713,
+            "unit": "ns/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1160.06,
+            "unit": "MB/s",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27910420,
+            "unit": "ns/op\t1158.57 MB/s\t 1721672 B/op\t    8059 allocs/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27910420,
+            "unit": "ns/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1158.57,
+            "unit": "MB/s",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 1721672,
+            "unit": "B/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_EndToEnd/Large_1000V_1000A (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 8059,
+            "unit": "allocs/op",
+            "extra": "40 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13207816,
+            "unit": "ns/op\t1192.36 MB/s\t  989927 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13207816,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1192.36,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989927,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13202732,
+            "unit": "ns/op\t1192.82 MB/s\t  989929 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13202732,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1192.82,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989929,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13258763,
+            "unit": "ns/op\t1187.78 MB/s\t  989927 B/op\t    4036 allocs/op",
+            "extra": "82 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13258763,
+            "unit": "ns/op",
+            "extra": "82 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1187.78,
+            "unit": "MB/s",
+            "extra": "82 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989927,
+            "unit": "B/op",
+            "extra": "82 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "82 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13203583,
+            "unit": "ns/op\t1192.74 MB/s\t  989929 B/op\t    4036 allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13203583,
+            "unit": "ns/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1192.74,
+            "unit": "MB/s",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989929,
+            "unit": "B/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "88 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13308191,
+            "unit": "ns/op\t1183.36 MB/s\t  989929 B/op\t    4036 allocs/op",
+            "extra": "91 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13308191,
+            "unit": "ns/op",
+            "extra": "91 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1183.36,
+            "unit": "MB/s",
+            "extra": "91 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989929,
+            "unit": "B/op",
+            "extra": "91 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "91 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13508619,
+            "unit": "ns/op\t1165.81 MB/s\t  989928 B/op\t    4036 allocs/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13508619,
+            "unit": "ns/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1165.81,
+            "unit": "MB/s",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989928,
+            "unit": "B/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13319758,
+            "unit": "ns/op\t1182.34 MB/s\t  989928 B/op\t    4036 allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13319758,
+            "unit": "ns/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1182.34,
+            "unit": "MB/s",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989928,
+            "unit": "B/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13600517,
+            "unit": "ns/op\t1157.93 MB/s\t  989928 B/op\t    4036 allocs/op",
+            "extra": "87 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13600517,
+            "unit": "ns/op",
+            "extra": "87 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1157.93,
+            "unit": "MB/s",
+            "extra": "87 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989928,
+            "unit": "B/op",
+            "extra": "87 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "87 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13314192,
+            "unit": "ns/op\t1182.83 MB/s\t  989928 B/op\t    4036 allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13314192,
+            "unit": "ns/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1182.83,
+            "unit": "MB/s",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989928,
+            "unit": "B/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "90 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 13410024,
+            "unit": "ns/op\t1174.38 MB/s\t  989928 B/op\t    4036 allocs/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 13410024,
+            "unit": "ns/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1174.38,
+            "unit": "MB/s",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 989928,
+            "unit": "B/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_1 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4036,
+            "unit": "allocs/op",
+            "extra": "84 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7415350,
+            "unit": "ns/op\t2123.76 MB/s\t  990201 B/op\t    4037 allocs/op",
+            "extra": "162 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7415350,
+            "unit": "ns/op",
+            "extra": "162 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2123.76,
+            "unit": "MB/s",
+            "extra": "162 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990201,
+            "unit": "B/op",
+            "extra": "162 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "162 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7560703,
+            "unit": "ns/op\t2082.93 MB/s\t  990104 B/op\t    4037 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7560703,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2082.93,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990104,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7832605,
+            "unit": "ns/op\t2010.62 MB/s\t  990148 B/op\t    4037 allocs/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7832605,
+            "unit": "ns/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2010.62,
+            "unit": "MB/s",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990148,
+            "unit": "B/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7582242,
+            "unit": "ns/op\t2077.01 MB/s\t  990111 B/op\t    4037 allocs/op",
+            "extra": "159 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7582242,
+            "unit": "ns/op",
+            "extra": "159 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2077.01,
+            "unit": "MB/s",
+            "extra": "159 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990111,
+            "unit": "B/op",
+            "extra": "159 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "159 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7500387,
+            "unit": "ns/op\t2099.68 MB/s\t  990195 B/op\t    4037 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7500387,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2099.68,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990195,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7746116,
+            "unit": "ns/op\t2033.07 MB/s\t  990104 B/op\t    4037 allocs/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7746116,
+            "unit": "ns/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2033.07,
+            "unit": "MB/s",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990104,
+            "unit": "B/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7456636,
+            "unit": "ns/op\t2112.00 MB/s\t  990104 B/op\t    4037 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7456636,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2112,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990104,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7637408,
+            "unit": "ns/op\t2062.01 MB/s\t  990104 B/op\t    4037 allocs/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7637408,
+            "unit": "ns/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2062.01,
+            "unit": "MB/s",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990104,
+            "unit": "B/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7595627,
+            "unit": "ns/op\t2073.35 MB/s\t  990104 B/op\t    4037 allocs/op",
+            "extra": "160 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7595627,
+            "unit": "ns/op",
+            "extra": "160 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2073.35,
+            "unit": "MB/s",
+            "extra": "160 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990104,
+            "unit": "B/op",
+            "extra": "160 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "160 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7553811,
+            "unit": "ns/op\t2084.83 MB/s\t  990104 B/op\t    4037 allocs/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7553811,
+            "unit": "ns/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2084.83,
+            "unit": "MB/s",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990104,
+            "unit": "B/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_2 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4037,
+            "unit": "allocs/op",
+            "extra": "158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7645978,
+            "unit": "ns/op\t2059.70 MB/s\t  990557 B/op\t    4039 allocs/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7645978,
+            "unit": "ns/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2059.7,
+            "unit": "MB/s",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990557,
+            "unit": "B/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7635658,
+            "unit": "ns/op\t2062.48 MB/s\t  990456 B/op\t    4039 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7635658,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2062.48,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990456,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7658219,
+            "unit": "ns/op\t2056.41 MB/s\t  990472 B/op\t    4039 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7658219,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2056.41,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990472,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7667971,
+            "unit": "ns/op\t2053.79 MB/s\t  990471 B/op\t    4039 allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7667971,
+            "unit": "ns/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2053.79,
+            "unit": "MB/s",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990471,
+            "unit": "B/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7669952,
+            "unit": "ns/op\t2053.26 MB/s\t  990456 B/op\t    4039 allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7669952,
+            "unit": "ns/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2053.26,
+            "unit": "MB/s",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990456,
+            "unit": "B/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7688210,
+            "unit": "ns/op\t2048.39 MB/s\t  990456 B/op\t    4039 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7688210,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2048.39,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990456,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7626965,
+            "unit": "ns/op\t2064.84 MB/s\t  990456 B/op\t    4039 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7626965,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2064.84,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990456,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7709939,
+            "unit": "ns/op\t2042.61 MB/s\t  990456 B/op\t    4039 allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7709939,
+            "unit": "ns/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2042.61,
+            "unit": "MB/s",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990456,
+            "unit": "B/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7662289,
+            "unit": "ns/op\t2055.32 MB/s\t  990456 B/op\t    4039 allocs/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7662289,
+            "unit": "ns/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2055.32,
+            "unit": "MB/s",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990456,
+            "unit": "B/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "157 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7661566,
+            "unit": "ns/op\t2055.51 MB/s\t  990455 B/op\t    4039 allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7661566,
+            "unit": "ns/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2055.51,
+            "unit": "MB/s",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 990455,
+            "unit": "B/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_4 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4039,
+            "unit": "allocs/op",
+            "extra": "154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7762676,
+            "unit": "ns/op\t2028.74 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7762676,
+            "unit": "ns/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2028.74,
+            "unit": "MB/s",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7654770,
+            "unit": "ns/op\t2057.34 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7654770,
+            "unit": "ns/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2057.34,
+            "unit": "MB/s",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "156 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7720284,
+            "unit": "ns/op\t2039.88 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7720284,
+            "unit": "ns/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2039.88,
+            "unit": "MB/s",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 8045066,
+            "unit": "ns/op\t1957.53 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 8045066,
+            "unit": "ns/op",
+            "extra": "146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1957.53,
+            "unit": "MB/s",
+            "extra": "146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "146 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7975768,
+            "unit": "ns/op\t1974.53 MB/s\t  991159 B/op\t    4043 allocs/op",
+            "extra": "148 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7975768,
+            "unit": "ns/op",
+            "extra": "148 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1974.53,
+            "unit": "MB/s",
+            "extra": "148 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991159,
+            "unit": "B/op",
+            "extra": "148 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "148 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7992148,
+            "unit": "ns/op\t1970.49 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "147 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7992148,
+            "unit": "ns/op",
+            "extra": "147 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 1970.49,
+            "unit": "MB/s",
+            "extra": "147 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "147 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "147 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7793585,
+            "unit": "ns/op\t2020.69 MB/s\t  991161 B/op\t    4043 allocs/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7793585,
+            "unit": "ns/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2020.69,
+            "unit": "MB/s",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991161,
+            "unit": "B/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7859318,
+            "unit": "ns/op\t2003.79 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "151 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7859318,
+            "unit": "ns/op",
+            "extra": "151 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2003.79,
+            "unit": "MB/s",
+            "extra": "151 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "151 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "151 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7777326,
+            "unit": "ns/op\t2024.92 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7777326,
+            "unit": "ns/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2024.92,
+            "unit": "MB/s",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "153 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 7817213,
+            "unit": "ns/op\t2014.58 MB/s\t  991160 B/op\t    4043 allocs/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 7817213,
+            "unit": "ns/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 2014.58,
+            "unit": "MB/s",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 991160,
+            "unit": "B/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMatch_Parallel/Workers_8 (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4043,
+            "unit": "allocs/op",
+            "extra": "152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 235.3,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5067734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 235.3,
+            "unit": "ns/op",
+            "extra": "5067734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5067734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5067734 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 257.3,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5090036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 257.3,
+            "unit": "ns/op",
+            "extra": "5090036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5090036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5090036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 255.2,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "4325528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 255.2,
+            "unit": "ns/op",
+            "extra": "4325528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "4325528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "4325528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 231.9,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5168940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 231.9,
+            "unit": "ns/op",
+            "extra": "5168940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5168940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5168940 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 232,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5162625 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 232,
+            "unit": "ns/op",
+            "extra": "5162625 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5162625 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5162625 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 240.9,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "4967922 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 240.9,
+            "unit": "ns/op",
+            "extra": "4967922 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "4967922 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "4967922 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 231.6,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5213060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 231.6,
+            "unit": "ns/op",
+            "extra": "5213060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5213060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5213060 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 232,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5186246 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 232,
+            "unit": "ns/op",
+            "extra": "5186246 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5186246 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5186246 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 232,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "5205801 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 232,
+            "unit": "ns/op",
+            "extra": "5205801 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "5205801 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "5205801 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 241.6,
+            "unit": "ns/op\t     120 B/op\t       4 allocs/op",
+            "extra": "4953764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 241.6,
+            "unit": "ns/op",
+            "extra": "4953764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 120,
+            "unit": "B/op",
+            "extra": "4953764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 4,
+            "unit": "allocs/op",
+            "extra": "4953764 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 585.1,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2046411 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 585.1,
+            "unit": "ns/op",
+            "extra": "2046411 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2046411 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2046411 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 586.1,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2048104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 586.1,
+            "unit": "ns/op",
+            "extra": "2048104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2048104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2048104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 585.2,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2047874 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 585.2,
+            "unit": "ns/op",
+            "extra": "2047874 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2047874 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2047874 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 587.2,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2044674 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 587.2,
+            "unit": "ns/op",
+            "extra": "2044674 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2044674 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2044674 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 612.4,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "1934730 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 612.4,
+            "unit": "ns/op",
+            "extra": "1934730 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "1934730 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "1934730 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 586.4,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2043100 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 586.4,
+            "unit": "ns/op",
+            "extra": "2043100 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2043100 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2043100 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 584.8,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2054488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 584.8,
+            "unit": "ns/op",
+            "extra": "2054488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2054488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2054488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 584.5,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2058109 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 584.5,
+            "unit": "ns/op",
+            "extra": "2058109 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2058109 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2058109 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 592.1,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2028114 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 592.1,
+            "unit": "ns/op",
+            "extra": "2028114 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2028114 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2028114 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 584.8,
+            "unit": "ns/op\t     360 B/op\t       5 allocs/op",
+            "extra": "2051214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 584.8,
+            "unit": "ns/op",
+            "extra": "2051214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 360,
+            "unit": "B/op",
+            "extra": "2051214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Video_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "2051214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2488,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "474200 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2488,
+            "unit": "ns/op",
+            "extra": "474200 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "474200 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "474200 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2484,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "482367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2484,
+            "unit": "ns/op",
+            "extra": "482367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "482367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "482367 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2486,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "475244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2486,
+            "unit": "ns/op",
+            "extra": "475244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "475244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "475244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2483,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "482768 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2483,
+            "unit": "ns/op",
+            "extra": "482768 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "482768 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "482768 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2483,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "474836 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2483,
+            "unit": "ns/op",
+            "extra": "474836 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "474836 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "474836 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2486,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "475021 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2486,
+            "unit": "ns/op",
+            "extra": "475021 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "475021 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "475021 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2487,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "476919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2487,
+            "unit": "ns/op",
+            "extra": "476919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "476919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "476919 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2509,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "478648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2509,
+            "unit": "ns/op",
+            "extra": "478648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "478648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "478648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2480,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "484083 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2480,
+            "unit": "ns/op",
+            "extra": "484083 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "484083 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "484083 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2483,
+            "unit": "ns/op\t      96 B/op\t       2 allocs/op",
+            "extra": "479929 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2483,
+            "unit": "ns/op",
+            "extra": "479929 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 96,
+            "unit": "B/op",
+            "extra": "479929 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "479929 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9850,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120841 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9850,
+            "unit": "ns/op",
+            "extra": "120841 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120841 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120841 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9844,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120325 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9844,
+            "unit": "ns/op",
+            "extra": "120325 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120325 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120325 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9902,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9902,
+            "unit": "ns/op",
+            "extra": "120657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9859,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120297 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9859,
+            "unit": "ns/op",
+            "extra": "120297 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120297 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120297 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9860,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "119761 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9860,
+            "unit": "ns/op",
+            "extra": "119761 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "119761 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "119761 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9847,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9847,
+            "unit": "ns/op",
+            "extra": "120456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9867,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "119686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9867,
+            "unit": "ns/op",
+            "extra": "119686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "119686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "119686 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9864,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9864,
+            "unit": "ns/op",
+            "extra": "120624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9903,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "119652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9903,
+            "unit": "ns/op",
+            "extra": "119652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "119652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "119652 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 9885,
+            "unit": "ns/op\t     640 B/op\t       5 allocs/op",
+            "extra": "120819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 9885,
+            "unit": "ns/op",
+            "extra": "120819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 640,
+            "unit": "B/op",
+            "extra": "120819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes/Audio_4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 5,
+            "unit": "allocs/op",
+            "extra": "120819 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 297.2,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4008445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 297.2,
+            "unit": "ns/op",
+            "extra": "4008445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4008445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4008445 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.4,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4020232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.4,
+            "unit": "ns/op",
+            "extra": "4020232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4020232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4020232 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.7,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4008745 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.7,
+            "unit": "ns/op",
+            "extra": "4008745 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4008745 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4008745 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 299.3,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4011706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 299.3,
+            "unit": "ns/op",
+            "extra": "4011706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4011706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4011706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.6,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "3994777 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.6,
+            "unit": "ns/op",
+            "extra": "3994777 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "3994777 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "3994777 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.6,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4015036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.6,
+            "unit": "ns/op",
+            "extra": "4015036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4015036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4015036 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 299.3,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4010902 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 299.3,
+            "unit": "ns/op",
+            "extra": "4010902 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4010902 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4010902 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.8,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4019497 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.8,
+            "unit": "ns/op",
+            "extra": "4019497 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4019497 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4019497 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.5,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4016943 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.5,
+            "unit": "ns/op",
+            "extra": "4016943 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4016943 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4016943 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 298.5,
+            "unit": "ns/op\t      40 B/op\t       2 allocs/op",
+            "extra": "4021188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 298.5,
+            "unit": "ns/op",
+            "extra": "4021188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 40,
+            "unit": "B/op",
+            "extra": "4021188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkExtractProbeHashes_NoSync (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 2,
+            "unit": "allocs/op",
+            "extra": "4021188 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11095,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "107966 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11095,
+            "unit": "ns/op",
+            "extra": "107966 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "107966 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "107966 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11382,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "106131 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11382,
+            "unit": "ns/op",
+            "extra": "106131 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "106131 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "106131 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11451,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "103539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11451,
+            "unit": "ns/op",
+            "extra": "103539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "103539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "103539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11361,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "105596 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11361,
+            "unit": "ns/op",
+            "extra": "105596 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "105596 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "105596 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11215,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "106986 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11215,
+            "unit": "ns/op",
+            "extra": "106986 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "106986 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "106986 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11470,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "104842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11470,
+            "unit": "ns/op",
+            "extra": "104842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "104842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "104842 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11438,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "105104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11438,
+            "unit": "ns/op",
+            "extra": "105104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "105104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "105104 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11299,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "106443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11299,
+            "unit": "ns/op",
+            "extra": "106443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "106443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "106443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11347,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "106034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11347,
+            "unit": "ns/op",
+            "extra": "106034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "106034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "106034 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 11269,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "106657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 11269,
+            "unit": "ns/op",
+            "extra": "106657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "106657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHashLookup (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "106657 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3789,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "269757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3789,
+            "unit": "ns/op",
+            "extra": "269757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "269757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "269757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3756,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "316648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3756,
+            "unit": "ns/op",
+            "extra": "316648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "316648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "316648 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3774,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "309324 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3774,
+            "unit": "ns/op",
+            "extra": "309324 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "309324 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "309324 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3850,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "308583 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3850,
+            "unit": "ns/op",
+            "extra": "308583 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "308583 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "308583 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3787,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "304872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3787,
+            "unit": "ns/op",
+            "extra": "304872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "304872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "304872 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3815,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "307333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3815,
+            "unit": "ns/op",
+            "extra": "307333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "307333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "307333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3813,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "320522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3813,
+            "unit": "ns/op",
+            "extra": "320522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "320522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "320522 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3802,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "308954 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3802,
+            "unit": "ns/op",
+            "extra": "308954 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "308954 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "308954 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3825,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "320871 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3825,
+            "unit": "ns/op",
+            "extra": "320871 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "320871 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "320871 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 3820,
+            "unit": "ns/op\t   14808 B/op\t      12 allocs/op",
+            "extra": "314856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 3820,
+            "unit": "ns/op",
+            "extra": "314856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 14808,
+            "unit": "B/op",
+            "extra": "314856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 12,
+            "unit": "allocs/op",
+            "extra": "314856 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2716,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "437394 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2716,
+            "unit": "ns/op",
+            "extra": "437394 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "437394 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "437394 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2743,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "429573 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2743,
+            "unit": "ns/op",
+            "extra": "429573 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "429573 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "429573 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2747,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "438543 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2747,
+            "unit": "ns/op",
+            "extra": "438543 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "438543 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "438543 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2721,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "426722 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2721,
+            "unit": "ns/op",
+            "extra": "426722 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "426722 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "426722 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2748,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "435870 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2748,
+            "unit": "ns/op",
+            "extra": "435870 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "435870 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "435870 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2714,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "434931 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2714,
+            "unit": "ns/op",
+            "extra": "434931 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "434931 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "434931 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2715,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "447658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2715,
+            "unit": "ns/op",
+            "extra": "447658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "447658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "447658 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2720,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "444016 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2720,
+            "unit": "ns/op",
+            "extra": "444016 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "444016 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "444016 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2712,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "463150 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2712,
+            "unit": "ns/op",
+            "extra": "463150 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "463150 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "463150 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 2724,
+            "unit": "ns/op\t    9432 B/op\t      11 allocs/op",
+            "extra": "428463 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 2724,
+            "unit": "ns/op",
+            "extra": "428463 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 9432,
+            "unit": "B/op",
+            "extra": "428463 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/100_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 11,
+            "unit": "allocs/op",
+            "extra": "428463 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28854,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "42268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28854,
+            "unit": "ns/op",
+            "extra": "42268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "42268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "42268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28537,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "41164 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28537,
+            "unit": "ns/op",
+            "extra": "41164 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "41164 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "41164 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 29257,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "41901 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 29257,
+            "unit": "ns/op",
+            "extra": "41901 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "41901 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "41901 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28667,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "42138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28667,
+            "unit": "ns/op",
+            "extra": "42138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "42138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "42138 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28898,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "42091 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28898,
+            "unit": "ns/op",
+            "extra": "42091 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "42091 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "42091 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 29731,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "40539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 29731,
+            "unit": "ns/op",
+            "extra": "40539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "40539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "40539 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 29205,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "41858 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 29205,
+            "unit": "ns/op",
+            "extra": "41858 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "41858 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "41858 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28657,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "40794 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28657,
+            "unit": "ns/op",
+            "extra": "40794 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "40794 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "40794 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28369,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "41456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28369,
+            "unit": "ns/op",
+            "extra": "41456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "41456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "41456 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 28537,
+            "unit": "ns/op\t  125272 B/op\t      15 allocs/op",
+            "extra": "41802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 28537,
+            "unit": "ns/op",
+            "extra": "41802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 125272,
+            "unit": "B/op",
+            "extra": "41802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_NoOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 15,
+            "unit": "allocs/op",
+            "extra": "41802 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20320,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "59706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20320,
+            "unit": "ns/op",
+            "extra": "59706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "59706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "59706 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20300,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "59492 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20300,
+            "unit": "ns/op",
+            "extra": "59492 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "59492 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "59492 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20831,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "56000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20831,
+            "unit": "ns/op",
+            "extra": "56000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "56000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "56000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20319,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "60416 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20319,
+            "unit": "ns/op",
+            "extra": "60416 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "60416 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "60416 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20194,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "60064 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20194,
+            "unit": "ns/op",
+            "extra": "60064 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "60064 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "60064 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20397,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "59023 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20397,
+            "unit": "ns/op",
+            "extra": "59023 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "59023 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "59023 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20741,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "58624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20741,
+            "unit": "ns/op",
+            "extra": "58624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "58624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "58624 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20406,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "59316 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20406,
+            "unit": "ns/op",
+            "extra": "59316 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "59316 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "59316 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20742,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "56860 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20742,
+            "unit": "ns/op",
+            "extra": "56860 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "56860 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "56860 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 20532,
+            "unit": "ns/op\t   84312 B/op\t      14 allocs/op",
+            "extra": "57662 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 20532,
+            "unit": "ns/op",
+            "extra": "57662 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 84312,
+            "unit": "B/op",
+            "extra": "57662 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/1000_50pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 14,
+            "unit": "allocs/op",
+            "extra": "57662 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 895849,
+            "unit": "ns/op\t 2238817 B/op\t      23 allocs/op",
+            "extra": "1773 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 895849,
+            "unit": "ns/op",
+            "extra": "1773 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238817,
+            "unit": "B/op",
+            "extra": "1773 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1773 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 952714,
+            "unit": "ns/op\t 2238817 B/op\t      23 allocs/op",
+            "extra": "1263 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 952714,
+            "unit": "ns/op",
+            "extra": "1263 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238817,
+            "unit": "B/op",
+            "extra": "1263 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1263 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 822133,
+            "unit": "ns/op\t 2238819 B/op\t      23 allocs/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 822133,
+            "unit": "ns/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238819,
+            "unit": "B/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 854268,
+            "unit": "ns/op\t 2238818 B/op\t      23 allocs/op",
+            "extra": "1806 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 854268,
+            "unit": "ns/op",
+            "extra": "1806 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238818,
+            "unit": "B/op",
+            "extra": "1806 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1806 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 922918,
+            "unit": "ns/op\t 2238816 B/op\t      23 allocs/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 922918,
+            "unit": "ns/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238816,
+            "unit": "B/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 922188,
+            "unit": "ns/op\t 2238817 B/op\t      23 allocs/op",
+            "extra": "1262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 922188,
+            "unit": "ns/op",
+            "extra": "1262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238817,
+            "unit": "B/op",
+            "extra": "1262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1262 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 924944,
+            "unit": "ns/op\t 2238815 B/op\t      23 allocs/op",
+            "extra": "1305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 924944,
+            "unit": "ns/op",
+            "extra": "1305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238815,
+            "unit": "B/op",
+            "extra": "1305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1305 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 870254,
+            "unit": "ns/op\t 2238817 B/op\t      23 allocs/op",
+            "extra": "1276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 870254,
+            "unit": "ns/op",
+            "extra": "1276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238817,
+            "unit": "B/op",
+            "extra": "1276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1276 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 945586,
+            "unit": "ns/op\t 2238817 B/op\t      23 allocs/op",
+            "extra": "1256 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 945586,
+            "unit": "ns/op",
+            "extra": "1256 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238817,
+            "unit": "B/op",
+            "extra": "1256 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1256 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 916939,
+            "unit": "ns/op\t 2238818 B/op\t      23 allocs/op",
+            "extra": "1249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 916939,
+            "unit": "ns/op",
+            "extra": "1249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 2238818,
+            "unit": "B/op",
+            "extra": "1249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMergeRegions/10000_10pctOverlap (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 23,
+            "unit": "allocs/op",
+            "extra": "1249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.03,
+            "unit": "ns/op\t5321.37 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "94480443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.03,
+            "unit": "ns/op",
+            "extra": "94480443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5321.37,
+            "unit": "MB/s",
+            "extra": "94480443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "94480443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "94480443 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12,
+            "unit": "ns/op\t5335.05 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "98907524 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12,
+            "unit": "ns/op",
+            "extra": "98907524 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5335.05,
+            "unit": "MB/s",
+            "extra": "98907524 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "98907524 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "98907524 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.03,
+            "unit": "ns/op\t5321.60 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "99205142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.03,
+            "unit": "ns/op",
+            "extra": "99205142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5321.6,
+            "unit": "MB/s",
+            "extra": "99205142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "99205142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "99205142 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.01,
+            "unit": "ns/op\t5329.66 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "96990780 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.01,
+            "unit": "ns/op",
+            "extra": "96990780 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5329.66,
+            "unit": "MB/s",
+            "extra": "96990780 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "96990780 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "96990780 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.02,
+            "unit": "ns/op\t5322.64 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "99393220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.02,
+            "unit": "ns/op",
+            "extra": "99393220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5322.64,
+            "unit": "MB/s",
+            "extra": "99393220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "99393220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "99393220 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.02,
+            "unit": "ns/op\t5326.06 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "99198868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.02,
+            "unit": "ns/op",
+            "extra": "99198868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5326.06,
+            "unit": "MB/s",
+            "extra": "99198868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "99198868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "99198868 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12,
+            "unit": "ns/op\t5334.31 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "99389491 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12,
+            "unit": "ns/op",
+            "extra": "99389491 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5334.31,
+            "unit": "MB/s",
+            "extra": "99389491 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "99389491 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "99389491 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.01,
+            "unit": "ns/op\t5329.42 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "99601485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.01,
+            "unit": "ns/op",
+            "extra": "99601485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5329.42,
+            "unit": "MB/s",
+            "extra": "99601485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "99601485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "99601485 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12,
+            "unit": "ns/op\t5334.65 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "98138797 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12,
+            "unit": "ns/op",
+            "extra": "98138797 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5334.65,
+            "unit": "MB/s",
+            "extra": "98138797 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "98138797 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "98138797 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 12.03,
+            "unit": "ns/op\t5319.53 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "96949680 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 12.03,
+            "unit": "ns/op",
+            "extra": "96949680 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 5319.53,
+            "unit": "MB/s",
+            "extra": "96949680 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "96949680 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/64B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "96949680 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.87,
+            "unit": "ns/op\t9527.67 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44183899 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.87,
+            "unit": "ns/op",
+            "extra": "44183899 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9527.67,
+            "unit": "MB/s",
+            "extra": "44183899 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44183899 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44183899 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.92,
+            "unit": "ns/op\t9510.64 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44307268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.92,
+            "unit": "ns/op",
+            "extra": "44307268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9510.64,
+            "unit": "MB/s",
+            "extra": "44307268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44307268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44307268 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 27.03,
+            "unit": "ns/op\t9469.44 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44587747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 27.03,
+            "unit": "ns/op",
+            "extra": "44587747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9469.44,
+            "unit": "MB/s",
+            "extra": "44587747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44587747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44587747 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.94,
+            "unit": "ns/op\t9502.26 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44582152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.94,
+            "unit": "ns/op",
+            "extra": "44582152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9502.26,
+            "unit": "MB/s",
+            "extra": "44582152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44582152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44582152 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.91,
+            "unit": "ns/op\t9512.06 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44558884 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.91,
+            "unit": "ns/op",
+            "extra": "44558884 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9512.06,
+            "unit": "MB/s",
+            "extra": "44558884 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44558884 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44558884 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.94,
+            "unit": "ns/op\t9503.99 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44479622 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.94,
+            "unit": "ns/op",
+            "extra": "44479622 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9503.99,
+            "unit": "MB/s",
+            "extra": "44479622 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44479622 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44479622 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.91,
+            "unit": "ns/op\t9513.76 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44494327 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.91,
+            "unit": "ns/op",
+            "extra": "44494327 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9513.76,
+            "unit": "MB/s",
+            "extra": "44494327 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44494327 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44494327 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.88,
+            "unit": "ns/op\t9523.89 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44244951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.88,
+            "unit": "ns/op",
+            "extra": "44244951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9523.89,
+            "unit": "MB/s",
+            "extra": "44244951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44244951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44244951 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.92,
+            "unit": "ns/op\t9510.42 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44534740 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.92,
+            "unit": "ns/op",
+            "extra": "44534740 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9510.42,
+            "unit": "MB/s",
+            "extra": "44534740 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44534740 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44534740 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 26.9,
+            "unit": "ns/op\t9515.33 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "44414204 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 26.9,
+            "unit": "ns/op",
+            "extra": "44414204 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 9515.33,
+            "unit": "MB/s",
+            "extra": "44414204 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "44414204 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/256B (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "44414204 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.79,
+            "unit": "ns/op\t11798.62 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13758795 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.79,
+            "unit": "ns/op",
+            "extra": "13758795 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11798.62,
+            "unit": "MB/s",
+            "extra": "13758795 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13758795 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13758795 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.8,
+            "unit": "ns/op\t11796.78 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13812429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.8,
+            "unit": "ns/op",
+            "extra": "13812429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11796.78,
+            "unit": "MB/s",
+            "extra": "13812429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13812429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13812429 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.84,
+            "unit": "ns/op\t11792.02 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13812758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.84,
+            "unit": "ns/op",
+            "extra": "13812758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11792.02,
+            "unit": "MB/s",
+            "extra": "13812758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13812758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13812758 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.96,
+            "unit": "ns/op\t11776.14 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13798212 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.96,
+            "unit": "ns/op",
+            "extra": "13798212 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11776.14,
+            "unit": "MB/s",
+            "extra": "13798212 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13798212 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13798212 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.75,
+            "unit": "ns/op\t11803.81 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13808070 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.75,
+            "unit": "ns/op",
+            "extra": "13808070 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11803.81,
+            "unit": "MB/s",
+            "extra": "13808070 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13808070 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13808070 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.94,
+            "unit": "ns/op\t11777.78 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13772757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.94,
+            "unit": "ns/op",
+            "extra": "13772757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11777.78,
+            "unit": "MB/s",
+            "extra": "13772757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13772757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13772757 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.78,
+            "unit": "ns/op\t11800.43 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13845163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.78,
+            "unit": "ns/op",
+            "extra": "13845163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11800.43,
+            "unit": "MB/s",
+            "extra": "13845163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13845163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13845163 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.81,
+            "unit": "ns/op\t11796.10 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13830664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.81,
+            "unit": "ns/op",
+            "extra": "13830664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11796.1,
+            "unit": "MB/s",
+            "extra": "13830664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13830664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13830664 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.95,
+            "unit": "ns/op\t11777.22 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13774518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.95,
+            "unit": "ns/op",
+            "extra": "13774518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11777.22,
+            "unit": "MB/s",
+            "extra": "13774518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13774518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13774518 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 86.74,
+            "unit": "ns/op\t11805.10 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "13867221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 86.74,
+            "unit": "ns/op",
+            "extra": "13867221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 11805.1,
+            "unit": "MB/s",
+            "extra": "13867221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "13867221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/1KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "13867221 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.3,
+            "unit": "ns/op\t12477.24 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3654195 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.3,
+            "unit": "ns/op",
+            "extra": "3654195 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12477.24,
+            "unit": "MB/s",
+            "extra": "3654195 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3654195 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3654195 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.4,
+            "unit": "ns/op\t12473.77 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3650904 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.4,
+            "unit": "ns/op",
+            "extra": "3650904 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12473.77,
+            "unit": "MB/s",
+            "extra": "3650904 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3650904 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3650904 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.7,
+            "unit": "ns/op\t12460.69 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3652340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.7,
+            "unit": "ns/op",
+            "extra": "3652340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12460.69,
+            "unit": "MB/s",
+            "extra": "3652340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3652340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3652340 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.5,
+            "unit": "ns/op\t12467.63 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3646742 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.5,
+            "unit": "ns/op",
+            "extra": "3646742 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12467.63,
+            "unit": "MB/s",
+            "extra": "3646742 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3646742 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3646742 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.9,
+            "unit": "ns/op\t12455.12 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3647041 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.9,
+            "unit": "ns/op",
+            "extra": "3647041 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12455.12,
+            "unit": "MB/s",
+            "extra": "3647041 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3647041 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3647041 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.5,
+            "unit": "ns/op\t12468.01 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3651488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.5,
+            "unit": "ns/op",
+            "extra": "3651488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12468.01,
+            "unit": "MB/s",
+            "extra": "3651488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3651488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3651488 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.4,
+            "unit": "ns/op\t12473.63 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3655472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.4,
+            "unit": "ns/op",
+            "extra": "3655472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12473.63,
+            "unit": "MB/s",
+            "extra": "3655472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3655472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3655472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.2,
+            "unit": "ns/op\t12478.90 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3654591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.2,
+            "unit": "ns/op",
+            "extra": "3654591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12478.9,
+            "unit": "MB/s",
+            "extra": "3654591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3654591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3654591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.5,
+            "unit": "ns/op\t12467.81 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3649753 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.5,
+            "unit": "ns/op",
+            "extra": "3649753 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12467.81,
+            "unit": "MB/s",
+            "extra": "3649753 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3649753 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3649753 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher)",
+            "value": 328.2,
+            "unit": "ns/op\t12479.73 MB/s\t       0 B/op\t       0 allocs/op",
+            "extra": "3655617 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - ns/op",
+            "value": 328.2,
+            "unit": "ns/op",
+            "extra": "3655617 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - MB/s",
+            "value": 12479.73,
+            "unit": "MB/s",
+            "extra": "3655617 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "3655617 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkXXHash/4KB (github.com/stuckj/mkvdup/internal/matcher) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "3655617 times\n4 procs"
           }
         ]
       }
