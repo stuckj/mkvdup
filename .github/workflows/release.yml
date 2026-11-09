@@ -1195,10 +1195,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Retried as a pair: a failed index download leaves apt-get update exiting
+      # 0, and only the install then fails, on a package it cannot locate.
       - name: Install tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev createrepo-c gnupg
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get -o Acquire::Retries=5 update &&
+              sudo apt-get -o Acquire::Retries=5 install -y dpkg-dev createrepo-c gnupg &&
+              exit 0
+            echo "::warning::package install attempt $attempt failed"
+            [ "$attempt" = 5 ] || sleep $((attempt * 30))
+          done
+          exit 1
 
       - name: Import GPG key
         run: |

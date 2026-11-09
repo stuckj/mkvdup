@@ -1,0 +1,75 @@
+name: Package Scripts
+
+# Builds YUM repodata with the release pipeline's own scripts under old and new
+# createrepo_c. Release runners track ubuntu-latest, so a changed createrepo_c
+# default would otherwise surface only in a release's publish step.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/yum-repodata.sh'
+      - 'scripts/yum_xmlbase.py'
+      - 'scripts/test-yum-repodata.sh'
+      - '.github/workflows/package-scripts.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/yum-repodata.sh'
+      - 'scripts/yum_xmlbase.py'
+      - 'scripts/test-yum-repodata.sh'
+      - '.github/workflows/package-scripts.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  yum-repodata:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:24.04   # createrepo_c 0.17
+          - ubuntu:26.04   # createrepo_c 1.x
+          - fedora:latest  # newest createrepo_c, and dnf to read the result
+    container: ${{ matrix.image }}
+    name: ${{ matrix.image }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          if command -v apt-get >/dev/null; then
+            # Use the Azure mirror the hosted runner itself uses, instead of the
+            # stock images' archive.ubuntu.com.
+            sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|' \
+              /etc/apt/sources.list.d/ubuntu.sources
+            echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+            # apt-get update exits 0 when an index fails to download, and the
+            # install then fails on a missing package; --error-on=any makes the
+            # update itself fail so the whole attempt is retried.
+            install_tools() { apt-get update --error-on=any &&
+                        apt-get install -y createrepo-c python3 curl ca-certificates; }
+          else
+            install_tools() { dnf install -y createrepo_c python3 curl; }
+          fi
+          for attempt in 1 2 3 4 5; do
+            install_tools && exit 0
+            echo "::warning::package install attempt $attempt failed"
+            [ "$attempt" = 5 ] || sleep $((attempt * 30))
+          done
+          exit 1
+
+      - name: Build and check repodata
+        run: bash scripts/test-yum-repodata.sh "${RUNNER_TEMP}"
