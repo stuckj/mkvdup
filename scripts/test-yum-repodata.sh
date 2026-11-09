@@ -5,20 +5,24 @@
 # checksums matching the files beside it. If dnf is present it must also read
 # the result.
 #
-# Usage: test-yum-repodata.sh <work-directory> [release-tag]
+# Usage: test-yum-repodata.sh <parent-directory> [release-tag]
+# Works in a new directory created under <parent-directory>; nothing existing
+# is removed.
 set -euo pipefail
 
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${GITHUB_REPOSITORY:-stuckj/mkvdup}"
 BASE="https://github.com/${REPO}/releases/download"
-WORK="${1:?usage: $(basename "$0") <work-directory> [release-tag]}"
+PARENT="${1:?usage: $(basename "$0") <parent-directory> [release-tag]}"
 TAG="${2:-v1.9.3}"
 ASSET="mkvdup-${TAG#v}-1.x86_64.rpm"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 echo "createrepo_c $(createrepo_c --version | head -n1)"
-rm -rf "$WORK"
+mkdir -p "$PARENT"
+WORK="$(mktemp -d "$PARENT/yumtest.XXXXXX")"
+echo "work directory: $WORK"
 mkdir -p "$WORK/rpms"
 curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o "$WORK/rpms/$ASSET" "$BASE/$TAG/$ASSET"
 echo "$TAG/$ASSET" > "$WORK/assetmap.txt"

@@ -72,4 +72,4 @@ jobs:
           exit 1
 
       - name: Build and check repodata
-        run: bash scripts/test-yum-repodata.sh "${RUNNER_TEMP}/yumtest"
+        run: bash scripts/test-yum-repodata.sh "${RUNNER_TEMP}"
