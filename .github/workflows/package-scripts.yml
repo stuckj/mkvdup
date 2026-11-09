@@ -1,0 +1,61 @@
+name: Package Scripts
+
+# Builds YUM repodata with the release pipeline's own scripts under old and new
+# createrepo_c. Release runners track ubuntu-latest, so a changed createrepo_c
+# default would otherwise surface only in a release's publish step.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/yum-repodata.sh'
+      - 'scripts/yum_xmlbase.py'
+      - 'scripts/test-yum-repodata.sh'
+      - '.github/workflows/package-scripts.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/yum-repodata.sh'
+      - 'scripts/yum_xmlbase.py'
+      - 'scripts/test-yum-repodata.sh'
+      - '.github/workflows/package-scripts.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  yum-repodata:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:24.04   # createrepo_c 0.17
+          - ubuntu:26.04   # createrepo_c 1.x
+          - fedora:latest  # newest createrepo_c, and dnf to read the result
+    container: ${{ matrix.image }}
+    name: ${{ matrix.image }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y createrepo-c python3 curl ca-certificates
+          else
+            dnf install -y createrepo_c python3 curl
+          fi
+
+      - name: Build and check repodata
+        run: bash scripts/test-yum-repodata.sh "${RUNNER_TEMP}/yumtest"

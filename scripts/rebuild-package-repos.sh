@@ -512,12 +512,8 @@ say "build gh-pages YUM repodata (full history, packages via xml:base)"
 for spec in "yum:rpm-stable" "yum-canary:rpm-canary"; do
   IFS=: read -r out dir <<<"$spec"
   [ "$out" = yum-canary ] && [ "$DO_CANARY" = 0 ] && continue
-  # --no-database: only primary.xml carries package locations, so the sqlite
-  # copies cannot be redirected to the releases. Shipping them would advertise
-  # packages/ paths that no longer exist to any client that prefers sqlite.
-  createrepo_c --quiet --no-database "stage/$dir"
   mkdir -p "pages/$out"
-  python3 "$SCRIPTS/yum_xmlbase.py" "stage/$dir/repodata" "pages/$out/repodata" assetmap.txt "$BASE"
+  bash "$SCRIPTS/yum-repodata.sh" "stage/$dir" "pages/$out/repodata" assetmap.txt "$BASE"
   detach "pages/$out/repodata/repomd.xml.asc" "pages/$out/repodata/repomd.xml"
   echo "  $out: $(find "stage/$dir" -name '*.rpm' | wc -l) packages indexed, 0 hosted"
 done

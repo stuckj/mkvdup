@@ -320,6 +320,13 @@ sit on Pages and point at the releases. APT resolves `Filename` against the
 offer packages that are themselves on Pages. The archive repository is a flat
 APT repo living beside the packages, reaching them with `../<tag>/<asset>`.
 
+The YUM index is built by `scripts/yum-repodata.sh`: `createrepo_c` asked for
+gzip metadata, then `yum_xmlbase.py` rewriting each location. The rewrite only
+reads gzip, and `createrepo_c` 1.x defaults to zstd, so the compression is set
+explicitly. **Package Scripts** (`package-scripts.yml`) runs that script under
+`createrepo_c` 0.17 (Ubuntu 24.04), 1.x (Ubuntu 26.04) and Fedora's newest, and
+has dnf read the result. It runs on changes to those scripts and weekly.
+
 `publish-repo` runs the script on every release. To rebuild by hand — after
 deleting a release, or if the indexes drift — dispatch **Rebuild Package
 Repositories**. It is idempotent. Run it with `dry_run: true` first: that builds

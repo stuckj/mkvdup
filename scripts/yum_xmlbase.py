@@ -58,6 +58,9 @@ def main(src, dst, mapfile, base):
             loc.set("href", f"repodata/{name}")
             continue
 
+        if not name.endswith(".gz"):
+            sys.exit(f"primary metadata {name} is not gzip — run createrepo_c "
+                     "with --general-compress-type gz")
         raw = gzip.decompress(open(srcf, "rb").read()).decode()
 
         def point_at_release(m):
