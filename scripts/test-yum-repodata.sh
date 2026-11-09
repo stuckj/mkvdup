@@ -20,7 +20,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 echo "createrepo_c $(createrepo_c --version | head -n1)"
 rm -rf "$WORK"
 mkdir -p "$WORK/rpms"
-curl -fsSL -o "$WORK/rpms/$ASSET" "$BASE/$TAG/$ASSET"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o "$WORK/rpms/$ASSET" "$BASE/$TAG/$ASSET"
 echo "$TAG/$ASSET" > "$WORK/assetmap.txt"
 
 bash "$SCRIPTS/yum-repodata.sh" "$WORK/rpms" "$WORK/out/repodata" "$WORK/assetmap.txt" "$BASE"

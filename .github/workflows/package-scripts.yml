@@ -51,16 +51,25 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           if command -v apt-get >/dev/null; then
-            # The stock images point at archive.ubuntu.com, which times out from
-            # GitHub's network; the hosted runner itself uses the Azure mirror.
+            # Use the Azure mirror the hosted runner itself uses, instead of the
+            # stock images' archive.ubuntu.com.
             sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|' \
               /etc/apt/sources.list.d/ubuntu.sources
             echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
-            apt-get update
-            apt-get install -y createrepo-c python3 curl ca-certificates
+            # apt-get update exits 0 when an index fails to download, and the
+            # install then fails on a missing package; --error-on=any makes the
+            # update itself fail so the whole attempt is retried.
+            install_tools() { apt-get update --error-on=any &&
+                        apt-get install -y createrepo-c python3 curl ca-certificates; }
           else
-            dnf install -y createrepo_c python3 curl
+            install_tools() { dnf install -y createrepo_c python3 curl; }
           fi
+          for attempt in 1 2 3 4 5; do
+            install_tools && exit 0
+            echo "::warning::package install attempt $attempt failed"
+            [ "$attempt" = 5 ] || sleep $((attempt * 30))
+          done
+          exit 1
 
       - name: Build and check repodata
         run: bash scripts/test-yum-repodata.sh "${RUNNER_TEMP}/yumtest"
