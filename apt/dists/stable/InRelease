@@ -8,16 +8,16 @@ Codename: stable
 Architectures: amd64 arm64
 Components: main
 Description: mkvdup (current version; see the apt-history release for older versions)
-Date: Mon, 09 Nov 2026 03:19:09 +0000
+Date: Tue, 17 Nov 2026 06:37:54 +0000
 SHA256:
- 622be127e3f8fefc29a9795fd9140300b20bf3d7e7ace8e2cd26273b34b28130 652 main/binary-amd64/Packages
- e9b9f0828348f067656bbdaaa197715596c6b1beda26cc627dc8328803cb2118 464 main/binary-amd64/Packages.gz
- e6cb7b3308b992cd856b18dea226d0e97d2f6f773fc5f49a331db5704881f5c4 652 main/binary-arm64/Packages
- 5c60e3eb65c0886b22ee1dad1820bee9af5580402da866903c1d78413956ea79 466 main/binary-arm64/Packages.gz
+ 566b685494cb3ae10b38d02d42f73a80157497d603d0d9e7ac280a55b96f9b34 652 main/binary-amd64/Packages
+ 97fbdacb39f7fe80c99f088962ae2cc779732abd3633188fab1c24b4a633dc15 464 main/binary-amd64/Packages.gz
+ 251b2d8cb461feb5065949c1263b73ffe9f05f772ca0adf7a1c171eef95ba252 652 main/binary-arm64/Packages
+ f2047d9988085435974d61a3b386d64d4250534c2d5af46c9253f2bc3059a3c1 464 main/binary-arm64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCavE7rQAKCRDNt7j4ivzL
-45lRAQCs48I71rdrANswbm9jOR0ofwqhxIflIqPpguLLtzSTGAEAq//4q3pUuwmL
-qBQ0Y7kq0moQ9F/d6OyvA5oAD1sAQQQ=
-=miHD
+iHUEARYKAB0WIQQ6q/TINP/n4I2RqbrNt7j4ivzL4wUCavv2QgAKCRDNt7j4ivzL
+45JaAP4oE9ZiPmID6RdqLVtl4dLRI1lANAjGKBrUHYVcU5RbbQD+MsgKwXRgKWYD
+yUdtWSArcwYD0vQgLN5nk3Vuv2ZCswU=
+=LULe
 -----END PGP SIGNATURE-----
