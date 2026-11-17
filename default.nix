@@ -12,7 +12,7 @@ in
 pkgs.buildGoModule rec {
   pname = command;
   # Version is updated by the release workflow before tagging
-  version = "1.9.3";
+  version = "1.9.4";
   src = ./.;
   vendorHash = "sha256-bNpvaiocCVgefGMq+oiOLGRSqicIhZwSAXeqM0LYoAk=";
   subPackages = [ "cmd/mkvdup" ];
